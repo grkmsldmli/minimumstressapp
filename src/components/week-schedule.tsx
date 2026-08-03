@@ -1,0 +1,199 @@
+"use client";
+
+import { Plus, X } from "lucide-react";
+
+import {
+  type AvailabilityBlock,
+  blocksForDay,
+  findProblems,
+} from "@/lib/availability";
+import { SELECTABLE_HOURS, WEEKDAYS, formatMinuteOfDay } from "@/lib/taxonomy";
+
+import { Toggle } from "./primitives";
+
+const DEFAULT_START = 9 * 60;
+const DEFAULT_END = 17 * 60;
+
+/**
+ * The recurring weekly template. Each day toggles independently and holds any
+ * number of blocks, so a host can open 7-8am, 2-3pm and 5-9pm on one Monday and
+ * keep the gaps for their own use.
+ *
+ * Blocks are a flat list rather than a per-day tree, matching how they are
+ * stored — one row per block — so nothing has to be reshaped on save.
+ */
+export function WeekSchedule({
+  blocks,
+  onChange,
+}: {
+  blocks: AvailabilityBlock[];
+  onChange: (next: AvailabilityBlock[]) => void;
+}) {
+  const problems = findProblems(blocks);
+
+  const problemFor = (block: AvailabilityBlock) =>
+    problems.find(
+      (p) =>
+        p.block.weekday === block.weekday &&
+        p.block.startMinute === block.startMinute &&
+        p.block.endMinute === block.endMinute,
+    );
+
+  const setDayOpen = (weekday: number, open: boolean) => {
+    if (open) {
+      onChange([
+        ...blocks,
+        { weekday, startMinute: DEFAULT_START, endMinute: DEFAULT_END },
+      ]);
+    } else {
+      onChange(blocks.filter((b) => b.weekday !== weekday));
+    }
+  };
+
+  const addBlock = (weekday: number) => {
+    onChange([...blocks, { weekday, startMinute: DEFAULT_START, endMinute: DEFAULT_END }]);
+  };
+
+  const removeBlock = (target: AvailabilityBlock) => {
+    const index = blocks.indexOf(target);
+    onChange(blocks.filter((_, i) => i !== index));
+  };
+
+  const updateBlock = (
+    target: AvailabilityBlock,
+    field: "startMinute" | "endMinute",
+    value: number,
+  ) => {
+    const index = blocks.indexOf(target);
+    onChange(blocks.map((b, i) => (i === index ? { ...b, [field]: value } : b)));
+  };
+
+  return (
+    <div className="flex flex-col gap-2">
+      {WEEKDAYS.map(({ weekday, short }) => {
+        const day = blocksForDay(blocks, weekday);
+        const open = day.length > 0;
+
+        return (
+          <div
+            key={weekday}
+            className="rounded-xl overflow-hidden"
+            style={{ border: `1px solid ${open ? "#D4E8FA" : "#E7EEF6"}` }}
+          >
+            <div
+              className="flex items-center gap-3 px-3.5 py-3"
+              style={{ backgroundColor: open ? "#F4F8FC" : "#fff" }}
+            >
+              <span
+                className={`font-body font-medium text-[12.5px] w-8 ${open ? "text-navy" : "text-ink-ghost"}`}
+              >
+                {short}
+              </span>
+              <Toggle
+                on={open}
+                onClick={() => setDayOpen(weekday, !open)}
+                label={`${short} availability`}
+              />
+              {!open && (
+                <span className="flex-1 text-right font-body text-[11.5px] text-ink-ghost">
+                  Closed
+                </span>
+              )}
+            </div>
+
+            {open && (
+              <div className="px-3.5 pb-3 pt-0.5 card-in" style={{ backgroundColor: "#F4F8FC" }}>
+                <div className="flex flex-col gap-1.5">
+                  {day.map((block) => {
+                    const problem = problemFor(block);
+                    return (
+                      <div key={`${block.startMinute}-${block.endMinute}`}>
+                        <div className="flex items-center gap-1.5">
+                          <TimeSelect
+                            value={block.startMinute}
+                            invalid={Boolean(problem)}
+                            onChange={(v) => updateBlock(block, "startMinute", v)}
+                            label={`${short} block start`}
+                          />
+                          <span className="font-body text-[10px] shrink-0 text-ink-faint">–</span>
+                          <TimeSelect
+                            value={block.endMinute}
+                            invalid={Boolean(problem)}
+                            onChange={(v) => updateBlock(block, "endMinute", v)}
+                            label={`${short} block end`}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => removeBlock(block)}
+                            className="press shrink-0"
+                            aria-label={`Remove ${short} block`}
+                          >
+                            <X size={13} color="#B9CBDD" />
+                          </button>
+                        </div>
+                        {problem && (
+                          <p className="font-body text-[10.5px] mt-1 text-danger">
+                            {problem.kind === "inverted"
+                              ? "This block ends before it starts."
+                              : "This overlaps an earlier block on the same day."}
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => addBlock(weekday)}
+                  // Seven of these render at once, one per day; the visible label
+                  // alone leaves them indistinguishable to a screen reader.
+                  aria-label={`Add another ${short} block`}
+                  className="flex items-center gap-1 mt-2 press"
+                >
+                  <Plus size={11} color="#3B9BE8" />
+                  <span className="font-body text-[11px] font-medium text-sky">
+                    Add another block
+                  </span>
+                </button>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function TimeSelect({
+  value,
+  onChange,
+  invalid,
+  label,
+}: {
+  value: number;
+  onChange: (minute: number) => void;
+  invalid: boolean;
+  label: string;
+}) {
+  // A stored time outside the picker's range would otherwise vanish silently.
+  const options = SELECTABLE_HOURS.includes(value)
+    ? SELECTABLE_HOURS
+    : [...SELECTABLE_HOURS, value].sort((a, b) => a - b);
+
+  return (
+    <select
+      aria-label={label}
+      value={value}
+      onChange={(e) => onChange(Number(e.target.value))}
+      className="font-body text-[11.5px] rounded-lg px-1.5 py-1.5 outline-none flex-1 min-w-0 text-navy"
+      style={{ border: `1px solid ${invalid ? "#F5C4BC" : "#DCE7F2"}` }}
+    >
+      {options.map((minute) => (
+        <option key={minute} value={minute}>
+          {formatMinuteOfDay(minute)}
+        </option>
+      ))}
+    </select>
+  );
+}

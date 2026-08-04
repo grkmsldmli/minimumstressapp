@@ -20,6 +20,7 @@ const MIGRATIONS = [
   "0003_storage.sql",
   "0004_narrow_public_profiles.sql",
   "0005_host_bookings.sql",
+  "0006_service_role_grants.sql",
 ];
 const STUBS = "0000_supabase_stubs.sql";
 
@@ -61,6 +62,42 @@ describe("migrations apply cleanly", () => {
       "space_media",
       "spaces",
     ]);
+  });
+
+  it("grants service_role access to every table the server writes", async () => {
+    /**
+     * This is the check that was missing. A policy without a GRANT is dead
+     * code, and BYPASSRLS does not help a role that cannot touch the table at
+     * all — service_role authenticated perfectly while every REST call came
+     * back denied, which reads exactly like a bad key.
+     */
+    const ungranted = await rows<{ table_name: string }>(
+      `select t.table_name
+       from information_schema.tables t
+       where t.table_schema = 'public'
+         and t.table_type = 'BASE TABLE'
+         and not exists (
+           select 1 from information_schema.role_table_grants g
+           where g.table_schema = 'public'
+             and g.table_name = t.table_name
+             and g.grantee = 'service_role'
+             and g.privilege_type = 'INSERT'
+         )
+       order by t.table_name`,
+    );
+
+    expect(ungranted).toEqual([]);
+  });
+
+  it("still refuses anon everything on the base tables", async () => {
+    // Widening service_role must not have widened anon along with it.
+    const granted = await rows<{ table_name: string }>(
+      `select distinct table_name from information_schema.role_table_grants
+       where table_schema = 'public' and grantee = 'anon'
+         and table_name in ('profiles','spaces','bookings','credit_ledger','availability','space_media')`,
+    );
+
+    expect(granted).toEqual([]);
   });
 
   it("enables row level security on every table", async () => {

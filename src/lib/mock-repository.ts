@@ -24,6 +24,7 @@ import {
 import type {
   Booking,
   BookingMoneyRecord,
+  CreatedBooking,
   CreditEntry,
   HostBooking,
   HostSpace,
@@ -354,7 +355,7 @@ export class MockRepository implements Repository {
     return { ...booking, revealedAccessCode: revealed ? booking.revealedAccessCode : null };
   }
 
-  async createBooking({ spaceId, startsAt }: CreateBookingInput): Promise<Booking> {
+  async createBooking({ spaceId, startsAt }: CreateBookingInput): Promise<CreatedBooking> {
     const space = await this.getPublicSpace(spaceId);
     if (!space) throw new Error(`no such space: ${spaceId}`);
 
@@ -398,7 +399,9 @@ export class MockRepository implements Repository {
     };
 
     this.bookings.unshift(booking);
-    return this.withRevealedCode(booking);
+    // No card, so nothing to confirm — the caller goes straight to the
+    // confirmation screen and the payment step never appears.
+    return { booking: this.withRevealedCode(booking), clientSecret: null };
   }
 
   async cancelBooking(bookingId: string, actor: "practitioner" | "host"): Promise<Booking> {

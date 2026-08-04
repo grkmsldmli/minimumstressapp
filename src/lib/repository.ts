@@ -11,6 +11,7 @@
 
 import type {
   Booking,
+  CreatedBooking,
   CreditEntry,
   HostBooking,
   HostSpace,
@@ -38,7 +39,7 @@ export interface Repository {
   getSpaceAccessDetails(spaceId: string): Promise<SpaceAccessDetails | null>;
 
   listMyBookings(): Promise<Booking[]>;
-  createBooking(input: CreateBookingInput): Promise<Booking>;
+  createBooking(input: CreateBookingInput): Promise<CreatedBooking>;
   cancelBooking(bookingId: string, actor: "practitioner" | "host"): Promise<Booking>;
 
   getCreditBalanceCents(): Promise<number>;

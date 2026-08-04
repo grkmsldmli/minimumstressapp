@@ -1,36 +1,49 @@
 /**
  * Which Repository the app runs against.
  *
- * The Supabase implementation is written, typechecked and pointed at a live
- * project whose schema and RLS are verified — but it is not the default yet,
- * and the reason is worth stating plainly rather than leaving as a mystery
- * flag.
+ * Both are complete. The mock holds everything in memory and is what the app
+ * falls back to; the Supabase one reads and writes the live project, and books
+ * and cancels through server routes because pricing a booking on the client
+ * would let a client price it however it liked.
  *
- * Creating a booking must (a) price it server-side, because a client that
- * computes its own total can simply send a smaller one, and (b) write the
- * booking row, its credit_ledger entry and a Stripe PaymentIntent as one unit.
- * A client interrupted between those steps leaves money in a state nobody
- * reconciles. That work needs a server route holding the secret key, so it
- * arrives with the Stripe milestone.
- *
- * Switching before then would trade a demo where every flow works for one that
- * falls over at the moment of booking. So the mock stays in charge, and the
- * Supabase path is exercised by its own tests rather than half-wired here.
- *
- * To flip it once payments land: set NEXT_PUBLIC_USE_SUPABASE=true.
+ * The switch is `NEXT_PUBLIC_USE_SUPABASE`. It stays a switch rather than
+ * becoming a hard default because the mock is genuinely useful: every screen
+ * works with no account, no network and no card, which is what makes the
+ * design reviewable and the empty states real.
  */
 
 import { MockRepository } from "./mock-repository";
 import type { Repository } from "./repository";
+import { SupabaseRepository } from "./supabase-repository";
+import { supabaseBrowser } from "./supabase/client";
 
 export type AppRepository = Repository & {
   simulateInboundBooking(spaceId: string): Promise<unknown>;
 };
 
-export function useSupabaseBackend(): boolean {
+/**
+ * Not a hook, despite reading like state — it is a build-time constant.
+ *
+ * It was called `useSupabaseBackend`, which made the rules-of-hooks lint treat
+ * every plain function that called it as a broken component. The `use` prefix
+ * is reserved for a reason.
+ */
+export function supabaseBackendEnabled(): boolean {
   return process.env.NEXT_PUBLIC_USE_SUPABASE === "true";
 }
 
 export function createRepository(): AppRepository {
-  return new MockRepository();
+  if (!supabaseBackendEnabled()) return new MockRepository();
+
+  /**
+   * Cast rather than implemented, and worth saying why out loud.
+   *
+   * `simulateInboundBooking` exists so a host can see their own dashboard with
+   * something in it before any practitioner has found them. Against the real
+   * database it returns null and does nothing — inventing a booking there
+   * would mean inventing a practitioner, a payment and an obligation to
+   * somebody, which is exactly the class of fake data this app has been
+   * careful to keep out of screens hosts use for money.
+   */
+  return new SupabaseRepository(supabaseBrowser()) as AppRepository;
 }

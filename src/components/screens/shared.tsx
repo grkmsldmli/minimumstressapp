@@ -202,9 +202,14 @@ function GoogleGlyph({ size = 16 }: { size?: number }) {
 export function AuthEntry({
   onEmail,
   onProvider,
+  error,
+  busy = false,
 }: {
   onEmail: (email: string) => void;
   onProvider: (provider: "apple" | "google") => void;
+  /** Why the code could not be sent. Shown here because there is no code screen to show it on. */
+  error?: string | null;
+  busy?: boolean;
 }) {
   const [email, setEmail] = useState("");
   // A trailing-dot or spaceless check catches the common typo without
@@ -256,7 +261,7 @@ export function AuthEntry({
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            if (looksLikeEmail) onEmail(email.trim());
+            if (looksLikeEmail && !busy) onEmail(email.trim());
           }}
         >
           <div
@@ -278,9 +283,14 @@ export function AuthEntry({
               className="font-body text-[13.5px] outline-none w-full bg-transparent text-white placeholder:text-white/40"
             />
           </div>
+          {error && (
+            <p className="font-body font-light text-[11.5px] mt-2.5 leading-relaxed text-coral-soft">
+              {error}
+            </p>
+          )}
           <div className="mt-3">
-            <PrimaryButton type="submit" disabled={!looksLikeEmail}>
-              Send code
+            <PrimaryButton type="submit" disabled={!looksLikeEmail || busy}>
+              {busy ? "Sending…" : "Send code"}
             </PrimaryButton>
           </div>
         </form>

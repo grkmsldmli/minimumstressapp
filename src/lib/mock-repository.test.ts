@@ -38,7 +38,7 @@ describe("pricing flows through the money module", () => {
   it("charges the all-in price and pays the host their rate exactly", async () => {
     const spaceId = await firstSpaceId();
     const space = await repo.getPublicSpace(spaceId);
-    const booking = await repo.createBooking({ spaceId, startsAt: daysFromNow(3) });
+    const { booking: booking } = await repo.createBooking({ spaceId, startsAt: daysFromNow(3) });
 
     expect(space!.hourlyRateCents).toBe(4500);
     expect(booking.hostRateCents).toBe(4500);
@@ -51,11 +51,11 @@ describe("pricing flows through the money module", () => {
     const spaceId = await firstSpaceId();
 
     const soon = new Date(Date.now() + 30 * 60 * 1000);
-    const instant = await repo.createBooking({ spaceId, startsAt: soon });
+    const { booking: instant } = await repo.createBooking({ spaceId, startsAt: soon });
     expect(instant.isInstant).toBe(true);
     expect(instant.instantFeeCents).toBe(INSTANT_FEE_CENTS);
 
-    const later = await repo.createBooking({ spaceId, startsAt: daysFromNow(2) });
+    const { booking: later } = await repo.createBooking({ spaceId, startsAt: daysFromNow(2) });
     expect(later.isInstant).toBe(false);
     expect(later.instantFeeCents).toBe(0);
   });
@@ -64,7 +64,7 @@ describe("pricing flows through the money module", () => {
     await repo.startProSubscription();
     const spaceId = await firstSpaceId();
 
-    const booking = await repo.createBooking({
+    const { booking: booking } = await repo.createBooking({
       spaceId,
       startsAt: new Date(Date.now() + 30 * 60 * 1000),
     });
@@ -78,7 +78,7 @@ describe("pricing flows through the money module", () => {
 
   it("freezes the price so a later rate change cannot rewrite it", async () => {
     const spaceId = await firstSpaceId();
-    const booking = await repo.createBooking({ spaceId, startsAt: daysFromNow(3) });
+    const { booking: booking } = await repo.createBooking({ spaceId, startsAt: daysFromNow(3) });
     const originalTotal = booking.totalCents;
 
     // Whatever happens to the listing afterwards, the booking keeps its quote.
@@ -91,7 +91,7 @@ describe("pricing flows through the money module", () => {
 describe("cancellation", () => {
   it("charges nothing when the practitioner cancels well ahead", async () => {
     const spaceId = await firstSpaceId();
-    const booking = await repo.createBooking({ spaceId, startsAt: daysFromNow(3) });
+    const { booking: booking } = await repo.createBooking({ spaceId, startsAt: daysFromNow(3) });
 
     const cancelled = await repo.cancelBooking(booking.id, "practitioner");
 
@@ -101,7 +101,7 @@ describe("cancellation", () => {
 
   it("credits the platform's fee when the host cancels", async () => {
     const spaceId = await firstSpaceId();
-    const booking = await repo.createBooking({ spaceId, startsAt: daysFromNow(3) });
+    const { booking: booking } = await repo.createBooking({ spaceId, startsAt: daysFromNow(3) });
 
     await repo.cancelBooking(booking.id, "host");
 
@@ -115,11 +115,11 @@ describe("cancellation", () => {
     const spaceId = await firstSpaceId();
 
     // Build a balance, spend part of it, then have the host cancel.
-    const first = await repo.createBooking({ spaceId, startsAt: daysFromNow(3) });
+    const { booking: first } = await repo.createBooking({ spaceId, startsAt: daysFromNow(3) });
     await repo.cancelBooking(first.id, "host");
     const balanceBefore = await repo.getCreditBalanceCents();
 
-    const second = await repo.createBooking({ spaceId, startsAt: daysFromNow(4) });
+    const { booking: second } = await repo.createBooking({ spaceId, startsAt: daysFromNow(4) });
     expect(second.creditAppliedCents).toBeGreaterThan(0);
 
     await repo.cancelBooking(second.id, "host");
@@ -131,11 +131,11 @@ describe("cancellation", () => {
 
   it("keeps spent credit when the practitioner cancels late", async () => {
     const spaceId = await firstSpaceId();
-    const first = await repo.createBooking({ spaceId, startsAt: daysFromNow(3) });
+    const { booking: first } = await repo.createBooking({ spaceId, startsAt: daysFromNow(3) });
     await repo.cancelBooking(first.id, "host");
 
     const soon = new Date(Date.now() + 45 * 60 * 1000);
-    const second = await repo.createBooking({ spaceId, startsAt: soon });
+    const { booking: second } = await repo.createBooking({ spaceId, startsAt: soon });
     const balanceAfterSpending = await repo.getCreditBalanceCents();
 
     await repo.cancelBooking(second.id, "practitioner");
@@ -148,7 +148,7 @@ describe("cancellation", () => {
 describe("the credit ledger is append-only", () => {
   it("derives the balance from its entries", async () => {
     const spaceId = await firstSpaceId();
-    const booking = await repo.createBooking({ spaceId, startsAt: daysFromNow(3) });
+    const { booking: booking } = await repo.createBooking({ spaceId, startsAt: daysFromNow(3) });
     await repo.cancelBooking(booking.id, "host");
 
     const entries = await repo.listCreditEntries();
@@ -177,7 +177,7 @@ describe("the address is withheld until there is a booking", () => {
 describe("the access code is withheld until its reveal time", () => {
   it("hides it on a booking days away", async () => {
     const spaceId = await firstSpaceId();
-    const booking = await repo.createBooking({ spaceId, startsAt: daysFromNow(3) });
+    const { booking: booking } = await repo.createBooking({ spaceId, startsAt: daysFromNow(3) });
 
     expect(booking.revealedAccessCode).toBeNull();
     expect(booking.accessCodeRevealedAt.getTime()).toBeLessThan(booking.startsAt.getTime());
@@ -185,7 +185,7 @@ describe("the access code is withheld until its reveal time", () => {
 
   it("releases it within the final half hour", async () => {
     const spaceId = await firstSpaceId();
-    const booking = await repo.createBooking({
+    const { booking: booking } = await repo.createBooking({
       spaceId,
       startsAt: new Date(Date.now() + 10 * 60 * 1000),
     });

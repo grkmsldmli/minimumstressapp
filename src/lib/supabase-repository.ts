@@ -27,6 +27,7 @@ import type { AvailabilityBlock } from "./availability";
 import type {
   Booking,
   BookingStatus,
+  CreatedBooking,
   CreditEntry,
   HostBooking,
   HostSpace,
@@ -81,8 +82,6 @@ interface MediaRow {
   kind: "image" | "video";
 }
 
-const NOT_YET_WIRED =
-  "Booking writes need a server route that is atomic with Stripe. Not available until the payments milestone.";
 
 export class SupabaseRepository implements Repository {
   constructor(private readonly db: SupabaseClient) {}
@@ -320,12 +319,71 @@ export class SupabaseRepository implements Repository {
     });
   }
 
-  async createBooking(_input: CreateBookingInput): Promise<Booking> {
-    throw new Error(NOT_YET_WIRED);
+  /**
+   * Booking goes through the server, and that is the security boundary.
+   *
+   * The request carries a space and a start time and nothing else. Everything
+   * that decides a price — the host's rate, whether the slot is instant,
+   * whether this practitioner is Pro, how much credit they hold — is read
+   * server-side from rows the client cannot write. A client that computed its
+   * own total could simply send a smaller one.
+   *
+   * It is also the only place that can write the booking row, its ledger entry
+   * and a Stripe PaymentIntent as one unit. A practitioner has no insert
+   * rights on `bookings` by design, so this cannot be done from here even if
+   * it were safe to.
+   */
+  async createBooking(input: CreateBookingInput): Promise<CreatedBooking> {
+    const response = await fetch("/api/bookings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        spaceId: input.spaceId,
+        startsAt: input.startsAt.toISOString(),
+      }),
+    });
+
+    const payload = (await response.json().catch(() => ({}))) as {
+      bookingId?: string;
+      clientSecret?: string;
+      error?: string;
+    };
+
+    if (!response.ok || !payload.bookingId) {
+      // The route's own message says why — the slot was taken, the host cannot
+      // be paid, the time is in the past. Those are worth showing verbatim.
+      throw new Error(payload.error ?? `Booking failed (${response.status})`);
+    }
+
+    // Read back rather than assembled from the response: the row the database
+    // holds is the one every other screen will show, and building a second
+    // version here is how two truths appear.
+    const booking = (await this.listMyBookings()).find((b) => b.id === payload.bookingId);
+    if (!booking) throw new Error("Booking was created but could not be read back");
+
+    return { booking, clientSecret: payload.clientSecret ?? null };
   }
 
-  async cancelBooking(_id: string, _actor: "practitioner" | "host"): Promise<Booking> {
-    throw new Error(NOT_YET_WIRED);
+  /**
+   * Cancelling is a Stripe operation before it is a database one — the hold is
+   * voided or captured, credit is issued or restored — so it lives behind the
+   * same route for the same reason.
+   */
+  async cancelBooking(id: string, actor: "practitioner" | "host"): Promise<Booking> {
+    const response = await fetch(`/api/bookings/${encodeURIComponent(id)}/cancel`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ actor }),
+    });
+
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => ({}))) as { error?: string };
+      throw new Error(payload.error ?? `Cancellation failed (${response.status})`);
+    }
+
+    const booking = (await this.listMyBookings()).find((b) => b.id === id);
+    if (!booking) throw new Error("Booking was cancelled but could not be read back");
+    return booking;
   }
 
   /* ---------------- credit ---------------- */

@@ -77,6 +77,23 @@ export interface SpaceAccessDetails {
   lng: number | null;
 }
 
+/**
+ * A booking, and whatever still has to happen before it is paid for.
+ *
+ * The two backends genuinely differ here and the type says so rather than
+ * papering over it. Against Stripe a booking exists the moment the row is
+ * written, but the card has only been *authorised for* — the practitioner
+ * still has to confirm it. The mock has no card and nothing to confirm.
+ *
+ * Returning a bare Booking would force the caller to guess which world it is
+ * in; a null clientSecret says "nothing further" in both.
+ */
+export interface CreatedBooking {
+  booking: Booking;
+  /** Scoped to this one PaymentIntent, and useless for anything else. */
+  clientSecret: string | null;
+}
+
 /** A host's own listing, including the fields never shown to practitioners. */
 export interface HostSpace extends PublicSpace {
   status: SpaceStatus;

@@ -12,6 +12,13 @@ import type {
   SpaceAccessDetails,
 } from "@/lib/domain";
 import { type CancellationEvent, standingFor } from "@/lib/reliability";
+import { supabaseBackendEnabled } from "@/lib/repository-factory";
+import {
+  ensureProfile,
+  sendEmailCode,
+  signInWithProvider,
+  verifyEmailCode,
+} from "@/lib/supabase/auth";
 
 import { useApp } from "./app-state";
 import { AddSpace } from "./screens/add-space";
@@ -19,6 +26,7 @@ import { Confirmed, MyBookings } from "./screens/bookings";
 import { Discover } from "./screens/discover";
 import { EditAvailability, Earnings, HostDashboard, HostProfile } from "./screens/host";
 import { Legal } from "./screens/legal";
+import { PaymentSheet } from "./screens/payment-sheet";
 import {
   InsuranceUpload,
   PractitionerProfile,
@@ -55,11 +63,19 @@ export function App() {
     setActiveBookingId,
     editingSpaceId,
     setEditingSpaceId,
+    clientSecret,
+    setClientSecret,
     revision,
     refresh,
   } = useApp();
 
   const [data, setData] = useState<Snapshot | null>(null);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [authBusy, setAuthBusy] = useState(false);
+
+  // Read once per render rather than threaded through: it is a build-time
+  // constant, and every caller wants the same answer.
+  const onSupabase = supabaseBackendEnabled();
 
   useEffect(() => {
     let cancelled = false;
@@ -156,25 +172,92 @@ export function App() {
     case "auth-entry":
       return (
         <AuthEntry
+          error={authError}
+          busy={authBusy}
           onEmail={(value) => {
             setEmail(value);
-            void mutate(() => repo.updateProfile({ email: value }));
-            go("auth-verify");
+            setAuthError(null);
+
+            if (!onSupabase) {
+              void mutate(() => repo.updateProfile({ email: value }));
+              go("auth-verify");
+              return;
+            }
+
+            // Only advance once Supabase has accepted it. Showing the code
+            // screen first would leave someone staring at six empty boxes
+            // waiting for a message that was never sent.
+            setAuthBusy(true);
+            void (async () => {
+              try {
+                await sendEmailCode(value);
+                go("auth-verify");
+              } catch (error) {
+                setAuthError(describeAuthError(error));
+              } finally {
+                setAuthBusy(false);
+              }
+            })();
           }}
           onProvider={(provider) => {
-            const label = provider === "apple" ? "Apple ID" : "Google account";
-            setEmail(label);
-            void mutate(() => repo.updateProfile({ email: label }));
-            go("role");
+            setAuthError(null);
+
+            if (!onSupabase) {
+              const label = provider === "apple" ? "Apple ID" : "Google account";
+              setEmail(label);
+              void mutate(() => repo.updateProfile({ email: label }));
+              go("role");
+              return;
+            }
+
+            // Leaves the app entirely and comes back through /auth/callback,
+            // so there is no success path to handle here — only a failure to
+            // start, which happens when the provider is not configured yet.
+            void (async () => {
+              try {
+                await signInWithProvider(provider);
+              } catch (error) {
+                setAuthError(describeAuthError(error));
+              }
+            })();
           }}
         />
       );
 
     case "auth-verify":
-      return <AuthVerify email={email} next={() => go("role")} />;
-    // The code itself is ignored while the mock repository is in play — see
-    // src/lib/repository-factory.ts for why, and for where the real
-    // verifyEmailCode call takes over.
+      return (
+        <AuthVerify
+          email={email}
+          error={authError}
+          busy={authBusy}
+          next={(code) => {
+            setAuthError(null);
+
+            // The mock has no code to check — see repository-factory.ts.
+            if (!onSupabase) {
+              go("role");
+              return;
+            }
+
+            setAuthBusy(true);
+            void (async () => {
+              try {
+                await verifyEmailCode(email, code);
+                // Every screen after this writes as the signed-in user, and a
+                // user with no profile row hits a foreign key on the first
+                // one. Upsert, so a repeat sign-in is harmless.
+                await ensureProfile();
+                refresh();
+                go("role");
+              } catch (error) {
+                setAuthError(describeAuthError(error));
+              } finally {
+                setAuthBusy(false);
+              }
+            })();
+          }}
+        />
+      );
 
     case "role":
       return <RoleSelect choosePractitioner={() => go("verify")} chooseHost={goHosting} />;
@@ -219,11 +302,46 @@ export function App() {
           onGoPro={() => go("pro")}
           onBook={(startsAt) => {
             void (async () => {
-              const booking = await repo.createBooking({ spaceId: activeSpace.id, startsAt });
+              const { booking, clientSecret } = await repo.createBooking({
+                spaceId: activeSpace.id,
+                startsAt,
+              });
               setActiveBookingId(booking.id);
+              setClientSecret(clientSecret);
               refresh();
-              go("confirmed");
+              // The booking row exists either way. A clientSecret means a card
+              // still has to be confirmed against it; without one there is
+              // nothing left to do and the payment screen would be a lie.
+              go(clientSecret ? "payment" : "confirmed");
             })();
+          }}
+        />
+      );
+
+    case "payment":
+      if (!activeBooking || !clientSecret) return <Fallback onBack={() => go("discover")} />;
+      return (
+        <PaymentSheet
+          clientSecret={clientSecret}
+          money={activeBooking}
+          spaceName={activeBooking.spaceName}
+          startsAt={activeBooking.startsAt}
+          /**
+           * Back leaves the booking in place, holding the slot, unpaid.
+           *
+           * Deleting it here would be worse in both directions: a practitioner
+           * who meant to switch cards would lose the slot, and a slot released
+           * on every back-tap is a slot that flickers in and out of other
+           * people's searches. The capture job settles what is never paid.
+           */
+          onBack={() => {
+            setClientSecret(null);
+            go("discover");
+          }}
+          onPaid={() => {
+            setClientSecret(null);
+            refresh();
+            go("confirmed");
           }}
         />
       );
@@ -342,6 +460,19 @@ export function App() {
         />
       );
   }
+}
+
+/**
+ * What to show someone whose sign-in failed.
+ *
+ * Supabase's messages are already written for the person rather than the
+ * developer — "Token has expired or is invalid" — so they are passed through.
+ * The fallback covers a network failure, where there is no message at all and
+ * the honest thing is to say the attempt did not reach us.
+ */
+function describeAuthError(error: unknown): string {
+  const message = error instanceof Error ? error.message.trim() : "";
+  return message || "We couldn't reach the server. Check your connection and try again.";
 }
 
 /** Reached only if a screen is opened without the record it needs. */

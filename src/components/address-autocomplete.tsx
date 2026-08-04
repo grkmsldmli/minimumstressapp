@@ -51,23 +51,35 @@ export function AddressAutocomplete({
    */
   const sessionRef = useRef<string>(newSession());
 
+  /**
+   * Whether the query is long enough to have meant anything.
+   *
+   * Derived at render rather than cleared in the effect. Clearing meant three
+   * setState calls firing synchronously every time someone deleted a
+   * character, each one a re-render, to reach a state the query already
+   * describes. Deleting back to two characters hides the list immediately
+   * because the list is a function of the query, not a race against it.
+   */
+  const tooShort = value.trim().length < MIN_QUERY_LENGTH;
+  const visible = tooShort ? [] : suggestions;
+
   useEffect(() => {
     const query = value.trim();
 
+    // Nothing to ask, and the cleanup below has already stopped whatever was
+    // in flight for the longer query this one was cut down from.
     if (query === acceptedRef.current) return;
-    if (query.length < MIN_QUERY_LENGTH) {
-      setSuggestions([]);
-      setSearched(false);
-      setLoading(false);
-      return;
-    }
+    if (query.length < MIN_QUERY_LENGTH) return;
 
     const controller = new AbortController();
-    setLoading(true);
 
     // A request per keystroke would be several per word. A pause long enough
     // to be deliberate but short enough to feel immediate.
     const timer = setTimeout(async () => {
+      // Set here rather than above, so the spinner means a request is in
+      // flight rather than a keystroke was typed. During the pause nothing is
+      // happening and there is nothing to wait for.
+      setLoading(true);
       try {
         const response = await fetch(
           `/api/geocode?q=${encodeURIComponent(query)}&session=${sessionRef.current}`,
@@ -159,12 +171,12 @@ export function AddressAutocomplete({
       return;
     }
 
-    if (!open || suggestions.length === 0) return;
+    if (!open || visible.length === 0) return;
 
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
       const step = event.key === "ArrowDown" ? 1 : -1;
-      setHighlighted((i) => (i + step + suggestions.length) % suggestions.length);
+      setHighlighted((i) => (i + step + visible.length) % visible.length);
       return;
     }
 
@@ -172,11 +184,11 @@ export function AddressAutocomplete({
     // silently accepting a guess the host never looked at.
     if (event.key === "Enter" && highlighted >= 0) {
       event.preventDefault();
-      void accept(suggestions[highlighted]);
+      void accept(visible[highlighted]);
     }
   };
 
-  const showEmpty = open && searched && !loading && suggestions.length === 0;
+  const showEmpty = open && searched && !loading && !tooShort && visible.length === 0;
 
   return (
     <div ref={wrapRef} className="relative">
@@ -189,7 +201,7 @@ export function AddressAutocomplete({
           value={value}
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={onKeyDown}
-          onFocus={() => suggestions.length > 0 && setOpen(true)}
+          onFocus={() => visible.length > 0 && setOpen(true)}
           placeholder="Street address, city"
           aria-label="Street address"
           autoComplete="off"
@@ -205,7 +217,7 @@ export function AddressAutocomplete({
         )}
       </div>
 
-      {(open && suggestions.length > 0) || showEmpty ? (
+      {(open && visible.length > 0) || showEmpty ? (
         <div
           className="absolute left-0 right-0 top-full mt-1 rounded-xl bg-white overflow-hidden z-30"
           style={{ border: "1px solid #DCE7F2", boxShadow: "0 10px 30px rgba(22,48,78,0.12)" }}
@@ -216,7 +228,7 @@ export function AddressAutocomplete({
             </p>
           ) : (
             <ul id={listId} role="listbox" aria-label="Address suggestions">
-              {suggestions.map((suggestion, index) => (
+              {visible.map((suggestion, index) => (
                 <li key={suggestion.id} role="presentation">
                   <button
                     id={`${listId}-${index}`}

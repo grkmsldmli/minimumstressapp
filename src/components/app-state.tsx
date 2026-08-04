@@ -23,6 +23,7 @@ export type Screen =
   | "verify"
   | "discover"
   | "detail"
+  | "payment"
   | "confirmed"
   | "bookings"
   | "practitioner-profile"
@@ -56,6 +57,17 @@ interface AppState {
   editingSpaceId: string | null;
   setEditingSpaceId: (id: string | null) => void;
 
+  /**
+   * The PaymentIntent the card sheet is confirming.
+   *
+   * Held here rather than fetched by the sheet, because it is minted once by
+   * the booking route and asking again would create a second intent for the
+   * same booking. Cleared on the way out so a stale secret can never be
+   * handed to a later, unrelated booking.
+   */
+  clientSecret: string | null;
+  setClientSecret: (secret: string | null) => void;
+
   /** Bumped whenever data changes, so screens can refetch without a store. */
   revision: number;
   refresh: () => void;
@@ -78,6 +90,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [activeSpaceId, setActiveSpaceId] = useState<string | null>(null);
   const [activeBookingId, setActiveBookingId] = useState<string | null>(null);
+  const [clientSecret, setClientSecret] = useState<string | null>(null);
   const [editingSpaceId, setEditingSpaceId] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);
 
@@ -101,6 +114,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     setActiveSpaceId(null);
     setActiveBookingId(null);
     setEditingSpaceId(null);
+    setClientSecret(null);
   }, []);
 
   const refresh = useCallback(() => setRevision((r) => r + 1), []);
@@ -122,6 +136,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       setActiveBookingId,
       editingSpaceId,
       setEditingSpaceId,
+      clientSecret,
+      setClientSecret,
       revision,
       refresh,
     }),
@@ -136,6 +152,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       activeSpaceId,
       activeBookingId,
       editingSpaceId,
+      clientSecret,
       revision,
       refresh,
     ],

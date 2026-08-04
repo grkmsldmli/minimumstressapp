@@ -34,6 +34,8 @@ import {
   AMENITIES,
   BUFFER_OPTIONS,
   CATEGORIES,
+  REQUIREMENTS,
+  REQUIREMENT_GROUPS,
   type AccessTypeKey,
   type CategoryKey,
   RESTROOM_OPTIONS,
@@ -68,6 +70,8 @@ export function AddSpace({
   // Step 2 — only the media is required.
   const [media, setMedia] = useState<PickedMedia[]>([]);
   const [amenities, setAmenities] = useState<string[]>([]);
+  const [requirements, setRequirements] = useState<string[]>([]);
+  const [houseRules, setHouseRules] = useState("");
   const [accessible, setAccessible] = useState<boolean | null>(null);
   const [restroom, setRestroom] = useState<RestroomOption | null>(null);
   const [blocks, setBlocks] = useState<AvailabilityBlock[]>([]);
@@ -139,6 +143,8 @@ export function AddSpace({
       accessible,
       restroom,
       amenities,
+      requirements,
+      houseRules: houseRules.trim(),
       bufferMinutes,
       availability: blocks,
       media: media.map((m) => ({ url: m.url, kind: m.kind })),
@@ -307,6 +313,16 @@ export function AddSpace({
                     ? `Lists at ${formatCents(quote({ hostRateCents: rateCents, isInstant: false, isPro: false, creditBalanceCents: 0 }).totalCents)}/hr`
                     : "Lists at —"}
                 </p>
+                {/*
+                  Under the rate field rather than at the foot of the step. This
+                  is the sentence that answers "why is the listed price higher
+                  than what I typed", and it was worth nothing three scrolls
+                  below the moment that question occurs.
+                */}
+                <p className="font-body font-light text-[10.5px] leading-relaxed mt-1.5 text-ink-faint">
+                  Yours in full. Our fee is added on top for the practitioner,
+                  never taken out of this.
+                </p>
               </div>
               <div>
                 <FieldLabel>Capacity</FieldLabel>
@@ -355,27 +371,21 @@ export function AddSpace({
             <textarea
               value={entryInstructions}
               onChange={(e) => setEntryInstructions(e.target.value)}
-              placeholder="e.g. Keypad is on the right-hand door frame. Press # after the code."
+              placeholder={
+                accessType === "greeter"
+                  ? "e.g. Ring the bell marked 2B and someone will come down."
+                  : accessType === "lockbox"
+                    ? "e.g. Lockbox is on the railing left of the blue door."
+                    : "e.g. Keypad is on the right-hand door frame. Press # after the code."
+              }
               aria-label="Entry instructions"
               rows={3}
               className="w-full mt-3 px-4 py-3 rounded-xl font-body text-[13px] outline-none resize-none text-navy"
               style={{ border: "1px solid #DCE7F2" }}
             />
             <p className="font-body font-light text-[11px] mt-2 text-ink-faint">
-              We generate a fresh door code for every booking, so you never hand the same code to
-              two different people. These instructions go out with it.
+              Shared with the practitioner shortly before their session, never publicly.
             </p>
-
-            <div
-              className="mt-4 rounded-xl p-3 flex items-start gap-2"
-              style={{ backgroundColor: "#EFF4EC", border: "1px solid #DCE6D6" }}
-            >
-              <Check size={12} color="#5E7D5E" className="mt-0.5 shrink-0" />
-              <p className="font-body font-light text-[11px] leading-relaxed text-[#4A5D4A]">
-                Whatever you set here is exactly what lands in your account. Our fee is added on top
-                for the practitioner — never taken out of your rate.
-              </p>
-            </div>
           </div>
         )}
 
@@ -439,6 +449,58 @@ export function AddSpace({
                 </Chip>
               ))}
             </div>
+
+            {/*
+              House rules go on step 2 with the rest of the listing detail, and
+              they surface on the listing itself rather than in a confirmation
+              email. A grip-socks requirement learned on arrival is the same
+              broken promise as a fee that appears at checkout.
+            */}
+            <SectionLabel className="mt-6">
+              House rules <OptionalTag />
+            </SectionLabel>
+            <p className="font-body font-light text-[11px] mb-3 text-ink-faint">
+              Anything a practitioner needs to know before they book. Shown on your listing, not
+              sprung on them afterwards.
+            </p>
+
+            {REQUIREMENT_GROUPS.map(({ kind, heading }) => (
+              <div key={kind} className="mb-4">
+                <FieldLabel>{heading}</FieldLabel>
+                <div className="flex flex-wrap gap-2">
+                  {REQUIREMENTS.filter((r) => r.kind === kind).map((requirement) => (
+                    <Chip
+                      key={requirement.key}
+                      active={requirements.includes(requirement.key)}
+                      onClick={() =>
+                        setRequirements((list) =>
+                          list.includes(requirement.key)
+                            ? list.filter((k) => k !== requirement.key)
+                            : [...list, requirement.key],
+                        )
+                      }
+                    >
+                      {requirement.label}
+                    </Chip>
+                  ))}
+                </div>
+              </div>
+            ))}
+
+            <textarea
+              value={houseRules}
+              onChange={(e) => setHouseRules(e.target.value)}
+              placeholder="Anything else specific to your space"
+              aria-label="Other house rules"
+              rows={3}
+              maxLength={500}
+              className="w-full px-4 py-3 rounded-xl font-body text-[13px] outline-none resize-none text-navy"
+              style={{ border: "1px solid #DCE7F2" }}
+            />
+            <p className="font-body font-light text-[11px] mt-2 text-ink-faint">
+              For what is genuinely particular to your room. Rules must be about the space and how
+              it is used — not about who may use it.
+            </p>
 
             <SectionLabel className="mt-6">
               Availability <OptionalTag />

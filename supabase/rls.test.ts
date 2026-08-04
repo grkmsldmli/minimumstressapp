@@ -71,6 +71,7 @@ beforeAll(async () => {
     "0004_narrow_public_profiles.sql",
     "0005_host_bookings.sql",
     "0006_service_role_grants.sql",
+    "0007_space_details.sql",
   ]) {
     await db.exec(read(file));
   }

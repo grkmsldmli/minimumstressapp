@@ -79,6 +79,8 @@ interface SeedSpace {
   capacity: number;
   description: string;
   amenities: string[];
+  requirements: string[];
+  houseRules: string;
   accessible: boolean;
   restroom: PublicSpace["restroom"];
   bufferMinutes: number;
@@ -97,6 +99,8 @@ const SEED_SPACES: SeedSpace[] = [
     description:
       "A quiet reformer studio above a garden courtyard. Mirrors on one wall, ivy on the other.",
     amenities: ["Mirrors", "Sound system", "Natural light", "Storage"],
+    requirements: ["grip_socks", "indoor_shoes", "no_food_drink"],
+    houseRules: "Reformer springs are colour-coded by resistance — please reset them to red before you leave.",
     accessible: true,
     restroom: "Shared",
     bufferMinutes: 15,
@@ -113,6 +117,8 @@ const SEED_SPACES: SeedSpace[] = [
     description:
       "Two armchairs, a low table, and real privacy. A neutral, calm room for 1:1 coaching.",
     amenities: ["Soundproofed", "Climate control", "Natural light"],
+    requirements: ["quiet_building", "no_waiting_area"],
+    houseRules: "",
     accessible: false,
     restroom: "Shared",
     bufferMinutes: 0,
@@ -129,6 +135,8 @@ const SEED_SPACES: SeedSpace[] = [
     description:
       "Soundproofed, cushioned, and candle-lit on request. Hosts meditation, breathwork, and reiki.",
     amenities: ["Soundproofed", "Climate control", "Storage"],
+    requirements: ["indoor_shoes", "no_open_flame", "quiet_building"],
+    houseRules: "Cushions and bolsters live in the cupboard by the door. Please stack them back the way you found them.",
     accessible: true,
     restroom: "Private",
     bufferMinutes: 15,
@@ -144,6 +152,8 @@ const SEED_SPACES: SeedSpace[] = [
     capacity: 2,
     description: "Heated table, linen service, herb storage, and its own entrance.",
     amenities: ["Sink access", "Climate control", "Private entrance"],
+    requirements: ["own_linens", "no_scents", "wipe_down"],
+    houseRules: "",
     accessible: false,
     restroom: "Private",
     bufferMinutes: 30,
@@ -160,6 +170,8 @@ const SEED_SPACES: SeedSpace[] = [
     description:
       "Sprung floor, wall of mirrors, and a sound system that fills the room without shouting.",
     amenities: ["Mirrors", "Sound system", "Storage"],
+    requirements: ["grip_socks", "no_outside_equipment", "take_rubbish"],
+    houseRules: "",
     accessible: true,
     restroom: "Shared",
     bufferMinutes: 30,
@@ -176,6 +188,8 @@ const SEED_SPACES: SeedSpace[] = [
     description:
       "West-facing room that turns amber at sunset. Cushions and props included, silence guaranteed.",
     amenities: ["Natural light", "Storage"],
+    requirements: ["own_mat", "no_amplified_music", "stairs_only"],
+    houseRules: "Third floor, and the lift has been out since spring.",
     accessible: false,
     restroom: "None",
     bufferMinutes: 15,
@@ -231,6 +245,8 @@ export class MockRepository implements Repository {
         restroom: seed.restroom,
         bufferMinutes: seed.bufferMinutes,
         amenities: seed.amenities,
+        requirements: seed.requirements,
+        houseRules: seed.houseRules,
         description: seed.description,
         media: [],
         availability: seed.availability,
@@ -431,6 +447,8 @@ export class MockRepository implements Repository {
       restroom: input.restroom,
       bufferMinutes: input.bufferMinutes,
       amenities: input.amenities,
+      requirements: input.requirements,
+      houseRules: input.houseRules,
       description: "",
       media: input.media.map((m) => ({ id: id("md"), url: m.url, kind: m.kind })),
       availability: normalize(input.availability),

@@ -103,6 +103,73 @@ export function isAccessTypeKey(value: unknown): value is AccessTypeKey {
 export const RESTROOM_OPTIONS = ["Private", "Shared", "None"] as const;
 export type RestroomOption = (typeof RESTROOM_OPTIONS)[number];
 
+/* ------------------------------------------------------------------ */
+/*  House rules                                                        */
+/* ------------------------------------------------------------------ */
+
+/**
+ * What a host expects of whoever uses the room.
+ *
+ * Structured rather than free text, for three reasons. A fixed vocabulary can
+ * be shown on the listing *before* someone books — a rule you discover after
+ * paying is a trap, and this app already refuses that pattern with pricing.
+ * It can be scanned in a second instead of read as a paragraph. And it keeps
+ * the common cases out of a free-text box that is otherwise the easiest place
+ * for a rule to drift into something it should not be.
+ *
+ * `kind` drives how they group on the listing, because the three are genuinely
+ * different obligations and reading them as one list is how people miss the
+ * one that needed a purchase:
+ *
+ *   bring  something the practitioner has to turn up with
+ *   avoid  something they must not do in the room
+ *   know   a constraint of the building they cannot change
+ */
+export const REQUIREMENTS = [
+  { key: "grip_socks", kind: "bring", label: "Grip socks required" },
+  { key: "own_mat", kind: "bring", label: "Bring your own mat" },
+  { key: "own_linens", kind: "bring", label: "Bring your own linens or towels" },
+  { key: "indoor_shoes", kind: "bring", label: "Indoor shoes only — no outdoor soles" },
+
+  { key: "no_outside_equipment", kind: "avoid", label: "No outside equipment" },
+  { key: "no_food_drink", kind: "avoid", label: "No food or drink" },
+  { key: "no_open_flame", kind: "avoid", label: "No candles, incense or open flame" },
+  { key: "no_scents", kind: "avoid", label: "No scented oils or sprays" },
+  { key: "no_amplified_music", kind: "avoid", label: "No amplified music" },
+  { key: "no_filming", kind: "avoid", label: "No filming or photography" },
+
+  { key: "quiet_building", kind: "know", label: "Quiet building — keep noise down" },
+  { key: "no_waiting_area", kind: "know", label: "No waiting area for clients" },
+  { key: "stairs_only", kind: "know", label: "Stairs only, no lift" },
+  { key: "wipe_down", kind: "know", label: "Wipe down equipment after use" },
+  { key: "take_rubbish", kind: "know", label: "Take your rubbish with you" },
+] as const;
+
+export type RequirementKey = (typeof REQUIREMENTS)[number]["key"];
+export type RequirementKind = (typeof REQUIREMENTS)[number]["kind"];
+
+export const REQUIREMENT_GROUPS: { kind: RequirementKind; heading: string }[] = [
+  { kind: "bring", heading: "Bring with you" },
+  { kind: "avoid", heading: "Please don't" },
+  { kind: "know", heading: "Worth knowing" },
+];
+
+export function isRequirementKey(value: unknown): value is RequirementKey {
+  return REQUIREMENTS.some((r) => r.key === value);
+}
+
+export function requirementLabel(key: RequirementKey): string {
+  return REQUIREMENTS.find((r) => r.key === key)!.label;
+}
+
+export function requirementsByKind(keys: readonly string[]) {
+  return REQUIREMENT_GROUPS.map(({ kind, heading }) => ({
+    kind,
+    heading,
+    items: REQUIREMENTS.filter((r) => r.kind === kind && keys.includes(r.key)),
+  })).filter((group) => group.items.length > 0);
+}
+
 export const AMENITIES = [
   "Mirrors",
   "Sound system",

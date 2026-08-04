@@ -54,6 +54,10 @@ export interface PublicSpace {
   restroom: RestroomOption | null;
   bufferMinutes: number;
   amenities: string[];
+  /** Keys from REQUIREMENTS in taxonomy.ts, shown before booking. */
+  requirements: string[];
+  /** Free-text overflow for the genuinely specific. Secondary to the above. */
+  houseRules: string;
   description: string;
   media: SpaceMedia[];
   availability: AvailabilityBlock[];
@@ -146,6 +150,8 @@ export interface NewSpaceInput {
   accessible: boolean | null;
   restroom: RestroomOption | null;
   amenities: string[];
+  requirements: string[];
+  houseRules: string;
   bufferMinutes: number;
   availability: AvailabilityBlock[];
   media: { url: string; kind: MediaKind }[];

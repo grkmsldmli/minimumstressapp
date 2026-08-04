@@ -21,6 +21,7 @@ const MIGRATIONS = [
   "0004_narrow_public_profiles.sql",
   "0005_host_bookings.sql",
   "0006_service_role_grants.sql",
+  "0007_space_details.sql",
 ];
 const STUBS = "0000_supabase_stubs.sql";
 
@@ -129,6 +130,12 @@ describe("private columns stay out of the public views", () => {
     // Still has to be useful for Discover.
     expect(names).toContain("hourly_rate_cents");
     expect(names).toContain("category");
+
+    // House rules are shown before booking, not after. A grip-socks
+    // requirement discovered on arrival is the same broken promise as a fee
+    // that appears at checkout.
+    expect(names).toContain("requirements");
+    expect(names).toContain("house_rules");
   });
 
   it("omits Stripe identifiers and document paths from public_host_profiles", async () => {

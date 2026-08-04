@@ -15,7 +15,7 @@ import {
   isWithinBookingHorizon,
   quote,
 } from "@/lib/money";
-import { ACCESS_TYPES, roomTypeFor } from "@/lib/taxonomy";
+import { ACCESS_TYPES, requirementsByKind, roomTypeFor } from "@/lib/taxonomy";
 
 /** How often the clock is re-read, so "Instant" reflects real time. */
 const TICK_MS = 30_000;
@@ -95,6 +95,7 @@ export function SpaceDetail({
   const [from, to] = categoryGradient(space.category);
   const accessLabel =
     ACCESS_TYPES.find((a) => a.key === space.accessType)?.label ?? "Keypad code";
+  const requirementGroups = requirementsByKind(space.requirements);
 
   return (
     <div className="h-full flex flex-col relative screen-in bg-white">
@@ -165,14 +166,62 @@ export function SpaceDetail({
           ))}
         </div>
 
+        {/*
+          Above the slot grid on purpose. These are the things that would make
+          someone choose a different room, and they are worthless below the
+          moment of choosing — the same reasoning as showing the all-in price
+          on the card rather than at checkout.
+        */}
+        {(requirementGroups.length > 0 || space.houseRules) && (
+          <>
+            <Label>Before you book</Label>
+            <div
+              className="rounded-2xl p-4"
+              style={{ backgroundColor: "#FFF8F1", border: "1px solid #F5DFC4" }}
+            >
+              {requirementGroups.map((group, i) => (
+                <div key={group.kind} className={i > 0 ? "mt-3" : ""}>
+                  <p className="font-body font-medium text-[10px] uppercase tracking-[0.14em] text-warn mb-1.5">
+                    {group.heading}
+                  </p>
+                  <ul className="flex flex-col gap-1">
+                    {group.items.map((item) => (
+                      <li key={item.key} className="flex items-start gap-2">
+                        <span
+                          className="w-1 h-1 rounded-full mt-1.5 shrink-0"
+                          style={{ backgroundColor: "#B08D4F" }}
+                        />
+                        <span className="font-body font-light text-[12px] leading-relaxed text-[#7A5B33]">
+                          {item.label}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+
+              {space.houseRules && (
+                <p
+                  className={`font-body font-light text-[11.5px] leading-relaxed text-[#7A5B33] ${requirementGroups.length > 0 ? "mt-3 pt-3" : ""}`}
+                  style={
+                    requirementGroups.length > 0 ? { borderTop: "1px solid #F5DFC4" } : undefined
+                  }
+                >
+                  {space.houseRules}
+                </p>
+              )}
+            </div>
+          </>
+        )}
+
         <div
           className="mt-5 rounded-2xl p-3.5 flex items-start gap-2.5"
           style={{ backgroundColor: "#F4F8FC", border: "1px solid #E7EEF6" }}
         >
           <Lock size={13} color="#8CA3BD" className="mt-0.5 shrink-0" />
           <p className="font-body font-light text-[11px] leading-relaxed text-ink-soft">
-            The address and entry instructions are shared once you&apos;ve booked. Your door code
-            arrives 30 minutes before the session, and it is unique to your booking.
+            The address and entry instructions are shared once you&apos;ve booked, shortly before
+            your session.
           </p>
         </div>
 

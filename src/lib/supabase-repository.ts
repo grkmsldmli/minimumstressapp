@@ -51,6 +51,10 @@ interface SpaceRow {
   restroom: string | null;
   buffer_minutes: number;
   status?: "pending" | "active" | "delisted";
+  description?: string;
+  amenities?: string[];
+  requirements?: string[];
+  house_rules?: string;
   address_line?: string;
   entry_instructions?: string;
   sublease_doc_path?: string;
@@ -209,10 +213,10 @@ export class SupabaseRepository implements Repository {
       accessible: row.accessible,
       restroom: (row.restroom as PublicSpace["restroom"]) ?? null,
       bufferMinutes: row.buffer_minutes,
-      // Amenities and the free-text description are not yet columns; the
-      // listing flow collects them and they land in a follow-up migration.
-      amenities: [],
-      description: "",
+      amenities: row.amenities ?? [],
+      requirements: row.requirements ?? [],
+      houseRules: row.house_rules ?? "",
+      description: row.description ?? "",
       media: media.map((m) => ({
         id: m.id,
         url: this.publicUrl("space-media", m.storage_path),
@@ -378,6 +382,9 @@ export class SupabaseRepository implements Repository {
         accessible: input.accessible,
         restroom: input.restroom?.toLowerCase() ?? null,
         buffer_minutes: input.bufferMinutes,
+        amenities: input.amenities,
+        requirements: input.requirements,
+        house_rules: input.houseRules,
         sublease_doc_path: input.subleaseDocName,
         insurance_doc_path: input.insuranceDocName,
         legal_ack_at: new Date().toISOString(),

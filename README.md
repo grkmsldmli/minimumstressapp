@@ -21,7 +21,7 @@ DNS and a scheduler.
 | ✅ M4b | Server-side booking and cancellation, with pricing the client cannot influence |
 | ✅ M4c | Route handlers, the payment sheet, and both webhook endpoints |
 | 🔶 M5 | Capture runs daily, which is all Hobby allows — see Scheduled jobs |
-| 🔶 M6 | Resend wired and verified in a real inbox; needs DNS to reach anyone else |
+| ✅ M6 | Resend on a verified domain, carrying both our mail and Supabase's login codes |
 | 🔶 M7 | Deployed and verified at minimumstressapp.vercel.app; minimumstress.app not yet pointed |
 
 `src/lib/repository.ts` is the seam: screens talk to that interface,

@@ -1,59 +1,77 @@
 import { readFileSync } from "node:fs";
 
 /**
- * Asks Supabase Auth to send a real login code.
+ * Exercises the one email path the app does not send itself.
  *
- * This is the one email path the app does not send itself — Supabase does,
- * over whatever SMTP it is configured with. So it is also the one path our own
- * tests cannot cover, and the only honest check is to make it send one.
+ * Supabase sends the login code, over whatever SMTP it is configured with, so
+ * our own tests cannot cover it. The only honest check is to make it send one
+ * and then spend it.
  *
- *   node scripts/send-test-otp.mjs you@example.com
+ *   node scripts/send-test-otp.mjs you@example.com          # ask for a code
+ *   node scripts/send-test-otp.mjs you@example.com 237425   # redeem it
  *
- * Without the Resend integration, Supabase uses its own sender and limits the
- * free tier to a handful of emails an hour — enough to look like it works in
- * testing and to fail the first time two people sign in at once.
+ * Sending proves the mail leaves. Redeeming proves the loop closes — it is the
+ * same call the auth screen makes, so a length or template mismatch surfaces
+ * here rather than on somebody's phone.
  */
 
 const to = process.argv[2];
+const code = process.argv[3];
+
 if (!to) {
-  console.error("Usage: node scripts/send-test-otp.mjs you@example.com");
-  process.exit(1);
-}
-
-const env = Object.fromEntries(
-  readFileSync(".env.local", "utf8")
-    .split(/\r?\n/)
-    .map((line) => {
-      const at = line.indexOf("=");
-      return at > 0 ? [line.slice(0, at).trim(), line.slice(at + 1).trim()] : null;
-    })
-    .filter(Boolean),
-);
-
-const url = env.NEXT_PUBLIC_SUPABASE_URL;
-const anon = env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
-
-const started = Date.now();
-
-const response = await fetch(`${url}/auth/v1/otp`, {
-  method: "POST",
-  headers: { apikey: anon, "Content-Type": "application/json" },
-  body: JSON.stringify({ email: to, create_user: true }),
-});
-
-const elapsed = Date.now() - started;
-const body = await response.text();
-
-if (response.ok) {
-  console.log(`✓ Supabase accepted the request in ${elapsed}ms`);
-  console.log(`  A six-digit code should reach ${to}.`);
-  console.log(`  Check the sender: hello@minimumstress.app means Resend carried it.`);
+  console.error("Usage: node scripts/send-test-otp.mjs you@example.com [code-from-the-email]");
+  process.exitCode = 1;
 } else {
-  console.error(`✗ ${response.status}: ${body.slice(0, 300)}`);
-  // The rate limit is the specific failure this integration exists to remove,
-  // so it is worth naming rather than leaving as a status code.
-  if (/rate limit|too many/i.test(body)) {
-    console.error("  That is the built-in email rate limit — the integration is not in effect.");
+  const env = Object.fromEntries(
+    readFileSync(".env.local", "utf8")
+      .split(/\r?\n/)
+      .map((line) => {
+        const at = line.indexOf("=");
+        return at > 0 ? [line.slice(0, at).trim(), line.slice(at + 1).trim()] : null;
+      })
+      .filter(Boolean),
+  );
+
+  const url = env.NEXT_PUBLIC_SUPABASE_URL;
+  const anon = env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+
+  const post = (path, payload) =>
+    fetch(`${url}/auth/v1/${path}`, {
+      method: "POST",
+      headers: { apikey: anon, "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+  if (code) {
+    const response = await post("verify", { email: to, token: code, type: "email" });
+    const payload = await response.json();
+
+    if (response.ok) {
+      console.log(`✓ code accepted — signed in as ${payload.user?.email}`);
+      console.log(`  user id:  ${payload.user?.id}`);
+      console.log(`  session:  expires in ${payload.expires_in}s`);
+    } else {
+      console.error(`✗ ${response.status}: ${payload.msg ?? payload.error_description ?? ""}`);
+      process.exitCode = 1;
+    }
+  } else {
+    const started = Date.now();
+    const response = await post("otp", { email: to, create_user: true });
+    const body = await response.text();
+
+    if (response.ok) {
+      console.log(`✓ Supabase accepted the request in ${Date.now() - started}ms`);
+      console.log(`  A code should reach ${to}.`);
+      console.log(`  Sender hello@minimumstress.app means Resend carried it.`);
+      console.log(`  Run again with the code to prove it actually signs you in.`);
+    } else {
+      console.error(`✗ ${response.status}: ${body.slice(0, 300)}`);
+      // The rate limit is the specific failure the Resend integration exists to
+      // remove, so it is worth naming rather than leaving as a status code.
+      if (/rate limit|too many/i.test(body)) {
+        console.error("  That is the built-in email rate limit — the integration is not in effect.");
+      }
+      process.exitCode = 1;
+    }
   }
-  process.exit(1);
 }

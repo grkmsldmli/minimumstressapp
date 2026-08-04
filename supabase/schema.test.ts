@@ -14,7 +14,12 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
  * storage.*, auth.uid() — and is deliberately excluded from MIGRATIONS so it
  * can never be mistaken for something to apply to the real project.
  */
-const MIGRATIONS = ["0001_schema.sql", "0002_rls.sql", "0003_storage.sql"];
+const MIGRATIONS = [
+  "0001_schema.sql",
+  "0002_rls.sql",
+  "0003_storage.sql",
+  "0004_narrow_public_profiles.sql",
+];
 const STUBS = "0000_supabase_stubs.sql";
 
 const migrationsDir = join(import.meta.dirname, "migrations");

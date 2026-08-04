@@ -68,6 +68,7 @@ beforeAll(async () => {
     "0001_schema.sql",
     "0002_rls.sql",
     "0003_storage.sql",
+    "0004_narrow_public_profiles.sql",
   ]) {
     await db.exec(read(file));
   }
@@ -304,6 +305,25 @@ describe("profiles keep their payment identifiers to themselves", () => {
   it("exposes only name and avatar through the public host view", async () => {
     const [host] = await asAnon(`select * from public_host_profiles where id = '${HOST}'`);
     expect(Object.keys(host).sort()).toEqual(["avatar_path", "display_name", "id"]);
+  });
+
+  it("gives a practitioner no public presence at all", async () => {
+    // The view is named for hosts but originally returned every profile, so a
+    // practitioner's name and photo were readable by any anonymous caller.
+    const found = await asAnon(
+      `select id from public_host_profiles where id = '${PRACTITIONER}'`,
+    );
+    expect(found).toEqual([]);
+  });
+
+  it("drops a host from public view once they have no live listing", async () => {
+    await db.exec(`update spaces set status = 'delisted' where host_id = '${HOST}'`);
+    const afterDelisting = await asAnon(
+      `select id from public_host_profiles where id = '${HOST}'`,
+    );
+    await db.exec(`update spaces set status = 'active' where id = '${SPACE}'`);
+
+    expect(afterDelisting).toEqual([]);
   });
 
   it("stops a user editing someone else's profile", async () => {

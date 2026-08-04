@@ -3,6 +3,7 @@ import "server-only";
 import Stripe from "stripe";
 
 import type { BookingMoney } from "../money";
+import { BOOKING_PAYMENT_METHODS } from "./payment-methods";
 import { planPaymentIntent, type SettlementAction } from "./payments";
 
 /**
@@ -108,7 +109,8 @@ export async function authorizeBooking(
       application_fee_amount: plan.application_fee_amount,
       metadata: plan.metadata,
       customer: customerId,
-      automatic_payment_methods: { enabled: true },
+      // Not automatic_payment_methods — see payment-methods.ts for why.
+      payment_method_types: [...BOOKING_PAYMENT_METHODS],
     },
     { idempotencyKey: `booking_authorize_${meta.bookingId}` },
   );

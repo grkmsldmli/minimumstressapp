@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 
 import { bookingMoneyFromQuote, quote } from "@/lib/money";
 import { stripe } from "@/lib/stripe/client";
+import { BOOKING_PAYMENT_METHODS } from "@/lib/stripe/payment-methods";
 
 import { PaymentPreviewClient } from "./preview-client";
 
@@ -31,7 +32,9 @@ export default async function PaymentPreview() {
     amount: money.totalCents,
     currency: "usd",
     capture_method: "manual",
-    automatic_payment_methods: { enabled: true },
+    // The same list authorizeBooking uses, imported rather than repeated, so
+    // the preview cannot drift into showing a sheet the real flow never makes.
+    payment_method_types: [...BOOKING_PAYMENT_METHODS],
     metadata: { preview: "true" },
   });
 

@@ -6,6 +6,7 @@ import {
   resolveCancellation,
   type BookingMoney,
 } from "../money";
+import { BOOKING_PAYMENT_METHODS } from "./payment-methods";
 import { hostReceivesCents, planPaymentIntent, settlementFor } from "./payments";
 
 const HOST_ACCOUNT = "acct_test_host";
@@ -102,6 +103,27 @@ describe("the host is paid their rate, whatever Stripe is told", () => {
     expect(intent.metadata.service_fee_cents).toBe("900");
     expect(intent.metadata.instant_fee_cents).toBe("500");
     expect(intent.metadata.booking_id).toBe("bk_1");
+  });
+});
+
+describe("what a booking may be paid with", () => {
+  it("offers cards and nothing else", () => {
+    expect([...BOOKING_PAYMENT_METHODS]).toEqual(["card"]);
+  });
+
+  it("offers no method that cannot be held and released", () => {
+    // Stripe rejects us_bank_account with capture_method manual outright, so
+    // listing it would render a tab that can never complete a booking.
+    expect([...BOOKING_PAYMENT_METHODS]).not.toContain("us_bank_account");
+  });
+
+  it("offers no buy-now-pay-later", () => {
+    // Left to automatic selection Stripe adds these. Consumer financing for an
+    // hour in a yoga room is a poor fit, and their refund and dispute handling
+    // is nothing like the card hold every cancellation branch assumes.
+    for (const financing of ["klarna", "affirm", "afterpay_clearpay", "zip"]) {
+      expect([...BOOKING_PAYMENT_METHODS]).not.toContain(financing);
+    }
   });
 });
 

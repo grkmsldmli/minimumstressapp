@@ -1,4 +1,4 @@
--- Minimum Stress Spaces — core schema
+-- Minimum Stress — core schema
 --
 -- Not yet applied to a live project. Written against the data model in the
 -- Phase 1 plan; run `supabase db push` (or paste into the SQL editor) once

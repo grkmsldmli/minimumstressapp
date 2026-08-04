@@ -72,17 +72,46 @@ const ENDPOINTS = [
   },
 ];
 
+/**
+ * Which of the two an existing endpoint is.
+ *
+ * Not `connect` — that field is accepted when creating an endpoint but is
+ * absent from the one the API returns, so reading it back gives `undefined`
+ * for both kinds. Matching on it made every endpoint look like the platform
+ * one: the script "found" the Connect endpoint, relabelled it, and then
+ * created a second Connect endpoint because it had not found that one. Three
+ * endpoints, two of them wrong, and a duplicate quietly failing signature
+ * checks against a secret nobody had stored.
+ *
+ * `application` is the field that actually distinguishes them: a Connect
+ * endpoint carries the connect application id, a platform endpoint has null.
+ */
+const isConnect = (endpoint) => endpoint.application !== null;
+
 const existing = await stripe("webhook_endpoints?limit=100");
 const secrets = [];
 
 for (const endpoint of ENDPOINTS) {
   const already = existing.data.find(
-    (e) => e.url === url && Boolean(e.connect) === endpoint.connect,
+    (e) => e.url === url && isConnect(e) === endpoint.connect,
   );
 
+  const description = `Minimum Stress — ${endpoint.label}`;
+
   if (already) {
-    console.log(`· ${endpoint.label}: already registered as ${already.id} — left alone.`);
+    console.log(`· ${endpoint.label}: already registered as ${already.id}.`);
     console.log("  Its signing secret was only shown when it was created.");
+
+    // The label is the only thing worth correcting on an existing endpoint:
+    // the URL and events define what it does, but the description is what a
+    // person reads in the dashboard, so a stale one is quietly misleading.
+    if (already.description !== description) {
+      await stripe(`webhook_endpoints/${already.id}`, {
+        method: "POST",
+        params: [["description", description]],
+      });
+      console.log(`  Description updated to "${description}".`);
+    }
     continue;
   }
 
@@ -90,7 +119,7 @@ for (const endpoint of ENDPOINTS) {
     method: "POST",
     params: [
       ["url", url],
-      ["description", `Minimum Stress Spaces — ${endpoint.label}`],
+      ["description", description],
       ...(endpoint.connect ? [["connect", "true"]] : []),
       ...endpoint.events.map((event) => ["enabled_events[]", event]),
     ],

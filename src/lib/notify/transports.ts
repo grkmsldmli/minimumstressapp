@@ -15,7 +15,7 @@ export type SendResult =
   | { status: "dropped"; reason: string };
 
 /** Who the mail is from. Overridable so a staging deploy is obviously staging. */
-const FROM = process.env.NOTIFY_FROM_EMAIL ?? "Minimum Stress Spaces <hello@minimumstress.app>";
+const FROM = process.env.NOTIFY_FROM_EMAIL ?? "Minimum Stress <hello@minimumstress.app>";
 
 export function emailConfigured(): boolean {
   return Boolean(process.env.RESEND_API_KEY);

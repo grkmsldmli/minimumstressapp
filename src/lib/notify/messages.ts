@@ -67,7 +67,12 @@ export interface MessageContext {
   reason?: string;
 }
 
-const SIGN_OFF = "— Minimum Stress Spaces";
+/**
+ * The brand is "Minimum Stress". "Spaces" is what this product is, not what
+ * the company is called, and it does not belong at the bottom of a message to
+ * someone who has only ever seen the shorter name.
+ */
+const SIGN_OFF = "— Minimum Stress";
 
 function greeting(name?: string): string {
   return name ? `Hi ${name},` : "Hi,";

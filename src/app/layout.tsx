@@ -23,7 +23,7 @@ const poppins = Poppins({
 });
 
 export const metadata: Metadata = {
-  title: "Minimum Stress Spaces",
+  title: "Minimum Stress",
   description:
     "Private rooms by the hour for every kind of practice — movement, coaching, meditation, and healing.",
 };

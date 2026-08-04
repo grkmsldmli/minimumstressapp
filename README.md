@@ -1,4 +1,4 @@
-# Minimum Stress Spaces
+# Minimum Stress
 
 A two-sided marketplace: independent wellness practitioners who need a private room by the hour,
 matched with studios that have unused hours to rent out.

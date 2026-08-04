@@ -88,7 +88,7 @@ const SAMPLES = {
   payout_failed: { name: "Görkem", reason: "the account number could not be found" },
 };
 
-const from = env.NOTIFY_FROM_EMAIL || "Minimum Stress Spaces <onboarding@resend.dev>";
+const from = env.NOTIFY_FROM_EMAIL || "Minimum Stress <onboarding@resend.dev>";
 const kinds = only ? [only] : Object.keys(SAMPLES);
 
 console.log(`from: ${from}\nto:   ${to}\n`);

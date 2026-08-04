@@ -1,0 +1,479 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import {
+  Building2,
+  Calendar,
+  ChevronRight,
+  List,
+  Map as MapIcon,
+  MapPin,
+  Moon,
+  Search,
+  Sun,
+} from "lucide-react";
+
+import {
+  AllCategoriesIcon,
+  Ambient,
+  CatIcon,
+  Headline,
+  LogoBadge,
+  categoryGradient,
+} from "@/components/brand";
+import { MapBackdrop, PinMarker, YouDot } from "@/components/map";
+import { TiltCard } from "@/components/primitives";
+import type { PublicSpace } from "@/lib/domain";
+import { formatCents, quote } from "@/lib/money";
+import { CATEGORIES, type CategoryKey, roomTypeFor } from "@/lib/taxonomy";
+
+type Filter = CategoryKey | "all";
+
+/**
+ * The all-in price for a listing card.
+ *
+ * Every surface that shows a price shows this one — search results, the map
+ * card, the detail header — so the number a practitioner first sees is the
+ * number they pay. Instant and credit are excluded here on purpose: both
+ * depend on the specific slot, and quoting a best case on a browse card is
+ * exactly the pattern the pricing rules exist to avoid.
+ */
+function browsePriceCents(space: PublicSpace, isPro: boolean): number {
+  return quote({
+    hostRateCents: space.hourlyRateCents,
+    isInstant: false,
+    isPro,
+    creditBalanceCents: 0,
+  }).totalCents;
+}
+
+export function Discover({
+  spaces,
+  isPro,
+  onOpenSpace,
+  onGoHost,
+  onGoPro,
+  onGoBookings,
+  onGoProfile,
+  onGoLegal,
+  greetingName,
+}: {
+  spaces: PublicSpace[];
+  isPro: boolean;
+  onOpenSpace: (id: string) => void;
+  onGoHost: () => void;
+  onGoPro: () => void;
+  onGoBookings: () => void;
+  onGoProfile: () => void;
+  onGoLegal: () => void;
+  greetingName: string | null;
+}) {
+  const [filter, setFilter] = useState<Filter>("all");
+  const [view, setView] = useState<"list" | "map">("list");
+
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+  const GreetIcon = hour < 18 ? Sun : Moon;
+
+  // Only offer a filter that would return something. The prototype listed all
+  // five regardless, so a tap could land on an empty screen.
+  const offered = useMemo(
+    () => CATEGORIES.filter((c) => spaces.some((s) => s.category === c.key)),
+    [spaces],
+  );
+
+  // If the chosen category stops being offered — the last listing in it was
+  // delisted, say — fall back during render rather than correcting it in an
+  // effect, which would paint an empty screen first and then fix itself.
+  const active: Filter =
+    filter !== "all" && !offered.some((c) => c.key === filter) ? "all" : filter;
+
+  const visible = active === "all" ? spaces : spaces.filter((s) => s.category === active);
+
+  return (
+    <div className="h-full flex flex-col screen-in bg-white">
+      {!isPro && (
+        <button
+          type="button"
+          onClick={onGoPro}
+          className="flex items-center justify-between px-6 py-2.5 press shrink-0"
+          style={{ backgroundColor: "#16304E" }}
+        >
+          <span className="font-body font-light text-[11px] text-white/70">
+            Book instantly, no extra fee, with{" "}
+            <span className="font-medium text-sky-soft">Pro</span>
+          </span>
+          <span className="flex items-center gap-0.5 font-body text-[11px] font-medium text-white shrink-0">
+            Go Pro <ChevronRight size={12} />
+          </span>
+        </button>
+      )}
+
+      <div
+        className="px-6 pt-8 pb-7 rounded-b-[30px] relative overflow-hidden shrink-0"
+        style={{ background: "radial-gradient(130% 130% at 20% 0%, #1E4066 0%, #16304E 80%)" }}
+      >
+        <Ambient />
+        <div className="flex items-center justify-between relative z-10">
+          <div className="flex items-center gap-2.5">
+            <button type="button" onClick={onGoProfile} className="press" aria-label="Your profile">
+              <LogoBadge size={34} />
+            </button>
+            <div className="flex items-center gap-1.5">
+              <GreetIcon size={11} color="#8FC6F5" />
+              <p className="font-body font-light text-[11px] tracking-wide text-white/70">
+                {greetingName ? `${greeting}, ${greetingName}` : greeting}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <RoundButton label="Your bookings" onClick={onGoBookings}>
+              <Calendar size={15} color="#fff" />
+            </RoundButton>
+            <RoundButton
+              label={view === "list" ? "Show map" : "Show list"}
+              onClick={() => setView(view === "list" ? "map" : "list")}
+            >
+              {view === "list" ? <MapIcon size={15} color="#fff" /> : <List size={15} color="#fff" />}
+            </RoundButton>
+            <RoundButton label="Host studio" onClick={onGoHost}>
+              <Building2 size={15} color="#fff" />
+            </RoundButton>
+          </div>
+        </div>
+
+        <div className="mt-4 relative z-10">
+          <Headline pre="Where will you" accent="practice today?" size={24} light />
+        </div>
+
+        <div
+          className="flex items-center gap-2.5 mt-5 px-4 py-3 rounded-full relative z-10"
+          style={{
+            backgroundColor: "rgba(255,255,255,0.1)",
+            border: "1px solid rgba(255,255,255,0.16)",
+          }}
+        >
+          <Search size={14} color="#8FC6F5" />
+          <span className="font-body font-light text-[12.5px] text-white/60">
+            Search coming soon
+          </span>
+        </div>
+      </div>
+
+      <div className="flex gap-2 px-6 py-4 overflow-x-auto no-scrollbar shrink-0">
+        <FilterChip active={active === "all"} onClick={() => setFilter("all")}>
+          <AllCategoriesIcon size={12} />
+          All
+        </FilterChip>
+        {offered.map((category) => (
+          <FilterChip
+            key={category.key}
+            active={active === category.key}
+            onClick={() => setFilter(category.key)}
+          >
+            <CatIcon cat={category.key} size={12} />
+            {category.shortLabel}
+          </FilterChip>
+        ))}
+      </div>
+
+      {view === "map" ? (
+        <MapView spaces={visible} isPro={isPro} onOpen={onOpenSpace} />
+      ) : (
+        <div className="flex-1 overflow-y-auto pb-8">
+          {active === "all" && visible.length > 0 && (
+            <>
+              <SectionLabel className="px-6">Open right now</SectionLabel>
+              <div
+                className="flex gap-3.5 px-6 pb-6 overflow-x-auto no-scrollbar"
+                style={{ perspective: 800 }}
+              >
+                {visible.slice(0, 4).map((space, i) => (
+                  <FeaturedCard
+                    key={space.id}
+                    space={space}
+                    isPro={isPro}
+                    index={i}
+                    onClick={() => onOpenSpace(space.id)}
+                  />
+                ))}
+              </div>
+            </>
+          )}
+
+          <SectionLabel className="px-6">
+            {active === "all"
+              ? "All spaces nearby"
+              : `${CATEGORIES.find((c) => c.key === active)?.shortLabel} spaces`}
+          </SectionLabel>
+
+          {visible.length === 0 ? (
+            <p className="px-6 font-body font-light text-[12.5px] text-ink-faint">
+              No spaces listed yet.
+            </p>
+          ) : (
+            <div className="px-6 flex flex-col gap-2.5">
+              {visible.map((space, i) => (
+                <SpaceRow
+                  key={space.id}
+                  space={space}
+                  isPro={isPro}
+                  index={i}
+                  onClick={() => onOpenSpace(space.id)}
+                />
+              ))}
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={onGoLegal}
+            className="w-full text-center font-body font-light text-[11px] mt-6 press text-ink-ghost"
+          >
+            Terms &amp; Privacy
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RoundButton({
+  children,
+  onClick,
+  label,
+}: {
+  children: React.ReactNode;
+  onClick: () => void;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      className="w-9 h-9 rounded-full flex items-center justify-center press"
+      style={{ backgroundColor: "rgba(255,255,255,0.12)" }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function FilterChip({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className="flex items-center gap-1.5 px-3.5 py-2 rounded-full whitespace-nowrap font-body text-[12px] press transition-colors"
+      style={{
+        backgroundColor: active ? "#3B9BE8" : "#FFFFFF",
+        color: active ? "#fff" : "#16304E",
+        border: `1px solid ${active ? "#3B9BE8" : "#DCE7F2"}`,
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function SectionLabel({
+  children,
+  className = "",
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <p
+      className={`font-body font-medium text-[10.5px] uppercase tracking-[0.2em] mb-3 text-sky ${className}`}
+    >
+      {children}
+    </p>
+  );
+}
+
+function FeaturedCard({
+  space,
+  isPro,
+  index,
+  onClick,
+}: {
+  space: PublicSpace;
+  isPro: boolean;
+  index: number;
+  onClick: () => void;
+}) {
+  const [from, to] = categoryGradient(space.category);
+  const price = browsePriceCents(space, isPro);
+
+  return (
+    <TiltCard
+      onClick={onClick}
+      className="shrink-0 w-[230px] rounded-[24px] overflow-hidden text-left press card-in"
+      style={{
+        animationDelay: `${index * 90}ms`,
+        boxShadow: "0 16px 34px -16px rgba(22,48,78,0.35)",
+        border: "1px solid #E7EEF6",
+      }}
+    >
+      <div
+        className="h-[145px] relative flex items-end justify-between p-4"
+        style={{ background: `radial-gradient(130% 110% at 20% 0%, ${from} 0%, ${to} 90%)` }}
+      >
+        <CatIcon cat={space.category} size={24} color="rgba(255,255,255,0.92)" />
+        <span
+          className="px-2 py-1 rounded-full font-body text-[9px] text-white"
+          style={{ backgroundColor: "rgba(255,255,255,0.18)", backdropFilter: "blur(6px)" }}
+        >
+          {roomTypeFor(space.category)}
+        </span>
+      </div>
+      <div className="p-4 bg-white">
+        <div className="flex items-baseline justify-between">
+          <p className="font-display italic font-semibold text-[17px] text-navy">{space.name}</p>
+          <p className="font-body text-[12px] text-navy">
+            <span className="font-semibold">{formatCents(price)}</span>
+            <span className="text-ink-faint">/hr</span>
+          </p>
+        </div>
+        <p className="font-body font-light text-[9.5px] mt-0.5 text-ink-ghost">
+          All fees included
+        </p>
+        <p className="font-body font-light text-[11px] mt-0.5 text-ink-soft">
+          {roomTypeFor(space.category)} · {space.distanceLabel}
+        </p>
+      </div>
+    </TiltCard>
+  );
+}
+
+function SpaceRow({
+  space,
+  isPro,
+  index,
+  onClick,
+}: {
+  space: PublicSpace;
+  isPro: boolean;
+  index: number;
+  onClick: () => void;
+}) {
+  const [from, to] = categoryGradient(space.category);
+  const price = browsePriceCents(space, isPro);
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex items-center gap-3.5 p-3 rounded-2xl text-left press card-in bg-white"
+      style={{
+        border: "1px solid #E7EEF6",
+        animationDelay: `${index * 70}ms`,
+        boxShadow: "0 4px 14px -8px rgba(22,48,78,0.12)",
+      }}
+    >
+      <div
+        className="w-14 h-14 rounded-xl shrink-0 flex items-center justify-center"
+        style={{ background: `radial-gradient(120% 120% at 25% 15%, ${from}, ${to})` }}
+      >
+        <CatIcon cat={space.category} size={18} color="rgba(255,255,255,0.92)" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="font-body font-medium text-[13.5px] text-navy">
+          {space.name} · {roomTypeFor(space.category)}
+        </p>
+        <p className="font-body font-light text-[11.5px] mt-0.5 text-ink-soft truncate">
+          {space.description}
+        </p>
+        <p className="font-body font-light text-[11px] mt-0.5 flex items-center gap-1 text-ink-faint">
+          <MapPin size={10} /> {space.distanceLabel} · fits {space.capacity}
+        </p>
+      </div>
+      <div className="text-right shrink-0">
+        <p className="font-body font-semibold text-[13px] text-navy">{formatCents(price)}</p>
+        <p className="font-body font-light text-[8.5px] text-ink-ghost">incl. fees</p>
+        <ChevronRight size={14} color="#B9CBDD" className="ml-auto mt-0.5" />
+      </div>
+    </button>
+  );
+}
+
+function MapView({
+  spaces,
+  isPro,
+  onOpen,
+}: {
+  spaces: PublicSpace[];
+  isPro: boolean;
+  onOpen: (id: string) => void;
+}) {
+  const [selected, setSelected] = useState<string | null>(null);
+  const active = spaces.find((s) => s.id === selected) ?? null;
+
+  return (
+    <div className="relative flex-1 overflow-hidden">
+      <MapBackdrop />
+      <YouDot />
+      {spaces.map((space, i) => (
+        <PinMarker
+          key={space.id}
+          x={space.mapX}
+          y={space.mapY}
+          cat={space.category}
+          index={i}
+          active={selected === space.id}
+          label={space.name}
+          onClick={() => setSelected(selected === space.id ? null : space.id)}
+        />
+      ))}
+
+      {active && (
+        <div className="absolute bottom-4 left-4 right-4 z-30 card-in">
+          <div
+            className="flex items-center gap-3 p-3 rounded-2xl bg-white"
+            style={{
+              boxShadow: "0 18px 40px -14px rgba(22,48,78,0.35)",
+              border: "1px solid #E7EEF6",
+            }}
+          >
+            <div
+              className="w-14 h-14 rounded-xl shrink-0 flex items-center justify-center"
+              style={{
+                background: `radial-gradient(120% 120% at 25% 15%, ${categoryGradient(active.category)[0]}, ${categoryGradient(active.category)[1]})`,
+              }}
+            >
+              <CatIcon cat={active.category} size={18} color="rgba(255,255,255,0.92)" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="font-body font-medium text-[13px] text-navy">
+                {active.name} · {roomTypeFor(active.category)}
+              </p>
+              <p className="font-body font-light text-[11px] mt-0.5 text-ink-soft">
+                {active.distanceLabel} · {formatCents(browsePriceCents(active, isPro))}/hr{" "}
+                <span className="text-ink-ghost">incl. fees</span>
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => onOpen(active.id)}
+              className="px-3.5 py-2 rounded-full font-body font-medium text-[11.5px] text-white shrink-0 press"
+              style={{ backgroundColor: "#3B9BE8" }}
+            >
+              View
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

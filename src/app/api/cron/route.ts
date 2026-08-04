@@ -1,5 +1,7 @@
 import type { NextRequest } from "next/server";
 
+import { notifyAccessCodesReady, rebuildPending } from "@/lib/notify/for-booking";
+import { retryPending } from "@/lib/notify/send";
 import { stripe } from "@/lib/stripe/client";
 import { supabaseAdmin } from "@/lib/supabase/server";
 
@@ -44,8 +46,19 @@ export async function GET(request: NextRequest): Promise<Response> {
   const now = new Date();
 
   try {
+    /**
+     * Sequential, and capture goes first.
+     *
+     * If the run is cut short — a function timeout, a deploy mid-run — the
+     * thing that must already have happened is taking the money for sessions
+     * that started. A door-code email is recoverable on the next pass; a
+     * capture that never happens is a host who is not paid.
+     */
     const captured = await captureDue(now);
-    return Response.json({ ranAt: now.toISOString(), ...captured });
+    const announced = await announceAccessCodes(now);
+    const retried = await retryFailedNotifications();
+
+    return Response.json({ ranAt: now.toISOString(), ...captured, ...announced, ...retried });
   } catch (error) {
     // Supabase rejects with a plain object rather than an Error, so the default
     // logging renders it as `{}` — useless at 3am when a capture run has
@@ -112,4 +125,35 @@ async function captureDue(now: Date): Promise<{ captured: number; failed: number
   }
 
   return { captured, failed };
+}
+
+/**
+ * Tell practitioners their door code has unlocked.
+ *
+ * The code itself needs no job — see the note at the top of this file. This is
+ * only the message, and it is the one the whole notification queue exists for:
+ * somebody is about to stand in front of a door.
+ *
+ * Wrapped so a notification failure cannot take down the capture result that
+ * was already computed. Nothing here is worth reporting a failed cron run for.
+ */
+async function announceAccessCodes(now: Date): Promise<{ announced: number }> {
+  try {
+    return await notifyAccessCodesReady(supabaseAdmin(), now);
+  } catch (error) {
+    console.error("Access code announcements failed:", describe(error));
+    return { announced: 0 };
+  }
+}
+
+/** Second chance for anything a provider refused for a reason that may have passed. */
+async function retryFailedNotifications(): Promise<{ notificationsSent: number }> {
+  try {
+    const admin = supabaseAdmin();
+    const { sent } = await retryPending(await rebuildPending(admin));
+    return { notificationsSent: sent };
+  } catch (error) {
+    console.error("Notification retries failed:", describe(error));
+    return { notificationsSent: 0 };
+  }
 }

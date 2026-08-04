@@ -7,8 +7,9 @@ Separate from minimumstress.com, which is an unrelated Shopify storefront.
 
 ## Status
 
-Phase 1, milestones M0 and M1. The foundation is in place; nothing is wired to a database or a
-payment processor yet.
+Deployed and running. The database, payments, payouts, addresses and email are
+all wired to real services and verified against them; what remains is mostly
+DNS and a scheduler.
 
 | | |
 |---|---|
@@ -20,24 +21,21 @@ payment processor yet.
 | ✅ M4b | Server-side booking and cancellation, with pricing the client cannot influence |
 | ✅ M4c | Route handlers, the payment sheet, and both webhook endpoints |
 | 🔶 M5 | Capture runs daily, which is all Hobby allows — see Scheduled jobs |
-| ⬜ M6 | Resend transactional email — *needs Resend key and DNS* |
+| 🔶 M6 | Resend wired and verified in a real inbox; needs DNS to reach anyone else |
 | 🔶 M7 | Deployed and verified at minimumstressapp.vercel.app; minimumstress.app not yet pointed |
-
-Still on the mock repository, deliberately — flip `NEXT_PUBLIC_USE_SUPABASE=true`
-when the auth screens are wired to real accounts.
 
 `src/lib/repository.ts` is the seam: screens talk to that interface,
 `MockRepository` implements it in memory, `SupabaseRepository` against the real
-database. The mock is still the one wired up, deliberately — see
-`repository-factory.ts` for why, and flip `NEXT_PUBLIC_USE_SUPABASE=true` once
-the payment routes land.
+database. **The mock is still the one wired up** — see `repository-factory.ts`
+for why, and flip `NEXT_PUBLIC_USE_SUPABASE=true` once the auth screens create
+real accounts. That is the largest remaining piece of work.
 
 ## Running it
 
 ```bash
 npm install
 npm run dev     # http://localhost:3000
-npm test        # 225 tests: money, availability, geo, repository, schema, RLS, webhook
+npm test        # 266 tests: money, availability, geo, repository, schema, RLS, webhook
 ```
 
 Start at the splash screen and pick either role. Nothing is seeded for *you* — no listings, no
@@ -156,6 +154,43 @@ asserts that property rather than trusting the comment.
 someone holding a booking. `map_x`/`map_y` — the coarse derived pair — are the
 only position `anon` can select.
 
+## Notifications
+
+`src/lib/notify/messages.ts` holds every message as a pure function, so what
+they *say* is tested without a provider, an API key or a network. That matters
+more here than usual: the failure mode is not an exception anyone sees, it is a
+correct delivery of the wrong number to a real person. The suite asserts that no
+placeholder leaks into an inbox, that a host is never shown the platform's fee,
+and that a released authorization is never described as a refund.
+
+That last one was a real bug, caught by the build rather than by review. Payment
+is authorised at booking and captured at session start, so the ordinary
+cancellation returns nothing *because nothing was ever taken* — calling it a
+refund would have people watching a statement for a credit that is not coming.
+There are three outcomes, and only one of them is a refund.
+
+Email is [Resend](https://resend.com). Until a domain is verified it sends only
+from `onboarding@resend.dev` and only to the account owner, which is enough to
+read every message in a real inbox — `scripts/send-test-email.mjs` does exactly
+that.
+
+**Sending is not transactional**, the same problem as the Stripe call in
+`booking-service.ts`: no transaction spans Postgres and Resend. So `notifications`
+carries a unique key per *(what, about what, which channel)*, claimed before the
+send, and a retried job collides instead of sending twice. Delivery is
+at-least-once rather than exactly-once, deliberately — a duplicate door code is
+an annoyance, a missing one is someone locked out. The body is never stored: it
+is rebuilt from live data on retry, which also keeps door codes out of a second
+table.
+
+SMS is reserved for two kinds — the door code, and a host cancelling on you —
+because those are the only ones where hearing an hour later is too late. A
+number is texted only when it is both verified and opted in; an unverified
+number is somebody's typo until proven otherwise, and the wrong number is a
+stranger receiving a door code. The transport is written and tested, but **US
+SMS needs A2P 10DLC brand and campaign registration before a carrier will
+deliver it** — that is a form and a wait, not a key.
+
 ## Payments
 
 Destination charges with `capture_method: manual`. The practitioner is
@@ -179,6 +214,7 @@ src/lib/money.ts           pricing, cancellation outcomes, credit redemption
 src/lib/availability.ts    weekly template, validation, slot generation
 src/lib/geo.ts             web mercator, tile grids, the browse-map projection
 src/lib/geocode.ts         address lookup, and what a suggestion is made of
+src/lib/notify/            what each message says, and the queue that sends it once
 src/lib/taxonomy.ts        the four categories, listing and house-rule vocabulary
 src/lib/booking-plan.ts    what may be booked, and for how much — pure, heavily tested
 src/lib/booking-service.ts the same rules against the database and Stripe

@@ -1,6 +1,8 @@
 import type { NextRequest } from "next/server";
 import type Stripe from "stripe";
 
+import { recipientFor } from "@/lib/notify/for-booking";
+import { notify } from "@/lib/notify/send";
 import { stripe } from "@/lib/stripe/client";
 import { supabaseAdmin } from "@/lib/supabase/server";
 
@@ -153,9 +155,34 @@ async function handle(event: Stripe.Event): Promise<void> {
      */
     case "payout.failed": {
       const payout = event.data.object;
+      const reason = payout.failure_message ?? payout.failure_code ?? "no reason given";
+
       console.error(
-        `PAYOUT FAILED — account ${event.account ?? "unknown"}, ${payout.amount} ${payout.currency}: ${payout.failure_message ?? payout.failure_code ?? "no reason given"}`,
+        `PAYOUT FAILED — account ${event.account ?? "unknown"}, ${payout.amount} ${payout.currency}: ${reason}`,
       );
+
+      // The log was never enough. Stripe pauses payouts to an account after a
+      // return, so without this the host keeps earning, keeps not being paid,
+      // and the only record is a line nobody is reading.
+      if (!event.account) return;
+
+      const { data: host } = await admin
+        .from("profiles")
+        .select("id")
+        .eq("stripe_connect_account_id", event.account)
+        .maybeSingle();
+      if (!host) return;
+
+      const recipient = await recipientFor(admin, host.id);
+      if (!recipient) return;
+
+      await notify({
+        kind: "payout_failed",
+        recipient,
+        // Per payout, not per host: a second failure is news again.
+        subjectId: payout.id,
+        context: { reason },
+      });
       return;
     }
 

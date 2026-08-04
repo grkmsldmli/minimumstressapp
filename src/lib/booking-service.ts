@@ -4,6 +4,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { explainRejection, planBooking } from "./booking-plan";
 import { resolveCancellation, type BookingMoney } from "./money";
+import { notifyBookingCreated, notifyCancellation } from "./notify/for-booking";
+import { settlementFor } from "./stripe/payments";
 
 /**
  * Creating and cancelling a booking, server-side.
@@ -205,6 +207,12 @@ export async function createBooking(
       });
     }
 
+    // After the money, and deliberately not awaited into the failure path: the
+    // booking is real whether or not an email goes out, so a provider outage
+    // must not roll back an authorised hold. notifyBookingCreated swallows its
+    // own errors for the same reason.
+    await notifyBookingCreated(admin, booking.id);
+
     return { bookingId: booking.id, money, clientSecret: authorized.clientSecret };
   } catch (error) {
     // Undo the row rather than leave an unpayable booking occupying an hour
@@ -310,4 +318,16 @@ export async function cancelBooking(
   if (entries.length > 0) {
     await admin.from("credit_ledger").insert(entries);
   }
+
+  // Last, so the figures quoted are the ones that actually landed.
+  // Taken from the settlement rather than inferred, so the message can never
+  // describe a refund Stripe was not asked to make. The usual cancellation is
+  // a void of an uncaptured hold: nothing left the card, so nothing returns.
+  const settlement = settlementFor(outcome, capturedCents);
+
+  await notifyCancellation(admin, bookingId, actor, {
+    chargedCents: outcome.chargedCents,
+    refundedCents: settlement.kind === "refund" ? settlement.amountCents : 0,
+    goodwillCreditCents: outcome.goodwillCreditCents,
+  });
 }

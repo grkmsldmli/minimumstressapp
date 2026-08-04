@@ -1,0 +1,306 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+import { type NotificationKind, render } from "./messages";
+import { type PendingNotification, type Recipient, notify } from "./send";
+
+/**
+ * Turning a booking into "who needs to be told what".
+ *
+ * Kept apart from `send.ts` so that module can stay ignorant of bookings and
+ * be tested on its own, and apart from `messages.ts` so the wording never has
+ * to reach into a database row.
+ */
+
+/**
+ * The recipient, if there is anyone to write to.
+ *
+ * Email lives on auth.users rather than profiles, so it is fetched with the
+ * admin API. A phone number is returned *only* when it is both verified and
+ * opted in — an unverified number is somebody's typo until proven otherwise,
+ * and the wrong number is a stranger receiving a door code.
+ */
+export async function recipientFor(
+  admin: SupabaseClient,
+  userId: string,
+): Promise<Recipient | null> {
+  const [{ data: profile }, { data: auth }] = await Promise.all([
+    admin
+      .from("profiles")
+      .select("display_name, phone, phone_verified_at, notify_sms, notify_bookings")
+      .eq("id", userId)
+      .maybeSingle(),
+    admin.auth.admin.getUserById(userId),
+  ]);
+
+  const email = auth?.user?.email ?? null;
+  if (!profile && !email) return null;
+
+  const smsAllowed = Boolean(profile?.notify_sms && profile?.phone_verified_at && profile?.phone);
+
+  return {
+    userId,
+    name: profile?.display_name?.split(" ")[0] ?? undefined,
+    email,
+    phone: smsAllowed ? profile!.phone : null,
+  };
+}
+
+/**
+ * How a time is written to a person.
+ *
+ * Note for later, and it is a real gap rather than a detail: the app has no
+ * timezone model. Availability, slots and this formatter all work in whatever
+ * zone the process happens to be in, which is fine while every studio and
+ * every practitioner is in one region and wrong the day they are not. Fixing
+ * it belongs with the space's coordinates — which now exist — not here.
+ */
+export function formatWhen(date: Date): string {
+  return date.toLocaleString("en-US", {
+    weekday: "long",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+/** The row shape every notifier here needs. Selected once, in `loadBooking`. */
+interface BookingRow {
+  id: string;
+  practitioner_id: string;
+  starts_at: string;
+  total_cents: number;
+  host_rate_cents: number;
+  access_code: string | null;
+  spaces: {
+    name: string;
+    host_id: string;
+    address_line: string | null;
+    entry_instructions: string | null;
+  };
+}
+
+async function loadBooking(admin: SupabaseClient, bookingId: string): Promise<BookingRow | null> {
+  const { data } = await admin
+    .from("bookings")
+    .select(
+      "id, practitioner_id, starts_at, total_cents, host_rate_cents, access_code, spaces!inner(name, host_id, address_line, entry_instructions)",
+    )
+    .eq("id", bookingId)
+    .maybeSingle();
+
+  return (data as BookingRow | null) ?? null;
+}
+
+/**
+ * Both sides of a new booking.
+ *
+ * Failures are swallowed on purpose. This runs after the money has already
+ * moved, and throwing here would turn a delivered email into a failed booking
+ * — the caller has nothing useful to do with the error, and the queue will
+ * retry anything transient.
+ */
+export async function notifyBookingCreated(
+  admin: SupabaseClient,
+  bookingId: string,
+): Promise<void> {
+  try {
+    const booking = await loadBooking(admin, bookingId);
+    if (!booking) return;
+
+    const when = formatWhen(new Date(booking.starts_at));
+
+    const [practitioner, host] = await Promise.all([
+      recipientFor(admin, booking.practitioner_id),
+      recipientFor(admin, booking.spaces.host_id),
+    ]);
+
+    if (practitioner) {
+      await notify({
+        kind: "booking_confirmed",
+        recipient: practitioner,
+        subjectId: bookingId,
+        bookingId,
+        context: { spaceName: booking.spaces.name, when, amountCents: booking.total_cents },
+      });
+    }
+
+    if (host) {
+      await notify({
+        kind: "host_new_booking",
+        recipient: host,
+        subjectId: bookingId,
+        bookingId,
+        // The host's rate, never the total. What the practitioner paid is not
+        // theirs to see — the same rule host_bookings() enforces in SQL.
+        context: { spaceName: booking.spaces.name, when, amountCents: booking.host_rate_cents },
+      });
+    }
+  } catch (error) {
+    console.error(`Booking notifications failed for ${bookingId}:`, error);
+  }
+}
+
+export async function notifyCancellation(
+  admin: SupabaseClient,
+  bookingId: string,
+  actor: "practitioner" | "host",
+  outcome: { chargedCents: number; refundedCents: number; goodwillCreditCents: number },
+): Promise<void> {
+  try {
+    const booking = await loadBooking(admin, bookingId);
+    if (!booking) return;
+
+    const when = formatWhen(new Date(booking.starts_at));
+
+    // A practitioner cancelling tells the host; a host cancelling tells the
+    // practitioner. Each side hears about the thing done to them.
+    if (actor === "practitioner") {
+      const [practitioner, host] = await Promise.all([
+        recipientFor(admin, booking.practitioner_id),
+        recipientFor(admin, booking.spaces.host_id),
+      ]);
+
+      if (practitioner) {
+        await notify({
+          kind: "cancelled_by_practitioner",
+          recipient: practitioner,
+          subjectId: bookingId,
+          bookingId,
+          context: {
+            spaceName: booking.spaces.name,
+            when,
+            chargedCents: outcome.chargedCents,
+            refundedCents: outcome.refundedCents,
+          },
+        });
+      }
+      if (host) {
+        await notify({
+          kind: "cancelled_by_practitioner",
+          recipient: host,
+          subjectId: `${bookingId}:host`,
+          bookingId,
+          context: { spaceName: booking.spaces.name, when },
+        });
+      }
+      return;
+    }
+
+    const practitioner = await recipientFor(admin, booking.practitioner_id);
+    if (!practitioner) return;
+
+    await notify({
+      kind: "cancelled_by_host",
+      recipient: practitioner,
+      subjectId: bookingId,
+      bookingId,
+      context: {
+        spaceName: booking.spaces.name,
+        when,
+        chargedCents: outcome.chargedCents,
+        refundedCents: outcome.refundedCents,
+        creditCents: outcome.goodwillCreditCents,
+      },
+    });
+  } catch (error) {
+    console.error(`Cancellation notifications failed for ${bookingId}:`, error);
+  }
+}
+
+/**
+ * The door code, once it has actually unlocked.
+ *
+ * The code itself is already available from the moment `access_code_revealed_at`
+ * passes — the view handles that with no job involved. What needs a job is
+ * *telling* someone, which is this, and it is the only notification in the app
+ * that is worth a text message.
+ *
+ * Driven by comparing state to the clock, like the capture job: "which
+ * bookings are open and unannounced", not "which became open since last time".
+ */
+export async function notifyAccessCodesReady(
+  admin: SupabaseClient,
+  now: Date,
+): Promise<{ announced: number }> {
+  const { data, error } = await admin
+    .from("bookings")
+    .select(
+      "id, practitioner_id, starts_at, total_cents, host_rate_cents, access_code, spaces!inner(name, host_id, address_line, entry_instructions)",
+    )
+    .eq("status", "upcoming")
+    .lte("access_code_revealed_at", now.toISOString())
+    // Nothing to announce about a session that has already finished.
+    .gte("starts_at", new Date(now.getTime() - 60 * 60 * 1000).toISOString());
+
+  if (error) throw error;
+
+  let announced = 0;
+
+  // PostgREST types an embedded relation as an array even when the join is
+  // one-to-one, so the shape has to be asserted rather than narrowed.
+  for (const booking of (data ?? []) as unknown as BookingRow[]) {
+    const practitioner = await recipientFor(admin, booking.practitioner_id);
+    if (!practitioner) continue;
+
+    // The dedupe key makes this safe to re-run: a booking already announced
+    // collides and is skipped, so a job that runs hourly does not text
+    // somebody hourly.
+    const result = await notify({
+      kind: "access_code_ready",
+      recipient: practitioner,
+      subjectId: booking.id,
+      bookingId: booking.id,
+      context: {
+        spaceName: booking.spaces.name,
+        when: formatWhen(new Date(booking.starts_at)),
+        address: booking.spaces.address_line ?? undefined,
+        accessCode: booking.access_code ?? undefined,
+        entryInstructions: booking.spaces.entry_instructions ?? undefined,
+      },
+    });
+
+    if (result.email === "sent" || result.sms === "sent") announced += 1;
+  }
+
+  return { announced };
+}
+
+/**
+ * Rebuilds a queued message so the retry loop can send it again.
+ *
+ * Reads the booking fresh rather than replaying a stored body, so a retry
+ * carries what is true now — and so no door code was ever copied into the
+ * notifications table to begin with.
+ */
+export async function rebuildPending(admin: SupabaseClient) {
+  return async (row: PendingNotification) => {
+    const recipient = await recipientFor(admin, row.user_id);
+    if (!recipient) return null;
+
+    const to = row.channel === "email" ? recipient.email : recipient.phone;
+    if (!to) return null;
+
+    if (!row.booking_id) {
+      // Kinds that are about a person rather than a booking carry no context
+      // worth rebuilding; the subject line alone is still correct.
+      return { to, message: render(row.kind as NotificationKind, { name: recipient.name }) };
+    }
+
+    const booking = await loadBooking(admin, row.booking_id);
+    if (!booking) return null;
+
+    return {
+      to,
+      message: render(row.kind as NotificationKind, {
+        name: recipient.name,
+        spaceName: booking.spaces.name,
+        when: formatWhen(new Date(booking.starts_at)),
+        address: booking.spaces.address_line ?? undefined,
+        accessCode: booking.access_code ?? undefined,
+        entryInstructions: booking.spaces.entry_instructions ?? undefined,
+        amountCents: booking.total_cents,
+      }),
+    };
+  };
+}

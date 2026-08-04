@@ -3,8 +3,7 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
 
 import type { Profile } from "@/lib/domain";
-import { MockRepository } from "@/lib/mock-repository";
-import type { Repository } from "@/lib/repository";
+import { type AppRepository, createRepository } from "@/lib/repository-factory";
 
 /**
  * Every screen in the flow, as one state machine.
@@ -36,7 +35,7 @@ export type Screen =
   | "host-profile";
 
 interface AppState {
-  repo: Repository & { simulateInboundBooking(spaceId: string): Promise<unknown> };
+  repo: AppRepository;
   screen: Screen;
   go: (screen: Screen) => void;
   back: () => void;
@@ -68,7 +67,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   // Lazy useState rather than useRef: the instance must survive re-renders,
   // but reading a ref during render is exactly what React tells you not to do,
   // and this value is read on every render.
-  const [repo] = useState(() => new MockRepository());
+  const [repo] = useState(createRepository);
 
   // The stack holds the current screen at its top, so there is no second
   // source of truth to keep in step with it.

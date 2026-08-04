@@ -279,7 +279,9 @@ export function AuthEntry({
             />
           </div>
           <div className="mt-3">
-            <PrimaryButton disabled={!looksLikeEmail}>Send code</PrimaryButton>
+            <PrimaryButton type="submit" disabled={!looksLikeEmail}>
+              Send code
+            </PrimaryButton>
           </div>
         </form>
       </div>
@@ -287,9 +289,24 @@ export function AuthEntry({
   );
 }
 
-const CODE_LENGTH = 4;
+/**
+ * Six, not the prototype's four. Supabase sends a six-digit code, so a
+ * four-box input physically cannot hold a valid one — every sign-in would have
+ * failed with a correct code typed in.
+ */
+const CODE_LENGTH = 6;
 
-export function AuthVerify({ email, next }: { email: string; next: () => void }) {
+export function AuthVerify({
+  email,
+  next,
+  error,
+  busy = false,
+}: {
+  email: string;
+  next: (code: string) => void;
+  error?: string | null;
+  busy?: boolean;
+}) {
   const [digits, setDigits] = useState<string[]>(Array(CODE_LENGTH).fill(""));
   const inputs = useRef<(HTMLInputElement | null)[]>([]);
   const complete = digits.every((d) => d !== "");
@@ -336,7 +353,7 @@ export function AuthVerify({ email, next }: { email: string; next: () => void })
       </div>
 
       <div className="relative z-10">
-        <div className="flex justify-center gap-3">
+        <div className="flex justify-center gap-2">
           {digits.map((digit, i) => (
             <input
               key={i}
@@ -349,19 +366,28 @@ export function AuthVerify({ email, next }: { email: string; next: () => void })
               aria-label={`Digit ${i + 1} of ${CODE_LENGTH}`}
               onChange={(e) => setDigit(i, e.target.value)}
               onKeyDown={(e) => onKeyDown(i, e)}
-              className="text-center font-display italic text-[22px] rounded-xl outline-none text-white"
+              className="text-center font-display italic text-[20px] rounded-xl outline-none text-white"
               style={{
-                width: 54,
-                height: 60,
+                width: 44,
+                height: 56,
                 backgroundColor: "rgba(255,255,255,0.1)",
-                border: `1px solid ${digit ? "#3B9BE8" : "rgba(255,255,255,0.2)"}`,
+                border: `1px solid ${
+                  error ? "#F2695C" : digit ? "#3B9BE8" : "rgba(255,255,255,0.2)"
+                }`,
               }}
             />
           ))}
         </div>
+
+        {error && (
+          <p className="font-body font-light text-[11.5px] text-center mt-3 text-coral-soft">
+            {error}
+          </p>
+        )}
+
         <div className="mt-6">
-          <PrimaryButton disabled={!complete} onClick={next}>
-            Continue
+          <PrimaryButton disabled={!complete || busy} onClick={() => next(digits.join(""))}>
+            {busy ? "Checking…" : "Continue"}
           </PrimaryButton>
         </div>
       </div>

@@ -151,21 +151,29 @@ export function Toggle({
   );
 }
 
-/** Primary pill CTA with the travelling sheen. Disabled state drops the sheen. */
+/**
+ * Primary pill CTA with the travelling sheen. Disabled state drops the sheen.
+ *
+ * `type` is a real prop rather than a hardcoded "button": inside a form, a
+ * type="button" submit control silently does nothing, which is exactly how the
+ * email sign-in step managed to look finished while never firing.
+ */
 export function PrimaryButton({
   children,
   onClick,
   disabled = false,
   className = "",
+  type = "button",
 }: {
   children: ReactNode;
   onClick?: () => void;
   disabled?: boolean;
   className?: string;
+  type?: "button" | "submit";
 }) {
   return (
     <button
-      type="button"
+      type={type}
       onClick={onClick}
       disabled={disabled}
       className={`w-full py-4 rounded-full font-body font-medium text-[14px] press transition-all sheen-wrap ${className}`}

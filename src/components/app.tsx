@@ -151,6 +151,9 @@ export function App() {
 
     case "auth-verify":
       return <AuthVerify email={email} next={() => go("role")} />;
+    // The code itself is ignored while the mock repository is in play — see
+    // src/lib/repository-factory.ts for why, and for where the real
+    // verifyEmailCode call takes over.
 
     case "role":
       return <RoleSelect choosePractitioner={() => go("verify")} chooseHost={goHosting} />;

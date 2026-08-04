@@ -14,17 +14,20 @@ payment processor yet.
 |---|---|
 | ✅ M0 | Next.js scaffold, brand tokens, fonts, shared UI primitives |
 | ✅ M1 | Money module and its invariant test suite |
-| ✅ M2a | Schema, RLS and storage policies, written and verified against real Postgres |
+| ✅ M2 | Schema, RLS and storage policies — applied to the live project and verified against it |
 | ✅ M3 | Every screen ported, running against an in-memory repository |
-| ⬜ M2b | Point the repository at a live Supabase project — *needs Supabase keys* |
-| ⬜ M4 | Stripe Connect, manual-capture PaymentIntents, webhooks — *needs Stripe keys* |
+| ✅ M4a | Stripe payment layer, verified end to end in the sandbox |
+| ✅ M4b | Server-side booking and cancellation, with pricing the client cannot influence |
+| ⬜ M4c | Route handlers and the Embedded Components payment sheet |
 | ⬜ M5 | Scheduled jobs: session-time capture, access code reveal |
 | ⬜ M6 | Resend transactional email — *needs Resend key and DNS* |
 | ⬜ M7 | Vercel deploy, then point minimumstress.app |
 
-The whole app runs today. `src/lib/repository.ts` is the seam: screens talk to
-that interface, `MockRepository` implements it in memory, and connecting
-Supabase means writing a second implementation without touching a component.
+`src/lib/repository.ts` is the seam: screens talk to that interface,
+`MockRepository` implements it in memory, `SupabaseRepository` against the real
+database. The mock is still the one wired up, deliberately — see
+`repository-factory.ts` for why, and flip `NEXT_PUBLIC_USE_SUPABASE=true` once
+the payment routes land.
 
 ## Running it
 
@@ -68,10 +71,16 @@ Two decisions the brief left open, resolved in code and documented at the call s
 
 ## The database
 
-`supabase/migrations/` holds the schema, RLS policies and storage rules. They have not been applied
-to a live project yet, but they are not unverified: `supabase/schema.test.ts` and
-`supabase/rls.test.ts` execute them against real Postgres (PGlite, compiled to WASM) and then query
-as `anon` and as two different signed-in users to prove the boundaries hold.
+`supabase/migrations/` holds the schema, RLS policies and storage rules, and
+`supabase/apply.sql` is all of them concatenated for the SQL editor. Safe to run
+more than once — every statement is guarded, so applying it to a project that
+already has some of it is dull rather than a transaction that aborts halfway.
+
+`schema.test.ts` and `rls.test.ts` execute the migrations against real Postgres
+(PGlite, compiled to WASM), then query as `anon` and as two different signed-in
+users to prove the boundaries hold. One test applies the whole set twice, which
+is the only thing that catches `create or replace view` refusing to drop a
+column.
 
 The organising rule, because getting it wrong is how an address leaks:
 
@@ -85,13 +94,32 @@ The organising rule, because getting it wrong is how an address leaks:
 `0000_supabase_stubs.sql` stands in for what Supabase provides locally and is excluded from the
 migrations the tests treat as real.
 
+## Payments
+
+Destination charges with `capture_method: manual`. The practitioner is
+authorised at booking and nothing moves until the session starts, which is what
+makes 24-hour free cancellation possible rather than a refund policy.
+
+`application_fee_amount` is written as total minus the host's rate, though the
+two are equal, so the host's take is the subject of the arithmetic. Verified in
+the sandbox: on a $45 rate for an instant slot the practitioner pays $59.00, the
+host's balance shows exactly $45.00, Stripe takes $2.01 and $11.99 reaches us.
+
+Worth knowing if you go looking in the dashboard: the platform's copy of the
+charge reports `transfer.amount` as the full $59.00, which reads alarmingly like
+the host being handed our fee too. The fee is deducted on the connected
+account's side. That account's own ledger is the honest view.
+
 ## Layout
 
 ```
-src/lib/money.ts          pricing, cancellation outcomes, credit redemption
-src/lib/availability.ts   weekly template, validation, slot generation
-src/lib/taxonomy.ts       the four locked categories and listing vocabulary
-src/lib/repository.ts     the data boundary; mock-repository.ts implements it
-src/components/screens/   every screen, one file per flow
-supabase/migrations/      schema, RLS, storage
+src/lib/money.ts           pricing, cancellation outcomes, credit redemption
+src/lib/availability.ts    weekly template, validation, slot generation
+src/lib/taxonomy.ts        the four categories, listing and house-rule vocabulary
+src/lib/booking-plan.ts    what may be booked, and for how much — pure, heavily tested
+src/lib/booking-service.ts the same rules against the database and Stripe
+src/lib/stripe/            payment intents, Connect onboarding, settlement
+src/lib/repository.ts      the data boundary; mock and Supabase both implement it
+src/components/screens/    every screen, one file per flow
+supabase/migrations/       schema, RLS, storage
 ```

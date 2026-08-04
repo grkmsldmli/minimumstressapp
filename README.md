@@ -35,7 +35,7 @@ real accounts. That is the largest remaining piece of work.
 ```bash
 npm install
 npm run dev     # http://localhost:3000
-npm test        # 266 tests: money, availability, geo, repository, schema, RLS, webhook
+npm test        # 286 tests: money, availability, geo, repository, schema, RLS, webhook
 ```
 
 Start at the splash screen and pick either role. Nothing is seeded for *you* — no listings, no
@@ -124,11 +124,27 @@ passes, so it opens on time whether or not anything is running.
 ## Addresses and the two maps
 
 A host types an address and picks it from a dropdown; the choice carries real
-coordinates, which drop the pin on a real map of their own street. Geocoding is
-[Photon](https://photon.komoot.io) — OpenStreetMap data, built for typing one
-character at a time, no key and no billing account — proxied through
-`/api/geocode` so a host's home address does not leave their browser for a third
-party, and so swapping in a paid provider later is one file.
+coordinates, which drop the pin on a real map of their own street. It is proxied
+through `/api/geocode` so a host's home address does not leave their browser for
+a third party, and so the provider is one file.
+
+**Two things happen to the query before it is sent**, both arrived at by
+measuring a live geocoder rather than guessing. US abbreviations are expanded —
+"1301 w hillsdale blv" returned an alley in Sacramento, and the spelled-out form
+found the right street in San Mateo. And results carrying the house number that
+was typed are moved to the top, because an OSM-derived provider will happily
+rank a street called "Hillsdale Blvd Walerga Road Alley" above the building
+someone gave the number of.
+
+**Provider quality is a real constraint, not a detail.** With both fixes,
+[Photon](https://photon.komoot.io) — free, keyless — reaches the right street
+and city but still returns 1700 where 1301 was asked for. A pin a block from the
+studio is worse than no pin, because it looks correct. The data is not missing:
+Nominatim finds the same OSM address exactly. Nominatim forbids autocomplete
+use, so the preferred provider is LocationIQ, which runs that engine
+commercially and permits it, and Photon stays as the keyless fallback so the
+field works before anyone has signed up for anything. Set `LOCATIONIQ_API_KEY`
+to switch.
 
 The field stays authoritative throughout. A rural address the geocoder has never
 heard of, or a geocoder that is simply down, costs a host the suggestions and

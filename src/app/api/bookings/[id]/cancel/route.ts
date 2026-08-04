@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 
 import { LIMITS, check, identify, tooManyRequests } from "@/lib/api/rate-limit";
 import { handled, jsonError, requireUser } from "@/lib/api/session";
+import { jsonObject, oneOf } from "@/lib/api/validate";
 import { stripeGateway } from "@/lib/api/stripe-gateway";
 import { cancelBooking } from "@/lib/booking-service";
 import { supabaseAdmin } from "@/lib/supabase/server";
@@ -28,19 +29,15 @@ export async function POST(
 
     const { id } = await context.params;
 
-    let body: unknown = {};
-    try {
-      body = await request.json();
-    } catch {
-      // An empty body is fine; actor defaults below.
-    }
+    // An empty body is fine here — actor defaults below — so a parse failure
+    // is treated as "nothing sent" rather than as an error.
+    const parsed = await jsonObject(request);
+    const body = parsed.ok ? parsed.value : {};
 
-    const actor = (body as { actor?: unknown }).actor ?? "practitioner";
-    if (actor !== "practitioner" && actor !== "host") {
-      return jsonError("actor must be 'practitioner' or 'host'", 400);
-    }
+    const actor = oneOf(body, "actor", ["practitioner", "host"] as const, "practitioner");
+    if (!actor.ok) return jsonError(actor.reason, 400);
 
-    await cancelBooking(supabaseAdmin(), stripeGateway, id, actor, auth.user.id);
+    await cancelBooking(supabaseAdmin(), stripeGateway, id, actor.value, auth.user.id);
 
     return Response.json({ ok: true });
   });

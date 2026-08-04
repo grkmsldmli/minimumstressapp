@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 
 import { LIMITS, check, identify, tooManyRequests } from "@/lib/api/rate-limit";
 import { handled, jsonError, requireUser } from "@/lib/api/session";
+import { flag, integer, jsonObject, optionalString, uuid } from "@/lib/api/validate";
 import { submitReview, type SubmitFailure } from "@/lib/review-service";
 import { supabaseAdmin } from "@/lib/supabase/server";
 
@@ -22,36 +23,27 @@ export async function POST(request: NextRequest): Promise<Response> {
     const limited = check("review", identify(request, auth.user.id), LIMITS.review);
     if (!limited.ok) return tooManyRequests(limited);
 
-    let body: unknown;
-    try {
-      body = await request.json();
-    } catch {
-      return jsonError("Expected a JSON body", 400);
-    }
+    const body = await jsonObject(request);
+    if (!body.ok) return jsonError(body.reason, 400);
 
-    const payload = (body ?? {}) as Record<string, unknown>;
+    const bookingId = uuid(body.value, "bookingId");
+    if (!bookingId.ok) return jsonError(bookingId.reason, 400);
 
-    const bookingId = payload.bookingId;
-    if (typeof bookingId !== "string" || bookingId === "") {
-      return jsonError("bookingId is required", 400);
-    }
+    // Bounded here as well as in the service: the column is unbounded text and
+    // this is the outermost point a person's typing reaches it.
+    const overall = integer(body.value, "overall", { min: 1, max: 5 });
+    if (!overall.ok) return jsonError(overall.reason, 400);
 
-    if (typeof payload.overall !== "number") {
-      return jsonError("overall is required, as a number from 1 to 5", 400);
-    }
-
-    const comment = typeof payload.comment === "string" ? payload.comment : "";
-    if (comment.length > 5000) {
-      return jsonError("That comment is too long", 400);
-    }
+    const comment = optionalString(body.value, "comment", { max: 5000 });
+    if (!comment.ok) return jsonError(comment.reason, 400);
 
     const result = await submitReview(supabaseAdmin(), auth.user.id, {
-      bookingId,
-      overall: payload.overall,
-      comment,
-      safetyConcern: payload.safetyConcern === true,
-      practitioner: asAnswers(payload.practitioner),
-      host: asAnswers(payload.host),
+      bookingId: bookingId.value,
+      overall: overall.value,
+      comment: comment.value,
+      safetyConcern: flag(body.value, "safetyConcern"),
+      practitioner: asAnswers(body.value.practitioner),
+      host: asAnswers(body.value.host),
     });
 
     if (!result.ok) {

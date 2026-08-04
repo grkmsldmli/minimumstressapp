@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 
 import { LIMITS, check, identify, tooManyRequests } from "@/lib/api/rate-limit";
 import { handled, jsonError, requireUser } from "@/lib/api/session";
+import { jsonObject, timestamp, uuid } from "@/lib/api/validate";
 import { stripeGateway } from "@/lib/api/stripe-gateway";
 import { createBooking } from "@/lib/booking-service";
 import { supabaseAdmin } from "@/lib/supabase/server";
@@ -27,33 +28,21 @@ export async function POST(request: NextRequest): Promise<Response> {
     const limited = check("booking", identify(request, auth.user.id), LIMITS.booking);
     if (!limited.ok) return tooManyRequests(limited);
 
-    let body: unknown;
-    try {
-      body = await request.json();
-    } catch {
-      return jsonError("Expected a JSON body", 400);
-    }
+    const body = await jsonObject(request);
+    if (!body.ok) return jsonError(body.reason, 400);
 
-    const { spaceId, startsAt } = (body ?? {}) as { spaceId?: unknown; startsAt?: unknown };
+    const spaceId = uuid(body.value, "spaceId");
+    if (!spaceId.ok) return jsonError(spaceId.reason, 400);
 
-    if (typeof spaceId !== "string" || spaceId === "") {
-      return jsonError("spaceId is required", 400);
-    }
-    if (typeof startsAt !== "string") {
-      return jsonError("startsAt is required, as an ISO timestamp", 400);
-    }
-
-    const start = new Date(startsAt);
-    if (Number.isNaN(start.getTime())) {
-      return jsonError("startsAt is not a valid timestamp", 400);
-    }
+    const startsAt = timestamp(body.value, "startsAt");
+    if (!startsAt.ok) return jsonError(startsAt.reason, 400);
 
     // The admin client, because writing the booking, its ledger entry and the
     // PaymentIntent has to outrank the person asking — a practitioner has no
     // insert rights on `bookings` by design.
     const result = await createBooking(supabaseAdmin(), stripeGateway, auth.user.id, {
-      spaceId,
-      startsAt: start,
+      spaceId: spaceId.value,
+      startsAt: startsAt.value,
     });
 
     return Response.json(

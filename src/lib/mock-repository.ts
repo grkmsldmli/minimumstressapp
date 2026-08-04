@@ -274,10 +274,13 @@ export class MockRepository implements Repository {
   }
 
   /**
-   * Stands in for Stripe Express onboarding. The real one redirects to
-   * Stripe's hosted flow and only flips this flag once the
-   * `account.updated` webhook confirms the account can actually receive
-   * money — a host who abandons the form halfway must not look connected.
+   * Stands in for Stripe Express onboarding.
+   *
+   * The real route creates an Express account and hands the host to Stripe's
+   * hosted form; this flag is then set only by the `account.updated` webhook,
+   * once Stripe reports both charges and payouts genuinely enabled. Someone
+   * who abandons the form halfway must not come back looking connected, or
+   * their listing takes bookings for money that can never reach them.
    */
   async connectPayouts(): Promise<Profile> {
     this.profile = { ...this.profile, stripeConnected: true };

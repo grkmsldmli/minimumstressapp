@@ -3,6 +3,7 @@ import "server-only";
 import Stripe from "stripe";
 
 import type { BookingMoney } from "../money";
+import { PAYOUT_DELAY_DAYS, payoutStatus, type PayoutStatus } from "../payouts";
 import { BOOKING_PAYMENT_METHODS } from "./payment-methods";
 import { planPaymentIntent, type SettlementAction } from "./payments";
 
@@ -44,8 +45,31 @@ export async function createConnectedAccount(email: string | null): Promise<stri
       transfers: { requested: true },
       card_payments: { requested: true },
     },
+    settings: {
+      payouts: {
+        // Daily on a rolling delay, rather than Stripe's weekly default.
+        // A host earning on Tuesday should not wait until the following
+        // Friday; the protection comes from the delay and from capture
+        // happening at session start, not from batching.
+        schedule: { interval: "daily", delay_days: PAYOUT_DELAY_DAYS },
+      },
+    },
   });
   return account.id;
+}
+
+/** Where a host stands, asked of Stripe rather than inferred from our own rows. */
+export async function readPayoutStatus(accountId: string): Promise<PayoutStatus> {
+  const account = await stripe().accounts.retrieve(accountId);
+  return payoutStatus({
+    hasAccount: true,
+    chargesEnabled: Boolean(account.charges_enabled),
+    payoutsEnabled: Boolean(account.payouts_enabled),
+    // Stripe sets this when a deadline has passed and the account is limited —
+    // distinct from simply not having finished yet.
+    hasOverdueRequirements: (account.requirements?.currently_due?.length ?? 0) > 0
+      && Boolean(account.requirements?.current_deadline),
+  });
 }
 
 /** A one-time link into Stripe's hosted onboarding. Expires quickly by design. */

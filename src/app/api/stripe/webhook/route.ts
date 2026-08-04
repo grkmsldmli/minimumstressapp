@@ -105,6 +105,23 @@ async function handle(event: Stripe.Event): Promise<void> {
     }
 
     /**
+     * A payout to a host's bank was rejected — usually a closed account or
+     * wrong details. Stripe pauses that account's payouts until it is fixed,
+     * so the money is sitting still and the host does not necessarily know.
+     *
+     * Logged loudly rather than handled silently: this is the case where a
+     * host is owed real money and cannot receive it, and nobody finds out
+     * unless someone is watching. It becomes an email once Resend is wired.
+     */
+    case "payout.failed": {
+      const payout = event.data.object;
+      console.error(
+        `PAYOUT FAILED — account ${event.account ?? "unknown"}, ${payout.amount} ${payout.currency}: ${payout.failure_message ?? payout.failure_code ?? "no reason given"}`,
+      );
+      return;
+    }
+
+    /**
      * Recorded, not acted on. Our own refunds already wrote their ledger
      * entries; a refund issued from the Stripe dashboard is a human stepping
      * outside the app, and quietly minting credit for it would be guessing at

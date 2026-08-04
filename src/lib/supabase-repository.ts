@@ -142,8 +142,28 @@ export class SupabaseRepository implements Repository {
     throw new Error("Pro subscriptions need Stripe. Not available until the payments milestone.");
   }
 
+  /**
+   * Hands the host to Stripe's hosted onboarding.
+   *
+   * The account is created server-side by the route, which also holds the
+   * secret key; this only asks for the link and follows it. Nothing here marks
+   * the host as connected — that is the `account.updated` webhook's job, and
+   * only once Stripe says the account can actually receive money.
+   */
   async connectPayouts(): Promise<Profile> {
-    throw new Error("Payout onboarding needs Stripe Connect. Not available yet.");
+    const response = await fetch("/api/connect/onboard", { method: "POST" });
+    if (!response.ok) {
+      const { error } = await response.json().catch(() => ({ error: null }));
+      throw new Error(error ?? "Could not start payout setup");
+    }
+
+    const { url } = (await response.json()) as { url: string };
+    window.location.href = url;
+
+    // The redirect ends this page, so nothing after it runs. Returning the
+    // current profile keeps the signature honest for the brief moment before
+    // the browser leaves.
+    return this.getProfile();
   }
 
   async signOut(): Promise<void> {

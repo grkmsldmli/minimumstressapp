@@ -20,6 +20,7 @@ import { WeekSchedule } from "@/components/week-schedule";
 import type { AvailabilityBlock } from "@/lib/availability";
 import type { HostBooking, HostSpace, Profile } from "@/lib/domain";
 import { formatCents } from "@/lib/money";
+import { PAYOUT_DELAY_DAYS, describeSpeed } from "@/lib/payouts";
 import { roomTypeFor } from "@/lib/taxonomy";
 
 import { GroupLabel, ProfileHeader, ProfileRow, SettingToggle } from "./practitioner-extras";
@@ -613,6 +614,11 @@ export function HostProfile({
   const activeCount = spaces.filter((s) => s.status === "active").length;
   const pendingCount = spaces.filter((s) => s.status === "pending").length;
 
+  // Priced against a real listing where there is one, so the instant-payout
+  // figure is the host's own money rather than a generic example.
+  const exampleRateCents = spaces[0]?.hourlyRateCents ?? 0;
+  const selectedSpeed = describeSpeed(profile.payoutSchedule, exampleRateCents);
+
   return (
     <div className="h-full flex flex-col screen-in bg-white">
       <ProfileHeader
@@ -694,8 +700,8 @@ export function HostProfile({
             <div className="flex gap-2">
               {(
                 [
-                  { key: "standard", label: "Standard", sub: "2–3 business days" },
-                  { key: "instant", label: "Instant", sub: "Minutes" },
+                  { key: "standard", label: "Standard", sub: `${PAYOUT_DELAY_DAYS} business days` },
+                  { key: "instant", label: "Instant", sub: "Minutes, for a fee" },
                 ] as const
               ).map((option) => {
                 const selected = profile.payoutSchedule === option.key;
@@ -722,16 +728,15 @@ export function HostProfile({
               })}
             </div>
             {/*
-              Said plainly, because this is the one place a host's take can
-              differ from their rate. Our service fee never touches it; Stripe's
-              instant-payout charge is a separate choice about *when* the money
-              arrives, and hiding that behind "small fee" would be the kind of
-              surprise the rest of this app exists to avoid.
+              The exact figure, on their own rate, rather than "a small fee".
+              This is the one place a host's take can differ from what they
+              set — our service fee never touches it, but Stripe's charge for
+              moving money early does — so it is stated as a number they can
+              check against their bank.
             */}
             <p className="font-body font-light text-[10.5px] leading-relaxed mt-2.5 text-ink-faint">
-              {profile.payoutSchedule === "instant"
-                ? "Stripe charges for instant transfers, and it comes out of the payout. Standard is free."
-                : "Free. Instant transfers arrive in minutes but Stripe charges a fee for them."}
+              {selectedSpeed.arrival}
+              {selectedSpeed.costLine ? ` — ${selectedSpeed.costLine}` : "."}
             </p>
           </div>
         </div>

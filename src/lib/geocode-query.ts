@@ -86,6 +86,31 @@ export function normalizeQuery(raw: string): string {
   return expanded.replace(/\s+/g, " ").trim();
 }
 
+/**
+ * Words that name a street, with everything that does not distinguish one
+ * street from another taken out.
+ *
+ * The house number goes because it is compared separately. Street types and
+ * directionals go because every second address has "West" or "Street" in it —
+ * leaving them in makes "West Hillsdale Boulevard" and "West Green Oaks
+ * Boulevard" look related when the only thing they share is grammar.
+ */
+function streetWords(value: string): Set<string> {
+  const generic = new Set(Object.values(ABBREVIATIONS).map((word) => word.toLowerCase()));
+
+  return new Set(
+    normalizeQuery(value)
+      .toLowerCase()
+      .split(/[\s,]+/)
+      .filter((word) => word.length > 1 && !/^\d/.test(word) && !generic.has(word)),
+  );
+}
+
+function overlaps(a: Set<string>, b: Set<string>): boolean {
+  for (const word of a) if (b.has(word)) return true;
+  return false;
+}
+
 /** The house number a query opens with, if it opens with one. */
 export function leadingHouseNumber(raw: string): string | null {
   const match = raw.trim().match(/^(\d+[A-Za-z]?)\b/);
@@ -112,12 +137,23 @@ export function rankSuggestions(
   // street, and promoting arbitrary buildings on it buries what they asked for.
   if (!wanted) return suggestions;
 
+  const queryStreet = streetWords(query);
+
+  /**
+   * Street first, then number — and that order is the whole correctness of it.
+   *
+   * Ranking on the number alone put "1301 Summit Boulevard, West Palm Beach"
+   * above the right building for "1301 w hillsdale blv", because the digits
+   * matched and nothing else was consulted. A house number is only meaningful
+   * relative to a street, so a result that shares no street word with the
+   * query is a different place no matter what number it carries.
+   */
   const score = (suggestion: AddressSuggestion): number => {
     const number = leadingHouseNumber(suggestion.primary);
+    const sameStreet = overlaps(queryStreet, streetWords(suggestion.primary));
 
-    if (number === wanted) return 0;
-    if (number) return 1;
-    return 2;
+    const numberRank = number === wanted ? 0 : number ? 1 : 2;
+    return (sameStreet ? 0 : 4) + numberRank;
   };
 
   // Stable: equal scores keep the provider's own ordering, which is better

@@ -97,6 +97,32 @@ describe("rankSuggestions", () => {
     expect(ranked[0].primary).toBe("1301 West Hillsdale Boulevard");
   });
 
+  /**
+   * The false positive that ranking on the number alone produced: identical
+   * digits, entirely different place.
+   */
+  it("does not promote a matching number on a street nobody asked for", () => {
+    const ranked = rankSuggestions(
+      [make("1301 Summit Boulevard"), make("West Hillsdale Boulevard")],
+      "1301 w hillsdale blv",
+    );
+
+    expect(ranked[0].primary).toBe("West Hillsdale Boulevard");
+  });
+
+  it("still puts the right street with the right number above everything", () => {
+    const ranked = rankSuggestions(
+      [make("1301 Summit Boulevard"), make("West Hillsdale Boulevard"), make("1301 West Hillsdale Boulevard")],
+      "1301 w hillsdale blv",
+    );
+
+    expect(ranked.map((s) => s.primary)).toEqual([
+      "1301 West Hillsdale Boulevard",
+      "West Hillsdale Boulevard",
+      "1301 Summit Boulevard",
+    ]);
+  });
+
   it("prefers any numbered address over a bare street", () => {
     const ranked = rankSuggestions(
       [make("West Hillsdale Boulevard"), make("1700 West Hillsdale Boulevard")],

@@ -18,7 +18,20 @@ import { normalizeQuery, rankSuggestions } from "./geocode-query";
  */
 
 const PHOTON_ENDPOINT = "https://photon.komoot.io/api";
-const LOCATIONIQ_ENDPOINT = "https://api.locationiq.com/v1/autocomplete";
+/**
+ * Search, not the autocomplete endpoint, despite this being an autocomplete.
+ *
+ * Measured against both: `/autocomplete` answered "1301 w hillsdale blv" with
+ * 1301 Summit Boulevard in West Palm Beach — it matches the number as a prefix
+ * and is loose about the rest. `/search` returned 1301 West Hillsdale
+ * Boulevard, San Mateo, first and exactly, with no city in the query at all,
+ * and got every other test address right too.
+ *
+ * The endpoint named after the feature was the wrong one. Debounced typing
+ * makes a full geocode per pause affordable, and both cost the same against
+ * the quota.
+ */
+const LOCATIONIQ_ENDPOINT = "https://us1.locationiq.com/v1/search";
 
 /** Below this a query matches half the planet and the results are noise. */
 export const MIN_QUERY_LENGTH = 3;
@@ -224,6 +237,10 @@ function locationIqUrl(query: string, key: string): URL {
   url.searchParams.set("key", key);
   url.searchParams.set("q", query);
   url.searchParams.set("limit", String(MAX_SUGGESTIONS * 2));
+  url.searchParams.set("format", "json");
+  // Without this the response carries no house number, city or road to build a
+  // suggestion from — only a single run-on display string.
+  url.searchParams.set("addressdetails", "1");
   url.searchParams.set("dedupe", "1");
   // Cities returned in their common form rather than the administrative one,
   // so a host sees "San Mateo" and not "San Mateo County".

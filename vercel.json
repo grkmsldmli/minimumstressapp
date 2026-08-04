@@ -3,7 +3,6 @@
   "crons": [
     {
       "path": "/api/cron",
-      "// why daily": "Vercel's Hobby plan allows one cron run per day, and rejects the deployment outright for anything more frequent. Daily is workable rather than ideal: the job captures every session that has already started, so a booking is captured within 24 hours of its hour rather than at it. Card authorisations last about seven days, so nothing expires — the cost is that a host waits up to a day longer than they need to. The fix is a trigger that fires more often; see README, Scheduled jobs.",
       "schedule": "0 3 * * *"
     }
   ]

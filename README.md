@@ -14,24 +14,33 @@ payment processor yet.
 |---|---|
 | ✅ M0 | Next.js scaffold, brand tokens, fonts, shared UI primitives |
 | ✅ M1 | Money module and its invariant test suite |
-| ⬜ M2 | Supabase schema, RLS, auth — *needs Supabase keys* |
-| ⬜ M3 | All screens ported and wired to real data |
+| ✅ M2a | Schema, RLS and storage policies, written and verified against real Postgres |
+| ✅ M3 | Every screen ported, running against an in-memory repository |
+| ⬜ M2b | Point the repository at a live Supabase project — *needs Supabase keys* |
 | ⬜ M4 | Stripe Connect, manual-capture PaymentIntents, webhooks — *needs Stripe keys* |
 | ⬜ M5 | Scheduled jobs: session-time capture, access code reveal |
 | ⬜ M6 | Resend transactional email — *needs Resend key and DNS* |
 | ⬜ M7 | Vercel deploy, then point minimumstress.app |
 
+The whole app runs today. `src/lib/repository.ts` is the seam: screens talk to
+that interface, `MockRepository` implements it in memory, and connecting
+Supabase means writing a second implementation without touching a component.
+
 ## Running it
 
 ```bash
 npm install
-npm run dev     # http://localhost:3000 — foundation preview
-npm test        # the money and availability invariant suites
+npm run dev     # http://localhost:3000
+npm test        # 120 tests: money, availability, repository, schema, RLS
 ```
 
-The preview at `/` is a review surface, not a product screen. It has three tabs: a live All In
-Price calculator driven by the real pricing module, the weekly availability editor, and the brand
-marks with the locked taxonomy.
+Start at the splash screen and pick either role. Nothing is seeded for *you* — no listings, no
+bookings, no credit — so every empty state is a real one. Other hosts' rooms are seeded, because a
+marketplace with nothing in it cannot be reviewed.
+
+Two buttons are labelled "Prototype only": approving a listing, and simulating an inbound booking.
+They stand in for the manual review and for real practitioner demand, and both disappear once
+there is a backend.
 
 ## The money rules
 
@@ -57,11 +66,32 @@ Two decisions the brief left open, resolved in code and documented at the call s
   spent is restored separately. Refunding the gross fee as fresh credit would mint liability we
   never earned. With no credit involved this is identical to the brief's plain reading.
 
+## The database
+
+`supabase/migrations/` holds the schema, RLS policies and storage rules. They have not been applied
+to a live project yet, but they are not unverified: `supabase/schema.test.ts` and
+`supabase/rls.test.ts` execute them against real Postgres (PGlite, compiled to WASM) and then query
+as `anon` and as two different signed-in users to prove the boundaries hold.
+
+The organising rule, because getting it wrong is how an address leaks:
+
+- **Base tables are owner-only.** `anon` cannot reach them at all.
+- **Public data goes through security *definer* views**, whose safety is the column list — the
+  address and Stripe identifiers are absent, not merely unselected.
+- **Per-user data goes through security *invoker* views**, so row policies still apply.
+- **The address is a security definer function** that checks for a booking itself, because a
+  practitioner has no row policy on `spaces` and granting one would expose the host's lease document.
+
+`0000_supabase_stubs.sql` stands in for what Supabase provides locally and is excluded from the
+migrations the tests treat as real.
+
 ## Layout
 
 ```
 src/lib/money.ts          pricing, cancellation outcomes, credit redemption
 src/lib/availability.ts   weekly template, validation, slot generation
 src/lib/taxonomy.ts       the four locked categories and listing vocabulary
-src/components/           brand marks, primitives, schedule editor, uploads, map
+src/lib/repository.ts     the data boundary; mock-repository.ts implements it
+src/components/screens/   every screen, one file per flow
+supabase/migrations/      schema, RLS, storage
 ```

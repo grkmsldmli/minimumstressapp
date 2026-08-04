@@ -261,6 +261,8 @@ export class MockRepository implements Repository {
         mapX: seed.mapX,
         mapY: seed.mapY,
         distanceLabel: seed.distanceLabel,
+      reviewCount: 0,
+      averageRating: null,
       };
     });
   }
@@ -500,6 +502,8 @@ export class MockRepository implements Repository {
       mapX: input.mapX,
       mapY: input.mapY,
       distanceLabel: "your space",
+      reviewCount: 0,
+      averageRating: null,
       // New listings are never live: the brief defers review to a manual
       // process, so nothing reaches Discover until it is approved.
       status: "pending",

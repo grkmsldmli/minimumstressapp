@@ -14,6 +14,7 @@ import {
   needsEscalation,
   reviewWindowClosesAt,
   summarise,
+  summariseAggregate,
 } from "./reviews";
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -199,5 +200,33 @@ describe("deadlines", () => {
   /** The seal must never outlast the chance to answer it. */
   it("opens a sealed review before the window to reply has closed", () => {
     expect(BLIND_PERIOD_DAYS).toBeLessThan(REVIEW_WINDOW_DAYS);
+  });
+});
+
+describe("summariseAggregate", () => {
+  /** Both entry points must decide "too new" the same way, or a card and a
+   * profile can disagree about the same listing. */
+  it("agrees with summarise on the same data", () => {
+    const ratings: Rating[] = [5, 4, 3, 5];
+    const fromRatings = summarise(ratings);
+    const fromAggregate = summariseAggregate(
+      ratings.length,
+      ratings.reduce((a, b) => a + b, 0) / ratings.length,
+    );
+    expect(fromAggregate).toEqual(fromRatings);
+  });
+
+  it("withholds an average below the threshold", () => {
+    expect(summariseAggregate(2, 5)).toEqual({ average: null, count: 2, isNew: true });
+  });
+
+  /** A count with no average is what an empty aggregate looks like. */
+  it("treats a missing average as too new", () => {
+    expect(summariseAggregate(9, null)).toEqual({ average: null, count: 9, isNew: true });
+  });
+
+  it("rounds to one decimal", () => {
+    expect(summariseAggregate(4, 4.25).average).toBe(4.3);
+    expect(summariseAggregate(7, 3.9166).average).toBe(3.9);
   });
 });

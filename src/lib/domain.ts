@@ -80,6 +80,13 @@ export interface PublicSpace {
   mapX: number;
   mapY: number;
   distanceLabel: string;
+  /**
+   * Counted from released reviews only, so a sealed one cannot be inferred by
+   * watching the number move. The decision to withhold an average under three
+   * reviews lives in reviews.ts, not here.
+   */
+  reviewCount: number;
+  averageRating: number | null;
 }
 
 /** Released only once the practitioner holds a booking on this space. */

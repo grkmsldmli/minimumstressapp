@@ -38,6 +38,28 @@ const SECTIONS = [
     ],
   },
   {
+    key: "location",
+    title: "Location",
+    points: [
+      "Sharing your location is optional. Every part of the app works without it — you can browse everything, search by ZIP code, and book normally.",
+      "When you do share it, it is used once, to put the nearest rooms first. It is sent to our server, used to sort that one list, and not written down. It is not attached to your account and not kept after the request.",
+      "We never share it with anyone, and we never use it to build a picture of where you go.",
+      "You can stop at any time — the app forgets your answer the moment you close it, so it will ask again rather than assume.",
+      "Distances are deliberately imprecise. A listing's exact position is private until it is booked, so a room half a mile away is shown as half a mile away and never any closer than that.",
+    ],
+  },
+  {
+    key: "reviews",
+    title: "Reviews and Safety",
+    points: [
+      "After a session, both sides can review each other. Neither review is visible until you have both written, or until 14 days have passed — so nobody is answering a review they have already read.",
+      "A rating of three or below, or a review that flags a safety concern, is read by a person on our team.",
+      "The safety flag is separate from the stars on purpose. A session can go perfectly and still end with a fire door propped open, and we would rather hear about that than lose it because the rating was good.",
+      "We never tell either side whether a review was escalated, and we never share who reported what without asking first.",
+      "Both hosts and practitioners can give us an emergency contact. Nobody you book with ever sees it — only our team, and only if something goes wrong during a session.",
+    ],
+  },
+  {
     key: "cancel",
     title: "Cancellation Policy",
     points: [

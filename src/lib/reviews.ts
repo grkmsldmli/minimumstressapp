@@ -166,11 +166,25 @@ export interface RatingSummary {
  */
 export function summarise(ratings: Rating[]): RatingSummary {
   const count = ratings.length;
-  if (count < MIN_REVIEWS_FOR_AVERAGE) return { average: null, count, isNew: true };
-
   const total = ratings.reduce((sum, r) => sum + r, 0);
+  return summariseAggregate(count, count === 0 ? null : total / count);
+}
+
+/**
+ * The same rule, from a count and an average rather than the ratings.
+ *
+ * The database aggregates for us — `space_ratings` returns a count and a mean
+ * — and a caller holding those two numbers should not have to invent a
+ * plausible array of stars to get an answer. Both entry points end here, so
+ * "too new for an average" is decided in one place.
+ */
+export function summariseAggregate(count: number, average: number | null): RatingSummary {
+  if (count < MIN_REVIEWS_FOR_AVERAGE || average === null) {
+    return { average: null, count, isNew: true };
+  }
+
   // One decimal, rounded half-up, so 4.25 shows as 4.3 rather than 4.2.
-  return { average: Math.round((total / count) * 10) / 10, count, isNew: false };
+  return { average: Math.round(average * 10) / 10, count, isNew: false };
 }
 
 /** When the other side stops being able to answer, for showing a countdown. */

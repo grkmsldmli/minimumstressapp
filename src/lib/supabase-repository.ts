@@ -207,16 +207,26 @@ export class SupabaseRepository implements Repository {
 
     // Two extra round trips rather than a nested select, because availability
     // and media come from their own views with their own visibility rules.
-    const [{ data: blocks }, { data: media }] = await Promise.all([
+    const [{ data: blocks }, { data: media }, { data: ratings }] = await Promise.all([
       this.db.from("availability_public").select("*").in("space_id", ids),
       this.db.from("space_media_public").select("*").in("space_id", ids).order("position"),
+      this.db.from("space_ratings").select("*").in("space_id", ids),
     ]);
+
+    const ratingFor = new Map(
+      (ratings ?? []).map((r: { space_id: string; review_count: number; average_rating: string }) => [
+        r.space_id,
+        // numeric arrives as a string from PostgREST, the same as map_x.
+        { count: r.review_count, average: Number(r.average_rating) },
+      ]),
+    );
 
     return spaces.map((row: SpaceRow) =>
       this.toPublicSpace(
         row,
         (blocks ?? []).filter((b: AvailabilityRow) => b.space_id === row.id),
         (media ?? []).filter((m: MediaRow) => m.space_id === row.id),
+        ratingFor.get(row.id),
       ),
     );
   }
@@ -242,6 +252,7 @@ export class SupabaseRepository implements Repository {
     row: SpaceRow,
     blocks: AvailabilityRow[],
     media: MediaRow[],
+    rating?: { count: number; average: number },
   ): PublicSpace {
     return {
       id: row.id,
@@ -273,6 +284,8 @@ export class SupabaseRepository implements Repository {
       mapX: Number(row.map_x ?? 50),
       mapY: Number(row.map_y ?? 50),
       distanceLabel: "nearby",
+      reviewCount: rating?.count ?? 0,
+      averageRating: rating?.average ?? null,
     };
   }
 
@@ -508,6 +521,8 @@ export class SupabaseRepository implements Repository {
         subleaseDocName: row.sublease_doc_path ?? null,
         insuranceDocName: row.insurance_doc_path ?? null,
         distanceLabel: "your space",
+        reviewCount: 0,
+        averageRating: null,
       };
     });
   }

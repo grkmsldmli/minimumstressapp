@@ -3,6 +3,8 @@
 import { useMemo, useState } from "react";
 
 import { LocationPrompt, type LocationChoice } from "@/components/location-prompt";
+import { RatingBadge } from "@/components/stars";
+import { summariseAggregate } from "@/lib/reviews";
 import {
   Building2,
   Calendar,
@@ -448,6 +450,9 @@ function SpaceRow({
         <p className="font-body font-light text-[11.5px] mt-0.5 text-ink-soft truncate">
           {space.description}
         </p>
+        <div className="mt-1">
+          <RatingBadge summary={summariseAggregate(space.reviewCount, space.averageRating)} />
+        </div>
         <p className="font-body font-light text-[11px] mt-0.5 flex items-center gap-1 text-ink-faint">
           {/*
             The measured distance when somebody has shared where they are,

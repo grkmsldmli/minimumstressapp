@@ -77,7 +77,29 @@ export function App() {
   // constant, and every caller wants the same answer.
   const onSupabase = supabaseBackendEnabled();
 
+  /**
+   * The screens someone sees before they have an account.
+   *
+   * They need no data, which is what makes them the only screens that can be
+   * rendered while signed out. Everything after this point reads rows that
+   * belong to a user.
+   */
+  const needsAccount =
+    onSupabase &&
+    (screen === "splash" || screen === "how" || screen === "auth-entry" || screen === "auth-verify");
+
+  /**
+   * Nothing is fetched before there is somebody to fetch it for.
+   *
+   * Every read on the Supabase repository resolves the signed-in user first
+   * and throws when there is none — which is the ordinary state of a first
+   * visit, not a failure. Without this guard that rejection left `data` null
+   * forever and the app rendered its blank loading box to every new visitor,
+   * with nothing in the console to say why.
+   */
   useEffect(() => {
+    if (needsAccount) return;
+
     let cancelled = false;
 
     (async () => {
@@ -119,7 +141,7 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [repo, revision]);
+  }, [repo, revision, needsAccount]);
 
   const mutate = useCallback(
     async (action: () => Promise<unknown>) => {
@@ -137,40 +159,9 @@ export function App() {
     })();
   }, [repo, reset, refresh]);
 
-  if (!data) return <div className="h-full bg-white" />;
-
-  const { profile, spaces, bookings, credit, ledger, mySpaces, hostBookings, access, cancellations } =
-    data;
-
-  // One history, read from each side. The same function answers "how do I
-  // stand" on both profiles, so the two can never disagree about a shared
-  // cancellation.
-  const now = new Date();
-  const practitionerStanding = standingFor("practitioner", cancellations, now);
-  const hostStanding = standingFor("host", cancellations, now);
-
-  /**
-   * A host with no listings goes straight to AddSpace.
-   *
-   * The brief is explicit that they should never meet an empty dashboard
-   * first, and putting the rule here means both entry points — Role Select and
-   * the Discover header — obey it without repeating themselves.
-   */
-  const goHosting = () => go(mySpaces.length === 0 ? "addspace" : "host");
-
-  const activeSpace = spaces.find((s) => s.id === activeSpaceId) ?? null;
-  const activeBooking = bookings.find((b) => b.id === activeBookingId) ?? null;
-  const editingSpace = mySpaces.find((s) => s.id === editingSpaceId) ?? mySpaces[0] ?? null;
-
-  switch (screen) {
-    case "splash":
-      return <Splash next={() => go("how")} />;
-
-    case "how":
-      return <HowItWorks next={() => go("auth-entry")} />;
-
-    case "auth-entry":
-      return (
+  // Defined as functions rather than inlined: they render from above the
+  // data guard, while every other screen renders from the switch below.
+  const renderAuthEntry = () => (
         <AuthEntry
           error={authError}
           busy={authBusy}
@@ -222,10 +213,9 @@ export function App() {
             })();
           }}
         />
-      );
+  );
 
-    case "auth-verify":
-      return (
+  const renderAuthVerify = () => (
         <AuthVerify
           email={email}
           error={authError}
@@ -257,8 +247,41 @@ export function App() {
             })();
           }}
         />
-      );
+  );
 
+  // Rendered before the data guard, because these are exactly the screens that
+  // exist to get someone to the point where there is data to load.
+  if (screen === "splash") return <Splash next={() => go("how")} />;
+  if (screen === "how") return <HowItWorks next={() => go("auth-entry")} />;
+  if (screen === "auth-entry") return renderAuthEntry();
+  if (screen === "auth-verify") return renderAuthVerify();
+
+  if (!data) return <div className="h-full bg-white" />;
+
+  const { profile, spaces, bookings, credit, ledger, mySpaces, hostBookings, access, cancellations } =
+    data;
+
+  // One history, read from each side. The same function answers "how do I
+  // stand" on both profiles, so the two can never disagree about a shared
+  // cancellation.
+  const now = new Date();
+  const practitionerStanding = standingFor("practitioner", cancellations, now);
+  const hostStanding = standingFor("host", cancellations, now);
+
+  /**
+   * A host with no listings goes straight to AddSpace.
+   *
+   * The brief is explicit that they should never meet an empty dashboard
+   * first, and putting the rule here means both entry points — Role Select and
+   * the Discover header — obey it without repeating themselves.
+   */
+  const goHosting = () => go(mySpaces.length === 0 ? "addspace" : "host");
+
+  const activeSpace = spaces.find((s) => s.id === activeSpaceId) ?? null;
+  const activeBooking = bookings.find((b) => b.id === activeBookingId) ?? null;
+  const editingSpace = mySpaces.find((s) => s.id === editingSpaceId) ?? mySpaces[0] ?? null;
+
+  switch (screen) {
     case "role":
       return <RoleSelect choosePractitioner={() => go("verify")} chooseHost={goHosting} />;
 

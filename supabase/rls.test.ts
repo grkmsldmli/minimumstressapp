@@ -69,6 +69,7 @@ beforeAll(async () => {
     "0002_rls.sql",
     "0003_storage.sql",
     "0004_narrow_public_profiles.sql",
+    "0005_host_bookings.sql",
   ]) {
     await db.exec(read(file));
   }
@@ -314,6 +315,42 @@ describe("profiles keep their payment identifiers to themselves", () => {
       `select id from public_host_profiles where id = '${PRACTITIONER}'`,
     );
     expect(found).toEqual([]);
+  });
+
+  it("still lets a host see who booked their own space", async () => {
+    // 0004 removed the practitioner's public identity, so this is the only
+    // remaining path to that name — and it exists precisely because the host
+    // is entitled to know who is coming into their room.
+    const rows = await asUser<{ practitioner_name: string; net_cents: number }>(
+      HOST,
+      `select practitioner_name, net_cents from host_bookings()`,
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0].practitioner_name).toBe("Elena R.");
+    expect(rows[0].net_cents).toBe(4500);
+  });
+
+  it("shows a host nothing for spaces they do not own", async () => {
+    const rows = await asUser(STRANGER, `select booking_id from host_bookings()`);
+    expect(rows).toEqual([]);
+  });
+
+  it("never exposes the platform's cut to a host", async () => {
+    // Hosts see earnings, never a percentage. Keeping the fee columns out of
+    // the signature means even a careless `select *` cannot leak them.
+    const [row] = await asUser<Record<string, unknown>>(HOST, `select * from host_bookings()`);
+
+    expect(Object.keys(row)).toEqual([
+      "booking_id",
+      "space_id",
+      "starts_at",
+      "ends_at",
+      "status",
+      "net_cents",
+      "practitioner_name",
+      "practitioner_avatar_path",
+    ]);
   });
 
   it("drops a host from public view once they have no live listing", async () => {

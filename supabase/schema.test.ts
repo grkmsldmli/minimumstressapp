@@ -19,6 +19,7 @@ const MIGRATIONS = [
   "0002_rls.sql",
   "0003_storage.sql",
   "0004_narrow_public_profiles.sql",
+  "0005_host_bookings.sql",
 ];
 const STUBS = "0000_supabase_stubs.sql";
 

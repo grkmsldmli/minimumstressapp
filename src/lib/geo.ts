@@ -21,6 +21,24 @@ export interface AddressSuggestion {
   secondary: string;
   /** What lands in the address field once chosen. */
   addressLine: string;
+  /**
+   * Null when the provider predicts without geocoding.
+   *
+   * A predictive engine answers "what might you be typing" from a few
+   * characters, which is a different question from "where is this", and only
+   * resolves the second once something is chosen. Geocoders answer both at
+   * once. The type carries the difference rather than hiding it, because a
+   * caller that assumes coordinates are present would place a pin at NaN.
+   */
+  lat: number | null;
+  lng: number | null;
+  /** The provider's handle for a prediction, exchanged for coordinates. */
+  placeId?: string;
+}
+
+/** A suggestion once its coordinates are known, which is all a caller wants. */
+export interface ResolvedAddress {
+  addressLine: string;
   lat: number;
   lng: number;
 }

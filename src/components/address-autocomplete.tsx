@@ -3,16 +3,22 @@
 import { Home, Loader2 } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
 
-import type { AddressSuggestion } from "@/lib/geo";
+import type { AddressSuggestion, ResolvedAddress } from "@/lib/geo";
 import { MIN_QUERY_LENGTH } from "@/lib/geocode";
+
+/** Opaque per-address-entry id. Not a secret; it only groups calls for billing. */
+function newSession(): string {
+  return crypto.randomUUID();
+}
 
 /**
  * The address field, with the list of places the host might mean.
  *
  * Typing stays authoritative: the field is an ordinary text input that accepts
- * anything, and the dropdown only offers. A host with a rural address the
- * geocoder has never heard of must still be able to list their space, so no
- * path through this component can leave them unable to proceed.
+ * anything, and the dropdown only offers. A host with a rural address no
+ * provider has heard of must still be able to list their space, so no path
+ * through this component can leave them unable to proceed — including the one
+ * where a chosen prediction fails to resolve.
  */
 export function AddressAutocomplete({
   value,
@@ -21,8 +27,8 @@ export function AddressAutocomplete({
 }: {
   value: string;
   onChange: (value: string) => void;
-  /** Fired only on a real choice, and carries the coordinates with it. */
-  onSelect: (suggestion: AddressSuggestion) => void;
+  /** Fired only on a real choice, and always with coordinates in hand. */
+  onSelect: (address: ResolvedAddress) => void;
 }) {
   const listId = useId();
   const [suggestions, setSuggestions] = useState<AddressSuggestion[]>([]);
@@ -30,11 +36,20 @@ export function AddressAutocomplete({
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
   const [highlighted, setHighlighted] = useState(-1);
+  const [resolving, setResolving] = useState(false);
 
   const wrapRef = useRef<HTMLDivElement>(null);
   // What the host chose, so re-rendering with that exact text does not
   // immediately reopen the dropdown offering them what they already picked.
   const acceptedRef = useRef<string | null>(null);
+
+  /**
+   * One session covers every keystroke of a single address plus the lookup
+   * that ends it, and the provider bills it once instead of per character.
+   * Replaced after each completed choice, because the next address a host
+   * types is a new question.
+   */
+  const sessionRef = useRef<string>(newSession());
 
   useEffect(() => {
     const query = value.trim();
@@ -54,9 +69,10 @@ export function AddressAutocomplete({
     // to be deliberate but short enough to feel immediate.
     const timer = setTimeout(async () => {
       try {
-        const response = await fetch(`/api/geocode?q=${encodeURIComponent(query)}`, {
-          signal: controller.signal,
-        });
+        const response = await fetch(
+          `/api/geocode?q=${encodeURIComponent(query)}&session=${sessionRef.current}`,
+          { signal: controller.signal },
+        );
         const body = (await response.json()) as { suggestions?: AddressSuggestion[] };
         setSuggestions(body.suggestions ?? []);
         setSearched(true);
@@ -90,12 +106,51 @@ export function AddressAutocomplete({
     return () => document.removeEventListener("pointerdown", onPointerDown);
   }, [open]);
 
-  const accept = (suggestion: AddressSuggestion) => {
+  const accept = async (suggestion: AddressSuggestion) => {
     acceptedRef.current = suggestion.addressLine.trim();
-    onSelect(suggestion);
     setOpen(false);
     setSuggestions([]);
     setHighlighted(-1);
+
+    // A geocoder already answered this; only a prediction has to go and ask.
+    if (suggestion.lat !== null && suggestion.lng !== null) {
+      onSelect({
+        addressLine: suggestion.addressLine,
+        lat: suggestion.lat,
+        lng: suggestion.lng,
+      });
+      sessionRef.current = newSession();
+      return;
+    }
+
+    if (!suggestion.placeId) return;
+
+    setResolving(true);
+    try {
+      const response = await fetch(
+        `/api/geocode/resolve?placeId=${encodeURIComponent(suggestion.placeId)}&session=${sessionRef.current}`,
+      );
+      const body = (await response.json()) as { resolved?: ResolvedAddress | null };
+
+      if (body.resolved) {
+        // The provider's own formatting of the address it just located, which
+        // is more complete than the two lines shown in the dropdown.
+        const addressLine = body.resolved.addressLine || suggestion.addressLine;
+        acceptedRef.current = addressLine.trim();
+        onSelect({ ...body.resolved, addressLine });
+      } else {
+        // Text kept, pin not placed. The host can still type and drop it
+        // themselves, which is why the field never depended on this working.
+        onChange(suggestion.addressLine);
+      }
+    } catch {
+      onChange(suggestion.addressLine);
+    } finally {
+      setResolving(false);
+      // Session closed either way — a retry is a new question, and reusing a
+      // spent token would quietly start billing per call.
+      sessionRef.current = newSession();
+    }
   };
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
@@ -117,7 +172,7 @@ export function AddressAutocomplete({
     // silently accepting a guess the host never looked at.
     if (event.key === "Enter" && highlighted >= 0) {
       event.preventDefault();
-      accept(suggestions[highlighted]);
+      void accept(suggestions[highlighted]);
     }
   };
 
@@ -145,7 +200,9 @@ export function AddressAutocomplete({
           aria-activedescendant={highlighted >= 0 ? `${listId}-${highlighted}` : undefined}
           className="font-body text-[13px] outline-none w-full text-navy bg-transparent"
         />
-        {loading && <Loader2 size={13} color="#8CA3BD" className="animate-spin shrink-0" />}
+        {(loading || resolving) && (
+          <Loader2 size={13} color="#8CA3BD" className="animate-spin shrink-0" />
+        )}
       </div>
 
       {(open && suggestions.length > 0) || showEmpty ? (
@@ -171,7 +228,7 @@ export function AddressAutocomplete({
                     // blur is what closes the list out from under the finger.
                     onPointerDown={(e) => {
                       e.preventDefault();
-                      accept(suggestion);
+                      void accept(suggestion);
                     }}
                     className="w-full text-left px-4 py-2.5"
                     style={{ backgroundColor: index === highlighted ? "#F1F6FB" : "transparent" }}

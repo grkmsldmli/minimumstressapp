@@ -1,4 +1,5 @@
 import type { AddressSuggestion } from "./geo";
+import { googleConfigured, predictAddresses } from "./geocode-google";
 import { normalizeQuery, rankSuggestions } from "./geocode-query";
 
 /**
@@ -43,8 +44,15 @@ function text(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
-/** Which provider is in play, so the route can say so and tests can assert it. */
-export function activeProvider(): "locationiq" | "photon" {
+/**
+ * Which provider is in play, so the route can say so and tests can assert it.
+ *
+ * Ordered by how well they answer a half-typed address, which is the only
+ * question this field ever asks. Places predicts; the other two geocode and
+ * are being used slightly against their grain.
+ */
+export function activeProvider(): "google" | "locationiq" | "photon" {
+  if (googleConfigured()) return "google";
   return process.env.LOCATIONIQ_API_KEY ? "locationiq" : "photon";
 }
 
@@ -193,8 +201,24 @@ function collect(
  */
 export async function searchAddresses(
   query: string,
-  signal?: AbortSignal,
+  options: { sessionToken?: string; signal?: AbortSignal } = {},
 ): Promise<AddressSuggestion[]> {
+  const { sessionToken, signal } = options;
+
+  /**
+   * Places gets the query as typed, and none of the tidying below.
+   *
+   * Expanding "blv" to "Boulevard" exists because a geocoder matches tokens
+   * literally. A predictive engine is doing the opposite job — it expects
+   * partial words and completes them — so handing it expanded, unit-stripped
+   * text takes away the very prefixes it predicts from.
+   */
+  if (googleConfigured()) {
+    const trimmed = query.trim();
+    if (trimmed.length < MIN_QUERY_LENGTH) return [];
+    return predictAddresses(trimmed, sessionToken ?? crypto.randomUUID(), signal);
+  }
+
   // Expanded before sending, not after: it changes what the provider looks for.
   const normalized = normalizeQuery(query);
   if (normalized.length < MIN_QUERY_LENGTH) return [];

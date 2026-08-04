@@ -136,15 +136,32 @@ was typed are moved to the top, because an OSM-derived provider will happily
 rank a street called "Hillsdale Blvd Walerga Road Alley" above the building
 someone gave the number of.
 
-**Provider quality is a real constraint, not a detail.** With both fixes,
-[Photon](https://photon.komoot.io) — free, keyless — reaches the right street
-and city but still returns 1700 where 1301 was asked for. A pin a block from the
-studio is worse than no pin, because it looks correct. The data is not missing:
-Nominatim finds the same OSM address exactly. Nominatim forbids autocomplete
-use, so the preferred provider is LocationIQ, which runs that engine
-commercially and permits it, and Photon stays as the keyless fallback so the
-field works before anyone has signed up for anything. Set `LOCATIONIQ_API_KEY`
-to switch.
+**Provider quality is a real constraint, not a detail.** Three are supported,
+and which one is configured changes what the field can do:
+
+| Key set | Provider | What it can answer |
+|---|---|---|
+| `GOOGLE_PLACES_API_KEY` | Google Places | Predicts from a few characters, tolerates typos, knows business names |
+| `LOCATIONIQ_API_KEY` | LocationIQ | Complete addresses, exactly |
+| neither | Photon | Right street, often the wrong building |
+
+The gap between the first two is not tuning. A geocoder answers "where is this
+address" and is asked, on every keystroke but the last, about half of one:
+measured through the app, `1301 w hillsd` resolved and `1301 w hillsdale` — the
+same address, three characters longer — returned nothing, while `1301 w
+hillsdale` alone landed in Lansing, Michigan. Places is a predictive engine and
+answers the question the field is actually asking.
+
+It costs two calls instead of one, because a prediction carries no coordinates
+and a chosen place is exchanged for them afterwards. A session token ties the
+keystrokes to that final lookup so the whole entry bills once rather than per
+character; `AddressSuggestion.lat` is nullable to make the intermediate state
+impossible to ignore, since defaulting it to zero would put an unresolved pin
+in the Gulf of Guinea.
+
+`scripts/check-geocoder.mjs` measures whichever provider is live, through
+`/api/geocode` rather than against the provider directly — a green run against
+the provider proves nothing about the one the app is configured to use.
 
 The field stays authoritative throughout. A rural address the geocoder has never
 heard of, or a geocoder that is simply down, costs a host the suggestions and

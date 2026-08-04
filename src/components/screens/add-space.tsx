@@ -242,9 +242,9 @@ export function AddSpace({
                 // block from where it says it is.
                 setPoint(null);
               }}
-              onSelect={(suggestion) => {
-                setAddress(suggestion.addressLine);
-                setPoint({ lat: suggestion.lat, lng: suggestion.lng });
+              onSelect={(picked) => {
+                setAddress(picked.addressLine);
+                setPoint({ lat: picked.lat, lng: picked.lng });
               }}
             />
             <p className="font-body font-light text-[11px] mt-2 text-ink-faint">

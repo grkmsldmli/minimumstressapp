@@ -476,7 +476,14 @@ export class MockRepository implements Repository {
       requirements: input.requirements,
       houseRules: input.houseRules,
       description: "",
-      media: input.media.map((m) => ({ id: id("md"), url: m.url, kind: m.kind })),
+      // The mock has no storage, so a preview URL is the only thing it can
+      // show — and it is enough, because the tab that made it is the tab that
+      // reads it. Callers release these with releasePickedMedia.
+      media: input.media.map((m) => ({
+        id: id("md"),
+        url: URL.createObjectURL(m.file),
+        kind: m.kind,
+      })),
       availability: normalize(input.availability),
       mapX: input.mapX,
       mapY: input.mapY,
@@ -488,8 +495,8 @@ export class MockRepository implements Repository {
       lat: input.lat,
       lng: input.lng,
       entryInstructions: input.entryInstructions,
-      subleaseDocName: input.subleaseDocName,
-      insuranceDocName: input.insuranceDocName,
+      subleaseDocName: input.subleaseDoc.name,
+      insuranceDocName: input.insuranceDoc?.name ?? null,
     };
 
     this.mySpaces.push(space);

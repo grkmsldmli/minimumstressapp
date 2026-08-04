@@ -20,6 +20,11 @@ async function firstSpaceId(): Promise<string> {
   return space.id;
 }
 
+/** A real File, because NewSpaceInput now carries the bytes rather than a preview URL. */
+function testFile(name: string, type: string): File {
+  return new File(["x"], name, { type });
+}
+
 describe("a brand-new account starts genuinely empty", () => {
   it("has no listings, bookings, credit, or Pro", async () => {
     expect(await repo.listMySpaces()).toEqual([]);
@@ -217,9 +222,9 @@ describe("listing a space", () => {
       houseRules: "",
       bufferMinutes: 15,
       availability: [{ weekday: 1, startMinute: 540, endMinute: 1020 }],
-      media: [{ url: "blob:test", kind: "image" }],
-      subleaseDocName: "lease.pdf",
-      insuranceDocName: null,
+      media: [{ file: testFile("room.jpg", "image/jpeg"), kind: "image" }],
+      subleaseDoc: testFile("lease.pdf", "application/pdf"),
+      insuranceDoc: null,
     });
 
     expect(space.status).toBe("pending");
@@ -249,9 +254,9 @@ describe("listing a space", () => {
       houseRules: "",
       bufferMinutes: 0,
       availability: [{ weekday: 1, startMinute: 540, endMinute: 1020 }],
-      media: [{ url: "blob:test", kind: "image" }],
-      subleaseDocName: "lease.pdf",
-      insuranceDocName: null,
+      media: [{ file: testFile("room.jpg", "image/jpeg"), kind: "image" }],
+      subleaseDoc: testFile("lease.pdf", "application/pdf"),
+      insuranceDoc: null,
     });
 
     await repo.approveSpace(space.id);
@@ -283,9 +288,9 @@ describe("listing a space", () => {
         { weekday: 1, startMinute: 540, endMinute: 720 },
         { weekday: 1, startMinute: 660, endMinute: 1020 },
       ],
-      media: [{ url: "blob:test", kind: "image" }],
-      subleaseDocName: "lease.pdf",
-      insuranceDocName: null,
+      media: [{ file: testFile("room.jpg", "image/jpeg"), kind: "image" }],
+      subleaseDoc: testFile("lease.pdf", "application/pdf"),
+      insuranceDoc: null,
     });
 
     expect(space.availability).toEqual([{ weekday: 1, startMinute: 540, endMinute: 1020 }]);
@@ -319,9 +324,9 @@ describe("simulated inbound bookings pay the host their rate", () => {
         startMinute: 0,
         endMinute: 1440,
       })),
-      media: [{ url: "blob:test", kind: "image" }],
-      subleaseDocName: "lease.pdf",
-      insuranceDocName: null,
+      media: [{ file: testFile("room.jpg", "image/jpeg"), kind: "image" }],
+      subleaseDoc: testFile("lease.pdf", "application/pdf"),
+      insuranceDoc: null,
     });
     await repo.approveSpace(space.id);
 
@@ -352,9 +357,9 @@ describe("simulated inbound bookings pay the host their rate", () => {
       houseRules: "",
       bufferMinutes: 0,
       availability: [{ weekday: 1, startMinute: 540, endMinute: 1020 }],
-      media: [{ url: "blob:test", kind: "image" }],
-      subleaseDocName: "lease.pdf",
-      insuranceDocName: null,
+      media: [{ file: testFile("room.jpg", "image/jpeg"), kind: "image" }],
+      subleaseDoc: testFile("lease.pdf", "application/pdf"),
+      insuranceDoc: null,
     });
 
     expect(await repo.simulateInboundBooking(space.id)).toBeNull();

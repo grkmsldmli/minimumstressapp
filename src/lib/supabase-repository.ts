@@ -24,6 +24,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { AvailabilityBlock } from "./availability";
+import {
+  rejectionReason,
+  spaceDocPath,
+  spaceMediaPath,
+} from "./uploads";
 import type {
   Booking,
   BookingStatus,
@@ -31,6 +36,7 @@ import type {
   CreditEntry,
   HostBooking,
   HostSpace,
+  MediaKind,
   NewSpaceInput,
   Profile,
   PublicSpace,
@@ -502,8 +508,9 @@ export class SupabaseRepository implements Repository {
         amenities: input.amenities,
         requirements: input.requirements,
         house_rules: input.houseRules,
-        sublease_doc_path: input.subleaseDocName,
-        insurance_doc_path: input.insuranceDocName,
+        // Filled in below, once the files are actually somewhere.
+        sublease_doc_path: null,
+        insurance_doc_path: null,
         legal_ack_at: new Date().toISOString(),
         // status defaults to 'pending'; nothing reaches Discover unreviewed.
       })
@@ -511,22 +518,115 @@ export class SupabaseRepository implements Repository {
       .single();
     if (error) throw error;
 
-    if (input.availability.length > 0) {
-      const { error: blockError } = await this.db.from("availability").insert(
-        input.availability.map((b) => ({
-          space_id: data.id,
-          weekday: b.weekday,
-          start_minute: b.startMinute,
-          end_minute: b.endMinute,
-        })),
-      );
-      if (blockError) throw blockError;
+    /**
+     * Files go up after the row exists, and the row is removed if they fail.
+     *
+     * The order is forced: every storage policy for these buckets asks whether
+     * the first path segment is a space this host owns, which cannot be true
+     * before the space exists. That leaves a window where a listing exists
+     * with no photo and no document — a listing that can never be reviewed and
+     * would sit in the queue looking like someone else's problem. So a failure
+     * here takes the row with it.
+     */
+    try {
+      await this.uploadSpaceFiles(data.id, hostId, input);
+
+      if (input.availability.length > 0) {
+        const { error: blockError } = await this.db.from("availability").insert(
+          input.availability.map((b) => ({
+            space_id: data.id,
+            weekday: b.weekday,
+            start_minute: b.startMinute,
+            end_minute: b.endMinute,
+          })),
+        );
+        if (blockError) throw blockError;
+      }
+    } catch (failure) {
+      // Best effort: if this also fails the listing is orphaned, which is
+      // recoverable by staff, whereas leaving it silently is not.
+      await this.db.from("spaces").delete().eq("id", data.id);
+      throw failure;
     }
 
     const spaces = await this.listMySpaces();
     const created = spaces.find((s) => s.id === data.id);
     if (!created) throw new Error("Listing was created but could not be read back");
     return created;
+  }
+
+  /**
+   * Puts a listing's photos and paperwork where the storage policies expect
+   * them, and records where that was.
+   *
+   * Every file is validated again here rather than trusting the form. The form
+   * is a convenience for the person filling it in; this is the last point
+   * before bytes reach a bucket, and the only one that is not a UI.
+   */
+  private async uploadSpaceFiles(
+    spaceId: string,
+    hostId: string,
+    input: NewSpaceInput,
+  ): Promise<void> {
+    const mediaRows: { space_id: string; storage_path: string; kind: MediaKind; position: number }[] =
+      [];
+
+    for (const [index, item] of input.media.entries()) {
+      const reason = rejectionReason(item.file, item.kind);
+      if (reason) throw new Error(reason);
+
+      const path = spaceMediaPath(spaceId, item.file.type, crypto.randomUUID());
+      const { error } = await this.db.storage.from("space-media").upload(path, item.file, {
+        contentType: item.file.type,
+        // Never overwrite. A generated name should not collide, and if it
+        // somehow did, replacing another listing's photo is the wrong repair.
+        upsert: false,
+      });
+      if (error) throw error;
+
+      mediaRows.push({ space_id: spaceId, storage_path: path, kind: item.kind, position: index });
+    }
+
+    if (mediaRows.length > 0) {
+      const { error } = await this.db.from("space_media").insert(mediaRows);
+      if (error) throw error;
+    }
+
+    const subleaseReason = rejectionReason(input.subleaseDoc, "document");
+    if (subleaseReason) throw new Error(subleaseReason);
+
+    const subleasePath = spaceDocPath(spaceId, input.subleaseDoc.type, crypto.randomUUID());
+    const { error: subleaseError } = await this.db.storage
+      .from("verification-docs")
+      .upload(subleasePath, input.subleaseDoc, {
+        contentType: input.subleaseDoc.type,
+        upsert: false,
+      });
+    if (subleaseError) throw subleaseError;
+
+    let insurancePath: string | null = null;
+    if (input.insuranceDoc) {
+      const insuranceReason = rejectionReason(input.insuranceDoc, "document");
+      if (insuranceReason) throw new Error(insuranceReason);
+
+      insurancePath = spaceDocPath(spaceId, input.insuranceDoc.type, crypto.randomUUID());
+      const { error } = await this.db.storage
+        .from("verification-docs")
+        .upload(insurancePath, input.insuranceDoc, {
+          contentType: input.insuranceDoc.type,
+          upsert: false,
+        });
+      if (error) throw error;
+    }
+
+    // Written last, so a path in the row always points at a file that is
+    // already there — never the other way round.
+    const { error: pathError } = await this.db
+      .from("spaces")
+      .update({ sublease_doc_path: subleasePath, insurance_doc_path: insurancePath })
+      .eq("id", spaceId)
+      .eq("host_id", hostId);
+    if (pathError) throw pathError;
   }
 
   async updateSpaceAvailability(

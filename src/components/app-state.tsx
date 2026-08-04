@@ -1,9 +1,10 @@
 "use client";
 
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import type { Profile } from "@/lib/domain";
-import { type AppRepository, createRepository } from "@/lib/repository-factory";
+import { type AppRepository, createRepository, supabaseBackendEnabled } from "@/lib/repository-factory";
+import { supabaseBrowser } from "@/lib/supabase/client";
 
 /**
  * Every screen in the flow, as one state machine.
@@ -93,6 +94,33 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [clientSecret, setClientSecret] = useState<string | null>(null);
   const [editingSpaceId, setEditingSpaceId] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);
+
+  /**
+   * Someone already signed in should not be asked to sign in.
+   *
+   * The shell always started at splash and walked forward, so a returning
+   * visitor was sent an email code for an account they were already holding a
+   * valid token for. The session lives in the browser and outlives the tab, so
+   * the only honest first question is whether there is one.
+   *
+   * Only from splash: this must never yank someone out of a screen they
+   * navigated to themselves, and by the time any other screen is showing, the
+   * question has already been answered.
+   */
+  useEffect(() => {
+    if (!supabaseBackendEnabled()) return;
+
+    let cancelled = false;
+    void (async () => {
+      const { data } = await supabaseBrowser().auth.getSession();
+      if (cancelled || !data.session) return;
+      setHistory((h) => (h.length === 1 && h[0] === "splash" ? ["discover"] : h));
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const go = useCallback((next: Screen) => {
     setHistory((h) => [...h, next]);

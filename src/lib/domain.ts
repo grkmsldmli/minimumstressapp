@@ -180,7 +180,16 @@ export interface NewSpaceInput {
   houseRules: string;
   bufferMinutes: number;
   availability: AvailabilityBlock[];
-  media: { url: string; kind: MediaKind }[];
-  subleaseDocName: string;
-  insuranceDocName: string | null;
+  /**
+   * The files themselves, not previews of them.
+   *
+   * This carried `{ url, kind }` — a blob: URL from the browser's own
+   * memory — and the repository dutifully stored the URL. Against the mock
+   * that works, because the tab that made the URL is the tab that reads it.
+   * Against a database it meant every listing was saved with a reference to
+   * nothing, and the review process had no document to review.
+   */
+  media: { file: File; kind: MediaKind }[];
+  subleaseDoc: File;
+  insuranceDoc: File | null;
 }

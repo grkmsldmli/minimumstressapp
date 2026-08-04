@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import {
+  AlertTriangle,
   Accessibility,
   ArrowLeft,
   Bath,
@@ -56,6 +57,8 @@ export function AddSpace({
 }) {
   const [step, setStep] = useState(1);
   const [listed, setListed] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   // Step 1 — every field here is required by the brief.
   const [name, setName] = useState("");
@@ -125,33 +128,52 @@ export function AddSpace({
     setMedia((m) => m.filter((i) => i.id !== item.id));
   };
 
+  /**
+   * Listing is the one action here that reaches a database, a storage bucket
+   * and back — so it is the one that can fail for reasons a host cannot guess.
+   * It failed silently once: the promise rejected, the success screen never
+   * came, and the button simply did nothing twice in a row.
+   */
   const submit = async () => {
-    if (!canSubmit || !category || !accessType || !point) return;
-    await onListed({
-      name: name.trim(),
-      category,
-      hourlyRateCents: rateCents,
-      capacity: Number(capacity),
-      accessType,
-      entryInstructions: entryInstructions.trim(),
-      addressLine: address.trim(),
-      lat: point.lat,
-      lng: point.lng,
-      // Where the pin sits on the illustrated browse map, which is a separate
-      // question from where the studio is — see toBrowsePosition.
-      ...toBrowsePosition(point),
-      accessible,
-      restroom,
-      amenities,
-      requirements,
-      houseRules: houseRules.trim(),
-      bufferMinutes,
-      availability: blocks,
-      media: media.map((m) => ({ url: m.url, kind: m.kind })),
-      subleaseDocName: subleaseDoc!.name,
-      insuranceDocName: insuranceDoc?.name ?? null,
-    });
-    setListed(true);
+    if (!canSubmit || !category || !accessType || !point || submitting) return;
+
+    setSubmitError(null);
+    setSubmitting(true);
+    try {
+      await onListed({
+        name: name.trim(),
+        category,
+        hourlyRateCents: rateCents,
+        capacity: Number(capacity),
+        accessType,
+        entryInstructions: entryInstructions.trim(),
+        addressLine: address.trim(),
+        lat: point.lat,
+        lng: point.lng,
+        // Where the pin sits on the illustrated browse map, which is a separate
+        // question from where the studio is — see toBrowsePosition.
+        ...toBrowsePosition(point),
+        accessible,
+        restroom,
+        amenities,
+        requirements,
+        houseRules: houseRules.trim(),
+        bufferMinutes,
+        availability: blocks,
+        media: media.map((m) => ({ file: m.file, kind: m.kind })),
+        subleaseDoc: subleaseDoc!,
+        insuranceDoc,
+      });
+      setListed(true);
+    } catch (error) {
+      setSubmitError(
+        error instanceof Error && error.message
+          ? error.message
+          : "Something went wrong listing your space. Nothing was saved — please try again.",
+      );
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   if (listed) {
@@ -603,14 +625,26 @@ export function AddSpace({
       </div>
 
       <div className="px-6 pt-3 pb-6 shrink-0" style={{ borderTop: "1px solid #F0ECE0" }}>
+        {submitError && (
+          <div
+            className="flex items-start gap-2 mb-3 px-3.5 py-3 rounded-xl"
+            style={{ backgroundColor: "#FEF2F0", border: "1px solid #F6D5D0" }}
+          >
+            <AlertTriangle size={13} color="#C4503F" className="mt-0.5 shrink-0" />
+            <p className="font-body font-light text-[11.5px] leading-relaxed"
+              style={{ color: "#C4503F" }}>
+              {submitError}
+            </p>
+          </div>
+        )}
         <PrimaryButton
-          disabled={!canAdvance}
+          disabled={!canAdvance || submitting}
           onClick={() => {
             if (step < 3) setStep(step + 1);
             else void submit();
           }}
         >
-          {step === 3 ? "List this space" : "Continue"}
+          {step === 3 ? (submitting ? "Listing…" : "List this space") : "Continue"}
         </PrimaryButton>
       </div>
     </div>

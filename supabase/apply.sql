@@ -1,5 +1,8 @@
 -- Minimum Stress Spaces — full schema, generated from supabase/migrations/
--- Paste into the Supabase SQL editor and run once, on an empty project.
+--
+-- Safe to run more than once. Every statement is guarded, so pasting this
+-- into a project that already has some of it is boring rather than a
+-- transaction that aborts halfway and leaves you guessing what landed.
 --
 -- 0000_supabase_stubs.sql is deliberately NOT included: it recreates what
 -- Supabase already provides and exists only so the test suite can run the
@@ -25,21 +28,50 @@
 -- Supabase runs 15+, so requiring the extension would only narrow where these
 -- migrations can run.
 
-create type space_category as enum ('physical', 'traditional', 'social', 'spirit');
-create type access_type as enum ('keypad', 'lockbox', 'greeter');
-create type restroom_option as enum ('private', 'shared', 'none');
-create type space_status as enum ('pending', 'active', 'delisted');
-create type media_kind as enum ('image', 'video');
-create type payout_schedule as enum ('standard', 'instant');
-create type booking_status as enum (
-  'upcoming',
-  'completed',
-  'cancelled_by_practitioner',
-  'cancelled_by_host',
-  'no_show'
-);
-create type cancelled_by_actor as enum ('practitioner', 'host');
-create type credit_reason as enum ('host_cancellation', 'booking_redemption', 'goodwill_restore');
+-- Every statement in this file is safe to re-run. Postgres has no
+-- `create type if not exists`, hence the wrapper; tables and indexes use the
+-- built-in guard.
+--
+-- This matters more than it looks. Applying the full script to a project that
+-- already has most of it should be boring, not a transaction that aborts on
+-- line 16 and leaves the reader guessing which half landed.
+do $$ begin
+  create type space_category as enum ('physical', 'traditional', 'social', 'spirit');
+exception when duplicate_object then null; end $$;
+
+do $$ begin
+  create type access_type as enum ('keypad', 'lockbox', 'greeter');
+exception when duplicate_object then null; end $$;
+
+do $$ begin
+  create type restroom_option as enum ('private', 'shared', 'none');
+exception when duplicate_object then null; end $$;
+
+do $$ begin
+  create type space_status as enum ('pending', 'active', 'delisted');
+exception when duplicate_object then null; end $$;
+
+do $$ begin
+  create type media_kind as enum ('image', 'video');
+exception when duplicate_object then null; end $$;
+
+do $$ begin
+  create type payout_schedule as enum ('standard', 'instant');
+exception when duplicate_object then null; end $$;
+
+do $$ begin
+  create type booking_status as enum (
+    'upcoming', 'completed', 'cancelled_by_practitioner', 'cancelled_by_host', 'no_show'
+  );
+exception when duplicate_object then null; end $$;
+
+do $$ begin
+  create type cancelled_by_actor as enum ('practitioner', 'host');
+exception when duplicate_object then null; end $$;
+
+do $$ begin
+  create type credit_reason as enum ('host_cancellation', 'booking_redemption', 'goodwill_restore');
+exception when duplicate_object then null; end $$;
 
 -- ------------------------------------------------------------------
 -- profiles
@@ -49,7 +81,7 @@ create type credit_reason as enum ('host_cancellation', 'booking_redemption', 'g
 -- entry point, not a database-enforced identity — the same person can host a
 -- space and book someone else's on the same account.
 -- ------------------------------------------------------------------
-create table profiles (
+create table if not exists profiles (
   id uuid primary key references auth.users (id) on delete cascade,
   display_name text,
   avatar_path text,
@@ -81,7 +113,7 @@ create table profiles (
 -- a client-side check, so the private fields never leave the server for an
 -- unauthorized request in the first place.
 -- ------------------------------------------------------------------
-create table spaces (
+create table if not exists spaces (
   id uuid primary key default gen_random_uuid(),
   host_id uuid not null references profiles (id) on delete cascade,
   name text not null,
@@ -104,8 +136,8 @@ create table spaces (
   updated_at timestamptz not null default now()
 );
 
-create index spaces_host_id_idx on spaces (host_id);
-create index spaces_status_idx on spaces (status) where status = 'active';
+create index if not exists spaces_host_id_idx on spaces (host_id);
+create index if not exists spaces_status_idx on spaces (status) where status = 'active';
 
 -- ------------------------------------------------------------------
 -- space_media
@@ -116,7 +148,7 @@ create index spaces_status_idx on spaces (status) where status = 'active';
 -- validation at submission time, where it can produce a helpful error
 -- instead of a database exception.
 -- ------------------------------------------------------------------
-create table space_media (
+create table if not exists space_media (
   id uuid primary key default gen_random_uuid(),
   space_id uuid not null references spaces (id) on delete cascade,
   storage_path text not null,
@@ -125,7 +157,7 @@ create table space_media (
   created_at timestamptz not null default now()
 );
 
-create index space_media_space_id_idx on space_media (space_id, position);
+create index if not exists space_media_space_id_idx on space_media (space_id, position);
 
 -- ------------------------------------------------------------------
 -- availability
@@ -134,7 +166,7 @@ create index space_media_space_id_idx on space_media (space_id, position);
 -- hold 7-8am, 2-3pm and 5-9pm as three independent rows rather than forcing
 -- one start/end pair per weekday.
 -- ------------------------------------------------------------------
-create table availability (
+create table if not exists availability (
   id uuid primary key default gen_random_uuid(),
   space_id uuid not null references spaces (id) on delete cascade,
   weekday smallint not null check (weekday between 0 and 6),
@@ -143,7 +175,7 @@ create table availability (
   constraint availability_ordered check (end_minute > start_minute)
 );
 
-create index availability_space_id_idx on availability (space_id, weekday);
+create index if not exists availability_space_id_idx on availability (space_id, weekday);
 
 -- ------------------------------------------------------------------
 -- bookings
@@ -157,7 +189,7 @@ create index availability_space_id_idx on availability (space_id, weekday);
 -- Stripe PaymentIntent and possibly a credit_ledger entry. Cascading a space
 -- or profile deletion into it would silently destroy the audit trail for money
 -- that actually moved. Deleting either has to reckon with its bookings first.
-create table bookings (
+create table if not exists bookings (
   id uuid primary key default gen_random_uuid(),
   space_id uuid not null references spaces (id) on delete restrict,
   practitioner_id uuid not null references profiles (id) on delete restrict,
@@ -194,9 +226,9 @@ create table bookings (
   )
 );
 
-create index bookings_practitioner_id_idx on bookings (practitioner_id);
-create index bookings_space_id_idx on bookings (space_id);
-create index bookings_starts_at_idx on bookings (starts_at) where status = 'upcoming';
+create index if not exists bookings_practitioner_id_idx on bookings (practitioner_id);
+create index if not exists bookings_space_id_idx on bookings (space_id);
+create index if not exists bookings_starts_at_idx on bookings (starts_at) where status = 'upcoming';
 
 -- ------------------------------------------------------------------
 -- credit_ledger
@@ -206,7 +238,7 @@ create index bookings_starts_at_idx on bookings (starts_at) where status = 'upco
 -- balance column next to this table would be exactly the bug the prototype
 -- had, where credits.balance and credits.ledger could drift apart.
 -- ------------------------------------------------------------------
-create table credit_ledger (
+create table if not exists credit_ledger (
   id uuid primary key default gen_random_uuid(),
   practitioner_id uuid not null references profiles (id) on delete restrict,
   delta_cents integer not null,
@@ -216,7 +248,7 @@ create table credit_ledger (
   created_at timestamptz not null default now()
 );
 
-create index credit_ledger_practitioner_id_idx on credit_ledger (practitioner_id);
+create index if not exists credit_ledger_practitioner_id_idx on credit_ledger (practitioner_id);
 
 -- security_invoker is load-bearing here, not decoration: without it this
 -- view runs as its owner (typically the migration role) and RLS on
@@ -257,6 +289,27 @@ create or replace view credit_balances
 -- role, never from the client: a cancellation has to void or capture a Stripe
 -- PaymentIntent and write a ledger row in one transaction, and RLS can gate who
 -- writes a row but cannot make that write atomic with an external API call.
+
+-- `create policy` has no IF NOT EXISTS, so re-running this file would abort on
+-- the first one that already existed. Clearing them first makes the file
+-- declarative: what follows is the complete set, and applying it twice is
+-- boring rather than a half-applied transaction.
+--
+-- Scoped to this app's own tables by name, so it cannot reach anything
+-- Supabase manages.
+do $$
+declare existing record;
+begin
+  for existing in
+    select policyname, tablename from pg_policies
+    where schemaname = 'public'
+      and tablename in (
+        'profiles', 'spaces', 'space_media', 'availability', 'bookings', 'credit_ledger'
+      )
+  loop
+    execute format('drop policy if exists %I on public.%I', existing.policyname, existing.tablename);
+  end loop;
+end $$;
 
 alter table profiles enable row level security;
 alter table spaces enable row level security;
@@ -360,6 +413,16 @@ create policy "credit_ledger: practitioner reads own entries"
 -- omitted-but-reachable, they are absent. A future policy change cannot
 -- widen them back into view.
 -- ==================================================================
+
+-- Dropped first, not just replaced. `create or replace view` can add columns
+-- but never remove them, so on a re-run this file would collide with the wider
+-- definition a later migration left behind and abort the whole script.
+drop view if exists spaces_public;
+drop view if exists public_host_profiles;
+drop view if exists availability_public;
+drop view if exists space_media_public;
+drop view if exists credit_balances;
+drop view if exists bookings_with_access_code;
 
 create or replace view spaces_public as
   select
@@ -494,6 +557,26 @@ values
   ('space-media', 'space-media', true),
   ('verification-docs', 'verification-docs', false)
 on conflict (id) do nothing;
+
+-- Same reasoning as 0002: drop this file's own policies so it can be re-run.
+-- Matched by name prefix rather than by table, because storage.objects carries
+-- policies for every bucket in the project and dropping all of them would take
+-- out ones this file never wrote.
+do $$
+declare existing record;
+begin
+  for existing in
+    select policyname from pg_policies
+    where schemaname = 'storage' and tablename = 'objects'
+      and (
+        policyname like 'avatars:%'
+        or policyname like 'space-media:%'
+        or policyname like 'verification-docs:%'
+      )
+  loop
+    execute format('drop policy if exists %I on storage.objects', existing.policyname);
+  end loop;
+end $$;
 
 -- ------------------------------------------------------------------
 -- avatars — path: {user_id}/{filename}
@@ -761,10 +844,10 @@ alter default privileges in schema public
 -- everywhere else. They are requirements, not fine print.
 
 alter table spaces
-  add column description text not null default '',
-  add column amenities text[] not null default '{}',
-  add column requirements text[] not null default '{}',
-  add column house_rules text not null default '';
+  add column if not exists description text not null default '',
+  add column if not exists amenities text[] not null default '{}',
+  add column if not exists requirements text[] not null default '{}',
+  add column if not exists house_rules text not null default '';
 
 -- Recreated rather than altered: a view does not pick up new columns on its
 -- own, and Discover cannot show a rule it never selected.

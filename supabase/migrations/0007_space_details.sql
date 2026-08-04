@@ -16,10 +16,10 @@
 -- everywhere else. They are requirements, not fine print.
 
 alter table spaces
-  add column description text not null default '',
-  add column amenities text[] not null default '{}',
-  add column requirements text[] not null default '{}',
-  add column house_rules text not null default '';
+  add column if not exists description text not null default '',
+  add column if not exists amenities text[] not null default '{}',
+  add column if not exists requirements text[] not null default '{}',
+  add column if not exists house_rules text not null default '';
 
 -- Recreated rather than altered: a view does not pick up new columns on its
 -- own, and Discover cannot show a rule it never selected.

@@ -24,6 +24,26 @@ values
   ('verification-docs', 'verification-docs', false)
 on conflict (id) do nothing;
 
+-- Same reasoning as 0002: drop this file's own policies so it can be re-run.
+-- Matched by name prefix rather than by table, because storage.objects carries
+-- policies for every bucket in the project and dropping all of them would take
+-- out ones this file never wrote.
+do $$
+declare existing record;
+begin
+  for existing in
+    select policyname from pg_policies
+    where schemaname = 'storage' and tablename = 'objects'
+      and (
+        policyname like 'avatars:%'
+        or policyname like 'space-media:%'
+        or policyname like 'verification-docs:%'
+      )
+  loop
+    execute format('drop policy if exists %I on storage.objects', existing.policyname);
+  end loop;
+end $$;
+
 -- ------------------------------------------------------------------
 -- avatars — path: {user_id}/{filename}
 -- ------------------------------------------------------------------

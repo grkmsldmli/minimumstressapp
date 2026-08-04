@@ -48,6 +48,29 @@ async function rows<T = Record<string, unknown>>(sql: string, params?: unknown[]
 }
 
 describe("migrations apply cleanly", () => {
+  it("survives being applied a second time", async () => {
+    /**
+     * Pasting the whole script into a project that already has most of it
+     * should be dull. Before this, it aborted on `create type space_category`
+     * at line 16 and left the operator guessing which half had landed —
+     * which is exactly what happened in practice.
+     */
+    const fresh = new PGlite();
+    try {
+      await fresh.exec(read(STUBS));
+      for (const migration of MIGRATIONS) await fresh.exec(read(migration));
+      for (const migration of MIGRATIONS) await fresh.exec(read(migration));
+
+      const tables = await fresh.query<{ table_name: string }>(
+        `select table_name from information_schema.tables
+         where table_schema = 'public' and table_type = 'BASE TABLE'`,
+      );
+      expect(tables.rows).toHaveLength(6);
+    } finally {
+      await fresh.close();
+    }
+  }, 60_000);
+
   it("creates every table the app expects", async () => {
     const found = await rows<{ table_name: string }>(
       `select table_name from information_schema.tables

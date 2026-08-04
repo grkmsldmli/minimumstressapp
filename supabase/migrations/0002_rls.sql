@@ -23,6 +23,27 @@
 -- PaymentIntent and write a ledger row in one transaction, and RLS can gate who
 -- writes a row but cannot make that write atomic with an external API call.
 
+-- `create policy` has no IF NOT EXISTS, so re-running this file would abort on
+-- the first one that already existed. Clearing them first makes the file
+-- declarative: what follows is the complete set, and applying it twice is
+-- boring rather than a half-applied transaction.
+--
+-- Scoped to this app's own tables by name, so it cannot reach anything
+-- Supabase manages.
+do $$
+declare existing record;
+begin
+  for existing in
+    select policyname, tablename from pg_policies
+    where schemaname = 'public'
+      and tablename in (
+        'profiles', 'spaces', 'space_media', 'availability', 'bookings', 'credit_ledger'
+      )
+  loop
+    execute format('drop policy if exists %I on public.%I', existing.policyname, existing.tablename);
+  end loop;
+end $$;
+
 alter table profiles enable row level security;
 alter table spaces enable row level security;
 alter table space_media enable row level security;
@@ -125,6 +146,16 @@ create policy "credit_ledger: practitioner reads own entries"
 -- omitted-but-reachable, they are absent. A future policy change cannot
 -- widen them back into view.
 -- ==================================================================
+
+-- Dropped first, not just replaced. `create or replace view` can add columns
+-- but never remove them, so on a re-run this file would collide with the wider
+-- definition a later migration left behind and abort the whole script.
+drop view if exists spaces_public;
+drop view if exists public_host_profiles;
+drop view if exists availability_public;
+drop view if exists space_media_public;
+drop view if exists credit_balances;
+drop view if exists bookings_with_access_code;
 
 create or replace view spaces_public as
   select

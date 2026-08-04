@@ -40,6 +40,8 @@ interface AppState {
   screen: Screen;
   go: (screen: Screen) => void;
   back: () => void;
+  /** Clears the session and returns to splash. */
+  reset: () => void;
 
   email: string;
   setEmail: (email: string) => void;
@@ -89,6 +91,19 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     setHistory((h) => (h.length > 1 ? h.slice(0, -1) : h));
   }, []);
 
+  /**
+   * Returns to the splash screen and drops the navigation history, so Back
+   * cannot walk someone straight back into a signed-in screen after they have
+   * logged out.
+   */
+  const reset = useCallback(() => {
+    setHistory(["splash"]);
+    setEmail("");
+    setActiveSpaceId(null);
+    setActiveBookingId(null);
+    setEditingSpaceId(null);
+  }, []);
+
   const refresh = useCallback(() => setRevision((r) => r + 1), []);
 
   const value = useMemo<AppState>(
@@ -97,6 +112,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       screen,
       go,
       back,
+      reset,
       email,
       setEmail,
       profile,
@@ -115,6 +131,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       screen,
       go,
       back,
+      reset,
       email,
       profile,
       activeSpaceId,

@@ -44,6 +44,7 @@ export function App() {
     screen,
     go,
     back,
+    reset,
     email,
     setEmail,
     activeSpaceId,
@@ -98,6 +99,14 @@ export function App() {
     },
     [refresh],
   );
+
+  const signOut = useCallback(() => {
+    void (async () => {
+      await repo.signOut();
+      reset();
+      refresh();
+    })();
+  }, [repo, reset, refresh]);
 
   if (!data) return <div className="h-full bg-white" />;
 
@@ -231,6 +240,7 @@ export function App() {
           onUpdate={(patch) => void mutate(() => repo.updateProfile(patch))}
           onGoLegal={() => go("legal")}
           onGoInsurance={() => go("verify")}
+          onSignOut={signOut}
         />
       );
 
@@ -300,6 +310,8 @@ export function App() {
           onBack={back}
           onUpdate={(patch) => void mutate(() => repo.updateProfile(patch))}
           onGoLegal={() => go("legal")}
+          onConnectPayouts={() => void mutate(() => repo.connectPayouts())}
+          onSignOut={signOut}
         />
       );
   }

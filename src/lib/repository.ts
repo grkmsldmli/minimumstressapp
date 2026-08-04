@@ -52,6 +52,16 @@ export interface Repository {
   approveSpace(spaceId: string): Promise<HostSpace>;
 
   startProSubscription(): Promise<Profile>;
+
+  /**
+   * Begins payout onboarding. Against Stripe this creates an Express account
+   * link and hands the host to Stripe's hosted KYC flow, which is where
+   * identity and bank details are collected — deliberately never by us.
+   */
+  connectPayouts(): Promise<Profile>;
+
+  /** Ends the session. */
+  signOut(): Promise<void>;
 }
 
 export interface CreateBookingInput {

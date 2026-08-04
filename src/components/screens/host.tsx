@@ -5,6 +5,7 @@ import {
   ArrowLeft,
   Building2,
   ChevronRight,
+  LogOut,
   Plus,
   ScrollText,
   ShieldAlert,
@@ -597,12 +598,16 @@ export function HostProfile({
   onBack,
   onUpdate,
   onGoLegal,
+  onConnectPayouts,
+  onSignOut,
 }: {
   profile: Profile;
   spaces: HostSpace[];
   onBack: () => void;
   onUpdate: (patch: Partial<Profile>) => void;
   onGoLegal: () => void;
+  onConnectPayouts: () => void;
+  onSignOut: () => void;
 }) {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(profile.avatarUrl);
   const activeCount = spaces.filter((s) => s.status === "active").length;
@@ -644,11 +649,41 @@ export function HostProfile({
           <GroupLabel>Payouts</GroupLabel>
         </div>
         <div className="flex flex-col gap-2.5">
-          <ProfileRow
-            icon={ShieldCheck}
-            label="Payout method"
-            value={profile.stripeConnected ? "Stripe · connected" : "Not set up"}
-          />
+          {profile.stripeConnected ? (
+            <ProfileRow icon={ShieldCheck} label="Payout method" value="Stripe · connected" />
+          ) : (
+            /*
+              Not a settings row. Without this a host can take bookings and
+              never be paid, so it states the consequence rather than sitting
+              quietly greyed out saying "Not set up".
+            */
+            <div
+              className="rounded-xl p-4"
+              style={{ backgroundColor: "#FFF8F1", border: "1px solid #F5DFC4" }}
+            >
+              <div className="flex items-center gap-2">
+                <ShieldAlert size={15} color="#B08D4F" />
+                <span className="font-body font-medium text-[13px] text-navy">
+                  Payouts not set up
+                </span>
+              </div>
+              <p className="font-body font-light text-[11.5px] leading-relaxed mt-1.5 text-[#7A5B33]">
+                Your space can still take bookings, but nothing can reach your bank until this is
+                done. Stripe collects your bank and identity details directly — we never see them.
+              </p>
+              <button
+                type="button"
+                onClick={onConnectPayouts}
+                className="w-full mt-3 py-3 rounded-xl font-body font-medium text-[12.5px] text-white press"
+                style={{ backgroundColor: "#3B9BE8" }}
+              >
+                Set up payouts
+              </button>
+              <p className="font-body font-light text-[10px] mt-2 text-center text-ink-faint">
+                Prototype only — the real button opens Stripe&apos;s hosted onboarding.
+              </p>
+            </div>
+          )}
 
           {/* The Standard-vs-Instant choice the brief calls for. */}
           <div className="rounded-xl bg-white p-3.5" style={{ border: "1px solid #E7EEF6" }}>
@@ -659,8 +694,8 @@ export function HostProfile({
             <div className="flex gap-2">
               {(
                 [
-                  { key: "standard", label: "Standard", sub: "2–3 business days, free" },
-                  { key: "instant", label: "Instant", sub: "Minutes, small fee" },
+                  { key: "standard", label: "Standard", sub: "2–3 business days" },
+                  { key: "instant", label: "Instant", sub: "Minutes" },
                 ] as const
               ).map((option) => {
                 const selected = profile.payoutSchedule === option.key;
@@ -686,13 +721,28 @@ export function HostProfile({
                 );
               })}
             </div>
+            {/*
+              Said plainly, because this is the one place a host's take can
+              differ from their rate. Our service fee never touches it; Stripe's
+              instant-payout charge is a separate choice about *when* the money
+              arrives, and hiding that behind "small fee" would be the kind of
+              surprise the rest of this app exists to avoid.
+            */}
+            <p className="font-body font-light text-[10.5px] leading-relaxed mt-2.5 text-ink-faint">
+              {profile.payoutSchedule === "instant"
+                ? "Stripe charges for instant transfers, and it comes out of the payout. Standard is free."
+                : "Free. Instant transfers arrive in minutes but Stripe charges a fee for them."}
+            </p>
           </div>
         </div>
 
         <div className="mt-6">
           <GroupLabel>Account</GroupLabel>
         </div>
-        <ProfileRow icon={ScrollText} label="Terms & privacy" onClick={onGoLegal} />
+        <div className="flex flex-col gap-2.5">
+          <ProfileRow icon={ScrollText} label="Terms & privacy" onClick={onGoLegal} />
+          <ProfileRow icon={LogOut} label="Log out" onClick={onSignOut} danger />
+        </div>
       </div>
     </div>
   );

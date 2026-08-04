@@ -3,9 +3,11 @@
 import { useState } from "react";
 import {
   ArrowLeft,
+  ChevronRight,
   Clock,
   CreditCard,
   FileUp,
+  LogOut,
   Percent,
   ScrollText,
   Zap,
@@ -43,7 +45,7 @@ export function InsuranceUpload({
             type="button"
             onClick={onBack}
             aria-label="Back"
-            className="w-9 h-9 rounded-full flex items-center justify-center press absolute left-8 top-8"
+            className="w-9 h-9 rounded-full flex items-center justify-center press absolute left-8 top-8 z-20"
             style={{ backgroundColor: "rgba(255,255,255,0.14)" }}
           >
             <ArrowLeft size={16} color="#fff" />
@@ -170,7 +172,7 @@ export function ProScreen({
           type="button"
           onClick={onBack}
           aria-label="Back"
-          className="w-9 h-9 rounded-full flex items-center justify-center press absolute left-6 top-8 z-10"
+          className="w-9 h-9 rounded-full flex items-center justify-center press absolute left-6 top-8 z-20"
           style={{ backgroundColor: "rgba(255,255,255,0.14)" }}
         >
           <ArrowLeft size={16} color="#fff" />
@@ -245,6 +247,7 @@ export function PractitionerProfile({
   onUpdate,
   onGoLegal,
   onGoInsurance,
+  onSignOut,
 }: {
   profile: Profile;
   bookingsCount: number;
@@ -253,6 +256,7 @@ export function PractitionerProfile({
   onUpdate: (patch: Partial<Profile>) => void;
   onGoLegal: () => void;
   onGoInsurance: () => void;
+  onSignOut: () => void;
 }) {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(profile.avatarUrl);
 
@@ -304,11 +308,12 @@ export function PractitionerProfile({
           <GroupLabel>Account</GroupLabel>
         </div>
         <div className="flex flex-col gap-2.5">
-          <ProfileRow
-            icon={CreditCard}
-            label="Payment method"
-            value="Added at checkout"
-          />
+          {/*
+            No stored card to manage yet. Stripe's embedded element collects it
+            at checkout, so this states where it happens instead of offering a
+            settings screen that has nothing in it.
+          */}
+          <ProfileRow icon={CreditCard} label="Payment method" value="Entered at checkout" />
           <ProfileRow
             icon={FileUp}
             label="Insurance certificate"
@@ -316,6 +321,7 @@ export function PractitionerProfile({
             onClick={onGoInsurance}
           />
           <ProfileRow icon={ScrollText} label="Terms & privacy" onClick={onGoLegal} />
+          <ProfileRow icon={LogOut} label="Log out" onClick={onSignOut} danger />
         </div>
       </div>
     </div>
@@ -351,11 +357,16 @@ export function ProfileHeader({
         type="button"
         onClick={onBack}
         aria-label="Back"
-        className="w-9 h-9 rounded-full flex items-center justify-center press absolute left-6 top-8 z-10"
+        className="w-9 h-9 rounded-full flex items-center justify-center press absolute left-6 top-8 z-20"
         style={{ backgroundColor: "rgba(255,255,255,0.14)" }}
       >
         <ArrowLeft size={16} color="#fff" />
       </button>
+      {/*
+        z-10 here, below the button's z-20. Both used to be z-10, and since this
+        block comes later in the DOM it painted over the button — a real click
+        landed on this centred column, so Back silently did nothing.
+      */}
       <div className="relative z-10 pt-2 flex flex-col items-center">
         <AvatarUpload photoUrl={avatarUrl} onPick={onPickAvatar} />
         <input
@@ -389,23 +400,48 @@ export function ProfileRow({
   label,
   value,
   onClick,
+  danger = false,
 }: {
   icon: typeof CreditCard;
   label: string;
   value?: string;
   onClick?: () => void;
+  danger?: boolean;
 }) {
-  const Element = onClick ? "button" : "div";
+  const tint = danger ? "#C05A4B" : "#3B9BE8";
+
+  // A row without an action is a label, not a button — rendering it as one
+  // would promise a tap that does nothing.
+  if (!onClick) {
+    return (
+      <div
+        className="w-full flex items-center gap-3 p-3.5 rounded-xl bg-white"
+        style={{ border: "1px solid #E7EEF6" }}
+      >
+        <Icon size={15} color={tint} />
+        <span className="flex-1 font-body font-medium text-[13px] text-navy">{label}</span>
+        {value && <span className="font-body font-light text-[12px] text-ink-faint">{value}</span>}
+      </div>
+    );
+  }
+
   return (
-    <Element
-      {...(onClick ? { type: "button" as const, onClick } : {})}
+    <button
+      type="button"
+      onClick={onClick}
       className="w-full flex items-center gap-3 p-3.5 rounded-xl press bg-white text-left"
       style={{ border: "1px solid #E7EEF6" }}
     >
-      <Icon size={15} color="#3B9BE8" />
-      <span className="flex-1 font-body font-medium text-[13px] text-navy">{label}</span>
+      <Icon size={15} color={tint} />
+      <span
+        className="flex-1 font-body font-medium text-[13px]"
+        style={{ color: danger ? "#C05A4B" : "#16304E" }}
+      >
+        {label}
+      </span>
       {value && <span className="font-body font-light text-[12px] text-ink-faint">{value}</span>}
-    </Element>
+      <ChevronRight size={14} color="#B9CBDD" />
+    </button>
   );
 }
 

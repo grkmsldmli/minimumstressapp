@@ -18,8 +18,8 @@ import { supabaseAdmin } from "@/lib/supabase/server";
  * let someone mark themselves payable and start taking bookings.
  */
 export async function POST(request: NextRequest): Promise<Response> {
-  const secret = process.env.STRIPE_WEBHOOK_SECRET;
-  if (!secret) {
+  const secrets = signingSecrets();
+  if (secrets.length === 0) {
     console.error("STRIPE_WEBHOOK_SECRET is not set; refusing to trust this request");
     return new Response("Webhook not configured", { status: 500 });
   }
@@ -31,13 +31,8 @@ export async function POST(request: NextRequest): Promise<Response> {
   // anything that reserialises JSON breaks verification.
   const payload = await request.text();
 
-  let event: Stripe.Event;
-  try {
-    event = await stripe().webhooks.constructEventAsync(payload, signature, secret);
-  } catch (error) {
-    console.error("Webhook signature verification failed:", error);
-    return new Response("Invalid signature", { status: 400 });
-  }
+  const event = await verify(payload, signature, secrets);
+  if (!event) return new Response("Invalid signature", { status: 400 });
 
   try {
     await handle(event);
@@ -49,6 +44,49 @@ export async function POST(request: NextRequest): Promise<Response> {
   }
 
   return Response.json({ received: true });
+}
+
+/**
+ * Stripe splits these events across two endpoints, and we need both.
+ *
+ * `payment_intent.*` happen on the platform account, because we create the
+ * charges. `account.updated` and `payout.failed` happen on the *connected*
+ * account, and an endpoint only receives those if it was created with Connect
+ * events enabled — which is a separate endpoint, with its own signing secret,
+ * even when both point at this same URL.
+ *
+ * So the variable holds a list. One secret is the ordinary case and behaves
+ * exactly as before; the comma is what lets a host ever become payable.
+ */
+function signingSecrets(): string[] {
+  return (process.env.STRIPE_WEBHOOK_SECRET ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+/**
+ * Returns the event only if some configured secret vouches for it.
+ *
+ * A failure against one secret says nothing — the request was probably signed
+ * by the other endpoint — so nothing is logged until every secret has refused,
+ * at which point the request really is unsigned or forged.
+ */
+async function verify(
+  payload: string,
+  signature: string,
+  secrets: string[],
+): Promise<Stripe.Event | null> {
+  for (const secret of secrets) {
+    try {
+      return await stripe().webhooks.constructEventAsync(payload, signature, secret);
+    } catch {
+      continue;
+    }
+  }
+
+  console.error(`Webhook signature verified against none of ${secrets.length} secret(s)`);
+  return null;
 }
 
 async function handle(event: Stripe.Event): Promise<void> {

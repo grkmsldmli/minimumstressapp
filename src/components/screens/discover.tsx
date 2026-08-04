@@ -1,6 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
+
+import { LocationPrompt, type LocationChoice } from "@/components/location-prompt";
 import {
   Building2,
   Calendar,
@@ -57,6 +59,10 @@ export function Discover({
   onGoProfile,
   onGoLegal,
   greetingName,
+  nearbyOrder,
+  onChooseLocation,
+  distanceLabels,
+  locationError,
 }: {
   spaces: PublicSpace[];
   isPro: boolean;
@@ -67,8 +73,17 @@ export function Discover({
   onGoProfile: () => void;
   onGoLegal: () => void;
   greetingName: string | null;
+  /** Ids nearest-first, or null while nobody has said where they are. */
+  nearbyOrder: string[] | null;
+  onChooseLocation: (choice: LocationChoice) => void;
+  /** Coarse label per space id — "0.8 mi". Never a coordinate. */
+  distanceLabels: Record<string, string>;
+  locationError: string | null;
 }) {
   const [filter, setFilter] = useState<Filter>("all");
+  // Dismissing hides the prompt for this visit only. Storing the refusal would
+  // mean remembering a "no" that was about one moment, not about the feature.
+  const [askedAlready, setAskedAlready] = useState(false);
   const [view, setView] = useState<"list" | "map">("list");
 
   const hour = new Date().getHours();
@@ -88,7 +103,24 @@ export function Discover({
   const active: Filter =
     filter !== "all" && !offered.some((c) => c.key === filter) ? "all" : filter;
 
-  const visible = active === "all" ? spaces : spaces.filter((s) => s.category === active);
+  const byCategory = active === "all" ? spaces : spaces.filter((s) => s.category === active);
+
+  /**
+   * Ordered by the server's answer, not by anything computed here.
+   *
+   * The listings a browser holds carry no coordinates — that is the whole
+   * point of `spaces_public` — so the order arrives as a list of ids and this
+   * only applies it. Anything the server did not rank keeps its place at the
+   * end rather than vanishing.
+   */
+  const visible = useMemo(() => {
+    if (!nearbyOrder) return byCategory;
+
+    const rank = new Map(nearbyOrder.map((id, i) => [id, i]));
+    return [...byCategory].sort(
+      (a, b) => (rank.get(a.id) ?? Infinity) - (rank.get(b.id) ?? Infinity),
+    );
+  }, [byCategory, nearbyOrder]);
 
   return (
     <div className="h-full flex flex-col screen-in bg-white">
@@ -201,9 +233,26 @@ export function Discover({
             </>
           )}
 
+          {nearbyOrder === null && !askedAlready && (
+            <div className="px-6 mb-4">
+              <LocationPrompt
+                onChoose={onChooseLocation}
+                onDismiss={() => setAskedAlready(true)}
+              />
+            </div>
+          )}
+
+          {locationError && (
+            <p className="px-6 mb-3 font-body font-light text-[11.5px] text-coral-deep">
+              {locationError}
+            </p>
+          )}
+
           <SectionLabel className="px-6">
             {active === "all"
-              ? "All spaces nearby"
+              ? nearbyOrder
+                ? "Nearest first"
+                : "All spaces"
               : `${CATEGORIES.find((c) => c.key === active)?.shortLabel} spaces`}
           </SectionLabel>
 
@@ -219,6 +268,7 @@ export function Discover({
                   space={space}
                   isPro={isPro}
                   index={i}
+                  distanceLabel={distanceLabels[space.id]}
                   onClick={() => onOpenSpace(space.id)}
                 />
               ))}
@@ -361,11 +411,14 @@ function SpaceRow({
   space,
   isPro,
   index,
+  distanceLabel,
   onClick,
 }: {
   space: PublicSpace;
   isPro: boolean;
   index: number;
+  /** Coarse, from the server. Absent until somebody has shared a location. */
+  distanceLabel?: string;
   onClick: () => void;
 }) {
   const [from, to] = categoryGradient(space.category);
@@ -396,7 +449,13 @@ function SpaceRow({
           {space.description}
         </p>
         <p className="font-body font-light text-[11px] mt-0.5 flex items-center gap-1 text-ink-faint">
-          <MapPin size={10} /> {space.distanceLabel} · fits {space.capacity}
+          {/*
+            The measured distance when somebody has shared where they are,
+            and the listing's own vague word when they have not. Never a
+            fabricated number — the seeded demo rows carry one, real rows say
+            "nearby" and mean it.
+          */}
+          <MapPin size={10} /> {distanceLabel ?? space.distanceLabel} · fits {space.capacity}
         </p>
       </div>
       <div className="text-right shrink-0">

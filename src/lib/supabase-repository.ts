@@ -126,6 +126,13 @@ export class SupabaseRepository implements Repository {
       notifyBookings: data?.notify_bookings ?? true,
       notifyPayouts: data?.notify_payouts ?? true,
       notifyOffers: data?.notify_offers ?? false,
+      // Read back only for its owner — this query runs as the signed-in user,
+      // and no policy lets anyone select another person's profile row.
+      emergencyContact: {
+        name: data?.emergency_contact_name ?? null,
+        phone: data?.emergency_contact_phone ?? null,
+        relationship: data?.emergency_contact_relationship ?? null,
+      },
     };
   }
 
@@ -139,6 +146,11 @@ export class SupabaseRepository implements Repository {
     if (patch.notifyOffers !== undefined) row.notify_offers = patch.notifyOffers;
     if (patch.payoutSchedule !== undefined) row.payout_schedule = patch.payoutSchedule;
     if (patch.insuranceDocName !== undefined) row.insurance_doc_path = patch.insuranceDocName;
+    if (patch.emergencyContact !== undefined) {
+      row.emergency_contact_name = patch.emergencyContact.name;
+      row.emergency_contact_phone = patch.emergencyContact.phone;
+      row.emergency_contact_relationship = patch.emergencyContact.relationship;
+    }
     // isPro and stripeConnected are absent on purpose: both are set by webhooks
     // after money or verification actually clears, never by the client asking.
 

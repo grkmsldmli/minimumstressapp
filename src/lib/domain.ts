@@ -20,6 +20,20 @@ export type BookingStatus =
   | "cancelled_by_host"
   | "no_show";
 
+/**
+ * Somebody to call if a session goes wrong while it is happening.
+ *
+ * Never leaves the server for anyone but its owner. The counterpart in a
+ * booking does not see it in either direction — a practitioner alone in a
+ * stranger's building and a host letting a stranger into theirs have the same
+ * need and the same right to privacy about it.
+ */
+export interface EmergencyContact {
+  name: string | null;
+  phone: string | null;
+  relationship: string | null;
+}
+
 export interface Profile {
   id: string;
   displayName: string | null;
@@ -32,6 +46,7 @@ export interface Profile {
   notifyBookings: boolean;
   notifyPayouts: boolean;
   notifyOffers: boolean;
+  emergencyContact: EmergencyContact;
 }
 
 export interface SpaceMedia {

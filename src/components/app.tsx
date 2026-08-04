@@ -12,6 +12,7 @@ import type {
   SpaceAccessDetails,
 } from "@/lib/domain";
 import { type CancellationEvent, standingFor } from "@/lib/reliability";
+import type { LocationChoice } from "@/components/location-prompt";
 import { supabaseBackendEnabled } from "@/lib/repository-factory";
 import {
   ensureProfile,
@@ -75,6 +76,44 @@ export function App() {
   const [data, setData] = useState<Snapshot | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
   const [authBusy, setAuthBusy] = useState(false);
+
+  /**
+   * Nearby ordering, held here rather than in Discover.
+   *
+   * It survives navigating into a listing and back, which is the ordinary
+   * path — asking for someone's location again every time they return from a
+   * detail screen would be both annoying and a second permission prompt.
+   */
+  const [nearbyOrder, setNearbyOrder] = useState<string[] | null>(null);
+  const [distanceLabels, setDistanceLabels] = useState<Record<string, string>>({});
+  const [locationError, setLocationError] = useState<string | null>(null);
+
+  const chooseLocation = useCallback(async (choice: LocationChoice) => {
+    setLocationError(null);
+    try {
+      const query =
+        choice.kind === "coords"
+          ? `lat=${choice.lat}&lng=${choice.lng}`
+          : `postalCode=${encodeURIComponent(choice.postalCode)}`;
+
+      const response = await fetch(`/api/spaces/nearby?${query}`);
+      const body = (await response.json()) as {
+        spaces?: { id: string; distanceLabel: string }[];
+        error?: string;
+      };
+
+      if (!response.ok) {
+        setLocationError(body.error ?? "We couldn't sort by distance just now.");
+        return;
+      }
+
+      const ranked = body.spaces ?? [];
+      setNearbyOrder(ranked.map((entry) => entry.id));
+      setDistanceLabels(Object.fromEntries(ranked.map((e) => [e.id, e.distanceLabel])));
+    } catch {
+      setLocationError("We couldn't reach the server. Check your connection and try again.");
+    }
+  }, []);
 
   // Read once per render rather than threaded through: it is a build-time
   // constant, and every caller wants the same answer.
@@ -314,6 +353,10 @@ export function App() {
           onGoBookings={() => go("bookings")}
           onGoProfile={() => go("practitioner-profile")}
           onGoLegal={() => go("legal")}
+          nearbyOrder={nearbyOrder}
+          onChooseLocation={(choice) => void chooseLocation(choice)}
+          distanceLabels={distanceLabels}
+          locationError={locationError}
         />
       );
 

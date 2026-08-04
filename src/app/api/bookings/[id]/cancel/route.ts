@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 
+import { LIMITS, check, identify, tooManyRequests } from "@/lib/api/rate-limit";
 import { handled, jsonError, requireUser } from "@/lib/api/session";
 import { stripeGateway } from "@/lib/api/stripe-gateway";
 import { cancelBooking } from "@/lib/booking-service";
@@ -21,6 +22,9 @@ export async function POST(
   return handled(async () => {
     const auth = await requireUser();
     if ("response" in auth) return auth.response;
+
+    const limited = check("cancel", identify(request, auth.user.id), LIMITS.cancel);
+    if (!limited.ok) return tooManyRequests(limited);
 
     const { id } = await context.params;
 

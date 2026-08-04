@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 
+import { LIMITS, check, identify, tooManyRequests } from "@/lib/api/rate-limit";
 import { resolveGooglePlace } from "@/lib/geocode-google";
 
 /**
@@ -14,6 +15,9 @@ import { resolveGooglePlace } from "@/lib/geocode-google";
  * session rather than the details call separately.
  */
 export async function GET(request: NextRequest): Promise<Response> {
+  const limited = check("geocode-resolve", identify(request), LIMITS.geocodeResolve);
+  if (!limited.ok) return tooManyRequests(limited);
+
   const placeId = request.nextUrl.searchParams.get("placeId");
   const sessionToken = request.nextUrl.searchParams.get("session");
 

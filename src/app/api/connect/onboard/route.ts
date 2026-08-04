@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 
+import { LIMITS, check, identify, tooManyRequests } from "@/lib/api/rate-limit";
 import { handled, requireUser } from "@/lib/api/session";
 import { createConnectedAccount, createOnboardingLink } from "@/lib/stripe/client";
 import { supabaseAdmin } from "@/lib/supabase/server";
@@ -22,6 +23,9 @@ export async function POST(request: NextRequest): Promise<Response> {
   return handled(async () => {
     const auth = await requireUser();
     if ("response" in auth) return auth.response;
+
+    const limited = check("connect", identify(request, auth.user.id), LIMITS.connect);
+    if (!limited.ok) return tooManyRequests(limited);
 
     const admin = supabaseAdmin();
 

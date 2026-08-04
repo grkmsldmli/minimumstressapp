@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 
+import { LIMITS, check, identify, tooManyRequests } from "@/lib/api/rate-limit";
 import { activeProvider, MIN_QUERY_LENGTH, searchAddresses } from "@/lib/geocode";
 
 /**
@@ -12,6 +13,11 @@ import { activeProvider, MIN_QUERY_LENGTH, searchAddresses } from "@/lib/geocode
  * control and one anybody can lift from the network tab and spend.
  */
 export async function GET(request: NextRequest): Promise<Response> {
+  // Checked before anything else: this endpoint spends real money per call
+  // against a metered provider, on our key, and anyone can reach it.
+  const limited = check("geocode", identify(request), LIMITS.geocode);
+  if (!limited.ok) return tooManyRequests(limited);
+
   const query = (request.nextUrl.searchParams.get("q") ?? "").trim();
   const sessionToken = request.nextUrl.searchParams.get("session") ?? undefined;
 

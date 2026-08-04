@@ -6,6 +6,7 @@ import {
   normalisePostalCode,
   sortByDistance,
 } from "@/lib/distance";
+import { LIMITS, check, identify, tooManyRequests } from "@/lib/api/rate-limit";
 import type { LatLng } from "@/lib/geo";
 import { geocodeOne } from "@/lib/geocode";
 import { supabaseAdmin } from "@/lib/supabase/server";
@@ -26,6 +27,11 @@ import { supabaseAdmin } from "@/lib/supabase/server";
  * is both the honest thing and what the consent screen promises.
  */
 export async function GET(request: NextRequest): Promise<Response> {
+  // A ZIP lookup runs a geocode, so this endpoint is metered too, one step
+  // removed.
+  const limited = check("nearby", identify(request), LIMITS.nearby);
+  if (!limited.ok) return tooManyRequests(limited);
+
   const params = request.nextUrl.searchParams;
 
   let origin: LatLng | null = null;

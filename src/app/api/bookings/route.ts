@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 
+import { LIMITS, check, identify, tooManyRequests } from "@/lib/api/rate-limit";
 import { handled, jsonError, requireUser } from "@/lib/api/session";
 import { stripeGateway } from "@/lib/api/stripe-gateway";
 import { createBooking } from "@/lib/booking-service";
@@ -19,6 +20,12 @@ export async function POST(request: NextRequest): Promise<Response> {
   return handled(async () => {
     const auth = await requireUser();
     if ("response" in auth) return auth.response;
+
+    // Counted against the signed-in user, not their address: the id comes
+    // from a verified token, so it cannot be swapped for someone else's
+    // allowance, and it follows them across a changed network.
+    const limited = check("booking", identify(request, auth.user.id), LIMITS.booking);
+    if (!limited.ok) return tooManyRequests(limited);
 
     let body: unknown;
     try {

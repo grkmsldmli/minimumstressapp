@@ -20,13 +20,36 @@ export async function sendEmailCode(email: string): Promise<void> {
 }
 
 /**
- * Verifies the emailed code.
+ * How many digits the emailed code has, and the one number here that is not
+ * ours to choose.
  *
- * Supabase sends six digits by default, so the four-box UI the prototype drew
- * would silently truncate a valid code. The input renders however many
- * `EMAIL_CODE_LENGTH` says.
+ * It is set in the Supabase dashboard, under Authentication → Sign In /
+ * Providers → Email. The screen draws exactly this many boxes, so if the two
+ * disagree the result is silent and cruel: a correct code is physically
+ * unenterable, and the only feedback is "invalid code". The prototype's
+ * four-box design had this bug; so did the app the first time a real code
+ * arrived with eight digits against six boxes.
+ *
+ * Kept in an environment variable so a mismatch is a redeploy rather than a
+ * code change, and validated on read so a typo fails loudly here instead of
+ * rendering a row of boxes nobody can fill.
  */
-export const EMAIL_CODE_LENGTH = 6;
+export const EMAIL_CODE_LENGTH = readCodeLength();
+
+function readCodeLength(): number {
+  const configured = process.env.NEXT_PUBLIC_EMAIL_CODE_LENGTH;
+  if (!configured) return 6;
+
+  const parsed = Number(configured);
+  // Supabase allows 6 to 10. Anything else is a typo, and falling back to the
+  // default would hide it until someone could not sign in.
+  if (!Number.isInteger(parsed) || parsed < 6 || parsed > 10) {
+    throw new Error(
+      `NEXT_PUBLIC_EMAIL_CODE_LENGTH must be an integer from 6 to 10, got "${configured}"`,
+    );
+  }
+  return parsed;
+}
 
 export async function verifyEmailCode(email: string, token: string): Promise<void> {
   const { error } = await supabaseBrowser().auth.verifyOtp({

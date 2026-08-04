@@ -9,12 +9,12 @@ import {
   ChevronDown,
   ChevronRight,
   KeyRound,
-  MapPin,
 } from "lucide-react";
 
 import { Ambient, BreathingLogo, Headline, categoryGradient } from "@/components/brand";
 import { BreathCoach } from "@/components/breath-coach";
 import { ConfettiBurst } from "@/components/primitives";
+import { SpaceDirections } from "@/components/space-directions";
 import { CancellationConsequence } from "@/components/standing-notice";
 import type { Booking, CreditEntry, SpaceAccessDetails } from "@/lib/domain";
 import { PRO_PRICE_CENTS, formatCents, isFreeCancellation } from "@/lib/money";
@@ -187,13 +187,7 @@ function AccessPanel({
       {access && (
         <>
           <div className="h-px my-3" style={{ backgroundColor: "rgba(255,255,255,0.12)" }} />
-          <p className="flex items-start gap-2 font-body font-light text-[11.5px] text-white/70 leading-relaxed">
-            <MapPin size={12} className="mt-0.5 shrink-0" color="#8FC6F5" />
-            {access.addressLine}
-          </p>
-          <p className="font-body font-light text-[11px] text-white/50 mt-1.5 leading-relaxed">
-            {access.entryInstructions}
-          </p>
+          <SpaceDirections access={access} tone="dark" />
         </>
       )}
     </div>
@@ -483,9 +477,9 @@ function UpcomingBooking({
               </p>
             )}
             {access && (
-              <p className="font-body font-light text-[11px] mt-2 leading-relaxed text-ink-soft">
-                {access.addressLine} — {access.entryInstructions}
-              </p>
+              <div className="mt-3">
+                <SpaceDirections access={access} showMap />
+              </div>
             )}
           </div>
 

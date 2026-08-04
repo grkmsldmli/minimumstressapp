@@ -18,10 +18,13 @@ payment processor yet.
 | ✅ M3 | Every screen ported, running against an in-memory repository |
 | ✅ M4a | Stripe payment layer, verified end to end in the sandbox |
 | ✅ M4b | Server-side booking and cancellation, with pricing the client cannot influence |
-| ⬜ M4c | Route handlers and the Embedded Components payment sheet |
-| ⬜ M5 | Scheduled jobs: session-time capture, access code reveal |
+| ✅ M4c | Route handlers, the payment sheet, and both webhook endpoints |
+| 🔶 M5 | Capture runs daily, which is all Hobby allows — see Scheduled jobs |
 | ⬜ M6 | Resend transactional email — *needs Resend key and DNS* |
-| ⬜ M7 | Vercel deploy, then point minimumstress.app |
+| 🔶 M7 | Deployed and verified at minimumstressapp.vercel.app; minimumstress.app not yet pointed |
+
+Still on the mock repository, deliberately — flip `NEXT_PUBLIC_USE_SUPABASE=true`
+when the auth screens are wired to real accounts.
 
 `src/lib/repository.ts` is the seam: screens talk to that interface,
 `MockRepository` implements it in memory, `SupabaseRepository` against the real

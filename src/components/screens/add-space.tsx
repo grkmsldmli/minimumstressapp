@@ -13,8 +13,9 @@ import {
   Users,
 } from "lucide-react";
 
+import { AddressAutocomplete } from "@/components/address-autocomplete";
 import { Ambient, BreathingLogo, CatIcon, Headline } from "@/components/brand";
-import { DroppedPin, MapBackdrop } from "@/components/map";
+import { LocationMap } from "@/components/location-map";
 import { ConfettiBurst, PrimaryButton } from "@/components/primitives";
 import {
   AddMediaTile,
@@ -28,6 +29,7 @@ import { WeekSchedule } from "@/components/week-schedule";
 import type { AvailabilityBlock } from "@/lib/availability";
 import { isValidSchedule } from "@/lib/availability";
 import type { NewSpaceInput } from "@/lib/domain";
+import { type LatLng, toBrowsePosition } from "@/lib/geo";
 import { formatCents, isViableHostRate, minViableHostRateCents, quote } from "@/lib/money";
 import {
   ACCESS_TYPES,
@@ -53,13 +55,17 @@ export function AddSpace({
   onBack: () => void;
   onListed: (input: NewSpaceInput) => Promise<void>;
 }) {
-  const mapRef = useRef<HTMLDivElement>(null);
   const [step, setStep] = useState(1);
   const [listed, setListed] = useState(false);
 
   // Step 1 — every field here is required by the brief.
   const [name, setName] = useState("");
-  const [pin, setPin] = useState<{ x: number; y: number } | null>(null);
+  /**
+   * Real coordinates, set by choosing from the dropdown and adjustable by
+   * tapping the map. Null until then, and required to advance: an address
+   * nobody can find is a practitioner standing on the wrong street.
+   */
+  const [point, setPoint] = useState<LatLng | null>(null);
   const [address, setAddress] = useState("");
   const [category, setCategory] = useState<CategoryKey | null>(null);
   const [rate, setRate] = useState("");
@@ -98,7 +104,7 @@ export function AddSpace({
 
   const canStep1 =
     name.trim() !== "" &&
-    pin !== null &&
+    point !== null &&
     address.trim() !== "" &&
     category !== null &&
     rateIsNumber &&
@@ -109,14 +115,6 @@ export function AddSpace({
   const canStep2 = media.length >= 1 && isValidSchedule(blocks);
   const canSubmit = subleaseDoc !== null && agreed;
   const canAdvance = step === 1 ? canStep1 : step === 2 ? canStep2 : canSubmit;
-
-  const placePin = (e: React.MouseEvent<HTMLDivElement>) => {
-    const rect = mapRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    const x = ((e.clientX - rect.left) / rect.width) * 100;
-    const y = ((e.clientY - rect.top) / rect.height) * 100;
-    setPin({ x: Math.min(94, Math.max(6, x)), y: Math.min(92, Math.max(8, y)) });
-  };
 
   const addMedia = (file: File) => {
     if (media.length >= MAX_MEDIA) return;
@@ -129,7 +127,7 @@ export function AddSpace({
   };
 
   const submit = async () => {
-    if (!canSubmit || !category || !accessType || !pin) return;
+    if (!canSubmit || !category || !accessType || !point) return;
     await onListed({
       name: name.trim(),
       category,
@@ -138,8 +136,11 @@ export function AddSpace({
       accessType,
       entryInstructions: entryInstructions.trim(),
       addressLine: address.trim(),
-      mapX: pin.x,
-      mapY: pin.y,
+      lat: point.lat,
+      lng: point.lng,
+      // Where the pin sits on the illustrated browse map, which is a separate
+      // question from where the studio is — see toBrowsePosition.
+      ...toBrowsePosition(point),
       accessible,
       restroom,
       amenities,
@@ -231,43 +232,28 @@ export function AddSpace({
             <TextInput value={name} onChange={setName} placeholder="e.g. Willow Reformer Studio" />
 
             <SectionLabel className="mt-6">Location</SectionLabel>
-            <div
-              ref={mapRef}
-              onClick={placePin}
-              className="relative rounded-2xl overflow-hidden cursor-crosshair"
-              style={{ height: 150, border: "1px solid #E7EEF6" }}
-            >
-              <MapBackdrop />
-              {pin ? (
-                <DroppedPin x={pin.x} y={pin.y} />
-              ) : (
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <span
-                    className="px-3 py-1.5 rounded-full font-body text-[11px] text-white"
-                    style={{ backgroundColor: "rgba(22,48,78,0.85)" }}
-                  >
-                    Tap the map to drop a pin
-                  </span>
-                </div>
-              )}
-            </div>
-
-            <div
-              className="flex items-center gap-2 mt-3 px-4 py-3 rounded-xl"
-              style={{ border: "1px solid #DCE7F2" }}
-            >
-              <Home size={13} color="#8CA3BD" />
-              <input
-                value={address}
-                onChange={(e) => setAddress(e.target.value)}
-                placeholder="Street address, city"
-                aria-label="Street address"
-                className="font-body text-[13px] outline-none w-full text-navy"
-              />
-            </div>
+            <AddressAutocomplete
+              value={address}
+              onChange={(next) => {
+                setAddress(next);
+                // Editing the text after choosing invalidates the pin: the
+                // coordinates belonged to the address that was picked, and
+                // silently keeping them is how a listing ends up on the map a
+                // block from where it says it is.
+                setPoint(null);
+              }}
+              onSelect={(suggestion) => {
+                setAddress(suggestion.addressLine);
+                setPoint({ lat: suggestion.lat, lng: suggestion.lng });
+              }}
+            />
             <p className="font-body font-light text-[11px] mt-2 text-ink-faint">
               Only shown to a practitioner once they&apos;ve booked — never public.
             </p>
+
+            <div className="mt-3">
+              <LocationMap point={point} onPick={point ? setPoint : undefined} />
+            </div>
 
             <SectionLabel className="mt-6">Room type</SectionLabel>
             <div className="flex flex-wrap gap-2">

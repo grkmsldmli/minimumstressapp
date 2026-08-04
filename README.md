@@ -34,7 +34,7 @@ the payment routes land.
 ```bash
 npm install
 npm run dev     # http://localhost:3000
-npm test        # 120 tests: money, availability, repository, schema, RLS
+npm test        # 225 tests: money, availability, geo, repository, schema, RLS, webhook
 ```
 
 Start at the splash screen and pick either role. Nothing is seeded for *you* — no listings, no
@@ -120,6 +120,39 @@ Revealing access codes deliberately needs none of this: a booking stores its own
 `access_code_revealed_at` and the view withholds the code until that moment
 passes, so it opens on time whether or not anything is running.
 
+## Addresses and the two maps
+
+A host types an address and picks it from a dropdown; the choice carries real
+coordinates, which drop the pin on a real map of their own street. Geocoding is
+[Photon](https://photon.komoot.io) — OpenStreetMap data, built for typing one
+character at a time, no key and no billing account — proxied through
+`/api/geocode` so a host's home address does not leave their browser for a third
+party, and so swapping in a paid provider later is one file.
+
+The field stays authoritative throughout. A rural address the geocoder has never
+heard of, or a geocoder that is simply down, costs a host the suggestions and
+nothing else. Editing the text after choosing clears the pin, because the
+coordinates belonged to the address that was picked.
+
+**There are deliberately two maps, and only one of them is real.**
+
+| | |
+|---|---|
+| `location-map.tsx` | Real OSM tiles. Host-only, showing them their own address. |
+| `map.tsx` | An illustration. Everything a practitioner browses. |
+
+The second is not a placeholder waiting to be upgraded. A listing's street
+address is private until someone books it, so the map on Discover must not be a
+locator — and `toBrowsePosition` reduces a coordinate to which ~11 km cell it
+falls in before spreading that cell through an integer mix, so the picture
+carries no bearing and no distance. Neighbouring studios land on the same spot,
+which is exactly what makes the drawing unreadable backwards. `geo.test.ts`
+asserts that property rather than trusting the comment.
+
+`lat`/`lng` stay private, released only through `space_access_details` to
+someone holding a booking. `map_x`/`map_y` — the coarse derived pair — are the
+only position `anon` can select.
+
 ## Payments
 
 Destination charges with `capture_method: manual`. The practitioner is
@@ -141,6 +174,8 @@ account's side. That account's own ledger is the honest view.
 ```
 src/lib/money.ts           pricing, cancellation outcomes, credit redemption
 src/lib/availability.ts    weekly template, validation, slot generation
+src/lib/geo.ts             web mercator, tile grids, the browse-map projection
+src/lib/geocode.ts         address lookup, and what a suggestion is made of
 src/lib/taxonomy.ts        the four categories, listing and house-rule vocabulary
 src/lib/booking-plan.ts    what may be booked, and for how much — pure, heavily tested
 src/lib/booking-service.ts the same rules against the database and Stripe

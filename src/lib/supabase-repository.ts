@@ -62,6 +62,9 @@ interface SpaceRow {
   insurance_doc_path?: string | null;
   lat?: number | null;
   lng?: number | null;
+  // numeric(4,1) arrives as a string from PostgREST, not a number.
+  map_x?: number | string | null;
+  map_y?: number | string | null;
 }
 
 interface AvailabilityRow {
@@ -248,8 +251,10 @@ export class SupabaseRepository implements Repository {
         startMinute: b.start_minute,
         endMinute: b.end_minute,
       })),
-      mapX: 50,
-      mapY: 50,
+      // Position on the illustration, not a location. The real coordinates are
+      // absent from this view by design.
+      mapX: Number(row.map_x ?? 50),
+      mapY: Number(row.map_y ?? 50),
       distanceLabel: "nearby",
     };
   }
@@ -267,6 +272,8 @@ export class SupabaseRepository implements Repository {
       addressLine: row.address_line,
       entryInstructions: row.entry_instructions,
       accessType: row.access_type,
+      lat: row.lat ?? null,
+      lng: row.lng ?? null,
     };
   }
 
@@ -401,6 +408,8 @@ export class SupabaseRepository implements Repository {
         ...base,
         status: row.status ?? "pending",
         addressLine: row.address_line ?? "",
+        lat: row.lat ?? null,
+        lng: row.lng ?? null,
         entryInstructions: row.entry_instructions ?? "",
         subleaseDocName: row.sublease_doc_path ?? null,
         insuranceDocName: row.insurance_doc_path ?? null,
@@ -423,6 +432,12 @@ export class SupabaseRepository implements Repository {
         access_type: input.accessType,
         entry_instructions: input.entryInstructions,
         address_line: input.addressLine,
+        // Private, and only ever read back through space_access_details.
+        lat: input.lat,
+        lng: input.lng,
+        // The coarse, public derivation of the two above — see 0008.
+        map_x: input.mapX,
+        map_y: input.mapY,
         accessible: input.accessible,
         restroom: input.restroom?.toLowerCase() ?? null,
         buffer_minutes: input.bufferMinutes,

@@ -233,6 +233,11 @@ export class MockRepository implements Repository {
         entryInstructions:
           "Keypad is on the right-hand door frame. Press # after the code.",
         accessType: "keypad",
+        // Spread around the peninsula so the post-booking map has somewhere
+        // real to centre on rather than the middle of the Atlantic, which is
+        // what a default of zero looks like.
+        lat: 37.5485 + index * 0.011,
+        lng: -122.3122 - index * 0.014,
       };
       return {
         id: spaceId,
@@ -324,6 +329,8 @@ export class MockRepository implements Repository {
         addressLine: mine.addressLine,
         entryInstructions: mine.entryInstructions,
         accessType: mine.accessType,
+        lat: mine.lat,
+        lng: mine.lng,
       };
     }
     return SEED_PRIVATE[spaceId] ?? null;
@@ -475,6 +482,8 @@ export class MockRepository implements Repository {
       // process, so nothing reaches Discover until it is approved.
       status: "pending",
       addressLine: input.addressLine,
+      lat: input.lat,
+      lng: input.lng,
       entryInstructions: input.entryInstructions,
       subleaseDocName: input.subleaseDocName,
       insuranceDocName: input.insuranceDocName,

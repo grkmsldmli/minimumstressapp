@@ -72,12 +72,18 @@ export interface SpaceAccessDetails {
   addressLine: string;
   entryInstructions: string;
   accessType: AccessTypeKey;
+  /** Null for listings created before addresses were geocoded. */
+  lat: number | null;
+  lng: number | null;
 }
 
 /** A host's own listing, including the fields never shown to practitioners. */
 export interface HostSpace extends PublicSpace {
   status: SpaceStatus;
   addressLine: string;
+  /** Alongside the address, and just as private. */
+  lat: number | null;
+  lng: number | null;
   entryInstructions: string;
   subleaseDocName: string | null;
   insuranceDocName: string | null;
@@ -145,6 +151,9 @@ export interface NewSpaceInput {
   accessType: AccessTypeKey;
   entryInstructions: string;
   addressLine: string;
+  /** Real coordinates, as private as the address they came from. */
+  lat: number;
+  lng: number;
   mapX: number;
   mapY: number;
   accessible: boolean | null;

@@ -15,8 +15,10 @@ import {
 import { Ambient, BreathingLogo, Headline, categoryGradient } from "@/components/brand";
 import { BreathCoach } from "@/components/breath-coach";
 import { ConfettiBurst } from "@/components/primitives";
+import { CancellationConsequence } from "@/components/standing-notice";
 import type { Booking, CreditEntry, SpaceAccessDetails } from "@/lib/domain";
 import { PRO_PRICE_CENTS, formatCents, isFreeCancellation } from "@/lib/money";
+import type { Standing } from "@/lib/reliability";
 
 /* ------------------------------------------------------------------ */
 /*  Confirmed                                                          */
@@ -233,6 +235,7 @@ export function MyBookings({
   creditBalanceCents,
   creditEntries,
   accessFor,
+  standing,
   onBack,
   onCancel,
   onSimulateHostCancel,
@@ -241,6 +244,7 @@ export function MyBookings({
   creditBalanceCents: number;
   creditEntries: CreditEntry[];
   accessFor: (spaceId: string) => SpaceAccessDetails | null;
+  standing: Standing;
   onBack: () => void;
   onCancel: (id: string) => void;
   onSimulateHostCancel: (id: string) => void;
@@ -337,6 +341,7 @@ export function MyBookings({
               booking={booking}
               access={accessFor(booking.spaceId)}
               now={now}
+              standing={standing}
               open={openId === booking.id}
               onToggle={() => setOpenId(openId === booking.id ? null : booking.id)}
               onCancel={() => {
@@ -390,6 +395,7 @@ function UpcomingBooking({
   booking,
   access,
   now,
+  standing,
   open,
   onToggle,
   onCancel,
@@ -398,6 +404,7 @@ function UpcomingBooking({
   booking: Booking;
   access: SpaceAccessDetails | null;
   now: Date;
+  standing: Standing;
   open: boolean;
   onToggle: () => void;
   onCancel: () => void;
@@ -504,10 +511,17 @@ function UpcomingBooking({
             </p>
           </div>
 
+          {/*
+            The standing consequence appears only when cancelling would
+            actually count — inside the window. Showing it on a booking three
+            days out would be a threat about something that carries no penalty.
+          */}
+          {!freeToCancel && <CancellationConsequence party="practitioner" standing={standing} />}
+
           <button
             type="button"
             onClick={onCancel}
-            className="w-full py-3 rounded-xl font-body font-medium text-[13px] press bg-white text-danger"
+            className="w-full py-3 rounded-xl font-body font-medium text-[13px] press bg-white text-danger mt-3"
             style={{ border: "1px solid #F5C4BC" }}
           >
             Cancel booking

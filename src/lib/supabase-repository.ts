@@ -35,6 +35,7 @@ import type {
   PublicSpace,
   SpaceAccessDetails,
 } from "./domain";
+import type { CancellationEvent } from "./reliability";
 import type { CreateBookingInput, Repository } from "./repository";
 import { type CategoryKey, roomTypeFor } from "./taxonomy";
 
@@ -344,6 +345,29 @@ export class SupabaseRepository implements Repository {
       reason: row.note ?? humanReason(row.reason),
       createdAt: new Date(row.created_at),
     }));
+  }
+
+  /**
+   * Cancellations on both sides of this user's bookings.
+   *
+   * RLS already scopes it: a practitioner sees their own bookings, a host sees
+   * those on their spaces. So this returns what they are entitled to and
+   * `standingFor` picks out the side being asked about.
+   */
+  async listCancellationHistory(): Promise<CancellationEvent[]> {
+    const { data, error } = await this.db
+      .from("bookings")
+      .select("starts_at, cancelled_at, cancelled_by")
+      .not("cancelled_at", "is", null);
+    if (error) throw error;
+
+    return (data ?? [])
+      .filter((row) => row.cancelled_by === "host" || row.cancelled_by === "practitioner")
+      .map((row) => ({
+        at: new Date(row.cancelled_at),
+        sessionStart: new Date(row.starts_at),
+        by: row.cancelled_by as "host" | "practitioner",
+      }));
   }
 
   /* ---------------- hosting ---------------- */

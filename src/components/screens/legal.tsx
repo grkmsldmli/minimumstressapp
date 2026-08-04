@@ -48,6 +48,18 @@ const SECTIONS = [
       "A host cancellation also earns you goodwill credit worth our own fee on that booking. It applies to a future booking and never reduces what that future host is paid.",
     ],
   },
+  {
+    key: "standing",
+    title: "Repeated Cancellations",
+    points: [
+      "Cancelling inside 24 hours counts towards your standing. Cancelling earlier never does — that is the whole point of the 24-hour line.",
+      "Hosts: three last-minute cancellations in 90 days pauses new bookings on your spaces for 14 days. Two brings a warning first, so it is never a surprise.",
+      "Practitioners: six in 90 days pauses new bookings for 14 days. The bar is higher because a late cancellation already charges you in full — the host is paid for the hour they set aside, so the loss between you is settled. A host cancelling leaves someone with no room and sometimes a client already waiting, which nothing makes right.",
+      "A pause stops new bookings only. Every session already on the calendar goes ahead. Cancelling those would land the harm on somebody who did nothing.",
+      "Pauses lift on their own after 14 days, and cancellations stop counting after 90. Nothing here is permanent.",
+      "You can see exactly where you stand in your profile, at any time, whether or not anything is wrong. And if a pause looks wrong to you, tell us — a rule with nobody to ask is not a rule we would want to run.",
+    ],
+  },
 ] as const;
 
 export function Legal({ onBack }: { onBack: () => void }) {

@@ -16,11 +16,13 @@ import {
 
 import { Ambient, Headline, LogoBadge } from "@/components/brand";
 import { PrimaryButton } from "@/components/primitives";
+import { StandingNotice } from "@/components/standing-notice";
 import { WeekSchedule } from "@/components/week-schedule";
 import type { AvailabilityBlock } from "@/lib/availability";
 import type { HostBooking, HostSpace, Profile } from "@/lib/domain";
 import { formatCents } from "@/lib/money";
 import { PAYOUT_DELAY_DAYS, describeSpeed } from "@/lib/payouts";
+import type { Standing } from "@/lib/reliability";
 import { roomTypeFor } from "@/lib/taxonomy";
 
 import { GroupLabel, ProfileHeader, ProfileRow, SettingToggle } from "./practitioner-extras";
@@ -596,6 +598,7 @@ function StatCard({ label, value }: { label: string; value: string }) {
 export function HostProfile({
   profile,
   spaces,
+  standing,
   onBack,
   onUpdate,
   onGoLegal,
@@ -604,6 +607,7 @@ export function HostProfile({
 }: {
   profile: Profile;
   spaces: HostSpace[];
+  standing: Standing;
   onBack: () => void;
   onUpdate: (patch: Partial<Profile>) => void;
   onGoLegal: () => void;
@@ -635,6 +639,11 @@ export function HostProfile({
       />
 
       <div className="flex-1 overflow-y-auto px-6 pt-5 pb-8">
+        {/* Always visible, so it is never a surprise on the day it costs something. */}
+        <div className="mb-6">
+          <StandingNotice party="host" standing={standing} />
+        </div>
+
         <GroupLabel>Notifications</GroupLabel>
         <div className="flex flex-col gap-2.5">
           <SettingToggle

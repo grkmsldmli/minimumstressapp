@@ -19,6 +19,7 @@ import type {
   PublicSpace,
   SpaceAccessDetails,
 } from "./domain";
+import type { CancellationEvent } from "./reliability";
 
 export interface Repository {
   getProfile(): Promise<Profile>;
@@ -42,6 +43,15 @@ export interface Repository {
 
   getCreditBalanceCents(): Promise<number>;
   listCreditEntries(): Promise<CreditEntry[]>;
+
+  /**
+   * Every cancellation involving this user, either side.
+   *
+   * Returned raw rather than pre-scored so `standingFor` stays the single
+   * place the rule lives — the profile screen, the cancel confirmation and
+   * the booking check all read the same history through the same function.
+   */
+  listCancellationHistory(): Promise<CancellationEvent[]>;
 
   listMySpaces(): Promise<HostSpace[]>;
   createSpace(input: NewSpaceInput): Promise<HostSpace>;

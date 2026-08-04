@@ -15,8 +15,10 @@ import {
 
 import { Ambient, BreathingLogo, Headline } from "@/components/brand";
 import { ConfettiBurst, PrimaryButton, Toggle } from "@/components/primitives";
+import { StandingNotice } from "@/components/standing-notice";
 import { AvatarUpload, DocumentUpload } from "@/components/uploads";
 import type { Profile } from "@/lib/domain";
+import type { Standing } from "@/lib/reliability";
 import { INSTANT_FEE_CENTS, PRO_HORIZON_DAYS, PRO_PRICE_CENTS, formatCents } from "@/lib/money";
 
 import { NavyScreen } from "./shared";
@@ -243,6 +245,7 @@ export function PractitionerProfile({
   profile,
   bookingsCount,
   creditBalanceCents,
+  standing,
   onBack,
   onUpdate,
   onGoLegal,
@@ -252,6 +255,7 @@ export function PractitionerProfile({
   profile: Profile;
   bookingsCount: number;
   creditBalanceCents: number;
+  standing: Standing;
   onBack: () => void;
   onUpdate: (patch: Partial<Profile>) => void;
   onGoLegal: () => void;
@@ -286,6 +290,15 @@ export function PractitionerProfile({
           <p className="font-display italic font-semibold text-[24px] mt-1 text-navy">
             {formatCents(creditBalanceCents)}
           </p>
+        </div>
+
+        {/*
+          Shown always, not only when something is wrong. A rule nobody can see
+          until it costs them is a trap; this way "where do I stand" is a tap
+          away on a good day too.
+        */}
+        <div className="mb-6">
+          <StandingNotice party="practitioner" standing={standing} />
         </div>
 
         <GroupLabel>Notifications</GroupLabel>

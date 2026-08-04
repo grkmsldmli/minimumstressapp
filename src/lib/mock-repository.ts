@@ -38,6 +38,7 @@ import {
   quote,
   resolveCancellation,
 } from "./money";
+import type { CancellationEvent } from "./reliability";
 import type { CreateBookingInput, Repository } from "./repository";
 import { type CategoryKey, roomTypeFor } from "./taxonomy";
 
@@ -429,6 +430,18 @@ export class MockRepository implements Repository {
 
   async listCreditEntries(): Promise<CreditEntry[]> {
     return [...this.ledger];
+  }
+
+  async listCancellationHistory(): Promise<CancellationEvent[]> {
+    return this.bookings
+      .filter((b) => b.status === "cancelled_by_host" || b.status === "cancelled_by_practitioner")
+      .map((b) => ({
+        // The mock has no cancelled_at column, so the moment is taken as now.
+        // Real rows carry it; see SupabaseRepository.
+        at: new Date(),
+        sessionStart: b.startsAt,
+        by: b.status === "cancelled_by_host" ? ("host" as const) : ("practitioner" as const),
+      }));
   }
 
   /* ---------------- hosting ---------------- */

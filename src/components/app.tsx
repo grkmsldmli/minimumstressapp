@@ -11,6 +11,7 @@ import type {
   PublicSpace,
   SpaceAccessDetails,
 } from "@/lib/domain";
+import { type CancellationEvent, standingFor } from "@/lib/reliability";
 
 import { useApp } from "./app-state";
 import { AddSpace } from "./screens/add-space";
@@ -36,6 +37,7 @@ interface Snapshot {
   mySpaces: HostSpace[];
   hostBookings: HostBooking[];
   access: Record<string, SpaceAccessDetails>;
+  cancellations: CancellationEvent[];
 }
 
 export function App() {
@@ -63,7 +65,7 @@ export function App() {
     let cancelled = false;
 
     (async () => {
-      const [profile, spaces, bookings, credit, ledger, mySpaces, hostBookings] =
+      const [profile, spaces, bookings, credit, ledger, mySpaces, hostBookings, cancellations] =
         await Promise.all([
           repo.getProfile(),
           repo.listPublicSpaces(),
@@ -72,6 +74,7 @@ export function App() {
           repo.listCreditEntries(),
           repo.listMySpaces(),
           repo.listHostBookings(),
+          repo.listCancellationHistory(),
         ]);
 
       // Address details are per-space and authorization-gated, so they are
@@ -83,7 +86,17 @@ export function App() {
       }
 
       if (!cancelled) {
-        setData({ profile, spaces, bookings, credit, ledger, mySpaces, hostBookings, access });
+        setData({
+          profile,
+          spaces,
+          bookings,
+          credit,
+          ledger,
+          mySpaces,
+          hostBookings,
+          access,
+          cancellations,
+        });
       }
     })();
 
@@ -110,7 +123,15 @@ export function App() {
 
   if (!data) return <div className="h-full bg-white" />;
 
-  const { profile, spaces, bookings, credit, ledger, mySpaces, hostBookings, access } = data;
+  const { profile, spaces, bookings, credit, ledger, mySpaces, hostBookings, access, cancellations } =
+    data;
+
+  // One history, read from each side. The same function answers "how do I
+  // stand" on both profiles, so the two can never disagree about a shared
+  // cancellation.
+  const now = new Date();
+  const practitionerStanding = standingFor("practitioner", cancellations, now);
+  const hostStanding = standingFor("host", cancellations, now);
 
   /**
    * A host with no listings goes straight to AddSpace.
@@ -227,6 +248,7 @@ export function App() {
           creditBalanceCents={credit}
           creditEntries={ledger}
           accessFor={(spaceId) => access[spaceId] ?? null}
+          standing={practitionerStanding}
           onBack={back}
           onCancel={(id) => void mutate(() => repo.cancelBooking(id, "practitioner"))}
           onSimulateHostCancel={(id) => void mutate(() => repo.cancelBooking(id, "host"))}
@@ -239,6 +261,7 @@ export function App() {
           profile={profile}
           bookingsCount={bookings.length}
           creditBalanceCents={credit}
+          standing={practitionerStanding}
           onBack={back}
           onUpdate={(patch) => void mutate(() => repo.updateProfile(patch))}
           onGoLegal={() => go("legal")}
@@ -310,6 +333,7 @@ export function App() {
         <HostProfile
           profile={profile}
           spaces={mySpaces}
+          standing={hostStanding}
           onBack={back}
           onUpdate={(patch) => void mutate(() => repo.updateProfile(patch))}
           onGoLegal={() => go("legal")}

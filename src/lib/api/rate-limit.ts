@@ -75,6 +75,12 @@ export const LIMITS = {
 
   /** Starting Stripe onboarding — a link a host follows once, maybe twice. */
   connect: { limit: 5, windowMs: 60_000 },
+
+  /**
+   * Leaving a review. One per booking per side is already enforced in the
+   * database, so this only stops a loop probing which bookings exist.
+   */
+  review: { limit: 10, windowMs: 60_000 },
 } as const satisfies Record<string, RateLimit>;
 
 export interface RateLimitResult {

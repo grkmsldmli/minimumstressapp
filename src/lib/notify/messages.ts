@@ -21,7 +21,8 @@ export type NotificationKind =
   | "cancelled_by_host"
   | "reliability_warning"
   | "reliability_suspended"
-  | "payout_failed";
+  | "payout_failed"
+  | "safety_escalation";
 
 export interface Message {
   subject: string;
@@ -65,6 +66,10 @@ export interface MessageContext {
   limit?: number;
   until?: string;
   reason?: string;
+  /** The reviewer's own words, passed through rather than summarised. */
+  note?: string;
+  /** Which side wrote it, so staff know who they are reading. */
+  role?: string;
 }
 
 /**
@@ -255,6 +260,36 @@ export function render(kind: NotificationKind, context: MessageContext): Message
           `If you think this is wrong, reply to this email and a person will read it.`,
           SIGN_OFF,
         ),
+        sms: null,
+      };
+
+    /**
+     * Not to a user — to whoever is on call.
+     *
+     * Deliberately plain and complete. This is the message that decides
+     * whether somebody looks at a report tonight or on Monday, and a subject
+     * line that hides the severity behind politeness gets read on Monday.
+     */
+    case "safety_escalation":
+      return {
+        subject:
+          context.reason === "safety"
+            ? `SAFETY CONCERN reported — ${spaceName}`
+            : `${context.strikes}-star review needs review — ${spaceName}`,
+        body: lines(
+          context.reason === "safety"
+            ? "A safety concern was reported on a completed session."
+            : `A session was rated ${context.strikes} out of 5.`,
+          `Space: ${spaceName}`,
+          `Reported by: the ${context.role === "host" ? "studio" : "practitioner"}`,
+          context.note ? `They wrote:
+
+"${context.note}"` : "They left no written comment.",
+          "The full record is in review_escalations, which lists everything still open.",
+          SIGN_OFF,
+        ),
+        // Nobody is standing at a door waiting for this, and a text cannot
+        // carry the comment that makes it actionable.
         sms: null,
       };
 

@@ -94,6 +94,32 @@ The organising rule, because getting it wrong is how an address leaks:
 `0000_supabase_stubs.sql` stands in for what Supabase provides locally and is excluded from the
 migrations the tests treat as real.
 
+## Scheduled jobs
+
+`/api/cron` captures payment for sessions that have already started. It is
+driven by comparing database state to the clock — "what is due and unhandled"
+rather than "what became due since I last ran" — so a missed run self-heals on
+the next one, and running it twice is harmless.
+
+It is scheduled daily, because Vercel's Hobby plan rejects any deployment whose
+cron runs more often. That is workable but not ideal: a booking is captured
+within 24 hours of its session rather than at it. Nothing expires — card
+authorisations last about seven days — but a host waits up to a day longer than
+they need to.
+
+Three ways to make it timely, in the order they cost:
+
+1. **Any external scheduler** hitting the endpoint every few minutes with
+   `Authorization: Bearer $CRON_SECRET`. Free, and the endpoint is already
+   built for it.
+2. **Supabase `pg_cron` + `pg_net`**, so the database triggers it. No third
+   party holding the secret.
+3. **Vercel Pro**, which lifts the restriction and needs no extra moving parts.
+
+Revealing access codes deliberately needs none of this: a booking stores its own
+`access_code_revealed_at` and the view withholds the code until that moment
+passes, so it opens on time whether or not anything is running.
+
 ## Payments
 
 Destination charges with `capture_method: manual`. The practitioner is

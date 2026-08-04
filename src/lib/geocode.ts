@@ -1,5 +1,5 @@
 import type { AddressSuggestion } from "./geo";
-import { googleConfigured, predictAddresses } from "./geocode-google";
+import { googleConfigured, predictAddresses, resolveGooglePlace } from "./geocode-google";
 import { normalizeQuery, rankSuggestions } from "./geocode-query";
 
 /**
@@ -246,6 +246,33 @@ export async function searchAddresses(
   // Ranked against what was typed, not what was sent, so a house number the
   // normaliser left alone still decides the order.
   return rankSuggestions(suggestions, query);
+}
+
+/**
+ * One place, with coordinates, whatever the provider is.
+ *
+ * `searchAddresses` returns what the provider returns, and a predictive one
+ * returns predictions — rows with no coordinates until a second call resolves
+ * them. Any caller that needs a *point* rather than a list of guesses has to
+ * cross that gap, and doing it at each call site is how one of them silently
+ * always fails: a ZIP lookup that reads `lat` off a Google prediction gets
+ * null every time and reports "no such postcode".
+ */
+export async function geocodeOne(
+  query: string,
+  signal?: AbortSignal,
+): Promise<{ lat: number; lng: number; addressLine: string } | null> {
+  const [best] = await searchAddresses(query, { signal });
+  if (!best) return null;
+
+  if (best.lat !== null && best.lng !== null) {
+    return { lat: best.lat, lng: best.lng, addressLine: best.addressLine };
+  }
+
+  if (!best.placeId) return null;
+
+  const resolved = await resolveGooglePlace(best.placeId, crypto.randomUUID(), signal);
+  return resolved ? { lat: resolved.lat, lng: resolved.lng, addressLine: resolved.addressLine } : null;
 }
 
 function photonUrl(query: string): URL {

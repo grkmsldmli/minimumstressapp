@@ -432,6 +432,17 @@ export class MockRepository implements Repository {
     return this.withRevealedCode(booking);
   }
 
+  /**
+   * Accepted and discarded.
+   *
+   * The mock exists so every screen can be walked without an account, and the
+   * review form is part of that walk. Storing one would mean also modelling
+   * the blind period and the escalation queue, which are the rules the real
+   * path exists to enforce — a second, quietly different copy of them here is
+   * how the two drift.
+   */
+  async submitReview(): Promise<void> {}
+
   /* ---------------- credit ---------------- */
 
   async getCreditBalanceCents(): Promise<number> {

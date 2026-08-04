@@ -27,6 +27,7 @@ export type Screen =
   | "payment"
   | "confirmed"
   | "bookings"
+  | "review"
   | "practitioner-profile"
   | "pro"
   | "legal"
@@ -69,6 +70,10 @@ interface AppState {
   clientSecret: string | null;
   setClientSecret: (secret: string | null) => void;
 
+  /** Which booking the review screen is about, and from which side. */
+  reviewing: { bookingId: string; role: "practitioner" | "host" } | null;
+  setReviewing: (target: { bookingId: string; role: "practitioner" | "host" } | null) => void;
+
   /** Bumped whenever data changes, so screens can refetch without a store. */
   revision: number;
   refresh: () => void;
@@ -92,6 +97,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [activeSpaceId, setActiveSpaceId] = useState<string | null>(null);
   const [activeBookingId, setActiveBookingId] = useState<string | null>(null);
   const [clientSecret, setClientSecret] = useState<string | null>(null);
+  const [reviewing, setReviewing] = useState<{
+    bookingId: string;
+    role: "practitioner" | "host";
+  } | null>(null);
   const [editingSpaceId, setEditingSpaceId] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);
 
@@ -143,6 +152,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     setActiveBookingId(null);
     setEditingSpaceId(null);
     setClientSecret(null);
+    setReviewing(null);
   }, []);
 
   const refresh = useCallback(() => setRevision((r) => r + 1), []);
@@ -166,6 +176,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       setEditingSpaceId,
       clientSecret,
       setClientSecret,
+      reviewing,
+      setReviewing,
       revision,
       refresh,
     }),
@@ -181,6 +193,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       activeBookingId,
       editingSpaceId,
       clientSecret,
+      reviewing,
       revision,
       refresh,
     ],

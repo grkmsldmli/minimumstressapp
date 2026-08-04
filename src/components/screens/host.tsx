@@ -40,7 +40,7 @@ export function HostDashboard({
   onEditHours,
   onOpenEarnings,
   onOpenProfile,
-  onSimulateBooking,
+  onReviewBooking,
 }: {
   spaces: HostSpace[];
   bookings: HostBooking[];
@@ -50,7 +50,8 @@ export function HostDashboard({
   onEditHours: (spaceId: string) => void;
   onOpenEarnings: () => void;
   onOpenProfile: () => void;
-  onSimulateBooking: (spaceId: string) => void;
+  /** Absent until the review window opens for a session. */
+  onReviewBooking?: (bookingId: string) => void;
 }) {
   const [activeId, setActiveId] = useState<string | null>(spaces[0]?.id ?? null);
   const active = spaces.find((s) => s.id === activeId) ?? spaces[0] ?? null;
@@ -61,8 +62,40 @@ export function HostDashboard({
 
   const pending = active.status === "pending";
   const spaceBookings = bookings.filter((b) => b.spaceId === active.id);
-  const monthCents = spaceBookings.reduce((sum, b) => sum + b.netCents, 0);
-  const hoursFilled = spaceBookings.length;
+
+  /**
+   * Split by the clock, not by status.
+   *
+   * The list was headed "Upcoming" and showed everything — past sessions and
+   * cancellations included — so a host could not tell what was still coming
+   * without reading every date. A cancelled booking is neither: it is not
+   * ahead of them and it is not something that happened.
+   */
+  const now = new Date();
+  const upcoming = spaceBookings
+    .filter((b) => b.status === "upcoming" && b.startsAt >= now)
+    .sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
+  const past = spaceBookings
+    .filter((b) => b.status !== "upcoming" || b.startsAt < now)
+    .sort((a, b) => b.startsAt.getTime() - a.startsAt.getTime());
+
+  /**
+   * Earned, and only from sessions that happened.
+   *
+   * This was every booking on the listing summed together under the label
+   * "this month" — including cancelled ones, and including next month's. A
+   * host reading that number is reading it for tax, so it counts completed
+   * sessions in the current calendar month and nothing else.
+   */
+  const monthCents = spaceBookings
+    .filter(
+      (b) =>
+        b.status === "completed" &&
+        b.startsAt.getMonth() === now.getMonth() &&
+        b.startsAt.getFullYear() === now.getFullYear(),
+    )
+    .reduce((sum, b) => sum + b.netCents, 0);
+  const hoursFilled = spaceBookings.filter((b) => b.status === "completed").length;
 
   return (
     <div className="h-full flex flex-col screen-in bg-white">
@@ -216,81 +249,42 @@ export function HostDashboard({
               </button>
             </div>
 
-            {spaceBookings.length === 0 ? (
+            {upcoming.length === 0 ? (
               <div
                 className="rounded-2xl p-4"
                 style={{ backgroundColor: "#F4F8FC", border: "1px solid #E7EEF6" }}
               >
                 <p className="font-body font-light text-[11.5px] leading-relaxed text-ink-soft">
-                  No bookings yet. That&apos;s normal for a new listing — opening more hours is the
-                  single thing that helps most, since practitioners search by time before anything
-                  else.
+                  {past.length > 0
+                    ? "Nothing booked ahead right now. Opening more hours is the single thing that helps most, since practitioners search by time before anything else."
+                    : "No bookings yet. That's normal for a new listing — opening more hours is the single thing that helps most, since practitioners search by time before anything else."}
                 </p>
-                <button
-                  type="button"
-                  onClick={() => onSimulateBooking(active.id)}
-                  className="w-full mt-3 py-2.5 rounded-xl font-body text-[10.5px] press text-ink-faint"
-                  style={{ border: "1px dashed #DCE7F2" }}
-                >
-                  Prototype only — simulate a practitioner booking →
-                </button>
               </div>
             ) : (
               <div className="flex flex-col gap-2.5">
-                {spaceBookings.map((booking, i) => (
-                  <div
-                    key={booking.id}
-                    className="flex items-center justify-between p-3.5 rounded-2xl card-in bg-white"
-                    style={{
-                      border: "1px solid #E7EEF6",
-                      animationDelay: `${i * 80}ms`,
-                      boxShadow: "0 4px 14px -8px rgba(22,48,78,0.1)",
-                    }}
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div
-                        className="w-10 h-10 rounded-full flex items-center justify-center font-display italic font-semibold text-[14px] shrink-0"
-                        style={{ backgroundColor: "#EDF6FE", color: "#16304E" }}
-                      >
-                        {booking.practitionerName[0]}
-                      </div>
-                      <div className="min-w-0">
-                        <p className="font-body font-medium text-[13px] text-navy truncate">
-                          {booking.practitionerName}
-                        </p>
-                        <p className="font-body font-light text-[11px] text-ink-soft truncate">
-                          {booking.practitionerCraft} ·{" "}
-                          {booking.startsAt.toLocaleDateString("en-US", {
-                            month: "short",
-                            day: "numeric",
-                          })}{" "}
-                          {booking.startsAt.toLocaleTimeString("en-US", {
-                            hour: "numeric",
-                            minute: "2-digit",
-                          })}
-                        </p>
-                      </div>
-                    </div>
-                    {/*
-                      Net earnings only. A host never sees the service fee or a
-                      percentage — the platform's cut is not deducted from this
-                      number, so showing it here would only invite the wrong
-                      question.
-                    */}
-                    <p className="font-body font-semibold text-[14px] text-navy shrink-0">
-                      +{formatCents(booking.netCents)}
-                    </p>
-                  </div>
+                {upcoming.map((booking, i) => (
+                  <HostBookingRow key={booking.id} booking={booking} index={i} />
                 ))}
-                <button
-                  type="button"
-                  onClick={() => onSimulateBooking(active.id)}
-                  className="w-full mt-1 py-2.5 rounded-xl font-body text-[10.5px] press text-ink-faint"
-                  style={{ border: "1px dashed #DCE7F2" }}
-                >
-                  Prototype only — simulate another booking →
-                </button>
               </div>
+            )}
+
+            {past.length > 0 && (
+              <>
+                <p className="font-body font-medium text-[10.5px] uppercase tracking-[0.2em] text-sky mt-7 mb-3">
+                  Past
+                </p>
+                <div className="flex flex-col gap-2.5">
+                  {past.map((booking, i) => (
+                    <HostBookingRow
+                      key={booking.id}
+                      booking={booking}
+                      index={i}
+                      past
+                      onReview={onReviewBooking ? () => onReviewBooking(booking.id) : undefined}
+                    />
+                  ))}
+                </div>
+              </>
             )}
           </div>
         </>
@@ -758,6 +752,89 @@ export function HostProfile({
           <ProfileRow icon={LogOut} label="Log out" onClick={onSignOut} danger />
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * One booking, as the host sees it.
+ *
+ * Net earnings only. A host never sees the service fee or a percentage — the
+ * platform's cut is not deducted from this number, so showing it here would
+ * only invite the wrong question.
+ */
+function HostBookingRow({
+  booking,
+  index,
+  past = false,
+  onReview,
+}: {
+  booking: HostBooking;
+  index: number;
+  past?: boolean;
+  onReview?: () => void;
+}) {
+  const cancelled = booking.status.startsWith("cancelled");
+
+  return (
+    <div
+      className="p-3.5 rounded-2xl card-in bg-white"
+      style={{
+        border: "1px solid #E7EEF6",
+        animationDelay: `${index * 80}ms`,
+        boxShadow: "0 4px 14px -8px rgba(22,48,78,0.1)",
+        // Cancelled sessions stay in the list because they are part of the
+        // record, but they should not read as earnings.
+        opacity: cancelled ? 0.6 : 1,
+      }}
+    >
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3 min-w-0">
+          <div
+            className="w-10 h-10 rounded-full flex items-center justify-center font-display italic font-semibold text-[14px] shrink-0"
+            style={{ backgroundColor: "#EDF6FE", color: "#16304E" }}
+          >
+            {booking.practitionerName[0]}
+          </div>
+          <div className="min-w-0">
+            <p className="font-body font-medium text-[13px] text-navy truncate">
+              {booking.practitionerName}
+            </p>
+            <p className="font-body font-light text-[11px] text-ink-soft truncate">
+              {booking.practitionerCraft} ·{" "}
+              {booking.startsAt.toLocaleDateString("en-US", { month: "short", day: "numeric" })}{" "}
+              {booking.startsAt.toLocaleTimeString("en-US", {
+                hour: "numeric",
+                minute: "2-digit",
+              })}
+            </p>
+          </div>
+        </div>
+
+        <p
+          className="font-body font-semibold text-[14px] shrink-0"
+          style={{ color: cancelled ? "#8CA3BD" : "#16304E" }}
+        >
+          {cancelled ? "—" : `+${formatCents(booking.netCents)}`}
+        </p>
+      </div>
+
+      {past && cancelled && (
+        <p className="font-body font-light text-[11px] mt-2 text-ink-faint">
+          Cancelled by {booking.status === "cancelled_by_host" ? "you" : "the practitioner"}.
+        </p>
+      )}
+
+      {past && !cancelled && onReview && (
+        <button
+          type="button"
+          onClick={onReview}
+          className="w-full mt-3 py-2.5 rounded-xl font-body font-medium text-[11.5px] press"
+          style={{ border: "1px solid #DCE7F2", color: "#16304E" }}
+        >
+          Leave a review
+        </button>
+      )}
     </div>
   );
 }

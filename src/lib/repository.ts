@@ -42,6 +42,15 @@ export interface Repository {
   createBooking(input: CreateBookingInput): Promise<CreatedBooking>;
   cancelBooking(bookingId: string, actor: "practitioner" | "host"): Promise<Booking>;
 
+  /**
+   * Leaves a review on a finished session.
+   *
+   * Takes no author and no role: both are derived server-side from the
+   * booking, because a caller who could name their own side could review as
+   * the other party.
+   */
+  submitReview(input: ReviewInput): Promise<void>;
+
   getCreditBalanceCents(): Promise<number>;
   listCreditEntries(): Promise<CreditEntry[]>;
 
@@ -78,4 +87,14 @@ export interface Repository {
 export interface CreateBookingInput {
   spaceId: string;
   startsAt: Date;
+}
+
+/** What the review screen collects. The server decides everything else. */
+export interface ReviewInput {
+  bookingId: string;
+  overall: number;
+  comment: string;
+  safetyConcern: boolean;
+  practitioner?: Record<string, unknown>;
+  host?: Record<string, unknown>;
 }

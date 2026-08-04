@@ -43,7 +43,7 @@ import type {
   SpaceAccessDetails,
 } from "./domain";
 import type { CancellationEvent } from "./reliability";
-import type { CreateBookingInput, Repository } from "./repository";
+import type { CreateBookingInput, Repository, ReviewInput } from "./repository";
 import { type CategoryKey, roomTypeFor } from "./taxonomy";
 
 /** Rows as PostgREST returns them, before mapping into domain shapes. */
@@ -390,6 +390,24 @@ export class SupabaseRepository implements Repository {
     const booking = (await this.listMyBookings()).find((b) => b.id === id);
     if (!booking) throw new Error("Booking was cancelled but could not be read back");
     return booking;
+  }
+
+  /**
+   * Reviews are written through a server route for the same reason bookings
+   * are: eligibility depends on facts a client can be made to lie about, and
+   * `reviews` has no insert policy at all.
+   */
+  async submitReview(input: ReviewInput): Promise<void> {
+    const response = await fetch("/api/reviews", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    });
+
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => ({}))) as { error?: string };
+      throw new Error(payload.error ?? `Could not save that review (${response.status})`);
+    }
   }
 
   /* ---------------- credit ---------------- */

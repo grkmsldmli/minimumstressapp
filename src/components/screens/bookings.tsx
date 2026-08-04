@@ -232,6 +232,7 @@ export function MyBookings({
   standing,
   onBack,
   onCancel,
+  onReview,
   onSimulateHostCancel,
 }: {
   bookings: Booking[];
@@ -241,6 +242,8 @@ export function MyBookings({
   standing: Standing;
   onBack: () => void;
   onCancel: (id: string) => void;
+  /** Offered on a finished session that has not been reviewed yet. */
+  onReview?: (id: string) => void;
   onSimulateHostCancel: (id: string) => void;
 }) {
   const [openId, setOpenId] = useState<string | null>(null);
@@ -356,27 +359,50 @@ export function MyBookings({
               <SectionLabel>Past</SectionLabel>
             </div>
             <div className="flex flex-col gap-2">
-              {past.map((booking) => (
-                <div
-                  key={booking.id}
-                  className="flex items-center justify-between p-3 rounded-xl gap-3"
-                  style={{ backgroundColor: "#F9FAFB" }}
-                >
-                  <div className="min-w-0">
-                    <p className="font-body font-medium text-[13px] text-navy truncate">
-                      {booking.spaceName} · {booking.roomType}
-                    </p>
-                    <p className="font-body font-light text-[11px] text-ink-faint">
-                      {booking.startsAt.toLocaleDateString("en-US", {
-                        month: "short",
-                        day: "numeric",
-                      })}
-                      {booking.status === "cancelled_by_host" && " · refunded and credited"}
-                    </p>
+              {past.map((booking) => {
+                /*
+                  A cancelled session is not reviewable — nobody was in the
+                  room, so there is nothing to report, and the reliability
+                  rules already handle a repeated canceller.
+                */
+                const reviewable =
+                  onReview && booking.status === "completed" && booking.endsAt < now;
+
+                return (
+                  <div
+                    key={booking.id}
+                    className="p-3 rounded-xl"
+                    style={{ backgroundColor: "#F9FAFB" }}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-body font-medium text-[13px] text-navy truncate">
+                          {booking.spaceName} · {booking.roomType}
+                        </p>
+                        <p className="font-body font-light text-[11px] text-ink-faint">
+                          {booking.startsAt.toLocaleDateString("en-US", {
+                            month: "short",
+                            day: "numeric",
+                          })}
+                          {booking.status === "cancelled_by_host" && " · refunded and credited"}
+                        </p>
+                      </div>
+                      <StatusPill status={booking.status} />
+                    </div>
+
+                    {reviewable && (
+                      <button
+                        type="button"
+                        onClick={() => onReview(booking.id)}
+                        className="w-full mt-2.5 py-2.5 rounded-xl font-body font-medium text-[11.5px] press bg-white"
+                        style={{ border: "1px solid #DCE7F2", color: "#16304E" }}
+                      >
+                        How was it? Leave a review
+                      </button>
+                    )}
                   </div>
-                  <StatusPill status={booking.status} />
-                </div>
-              ))}
+                );
+              })}
             </div>
           </>
         )}

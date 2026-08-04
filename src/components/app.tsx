@@ -27,6 +27,7 @@ import { Discover } from "./screens/discover";
 import { EditAvailability, Earnings, HostDashboard, HostProfile } from "./screens/host";
 import { Legal } from "./screens/legal";
 import { PaymentSheet } from "./screens/payment-sheet";
+import { ReviewScreen } from "./screens/review";
 import {
   InsuranceUpload,
   PractitionerProfile,
@@ -65,6 +66,8 @@ export function App() {
     setEditingSpaceId,
     clientSecret,
     setClientSecret,
+    reviewing,
+    setReviewing,
     revision,
     refresh,
   } = useApp();
@@ -369,6 +372,41 @@ export function App() {
         />
       );
 
+    case "review": {
+      if (!reviewing) return <Fallback onBack={() => go("discover")} />;
+
+      /**
+       * The booking is looked up in whichever list matches the side writing.
+       * A host's own bookings never appear in listMyBookings, and a
+       * practitioner's never appear in listHostBookings, so asking the wrong
+       * one is how a review screen renders empty for exactly one role.
+       */
+      const target =
+        reviewing.role === "practitioner"
+          ? bookings.find((b) => b.id === reviewing.bookingId)
+          : hostBookings.find((b) => b.id === reviewing.bookingId);
+
+      if (!target) return <Fallback onBack={back} />;
+
+      return (
+        <ReviewScreen
+          subjectName={
+            reviewing.role === "practitioner"
+              ? (target as Booking).spaceName
+              : (target as HostBooking).practitionerName
+          }
+          role={reviewing.role}
+          onBack={back}
+          onSubmit={async (draft) => {
+            await repo.submitReview({ bookingId: reviewing.bookingId, ...draft });
+            setReviewing(null);
+            refresh();
+            back();
+          }}
+        />
+      );
+    }
+
     case "confirmed":
       if (!activeBooking) return <Fallback onBack={() => go("discover")} />;
       return (
@@ -392,6 +430,10 @@ export function App() {
           standing={practitionerStanding}
           onBack={back}
           onCancel={(id) => void mutate(() => repo.cancelBooking(id, "practitioner"))}
+          onReview={(id) => {
+            setReviewing({ bookingId: id, role: "practitioner" });
+            go("review");
+          }}
           onSimulateHostCancel={(id) => void mutate(() => repo.cancelBooking(id, "host"))}
         />
       );
@@ -437,9 +479,10 @@ export function App() {
           }}
           onOpenEarnings={() => go("earnings")}
           onOpenProfile={() => go("host-profile")}
-          onSimulateBooking={(spaceId) =>
-            void mutate(() => repo.simulateInboundBooking(spaceId))
-          }
+          onReviewBooking={(bookingId) => {
+            setReviewing({ bookingId, role: "host" });
+            go("review");
+          }}
         />
       );
 

@@ -131,6 +131,12 @@ function assertMoney(value: number, label: string): void {
 /**
  * What Stripe charges to process a payment of this size. Rounded up so we never
  * under-reserve by a cent.
+ *
+ * Checked against a real sandbox charge: on $59.00 Stripe took 201c, while this
+ * returns 202c. Stripe rounds the percentage where this ceilings it, so the
+ * estimate runs a cent high — the safe direction, since the credit floor is
+ * built on it and over-reserving costs a practitioner a cent of rollover rather
+ * than costing us the payment.
  */
 export function estimateStripeFeeCents(totalCents: number): number {
   assertMoney(totalCents, "totalCents");

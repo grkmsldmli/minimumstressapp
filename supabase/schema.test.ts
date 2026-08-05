@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { PGlite } from "@electric-sql/pglite";
@@ -14,18 +14,25 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
  * storage.*, auth.uid() — and is deliberately excluded from MIGRATIONS so it
  * can never be mistaken for something to apply to the real project.
  */
-const MIGRATIONS = [
-  "0001_schema.sql",
-  "0002_rls.sql",
-  "0003_storage.sql",
-  "0004_narrow_public_profiles.sql",
-  "0005_host_bookings.sql",
-  "0006_service_role_grants.sql",
-  "0007_space_details.sql",
-];
+/**
+ * Read from the directory, not written down.
+ *
+ * This was a hand-maintained list and it stopped at 0007, so six migrations —
+ * everything from map positions through reviews and account types — were never
+ * executed by any test. One of them could not be applied twice: it dropped a
+ * view that another view depended on, which fails on every re-run and did,
+ * against the live project, because nothing here had tried.
+ *
+ * A list that must be updated by hand is a list that will be out of date, and
+ * silently: the suite stays green while covering less and less.
+ */
 const STUBS = "0000_supabase_stubs.sql";
 
 const migrationsDir = join(import.meta.dirname, "migrations");
+
+const MIGRATIONS = readdirSync(migrationsDir)
+  .filter((file) => file.endsWith(".sql") && file !== STUBS)
+  .sort();
 const read = (file: string) => readFileSync(join(migrationsDir, file), "utf8");
 
 let db: PGlite;
@@ -65,7 +72,7 @@ describe("migrations apply cleanly", () => {
         `select table_name from information_schema.tables
          where table_schema = 'public' and table_type = 'BASE TABLE'`,
       );
-      expect(tables.rows).toHaveLength(6);
+      expect(tables.rows).toHaveLength(10);
     } finally {
       await fresh.close();
     }
@@ -79,10 +86,14 @@ describe("migrations apply cleanly", () => {
     );
 
     expect(found.map((r) => r.table_name)).toEqual([
+      "account_type_change_requests",
       "availability",
       "bookings",
       "credit_ledger",
+      "notifications",
       "profiles",
+      "review_escalations",
+      "reviews",
       "space_media",
       "spaces",
     ]);
@@ -185,6 +196,11 @@ describe("private columns stay out of the public views", () => {
       "public_host_profiles",
       "availability_public",
       "space_media_public",
+      // Reviews are shown to everyone, so the same rule applies: the safety
+      // of a definer view is its column list, and the author's identity, the
+      // booking and the safety flag are absent from both of these.
+      "public_reviews",
+      "space_ratings",
     ];
 
     const views = await rows<{ viewname: string; options: string[] | null }>(

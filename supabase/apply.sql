@@ -1223,6 +1223,13 @@ grant select, insert, update on review_escalations to service_role;
 -- src/lib/reviews.ts, enforced here because this is the only copy a client
 -- cannot bypass.
 -- ------------------------------------------------------------------
+/*
+ * Dropped in dependency order: space_ratings reads from public_reviews, so
+ * Postgres refuses to drop the second while the first exists. Re-running the
+ * file is the ordinary case — apply.sql is pasted whole — and this failed on
+ * every attempt after the first.
+ */
+drop view if exists space_ratings;
 drop view if exists public_reviews;
 
 create view public_reviews
@@ -1257,8 +1264,6 @@ grant select on public_reviews to service_role;
 -- reviews belongs to src/lib/reviews.ts, which is where the reason for that
 -- rule is written down.
 -- ------------------------------------------------------------------
-drop view if exists space_ratings;
-
 create view space_ratings
 with (security_invoker = false) as
   select

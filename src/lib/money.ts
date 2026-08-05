@@ -101,6 +101,11 @@ export interface QuoteInput {
   isPro: boolean;
   /** Practitioner's available goodwill credit. Redemption may be partial. */
   creditBalanceCents: number;
+  /**
+   * Instant fee waived by earned standing rather than by the subscription.
+   * Defaults to false, so an existing caller keeps its current behaviour.
+   */
+  instantFeeWaived?: boolean;
 }
 
 export interface Quote {
@@ -173,12 +178,15 @@ export function minPlatformCents(hostRateCents: number): number {
  * with the remainder rolled over is honest and keeps us cash-positive.
  */
 export function quote(input: QuoteInput): Quote {
-  const { hostRateCents, isInstant, isPro, creditBalanceCents } = input;
+  const { hostRateCents, isInstant, isPro, creditBalanceCents, instantFeeWaived = false } = input;
   assertMoney(hostRateCents, "hostRateCents");
   assertMoney(creditBalanceCents, "creditBalanceCents");
 
   const serviceFeeCents = Math.round(hostRateCents * SERVICE_FEE_RATE);
-  const instantFeeCents = isInstant && !isPro ? INSTANT_FEE_CENTS : 0;
+  // Waived by the subscription or by standing — the two are the same benefit
+  // bought two different ways, and charging somebody who earned it would be
+  // the ladder failing to pay out.
+  const instantFeeCents = isInstant && !isPro && !instantFeeWaived ? INSTANT_FEE_CENTS : 0;
 
   const listPriceCents = hostRateCents + serviceFeeCents + instantFeeCents;
   const platformBeforeDiscount = serviceFeeCents + instantFeeCents;
@@ -311,14 +319,23 @@ export function isFreeCancellation(sessionStart: Date, now: Date): boolean {
 }
 
 /**
- * How far ahead this practitioner may book. Standard is same-day only; Pro
- * reaches three days out. Compared by calendar day, so "same day" means the
- * rest of today rather than the next 24 hours.
+ * How far ahead this practitioner may book. Compared by calendar day, so "same
+ * day" means the rest of today rather than the next 24 hours.
+ *
+ * `extraDays` is standing, passed in rather than looked up: this module knows
+ * about money and nothing about tiers, and the caller takes whichever of the
+ * two horizons is longer so paying never leaves somebody worse off than not
+ * paying.
  */
-export function isWithinBookingHorizon(slotStart: Date, now: Date, isPro: boolean): boolean {
+export function isWithinBookingHorizon(
+  slotStart: Date,
+  now: Date,
+  isPro: boolean,
+  extraDays = 0,
+): boolean {
   if (slotStart.getTime() < now.getTime()) return false;
 
-  const horizonDays = isPro ? PRO_HORIZON_DAYS : STANDARD_HORIZON_DAYS;
+  const horizonDays = Math.max(isPro ? PRO_HORIZON_DAYS : STANDARD_HORIZON_DAYS, extraDays);
   const lastBookableDay = new Date(now.getFullYear(), now.getMonth(), now.getDate() + horizonDays);
   const slotDay = new Date(slotStart.getFullYear(), slotStart.getMonth(), slotStart.getDate());
 

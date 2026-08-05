@@ -19,6 +19,7 @@ import {
   quote,
   type BookingMoney,
 } from "./money";
+import { earnedBookingHorizonDays, earnsInstantFeeWaiver } from "./standing-points";
 
 export interface SpaceFacts {
   id: string;
@@ -38,6 +39,12 @@ export interface PractitionerFacts {
   id: string;
   isPro: boolean;
   creditBalanceCents: number;
+  /**
+   * Earned standing. Read server-side from the points view, never sent by the
+   * caller — a client that could claim its own total could claim a horizon and
+   * a fee waiver with it.
+   */
+  points: number;
 }
 
 export type PlanRejection =
@@ -78,7 +85,14 @@ export function planBooking(input: {
 
   // The horizon is a paid Pro benefit, so it is checked against the stored
   // flag rather than anything the caller asserted.
-  if (!isWithinBookingHorizon(startsAt, now, practitioner.isPro)) {
+  if (
+    !isWithinBookingHorizon(
+      startsAt,
+      now,
+      practitioner.isPro,
+      earnedBookingHorizonDays(practitioner.points),
+    )
+  ) {
     return { ok: false, reason: "beyond_booking_horizon" };
   }
 
@@ -104,6 +118,7 @@ export function planBooking(input: {
         isInstant,
         isPro: practitioner.isPro,
         creditBalanceCents: practitioner.creditBalanceCents,
+        instantFeeWaived: earnsInstantFeeWaiver(practitioner.points),
       }),
     ),
   };

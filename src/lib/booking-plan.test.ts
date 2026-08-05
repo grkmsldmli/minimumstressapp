@@ -27,7 +27,12 @@ const SPACE: SpaceFacts = {
 };
 
 const HOST: HostFacts = { stripeAccountId: "acct_1", chargesEnabled: true };
-const PRACTITIONER: PractitionerFacts = { id: "pr_1", isPro: false, creditBalanceCents: 0 };
+const PRACTITIONER: PractitionerFacts = {
+  id: "pr_1",
+  isPro: false,
+  creditBalanceCents: 0,
+  points: 0,
+};
 
 const plan = (overrides: Partial<Parameters<typeof planBooking>[0]> = {}) =>
   planBooking({
@@ -196,5 +201,70 @@ describe("refusing to take money nobody can receive", () => {
 
   it("refuses a space that does not exist", () => {
     expect(plan({ space: null })).toEqual({ ok: false, reason: "space_not_found" });
+  });
+});
+
+/**
+ * The standing card promises these in words. Until this suite existed the
+ * words were the whole implementation — a ladder that told people what they
+ * had earned and then charged them for it anyway.
+ */
+describe("benefits that were earned rather than bought", () => {
+  // Wednesday the 5th, two days out: past the same-day standard horizon and
+  // inside the five days Established earns. A weekday, so the space is open.
+  const twoDaysOut = at(14, 2);
+
+  it("refuses a booking beyond today for somebody with no standing", () => {
+    expect(plan({ startsAt: twoDaysOut, practitioner: PRACTITIONER })).toMatchObject({
+      ok: false,
+      reason: "beyond_booking_horizon",
+    });
+  });
+
+  it("allows it once they reach Established", () => {
+    expect(
+      plan({ startsAt: twoDaysOut, practitioner: { ...PRACTITIONER, points: 100 } }).ok,
+    ).toBe(true);
+  });
+
+  /** Paying must never leave somebody worse off than not paying. */
+  it("gives a Pro with standing the longer of the two horizons", () => {
+    const sevenDaysOut = at(14, 7);
+    expect(
+      plan({
+        startsAt: sevenDaysOut,
+        practitioner: { ...PRACTITIONER, isPro: true, points: 100 },
+      }).ok,
+    ).toBe(false);
+
+    // Trusted reaches ten days, which is past both Pro's three and its own five.
+    expect(
+      plan({
+        startsAt: sevenDaysOut,
+        practitioner: { ...PRACTITIONER, isPro: true, points: 300 },
+      }).ok,
+    ).toBe(true);
+  });
+
+  it("charges the instant fee to somebody without standing", () => {
+    const result = plan({ startsAt: at(11), practitioner: PRACTITIONER });
+    expect(result.ok && result.money.instantFeeCents).toBeGreaterThan(0);
+  });
+
+  it("waives it at Trusted", () => {
+    const result = plan({ startsAt: at(11), practitioner: { ...PRACTITIONER, points: 300 } });
+    expect(result.ok && result.money.instantFeeCents).toBe(0);
+  });
+
+  /** The host is paid their rate either way — a waived fee comes out of ours. */
+  it("still pays the host in full when the fee is waived", () => {
+    const waived = plan({ startsAt: at(11), practitioner: { ...PRACTITIONER, points: 300 } });
+    const charged = plan({ startsAt: at(11), practitioner: PRACTITIONER });
+
+    expect(waived.ok && charged.ok).toBe(true);
+    if (waived.ok && charged.ok) {
+      expect(waived.money.hostRateCents).toBe(charged.money.hostRateCents);
+      expect(waived.money.totalCents).toBeLessThan(charged.money.totalCents);
+    }
   });
 });

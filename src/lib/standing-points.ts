@@ -93,19 +93,22 @@ export const TIERS: Record<Party, Tier[]> = {
       key: "established",
       name: "Established",
       at: 100,
-      benefit: "Your booking window opens 5 days ahead instead of same-day.",
+      benefit: "Book up to 5 days ahead, instead of same-day only.",
     },
     {
       key: "trusted",
       name: "Trusted",
       at: 300,
-      benefit: "Instant-booking fees waived on two sessions a month.",
+      // Deliberately the same benefit Pro sells, and unmetered. "Two a month"
+      // needed a counter nobody could see, and a benefit you cannot tell
+      // whether you have is not one.
+      benefit: "No instant-booking fee, ever — and 10 days of booking ahead.",
     },
     {
       key: "resident",
       name: "Resident",
       at: 750,
-      benefit: "A 5% credit back on every session, and first refusal on newly listed rooms.",
+      benefit: "Book up to 2 weeks ahead, with no instant fee.",
     },
   ],
   host: [
@@ -125,13 +128,13 @@ export const TIERS: Record<Party, Tier[]> = {
       key: "trusted",
       name: "Trusted",
       at: 300,
-      benefit: "A Trusted mark on your listing, and priority in the review queue for new rooms.",
+      benefit: "Payouts a day sooner, and priority in the review queue for new rooms.",
     },
     {
       key: "resident",
       name: "Resident",
       at: 750,
-      benefit: "Instant payouts at no fee, and your rooms surface first for nearby practitioners.",
+      benefit: "Payouts a day sooner, and your rooms surface first for nearby practitioners.",
     },
   ],
 };
@@ -221,6 +224,44 @@ export function standingFor(party: Party, points: number): Standing {
     // misconfigured ladder should not render NaN on somebody's profile.
     progress: span > 0 ? Math.min(1, Math.max(0, (points - tier.at) / span)) : 1,
   };
+}
+
+/**
+ * How many days ahead this practitioner may book, earned rather than paid.
+ *
+ * Pro buys three days; Established earns five. A benefit that only ever
+ * arrives with a subscription is a price list, not a ladder — and somebody who
+ * has run forty sessions has demonstrated more than somebody who has entered a
+ * card. The caller takes whichever is longer, so paying never makes you worse
+ * off than not paying.
+ */
+export function earnedBookingHorizonDays(points: number): number {
+  if (points >= 750) return 14;
+  if (points >= 300) return 10;
+  if (points >= 100) return 5;
+  return 0;
+}
+
+/**
+ * Whether instant-slot fees are waived by standing.
+ *
+ * Deliberately the same benefit Pro sells. Two routes to one outcome — pay for
+ * it, or earn it — and the earned one arrives at Trusted, which is around
+ * twenty completed sessions.
+ */
+export function earnsInstantFeeWaiver(points: number): boolean {
+  return points >= 300;
+}
+
+/**
+ * Days shaved off a host's payout wait.
+ *
+ * Capped so it can never reach zero: the delay exists because a card can be
+ * disputed after the money has been paid out, and a benefit that removed it
+ * entirely would move that risk onto us.
+ */
+export function earnedPayoutSpeedupDays(points: number): number {
+  return points >= 100 ? 1 : 0;
 }
 
 /** Whether a tier's benefit is live for this account. */

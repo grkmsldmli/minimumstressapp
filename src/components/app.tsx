@@ -29,6 +29,7 @@ import { EditAvailability, Earnings, HostDashboard, HostProfile } from "./screen
 import { Legal } from "./screens/legal";
 import { PaymentSheet } from "./screens/payment-sheet";
 import { ReviewScreen } from "./screens/review";
+import { Thread, type ThreadMessage } from "./screens/thread";
 import {
   InsuranceUpload,
   PractitionerProfile,
@@ -48,6 +49,7 @@ interface Snapshot {
   hostBookings: HostBooking[];
   access: Record<string, SpaceAccessDetails>;
   cancellations: CancellationEvent[];
+  points: number;
 }
 
 export function App() {
@@ -69,6 +71,8 @@ export function App() {
     setClientSecret,
     reviewing,
     setReviewing,
+    threadBookingId,
+    setThreadBookingId,
     revision,
     refresh,
   } = useApp();
@@ -76,6 +80,38 @@ export function App() {
   const [data, setData] = useState<Snapshot | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
   const [authBusy, setAuthBusy] = useState(false);
+
+  /**
+   * Loaded when a thread opens rather than with everything else.
+   *
+   * A booking list can be long and most of its threads are empty; fetching
+   * them all on every refresh would be work nobody asked for. The trade is one
+   * request when a thread is actually opened.
+   */
+  const [thread, setThread] = useState<ThreadMessage[]>([]);
+
+  useEffect(() => {
+    if (!threadBookingId) return;
+
+    let cancelled = false;
+    void (async () => {
+      const messages = await repo.listMessages(threadBookingId);
+      if (cancelled) return;
+      setThread(
+        messages.map((m) => ({
+          id: m.id,
+          senderId: m.senderId,
+          body: m.body,
+          createdAt: m.createdAt,
+          redactedKinds: m.redactedKinds,
+        })),
+      );
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [repo, threadBookingId, revision]);
 
   /**
    * Nearby ordering, held here rather than in Discover.
@@ -145,7 +181,7 @@ export function App() {
     let cancelled = false;
 
     (async () => {
-      const [profile, spaces, bookings, credit, ledger, mySpaces, hostBookings, cancellations] =
+      const [profile, spaces, bookings, credit, ledger, mySpaces, hostBookings, cancellations, points] =
         await Promise.all([
           repo.getProfile(),
           repo.listPublicSpaces(),
@@ -155,6 +191,7 @@ export function App() {
           repo.listMySpaces(),
           repo.listHostBookings(),
           repo.listCancellationHistory(),
+          repo.getPoints(),
         ]);
 
       // Address details are per-space and authorization-gated, so they are
@@ -176,6 +213,7 @@ export function App() {
           hostBookings,
           access,
           cancellations,
+          points,
         });
       }
     })();
@@ -192,6 +230,26 @@ export function App() {
     },
     [refresh],
   );
+
+  /**
+   * Deletes, then resets. The order matters only in that the reset must not
+   * happen first: a screen re-rendering against an account that still exists
+   * would refetch it and look like nothing happened.
+   */
+  const deleteAccount = useCallback(async () => {
+    const response = await fetch("/api/account/delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ confirm: "DELETE" }),
+    });
+
+    const payload = (await response.json().catch(() => ({}))) as { error?: string };
+    if (!response.ok) throw new Error(payload.error ?? "Could not delete the account");
+
+    await repo.signOut();
+    reset();
+    refresh();
+  }, [repo, reset, refresh]);
 
   const signOut = useCallback(() => {
     void (async () => {
@@ -326,7 +384,7 @@ export function App() {
 
   if (!data) return <div className="h-full bg-white" />;
 
-  const { profile, spaces, bookings, credit, ledger, mySpaces, hostBookings, access, cancellations } =
+  const { profile, spaces, bookings, credit, ledger, mySpaces, hostBookings, access, cancellations, points } =
     data;
 
   // One history, read from each side. The same function answers "how do I
@@ -413,6 +471,10 @@ export function App() {
           onReviewBooking={(bookingId) => {
             setReviewing({ bookingId, role: "host" });
             go("review");
+          }}
+          onMessageBooking={(bookingId) => {
+            setThreadBookingId(bookingId);
+            go("thread");
           }}
         />
   );
@@ -557,6 +619,43 @@ export function App() {
       );
     }
 
+    case "thread": {
+      if (!threadBookingId) return <Fallback onBack={() => go("discover")} />;
+
+      /*
+        The counterpart is whichever side this account is not. A practitioner's
+        own bookings carry the space name; a host's carry the practitioner's.
+      */
+      const mine = bookings.find((b) => b.id === threadBookingId);
+      const theirs = hostBookings.find((b) => b.id === threadBookingId);
+      const subject = mine ?? theirs;
+
+      if (!subject) return <Fallback onBack={back} />;
+
+      return (
+        <Thread
+          messages={thread}
+          meId={profile.id}
+          otherName={mine ? "the studio" : (theirs as HostBooking).practitionerName}
+          spaceName={mine ? mine.spaceName : "your space"}
+          when={subject.startsAt.toLocaleDateString("en-US", {
+            weekday: "short",
+            month: "short",
+            day: "numeric",
+          })}
+          onBack={() => {
+            setThreadBookingId(null);
+            back();
+          }}
+          onSend={async (body) => {
+            const result = await repo.sendMessage(threadBookingId, body);
+            refresh();
+            return result;
+          }}
+        />
+      );
+    }
+
     case "confirmed":
       if (!activeBooking) return <Fallback onBack={() => go("discover")} />;
       return (
@@ -584,6 +683,10 @@ export function App() {
             setReviewing({ bookingId: id, role: "practitioner" });
             go("review");
           }}
+          onMessage={(id) => {
+            setThreadBookingId(id);
+            go("thread");
+          }}
           onSimulateHostCancel={(id) => void mutate(() => repo.cancelBooking(id, "host"))}
         />
       );
@@ -592,6 +695,8 @@ export function App() {
       return (
         <PractitionerProfile
           profile={profile}
+          points={points}
+          onDeleteAccount={deleteAccount}
           bookingsCount={bookings.length}
           creditBalanceCents={credit}
           standing={practitionerStanding}
@@ -640,6 +745,8 @@ export function App() {
       return (
         <HostProfile
           profile={profile}
+          points={points}
+          onDeleteAccount={deleteAccount}
           spaces={mySpaces}
           standing={hostStanding}
           onBack={back}

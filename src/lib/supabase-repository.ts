@@ -37,6 +37,7 @@ import type {
   HostBooking,
   HostSpace,
   MediaKind,
+  Message,
   NewSpaceInput,
   Profile,
   PublicSpace,
@@ -79,6 +80,15 @@ interface AvailabilityRow {
   weekday: number;
   start_minute: number;
   end_minute: number;
+}
+
+interface MessageRow {
+  id: string;
+  booking_id: string;
+  sender_id: string;
+  body: string;
+  created_at: string;
+  redacted_kinds: string[] | null;
 }
 
 interface MediaRow {
@@ -442,6 +452,66 @@ export class SupabaseRepository implements Repository {
       const payload = (await response.json().catch(() => ({}))) as { error?: string };
       throw new Error(payload.error ?? `Could not save that review (${response.status})`);
     }
+  }
+
+  /* ---------------- messages ---------------- */
+
+  /**
+   * Read straight from the view, because reading is a policy the database can
+   * answer on its own: either you are on the booking or you are not. Sending
+   * is different — see below.
+   */
+  async listMessages(bookingId: string): Promise<Message[]> {
+    const { data, error } = await this.db
+      .from("messages_visible")
+      .select("*")
+      .eq("booking_id", bookingId)
+      .order("created_at");
+
+    if (error) throw error;
+
+    return (data ?? []).map((row: MessageRow) => ({
+      id: row.id,
+      bookingId: row.booking_id,
+      senderId: row.sender_id,
+      body: row.body,
+      createdAt: new Date(row.created_at),
+      redactedKinds: row.redacted_kinds ?? [],
+    }));
+  }
+
+  /**
+   * Sent through the server, because the masking has to happen somewhere a
+   * client cannot skip. A client that could insert its own row could insert an
+   * unmasked one, and the whole point is that a phone number never reaches the
+   * other side.
+   */
+  async sendMessage(bookingId: string, body: string): Promise<{ notice: string | null }> {
+    const response = await fetch("/api/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bookingId, body }),
+    });
+
+    const payload = (await response.json().catch(() => ({}))) as {
+      notice?: string | null;
+      error?: string;
+    };
+
+    if (!response.ok) throw new Error(payload.error ?? `Could not send (${response.status})`);
+    return { notice: payload.notice ?? null };
+  }
+
+  /* ---------------- standing ---------------- */
+
+  /**
+   * The view filters itself to the caller, so this reads one row or none.
+   * None means nothing has happened yet, which is zero rather than an error.
+   */
+  async getPoints(): Promise<number> {
+    const { data, error } = await this.db.from("standing_points").select("points").maybeSingle();
+    if (error) throw error;
+    return data?.points ?? 0;
   }
 
   /* ---------------- credit ---------------- */

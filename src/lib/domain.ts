@@ -185,6 +185,22 @@ export interface HostBooking {
   netCents: number;
 }
 
+/** One message on a booking's thread, as its two participants see it. */
+export interface Message {
+  id: string;
+  bookingId: string;
+  senderId: string;
+  body: string;
+  createdAt: Date;
+  /** What was masked on the way out. Only meaningful on your own messages. */
+  redactedKinds: string[];
+}
+
+/** Points and the tier they reach, for whichever side this account is. */
+export interface PointsSummary {
+  points: number;
+}
+
 export interface CreditEntry {
   id: string;
   deltaCents: number;

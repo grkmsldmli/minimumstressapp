@@ -3,6 +3,7 @@
 import { useState } from "react";
 import {
   ArrowLeft,
+  MessageCircle,
   Building2,
   ChevronRight,
   LogOut,
@@ -14,7 +15,9 @@ import {
   Wallet,
 } from "lucide-react";
 
+import { DeleteAccount } from "@/components/delete-account";
 import { EmergencyContactCard } from "@/components/emergency-contact";
+import { StandingCard } from "@/components/standing-card";
 import { Ambient, Headline, LogoBadge } from "@/components/brand";
 import { PrimaryButton } from "@/components/primitives";
 import { StandingNotice } from "@/components/standing-notice";
@@ -42,6 +45,7 @@ export function HostDashboard({
   onOpenEarnings,
   onOpenProfile,
   onReviewBooking,
+  onMessageBooking,
 }: {
   spaces: HostSpace[];
   bookings: HostBooking[];
@@ -53,6 +57,8 @@ export function HostDashboard({
   onOpenProfile: () => void;
   /** Absent until the review window opens for a session. */
   onReviewBooking?: (bookingId: string) => void;
+  /** Opens the thread for a booking. */
+  onMessageBooking?: (bookingId: string) => void;
 }) {
   const [activeId, setActiveId] = useState<string | null>(spaces[0]?.id ?? null);
   const active = spaces.find((s) => s.id === activeId) ?? spaces[0] ?? null;
@@ -264,7 +270,12 @@ export function HostDashboard({
             ) : (
               <div className="flex flex-col gap-2.5">
                 {upcoming.map((booking, i) => (
-                  <HostBookingRow key={booking.id} booking={booking} index={i} />
+                  <HostBookingRow
+                    key={booking.id}
+                    booking={booking}
+                    index={i}
+                    onMessage={onMessageBooking ? () => onMessageBooking(booking.id) : undefined}
+                  />
                 ))}
               </div>
             )}
@@ -596,6 +607,8 @@ export function HostProfile({
   standing,
   onBack,
   onUpdate,
+  points,
+  onDeleteAccount,
   onGoLegal,
   onConnectPayouts,
   onSignOut,
@@ -605,6 +618,9 @@ export function HostProfile({
   standing: Standing;
   onBack: () => void;
   onUpdate: (patch: Partial<Profile>) => void;
+  points: number;
+  /** Irreversible, and the screen says so before it runs. */
+  onDeleteAccount: () => Promise<void>;
   onGoLegal: () => void;
   onConnectPayouts: () => void;
   onSignOut: () => void;
@@ -754,6 +770,12 @@ export function HostProfile({
           Asked of both sides. Someone alone in a stranger's building and
           someone letting a stranger into theirs are in the same position.
         */}
+
+        {/* Where they stand, and what the next step actually gets them. */}
+        <div className="mt-6">
+          <StandingCard party="host" points={points} />
+        </div>
+
         <div className="mt-6">
           <EmergencyContactCard
             contact={profile.emergencyContact}
@@ -762,6 +784,10 @@ export function HostProfile({
         </div>
 
           <ProfileRow icon={ScrollText} label="Terms & privacy" onClick={onGoLegal} />
+
+        <div className="mt-6">
+          <DeleteAccount onDelete={onDeleteAccount} />
+        </div>
           <ProfileRow icon={LogOut} label="Log out" onClick={onSignOut} danger />
         </div>
       </div>
@@ -781,11 +807,13 @@ function HostBookingRow({
   index,
   past = false,
   onReview,
+  onMessage,
 }: {
   booking: HostBooking;
   index: number;
   past?: boolean;
   onReview?: () => void;
+  onMessage?: () => void;
 }) {
   const cancelled = booking.status.startsWith("cancelled");
 
@@ -836,6 +864,21 @@ function HostBookingRow({
         <p className="font-body font-light text-[11px] mt-2 text-ink-faint">
           Cancelled by {booking.status === "cancelled_by_host" ? "you" : "the practitioner"}.
         </p>
+      )}
+
+      {/*
+        Only ahead of a session. Afterwards the thread is history, and the
+        thing worth offering is a review.
+      */}
+      {!past && !cancelled && onMessage && (
+        <button
+          type="button"
+          onClick={onMessage}
+          className="w-full mt-3 py-2.5 rounded-xl font-body font-medium text-[11.5px] press flex items-center justify-center gap-1.5"
+          style={{ border: "1px solid #DCE7F2", color: "#16304E" }}
+        >
+          <MessageCircle size={13} /> Message
+        </button>
       )}
 
       {past && !cancelled && onReview && (

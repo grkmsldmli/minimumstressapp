@@ -13,7 +13,9 @@ import {
   Zap,
 } from "lucide-react";
 
+import { DeleteAccount } from "@/components/delete-account";
 import { EmergencyContactCard } from "@/components/emergency-contact";
+import { StandingCard } from "@/components/standing-card";
 import { Ambient, BreathingLogo, Headline } from "@/components/brand";
 import { ConfettiBurst, PrimaryButton, Toggle } from "@/components/primitives";
 import { StandingNotice } from "@/components/standing-notice";
@@ -249,6 +251,8 @@ export function PractitionerProfile({
   standing,
   onBack,
   onUpdate,
+  points,
+  onDeleteAccount,
   onGoLegal,
   onGoInsurance,
   onSignOut,
@@ -259,6 +263,9 @@ export function PractitionerProfile({
   standing: Standing;
   onBack: () => void;
   onUpdate: (patch: Partial<Profile>) => void;
+  points: number;
+  /** Irreversible, and the screen says so before it runs. */
+  onDeleteAccount: () => Promise<void>;
   onGoLegal: () => void;
   onGoInsurance: () => void;
   onSignOut: () => void;
@@ -339,6 +346,12 @@ export function PractitionerProfile({
           Asked of both sides. Someone alone in a stranger's building and
           someone letting a stranger into theirs are in the same position.
         */}
+
+        {/* Where they stand, and what the next step actually gets them. */}
+        <div className="mt-6">
+          <StandingCard party="practitioner" points={points} />
+        </div>
+
         <div className="mt-6">
           <EmergencyContactCard
             contact={profile.emergencyContact}
@@ -347,6 +360,10 @@ export function PractitionerProfile({
         </div>
 
           <ProfileRow icon={ScrollText} label="Terms & privacy" onClick={onGoLegal} />
+
+        <div className="mt-6">
+          <DeleteAccount onDelete={onDeleteAccount} />
+        </div>
           <ProfileRow icon={LogOut} label="Log out" onClick={onSignOut} danger />
         </div>
       </div>

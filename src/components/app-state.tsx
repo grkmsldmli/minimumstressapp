@@ -28,6 +28,7 @@ export type Screen =
   | "confirmed"
   | "bookings"
   | "review"
+  | "thread"
   | "practitioner-profile"
   | "pro"
   | "legal"
@@ -74,6 +75,10 @@ interface AppState {
   reviewing: { bookingId: string; role: "practitioner" | "host" } | null;
   setReviewing: (target: { bookingId: string; role: "practitioner" | "host" } | null) => void;
 
+  /** Which booking's thread is open. */
+  threadBookingId: string | null;
+  setThreadBookingId: (id: string | null) => void;
+
   /** Bumped whenever data changes, so screens can refetch without a store. */
   revision: number;
   refresh: () => void;
@@ -101,6 +106,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     bookingId: string;
     role: "practitioner" | "host";
   } | null>(null);
+  const [threadBookingId, setThreadBookingId] = useState<string | null>(null);
   const [editingSpaceId, setEditingSpaceId] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);
 
@@ -153,6 +159,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     setEditingSpaceId(null);
     setClientSecret(null);
     setReviewing(null);
+    setThreadBookingId(null);
   }, []);
 
   const refresh = useCallback(() => setRevision((r) => r + 1), []);
@@ -178,6 +185,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       setClientSecret,
       reviewing,
       setReviewing,
+      threadBookingId,
+      setThreadBookingId,
       revision,
       refresh,
     }),
@@ -194,6 +203,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       editingSpaceId,
       clientSecret,
       reviewing,
+      threadBookingId,
       revision,
       refresh,
     ],

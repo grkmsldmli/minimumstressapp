@@ -28,6 +28,7 @@ import type {
   CreditEntry,
   HostBooking,
   HostSpace,
+  Message,
   NewSpaceInput,
   Profile,
   PublicSpace,
@@ -39,7 +40,9 @@ import {
   quote,
   resolveCancellation,
 } from "./money";
+import { explainRedaction, redact } from "./message-redaction";
 import type { CancellationEvent } from "./reliability";
+import { totalPoints } from "./standing-points";
 import type { CreateBookingInput, Repository } from "./repository";
 import { type CategoryKey, roomTypeFor } from "./taxonomy";
 
@@ -446,6 +449,52 @@ export class MockRepository implements Repository {
    * how the two drift.
    */
   async submitReview(): Promise<void> {}
+
+  /* ---------------- messages ---------------- */
+
+  private messages: Message[] = [];
+
+  async listMessages(bookingId: string): Promise<Message[]> {
+    return this.messages.filter((m) => m.bookingId === bookingId);
+  }
+
+  /**
+   * Masks in memory using the same function the route uses.
+   *
+   * Sharing the function rather than approximating it is the point: a mock
+   * that let a phone number through would show a working feature that is not,
+   * and the screen being reviewed would be the wrong one.
+   */
+  async sendMessage(bookingId: string, body: string): Promise<{ notice: string | null }> {
+    const redaction = redact(body);
+
+    this.messages.push({
+      id: id("msg"),
+      bookingId,
+      senderId: ME,
+      body: redaction.text,
+      createdAt: new Date(),
+      redactedKinds: redaction.found,
+    });
+
+    return { notice: explainRedaction(redaction.found) };
+  }
+
+  /* ---------------- standing ---------------- */
+
+  /**
+   * Computed from the same rules as the real view, over what this repository
+   * holds — so the tier shown here is the tier a real account would reach.
+   */
+  async getPoints(): Promise<number> {
+    const completed = this.bookings.filter((b) => b.status === "completed");
+    return totalPoints(
+      completed.flatMap(() => [
+        { kind: "completedSession" as const, at: new Date() },
+        { kind: "cleanSession" as const, at: new Date() },
+      ]),
+    );
+  }
 
   /* ---------------- credit ---------------- */
 

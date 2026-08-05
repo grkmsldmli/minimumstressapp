@@ -15,6 +15,7 @@ import type {
   CreditEntry,
   HostBooking,
   HostSpace,
+  Message,
   NewSpaceInput,
   Profile,
   PublicSpace,
@@ -50,6 +51,21 @@ export interface Repository {
    * the other party.
    */
   submitReview(input: ReviewInput): Promise<void>;
+
+  /* ---------------- messages ---------------- */
+
+  listMessages(bookingId: string): Promise<Message[]>;
+
+  /**
+   * Returns the message as it was actually sent, plus a note when something
+   * was masked. The note is for the sender's own screen — the recipient never
+   * saw what was hidden and does not need telling.
+   */
+  sendMessage(bookingId: string, body: string): Promise<{ notice: string | null }>;
+
+  /* ---------------- standing ---------------- */
+
+  getPoints(): Promise<number>;
 
   getCreditBalanceCents(): Promise<number>;
   listCreditEntries(): Promise<CreditEntry[]>;

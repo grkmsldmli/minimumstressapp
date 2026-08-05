@@ -9,6 +9,7 @@ import {
   ChevronDown,
   ChevronRight,
   KeyRound,
+  MessageCircle,
 } from "lucide-react";
 
 import { Ambient, BreathingLogo, Headline, categoryGradient } from "@/components/brand";
@@ -233,6 +234,7 @@ export function MyBookings({
   onBack,
   onCancel,
   onReview,
+  onMessage,
   onSimulateHostCancel,
 }: {
   bookings: Booking[];
@@ -244,6 +246,8 @@ export function MyBookings({
   onCancel: (id: string) => void;
   /** Offered on a finished session that has not been reviewed yet. */
   onReview?: (id: string) => void;
+  /** Opens the thread for a booking. */
+  onMessage?: (id: string) => void;
   onSimulateHostCancel: (id: string) => void;
 }) {
   const [openId, setOpenId] = useState<string | null>(null);
@@ -341,6 +345,7 @@ export function MyBookings({
               standing={standing}
               open={openId === booking.id}
               onToggle={() => setOpenId(openId === booking.id ? null : booking.id)}
+              onMessage={onMessage ? () => onMessage(booking.id) : undefined}
               onCancel={() => {
                 onCancel(booking.id);
                 setOpenId(null);
@@ -419,6 +424,7 @@ function UpcomingBooking({
   open,
   onToggle,
   onCancel,
+  onMessage,
   onSimulateHostCancel,
 }: {
   booking: Booking;
@@ -428,6 +434,7 @@ function UpcomingBooking({
   open: boolean;
   onToggle: () => void;
   onCancel: () => void;
+  onMessage?: () => void;
   onSimulateHostCancel: () => void;
 }) {
   const [from, to] = categoryGradient(booking.category);
@@ -506,6 +513,23 @@ function UpcomingBooking({
               <div className="mt-3">
                 <SpaceDirections access={access} showMap />
               </div>
+            )}
+
+            {/*
+              Offered on an upcoming session, which is when there is something
+              to ask — where to park, a door that will not open, running late.
+              Neither side ever sees the other's number, so this is the only
+              way to ask.
+            */}
+            {onMessage && (
+              <button
+                type="button"
+                onClick={onMessage}
+                className="w-full mt-3 py-2.5 rounded-xl font-body font-medium text-[11.5px] press flex items-center justify-center gap-1.5"
+                style={{ border: "1px solid #DCE7F2", color: "#16304E" }}
+              >
+                <MessageCircle size={13} /> Message the studio
+              </button>
             )}
           </div>
 

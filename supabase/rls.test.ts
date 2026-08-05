@@ -485,3 +485,86 @@ describe("standing points are your own", () => {
     await expect(asAnon(`select points from standing_points`)).rejects.toThrow();
   });
 });
+
+/**
+ * A thread belongs to a booking, and a booking has exactly two people on it.
+ *
+ * The interesting case is the stranger: nothing about a message says who may
+ * read it, so the whole protection is the participant check, and a policy that
+ * merely looks right here would expose every conversation on the platform.
+ */
+describe("messages stay inside their booking", () => {
+  const bookingId = async () => {
+    const [row] = await asUser<{ id: string }>(
+      PRACTITIONER,
+      `select id::text from bookings limit 1`,
+    );
+    return row.id;
+  };
+
+  beforeAll(async () => {
+    const [row] = await asUser<{ id: string }>(
+      PRACTITIONER,
+      `select id::text from bookings limit 1`,
+    );
+
+    // Written as the service role, the way the send route does it.
+    await db.exec(`
+      insert into messages (booking_id, sender_id, body)
+      values ('${row.id}', '${PRACTITIONER}', 'Is there parking nearby?');
+    `);
+  });
+
+  it("lets the practitioner read the thread", async () => {
+    const rows = await asUser(PRACTITIONER, `select body from messages_visible`);
+    expect(rows).toHaveLength(1);
+  });
+
+  it("lets the host read the same thread", async () => {
+    const rows = await asUser(HOST, `select body from messages_visible`);
+    expect(rows).toHaveLength(1);
+  });
+
+  it("shows a stranger nothing", async () => {
+    const rows = await asUser(STRANGER, `select body from messages_visible`);
+    expect(rows).toHaveLength(0);
+  });
+
+  it("shows an anonymous caller nothing", async () => {
+    await expect(asAnon(`select body from messages_visible`)).rejects.toThrow();
+  });
+
+  /**
+   * The masked text is what the recipient gets; the original is for staff
+   * handling a complaint. A view that exposed both would make the masking
+   * pointless.
+   */
+  it("keeps the unmasked original out of the view", async () => {
+    await expect(
+      asUser(PRACTITIONER, `select original_body from messages_visible`),
+    ).rejects.toThrow();
+  });
+
+  it("does not let a stranger write into somebody else's thread", async () => {
+    const id = await bookingId();
+    await expect(
+      asUser(
+        STRANGER,
+        `insert into messages (booking_id, sender_id, body)
+         values ('${id}', '${STRANGER}', 'let me in')`,
+      ),
+    ).rejects.toThrow();
+  });
+
+  /** Nobody inserts directly — the route masks first, then writes as staff. */
+  it("does not let a participant write directly either", async () => {
+    const id = await bookingId();
+    await expect(
+      asUser(
+        PRACTITIONER,
+        `insert into messages (booking_id, sender_id, body)
+         values ('${id}', '${PRACTITIONER}', 'call me on 415 555 0134')`,
+      ),
+    ).rejects.toThrow();
+  });
+});

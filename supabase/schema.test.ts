@@ -72,7 +72,7 @@ describe("migrations apply cleanly", () => {
         `select table_name from information_schema.tables
          where table_schema = 'public' and table_type = 'BASE TABLE'`,
       );
-      expect(tables.rows).toHaveLength(10);
+      expect(tables.rows).toHaveLength(11);
     } finally {
       await fresh.close();
     }
@@ -90,6 +90,7 @@ describe("migrations apply cleanly", () => {
       "availability",
       "bookings",
       "credit_ledger",
+      "messages",
       "notifications",
       "profiles",
       "review_escalations",
@@ -190,7 +191,7 @@ describe("private columns stay out of the public views", () => {
     // RLS and hands every practitioner's balance to whoever asks. A public
     // subset view *with* it errors instead, because anon holds no grant on
     // the base table — safety there comes from the column list, not from RLS.
-    const PER_USER = ["credit_balances", "bookings_with_access_code"];
+    const PER_USER = ["credit_balances", "bookings_with_access_code", "messages_visible"];
     const PUBLIC = [
       "spaces_public",
       "public_host_profiles",

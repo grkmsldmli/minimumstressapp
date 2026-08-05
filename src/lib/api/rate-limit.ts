@@ -93,6 +93,13 @@ export const LIMITS = {
    * either a mistake or somebody else's.
    */
   accountDelete: { limit: 3, windowMs: 60 * 60_000 },
+
+  /**
+   * Sending a message. Generous, because a real conversation about a door
+   * that will not open is a burst of short messages — and being rate limited
+   * mid-problem is exactly when somebody reaches for a phone number instead.
+   */
+  message: { limit: 30, windowMs: 60_000 },
 } as const satisfies Record<string, RateLimit>;
 
 export interface RateLimitResult {

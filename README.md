@@ -26,25 +26,28 @@ DNS and a scheduler.
 
 `src/lib/repository.ts` is the seam: screens talk to that interface,
 `MockRepository` implements it in memory, `SupabaseRepository` against the real
-database. **The mock is still the one wired up** — see `repository-factory.ts`
-for why, and flip `NEXT_PUBLIC_USE_SUPABASE=true` once the auth screens create
-real accounts. That is the largest remaining piece of work.
+database. **The real one is the default.** Set `NEXT_PUBLIC_USE_MOCK=true` to
+opt into the in-memory version, which accepts any sign-in code and saves
+nothing — useful for reviewing screens without an account, and dangerous
+anywhere else.
+
+It used to be the other way round, and production shipped on the mock for a
+day because the variable that would have turned it off was never set. Nothing
+looked wrong: the app simply never sent an email, accepted whatever code was
+typed, and showed seed data. A missing variable now fails towards the real
+backend.
 
 ## Running it
 
 ```bash
 npm install
 npm run dev     # http://localhost:3000
-npm test        # 286 tests: money, availability, geo, repository, schema, RLS, webhook
+npm test        # 593 tests: money, availability, geo, repository, schema, RLS, webhook
 ```
 
 Start at the splash screen and pick either role. Nothing is seeded for *you* — no listings, no
 bookings, no credit — so every empty state is a real one. Other hosts' rooms are seeded, because a
 marketplace with nothing in it cannot be reviewed.
-
-Two buttons are labelled "Prototype only": approving a listing, and simulating an inbound booking.
-They stand in for the manual review and for real practitioner demand, and both disappear once
-there is a backend.
 
 ## The money rules
 

@@ -1,15 +1,17 @@
 /**
  * Which Repository the app runs against.
  *
- * Both are complete. The mock holds everything in memory and is what the app
- * falls back to; the Supabase one reads and writes the live project, and books
- * and cancels through server routes because pricing a booking on the client
- * would let a client price it however it liked.
+ * The default is the real one, and that inversion is the whole point of this
+ * file's history. It used to be `NEXT_PUBLIC_USE_SUPABASE === "true"`, so a
+ * deployment that simply never set the variable ran the in-memory mock — and
+ * did it silently. Production shipped that way: no sign-in code was ever sent
+ * because nothing asked Supabase to send one, any six digits were accepted
+ * because nothing checked them, and every listing on the screen was seed data
+ * that existed only in that browser tab. Everything looked like it worked.
  *
- * The switch is `NEXT_PUBLIC_USE_SUPABASE`. It stays a switch rather than
- * becoming a hard default because the mock is genuinely useful: every screen
- * works with no account, no network and no card, which is what makes the
- * design reviewable and the empty states real.
+ * A missing environment variable now means the real backend, which is the safe
+ * direction to fail in. The mock is a development convenience and has to be
+ * asked for by name.
  */
 
 import { MockRepository } from "./mock-repository";
@@ -22,18 +24,30 @@ export type AppRepository = Repository & {
 };
 
 /**
- * Not a hook, despite reading like state — it is a build-time constant.
+ * True unless somebody deliberately opted into the mock.
  *
- * It was called `useSupabaseBackend`, which made the rules-of-hooks lint treat
- * every plain function that called it as a broken component. The `use` prefix
- * is reserved for a reason.
+ * Not a hook, despite reading like state — it is a build-time constant. It was
+ * called `useSupabaseBackend` once, which made the rules-of-hooks lint treat
+ * every plain function that called it as a broken component.
  */
 export function supabaseBackendEnabled(): boolean {
-  return process.env.NEXT_PUBLIC_USE_SUPABASE === "true";
+  return process.env.NEXT_PUBLIC_USE_MOCK !== "true";
 }
 
 export function createRepository(): AppRepository {
-  if (!supabaseBackendEnabled()) return new MockRepository();
+  if (!supabaseBackendEnabled()) {
+    /**
+     * Loud, because the mock accepts any sign-in code and stores nothing.
+     *
+     * Anybody who reaches this without meaning to is about to spend an hour
+     * wondering why their email never arrives, and the only clue would be that
+     * everything works slightly too well.
+     */
+    console.warn(
+      "Running on the in-memory mock: no email is sent, any code is accepted, and nothing is saved. Unset NEXT_PUBLIC_USE_MOCK to use the real backend.",
+    );
+    return new MockRepository();
+  }
 
   /**
    * Cast rather than implemented, and worth saying why out loud.

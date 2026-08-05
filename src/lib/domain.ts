@@ -145,7 +145,6 @@ export interface BookingMoneyRecord {
   serviceFeeCents: number;
   instantFeeCents: number;
   proDiscountCents: number;
-  creditAppliedCents: number;
   totalCents: number;
   platformCents: number;
 }
@@ -194,18 +193,6 @@ export interface Message {
   createdAt: Date;
   /** What was masked on the way out. Only meaningful on your own messages. */
   redactedKinds: string[];
-}
-
-/** Points and the tier they reach, for whichever side this account is. */
-export interface PointsSummary {
-  points: number;
-}
-
-export interface CreditEntry {
-  id: string;
-  deltaCents: number;
-  reason: string;
-  createdAt: Date;
 }
 
 /** Everything AddSpace collects, before the row exists. */

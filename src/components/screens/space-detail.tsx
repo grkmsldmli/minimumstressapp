@@ -43,14 +43,12 @@ interface Slot {
 export function SpaceDetail({
   space,
   isPro,
-  creditBalanceCents,
   onBack,
   onBook,
   onGoPro,
 }: {
   space: PublicSpace;
   isPro: boolean;
-  creditBalanceCents: number;
   onBack: () => void;
   onBook: (startsAt: Date) => void;
   onGoPro: () => void;
@@ -89,7 +87,6 @@ export function SpaceDetail({
     hostRateCents: space.hourlyRateCents,
     isInstant: selectedIsInstant,
     isPro,
-    creditBalanceCents,
   });
 
   const [from, to] = categoryGradient(space.category);
@@ -331,13 +328,6 @@ export function SpaceDetail({
           )}
           {priced.proDiscountCents > 0 && (
             <Row label="Pro discount" value={`-${formatCents(priced.proDiscountCents)}`} positive />
-          )}
-          {priced.creditAppliedCents > 0 && (
-            <Row
-              label="Credit applied"
-              value={`-${formatCents(priced.creditAppliedCents)}`}
-              positive
-            />
           )}
 
           <div className="h-px my-2" style={{ backgroundColor: "#E7EEF6" }} />

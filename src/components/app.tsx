@@ -4,7 +4,6 @@ import { useCallback, useEffect, useState } from "react";
 
 import type {
   Booking,
-  CreditEntry,
   HostBooking,
   HostSpace,
   Profile,
@@ -43,13 +42,11 @@ interface Snapshot {
   profile: Profile;
   spaces: PublicSpace[];
   bookings: Booking[];
-  credit: number;
-  ledger: CreditEntry[];
   mySpaces: HostSpace[];
   hostBookings: HostBooking[];
   access: Record<string, SpaceAccessDetails>;
   cancellations: CancellationEvent[];
-  points: number;
+  sessions: number;
 }
 
 export function App() {
@@ -181,17 +178,15 @@ export function App() {
     let cancelled = false;
 
     (async () => {
-      const [profile, spaces, bookings, credit, ledger, mySpaces, hostBookings, cancellations, points] =
+      const [profile, spaces, bookings, mySpaces, hostBookings, cancellations, sessions] =
         await Promise.all([
           repo.getProfile(),
           repo.listPublicSpaces(),
           repo.listMyBookings(),
-          repo.getCreditBalanceCents(),
-          repo.listCreditEntries(),
           repo.listMySpaces(),
           repo.listHostBookings(),
           repo.listCancellationHistory(),
-          repo.getPoints(),
+          repo.getSessionCount(),
         ]);
 
       // Address details are per-space and authorization-gated, so they are
@@ -207,13 +202,11 @@ export function App() {
           profile,
           spaces,
           bookings,
-          credit,
-          ledger,
           mySpaces,
           hostBookings,
           access,
           cancellations,
-          points,
+          sessions,
         });
       }
     })();
@@ -384,7 +377,7 @@ export function App() {
 
   if (!data) return <div className="h-full bg-white" />;
 
-  const { profile, spaces, bookings, credit, ledger, mySpaces, hostBookings, access, cancellations, points } =
+  const { profile, spaces, bookings, mySpaces, hostBookings, access, cancellations, sessions } =
     data;
 
   // One history, read from each side. The same function answers "how do I
@@ -534,7 +527,6 @@ export function App() {
         <SpaceDetail
           space={activeSpace}
           isPro={profile.isPro}
-          creditBalanceCents={credit}
           onBack={back}
           onGoPro={() => go("pro")}
           onBook={(startsAt) => {
@@ -672,8 +664,6 @@ export function App() {
       return (
         <MyBookings
           bookings={bookings}
-          creditBalanceCents={credit}
-          creditEntries={ledger}
           accessFor={(spaceId) => access[spaceId] ?? null}
           standing={practitionerStanding}
           onBack={back}
@@ -693,10 +683,9 @@ export function App() {
       return (
         <PractitionerProfile
           profile={profile}
-          points={points}
+          sessions={sessions}
           onDeleteAccount={deleteAccount}
           bookingsCount={bookings.length}
-          creditBalanceCents={credit}
           standing={practitionerStanding}
           onBack={back}
           onUpdate={(patch) => void mutate(() => repo.updateProfile(patch))}
@@ -743,7 +732,7 @@ export function App() {
       return (
         <HostProfile
           profile={profile}
-          points={points}
+          sessions={sessions}
           onDeleteAccount={deleteAccount}
           spaces={mySpaces}
           standing={hostStanding}

@@ -105,34 +105,3 @@ describe("whether a host can be paid at all", () => {
     }
   });
 });
-
-/**
- * The host ladder promises "payouts arrive one business day sooner". Before
- * this it was a sentence on a card with nothing behind it.
- */
-describe("payout speed earned by standing", () => {
-  it("quotes the standard wait to a host with no standing", () => {
-    expect(describeSpeed("standard", 4500).arrival).toContain("2 business days");
-  });
-
-  it("shortens it by the day they earned, and says it was earned", () => {
-    const described = describeSpeed("standard", 4500, 1);
-    expect(described.arrival).toContain("1 business day");
-    expect(described.arrival).toContain("earned");
-  });
-
-  /**
-   * The delay is the window in which a card can be disputed after the host has
-   * been paid. Removing it entirely moves that risk onto us, so no amount of
-   * standing takes it below a day.
-   */
-  it("never reaches zero, however much standing is thrown at it", () => {
-    for (const days of [2, 5, 100]) {
-      expect(describeSpeed("standard", 4500, days).arrival).toContain("1 business day");
-    }
-  });
-
-  it("leaves instant payouts alone — they are already immediate", () => {
-    expect(describeSpeed("instant", 4500, 1).arrival).toBe(describeSpeed("instant", 4500).arrival);
-  });
-});

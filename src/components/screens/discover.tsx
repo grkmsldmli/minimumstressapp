@@ -47,7 +47,6 @@ function browsePriceCents(space: PublicSpace, isPro: boolean): number {
     hostRateCents: space.hourlyRateCents,
     isInstant: false,
     isPro,
-    creditBalanceCents: 0,
   }).totalCents;
 }
 

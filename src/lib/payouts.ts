@@ -81,28 +81,10 @@ export interface SpeedDescription {
  * Plain wording for each option, using the host's own rate so the trade-off is
  * a number rather than an adjective.
  */
-export function describeSpeed(
-  speed: PayoutSpeed,
-  exampleCents: number,
-  /** Days earned off the standard wait. See earnedPayoutSpeedupDays. */
-  speedupDays = 0,
-): SpeedDescription {
+export function describeSpeed(speed: PayoutSpeed, exampleCents: number): SpeedDescription {
   if (speed === "standard") {
-    /**
-     * Floored at one day rather than zero.
-     *
-     * The delay is not friction to be removed — it is the window in which a
-     * card can be disputed after we have already paid the host out. A benefit
-     * that took it to nothing would move that risk from the practitioner's
-     * bank to ours, which is the wrong way for a reward to work.
-     */
-    const days = Math.max(1, PAYOUT_DELAY_DAYS - speedupDays);
-
     return {
-      arrival:
-        speedupDays > 0
-          ? `${days} business ${days === 1 ? "day" : "days"} after each session — a day sooner, earned`
-          : `${days} business days after each session`,
+      arrival: `${PAYOUT_DELAY_DAYS} business days after each session`,
       costLine: null,
     };
   }

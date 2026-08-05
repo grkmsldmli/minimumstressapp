@@ -145,7 +145,7 @@ export async function notifyCancellation(
   admin: SupabaseClient,
   bookingId: string,
   actor: "practitioner" | "host",
-  outcome: { chargedCents: number; refundedCents: number; goodwillCreditCents: number },
+  outcome: { chargedCents: number; refundedCents: number },
 ): Promise<void> {
   try {
     const booking = await loadBooking(admin, bookingId);
@@ -200,7 +200,6 @@ export async function notifyCancellation(
         when,
         chargedCents: outcome.chargedCents,
         refundedCents: outcome.refundedCents,
-        creditCents: outcome.goodwillCreditCents,
       },
     });
   } catch (error) {

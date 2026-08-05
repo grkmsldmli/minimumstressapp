@@ -61,7 +61,6 @@ export interface MessageContext {
    */
   chargedCents?: number;
   refundedCents?: number;
-  creditCents?: number;
   /** Reliability: how many late cancellations, and what happens next. */
   strikes?: number;
   limit?: number;
@@ -207,9 +206,7 @@ export function render(kind: NotificationKind, context: MessageContext): Message
           context.refundedCents
             ? `${formatCents(context.refundedCents)} is refunded in full. You are never charged when a studio cancels.`
             : `You are not charged. Your card was only ever authorised for this session, and that hold is now released — there is nothing to refund because nothing was taken.`,
-          context.creditCents
-            ? `We have also added ${formatCents(context.creditCents)} of credit to your account for the trouble. It applies automatically to your next booking.`
-            : null,
+            null,
           `This counts against the studio's record with us. Repeated late cancellations suspend a studio from taking new bookings.`,
           SIGN_OFF,
         ),

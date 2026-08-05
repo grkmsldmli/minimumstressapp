@@ -25,18 +25,15 @@ const priced = (opts: {
       hostRateCents: opts.hostRateCents,
       isInstant: opts.isInstant ?? false,
       isPro: opts.isPro ?? false,
-      creditBalanceCents: opts.creditBalanceCents ?? 0,
     }),
   );
 
 const RATES = [500, 1500, 2250, 3333, 4500, 12000, 99999];
 const VARIANTS = [
-  { isInstant: false, isPro: false, creditBalanceCents: 0 },
-  { isInstant: true, isPro: false, creditBalanceCents: 0 },
-  { isInstant: false, isPro: true, creditBalanceCents: 0 },
-  { isInstant: true, isPro: true, creditBalanceCents: 0 },
-  { isInstant: false, isPro: false, creditBalanceCents: 100_000 },
-  { isInstant: true, isPro: true, creditBalanceCents: 100_000 },
+  { isInstant: false, isPro: false },
+  { isInstant: true, isPro: false },
+  { isInstant: false, isPro: true },
+  { isInstant: true, isPro: true },
 ];
 
 describe("the host is paid their rate, whatever Stripe is told", () => {
@@ -71,14 +68,6 @@ describe("the host is paid their rate, whatever Stripe is told", () => {
     expect(plan(priced({ hostRateCents: 4500 })).transfer_data.destination).toBe(HOST_ACCOUNT);
   });
 
-  it("shrinks our fee, never the host's share, when credit is redeemed", () => {
-    const plain = plan(priced({ hostRateCents: 4500 }));
-    const credited = plan(priced({ hostRateCents: 4500, creditBalanceCents: 100_000 }));
-
-    expect(credited.amount).toBeLessThan(plain.amount);
-    expect(credited.application_fee_amount).toBeLessThan(plain.application_fee_amount);
-    expect(hostReceivesCents(credited)).toBe(hostReceivesCents(plain));
-  });
 
   it("refuses to plan a payment that would top up the host from our own balance", () => {
     // Not reachable through quote(), which floors the platform's cut — this
@@ -88,7 +77,6 @@ describe("the host is paid their rate, whatever Stripe is told", () => {
       serviceFeeCents: 0,
       instantFeeCents: 0,
       proDiscountCents: 0,
-      creditAppliedCents: 0,
       totalCents: 4000,
       platformCents: -1000,
     };

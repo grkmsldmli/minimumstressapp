@@ -15,7 +15,7 @@ import {
 
 import { DeleteAccount } from "@/components/delete-account";
 import { EmergencyContactCard } from "@/components/emergency-contact";
-import { StandingCard } from "@/components/standing-card";
+import { BadgeCard } from "@/components/badge-card";
 import { Ambient, BreathingLogo, Headline } from "@/components/brand";
 import { ConfettiBurst, PrimaryButton, Toggle } from "@/components/primitives";
 import { StandingNotice } from "@/components/standing-notice";
@@ -247,11 +247,10 @@ export function ProScreen({
 export function PractitionerProfile({
   profile,
   bookingsCount,
-  creditBalanceCents,
   standing,
   onBack,
   onUpdate,
-  points,
+  sessions,
   onDeleteAccount,
   onGoLegal,
   onGoInsurance,
@@ -259,11 +258,11 @@ export function PractitionerProfile({
 }: {
   profile: Profile;
   bookingsCount: number;
-  creditBalanceCents: number;
   standing: Standing;
   onBack: () => void;
   onUpdate: (patch: Partial<Profile>) => void;
-  points: number;
+  /** Completed, paid sessions. Drives the badges and nothing else. */
+  sessions: number;
   /** Irreversible, and the screen says so before it runs. */
   onDeleteAccount: () => Promise<void>;
   onGoLegal: () => void;
@@ -296,7 +295,6 @@ export function PractitionerProfile({
             Credit balance
           </p>
           <p className="font-display italic font-semibold text-[24px] mt-1 text-navy">
-            {formatCents(creditBalanceCents)}
           </p>
         </div>
 
@@ -349,7 +347,7 @@ export function PractitionerProfile({
 
         {/* Where they stand, and what the next step actually gets them. */}
         <div className="mt-6">
-          <StandingCard party="practitioner" points={points} />
+          <BadgeCard party="practitioner" sessions={sessions} />
         </div>
 
         <div className="mt-6">

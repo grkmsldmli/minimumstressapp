@@ -22,7 +22,7 @@ export default async function PaymentPreview() {
 
   // $45 room on an instant slot: $45 + $9 fee + $5 instant.
   const money = bookingMoneyFromQuote(
-    quote({ hostRateCents: 4500, isInstant: true, isPro: false, creditBalanceCents: 0 }),
+    quote({ hostRateCents: 4500, isInstant: true, isPro: false }),
   );
 
   // No transfer_data here: routing to a host's account needs a verified

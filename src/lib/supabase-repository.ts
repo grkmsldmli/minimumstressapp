@@ -33,7 +33,6 @@ import type {
   Booking,
   BookingStatus,
   CreatedBooking,
-  CreditEntry,
   HostBooking,
   HostSpace,
   MediaKind,
@@ -380,7 +379,6 @@ export class SupabaseRepository implements Repository {
         serviceFeeCents: row.service_fee_cents,
         instantFeeCents: row.instant_fee_cents,
         proDiscountCents: row.pro_discount_cents,
-        creditAppliedCents: row.credit_applied_cents,
         totalCents: row.total_cents,
         platformCents: row.platform_cents,
         revealedAccessCode: row.revealed_access_code ?? null,
@@ -528,37 +526,19 @@ export class SupabaseRepository implements Repository {
    * The view filters itself to the caller, so this reads one row or none.
    * None means nothing has happened yet, which is zero rather than an error.
    */
-  async getPoints(): Promise<number> {
-    const { data, error } = await this.db.from("standing_points").select("points").maybeSingle();
+  /**
+   * Completed, paid, arm's-length sessions. Drives the badges and nothing else.
+   *
+   * The view filters itself to the caller, so this reads one row or none. None
+   * means nothing has happened yet, which is zero rather than an error.
+   */
+  async getSessionCount(): Promise<number> {
+    const { data, error } = await this.db.from("session_counts").select("sessions").maybeSingle();
     if (error) throw error;
-    return data?.points ?? 0;
+    return data?.sessions ?? 0;
   }
 
   /* ---------------- credit ---------------- */
-
-  async getCreditBalanceCents(): Promise<number> {
-    const { data, error } = await this.db
-      .from("credit_balances")
-      .select("balance_cents")
-      .maybeSingle();
-    if (error) throw error;
-    return data?.balance_cents ?? 0;
-  }
-
-  async listCreditEntries(): Promise<CreditEntry[]> {
-    const { data, error } = await this.db
-      .from("credit_ledger")
-      .select("id, delta_cents, note, reason, created_at")
-      .order("created_at", { ascending: false });
-    if (error) throw error;
-
-    return (data ?? []).map((row) => ({
-      id: row.id,
-      deltaCents: row.delta_cents,
-      reason: row.note ?? humanReason(row.reason),
-      createdAt: new Date(row.created_at),
-    }));
-  }
 
   /**
    * Cancellations on both sides of this user's bookings.
@@ -841,15 +821,3 @@ export class SupabaseRepository implements Repository {
   }
 }
 
-function humanReason(reason: string): string {
-  switch (reason) {
-    case "host_cancellation":
-      return "A host cancelled on you";
-    case "booking_redemption":
-      return "Applied to a booking";
-    case "goodwill_restore":
-      return "Credit returned";
-    default:
-      return reason;
-  }
-}

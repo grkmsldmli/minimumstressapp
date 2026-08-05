@@ -76,7 +76,6 @@ export function planPaymentIntent(
       service_fee_cents: String(money.serviceFeeCents),
       instant_fee_cents: String(money.instantFeeCents),
       pro_discount_cents: String(money.proDiscountCents),
-      credit_applied_cents: String(money.creditAppliedCents),
     },
   };
 }

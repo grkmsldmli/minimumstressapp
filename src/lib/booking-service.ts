@@ -5,7 +5,6 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { explainRejection, planBooking } from "./booking-plan";
 import { resolveCancellation, type BookingMoney } from "./money";
 import { notifyBookingCreated, notifyCancellation } from "./notify/for-booking";
-import { totalPoints } from "./standing-points";
 import { settlementFor } from "./stripe/payments";
 
 /**
@@ -79,14 +78,8 @@ export async function createBooking(
     .maybeSingle();
   if (spaceError) throw spaceError;
 
-  const [
-    { data: practitioner },
-    { data: hostRow },
-    { data: blocks },
-    { data: taken },
-    balance,
-    points,
-  ] = await Promise.all([
+  const [{ data: practitioner }, { data: hostRow }, { data: blocks }, { data: taken }] =
+    await Promise.all([
       admin.from("profiles").select("id, is_pro").eq("id", practitionerId).maybeSingle(),
       space
         ? admin
@@ -108,8 +101,6 @@ export async function createBooking(
             .eq("space_id", space.id)
             .in("status", ["upcoming", "completed"])
         : Promise.resolve({ data: [] }),
-      creditBalance(admin, practitionerId),
-      standingPoints(admin, practitionerId),
     ]);
 
   // Every rule about what may be booked and for how much lives in planBooking,
@@ -140,11 +131,6 @@ export async function createBooking(
       // From the stored row, never the request — otherwise the Pro discount
       // is free to anyone willing to edit a payload.
       isPro: practitioner?.is_pro ?? false,
-      creditBalanceCents: balance,
-      // Same reasoning as isPro: read from the view, never from the request.
-      // A caller who could assert their own total could assert a longer
-      // booking horizon and a waived instant fee with it.
-      points,
     },
     takenStarts: (taken ?? []).map((b) => new Date(b.starts_at)),
     startsAt: request.startsAt,
@@ -181,7 +167,6 @@ export async function createBooking(
       service_fee_cents: money.serviceFeeCents,
       instant_fee_cents: money.instantFeeCents,
       pro_discount_cents: money.proDiscountCents,
-      credit_applied_cents: money.creditAppliedCents,
       total_cents: money.totalCents,
       platform_cents: money.platformCents,
       access_code: generateAccessCode(),
@@ -208,17 +193,6 @@ export async function createBooking(
       })
       .eq("id", booking.id);
 
-    // Credit is spent only once the hold exists. Debiting earlier would take
-    // a practitioner's credit for a booking that never got authorised.
-    if (money.creditAppliedCents > 0) {
-      await admin.from("credit_ledger").insert({
-        practitioner_id: practitionerId,
-        delta_cents: -money.creditAppliedCents,
-        reason: "booking_redemption",
-        booking_id: booking.id,
-      });
-    }
-
     // After the money, and deliberately not awaited into the failure path: the
     // booking is real whether or not an email goes out, so a provider outage
     // must not roll back an authorised hold. notifyBookingCreated swallows its
@@ -232,47 +206,6 @@ export async function createBooking(
     await admin.from("bookings").delete().eq("id", booking.id);
     throw error;
   }
-}
-
-/**
- * Earned standing, which decides the booking horizon and whether the instant
- * fee is waived. Read here rather than trusted from the request, for the same
- * reason the Pro flag is.
- *
- * The view filters itself to auth.uid(), which is null for the admin client —
- * so this reads the base tables the same way the view does rather than
- * querying it.
- */
-async function standingPoints(admin: SupabaseClient, practitionerId: string): Promise<number> {
-  const { data, error } = await admin
-    .from("bookings")
-    .select("id, space_id, spaces!inner(host_id)")
-    .eq("practitioner_id", practitionerId)
-    .eq("status", "completed")
-    .not("captured_at", "is", null);
-
-  if (error) throw error;
-
-  const paid = (data ?? []).filter(
-    (row) => (row as unknown as { spaces: { host_id: string } }).spaces.host_id !== practitionerId,
-  );
-
-  return totalPoints(
-    paid.flatMap(() => [
-      { kind: "completedSession" as const, at: new Date() },
-      { kind: "cleanSession" as const, at: new Date() },
-    ]),
-  );
-}
-
-async function creditBalance(admin: SupabaseClient, practitionerId: string): Promise<number> {
-  const { data, error } = await admin
-    .from("credit_balances")
-    .select("balance_cents")
-    .eq("practitioner_id", practitionerId)
-    .maybeSingle();
-  if (error) throw error;
-  return data?.balance_cents ?? 0;
 }
 
 /**
@@ -314,7 +247,6 @@ export async function cancelBooking(
     serviceFeeCents: booking.service_fee_cents,
     instantFeeCents: booking.instant_fee_cents,
     proDiscountCents: booking.pro_discount_cents,
-    creditAppliedCents: booking.credit_applied_cents,
     totalCents: booking.total_cents,
     platformCents: booking.platform_cents,
   };
@@ -335,32 +267,8 @@ export async function cancelBooking(
     })
     .eq("id", bookingId);
 
-  const entries: {
-    practitioner_id: string;
-    delta_cents: number;
-    reason: string;
-    booking_id: string;
-  }[] = [];
-
-  if (outcome.creditRestoredCents > 0) {
-    entries.push({
-      practitioner_id: booking.practitioner_id,
-      delta_cents: outcome.creditRestoredCents,
-      reason: "goodwill_restore",
-      booking_id: bookingId,
-    });
-  }
-  if (outcome.goodwillCreditCents > 0) {
-    entries.push({
-      practitioner_id: booking.practitioner_id,
-      delta_cents: outcome.goodwillCreditCents,
-      reason: "host_cancellation",
-      booking_id: bookingId,
-    });
-  }
-  if (entries.length > 0) {
-    await admin.from("credit_ledger").insert(entries);
-  }
+  // Nothing to award: a host's cancellation releases the hold in full and
+  // that is the whole compensation.
 
   // Last, so the figures quoted are the ones that actually landed.
   // Taken from the settlement rather than inferred, so the message can never
@@ -371,6 +279,5 @@ export async function cancelBooking(
   await notifyCancellation(admin, bookingId, actor, {
     chargedCents: outcome.chargedCents,
     refundedCents: settlement.kind === "refund" ? settlement.amountCents : 0,
-    goodwillCreditCents: outcome.goodwillCreditCents,
   });
 }

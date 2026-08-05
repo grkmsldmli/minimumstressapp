@@ -146,13 +146,6 @@ function SheetBody({
           {money.proDiscountCents > 0 && (
             <Row label="Pro discount" value={`-${formatCents(money.proDiscountCents)}`} positive />
           )}
-          {money.creditAppliedCents > 0 && (
-            <Row
-              label="Credit applied"
-              value={`-${formatCents(money.creditAppliedCents)}`}
-              positive
-            />
-          )}
           <div className="h-px my-2" style={{ backgroundColor: "#E7EEF6" }} />
           <div className="flex justify-between font-body font-semibold text-[13.5px] text-navy">
             <span>Held on your card</span>

@@ -25,7 +25,6 @@ import type {
   Booking,
   BookingMoneyRecord,
   CreatedBooking,
-  CreditEntry,
   HostBooking,
   HostSpace,
   Message,
@@ -42,7 +41,6 @@ import {
 } from "./money";
 import { explainRedaction, redact } from "./message-redaction";
 import type { CancellationEvent } from "./reliability";
-import { totalPoints } from "./standing-points";
 import type { CreateBookingInput, Repository } from "./repository";
 import { type CategoryKey, roomTypeFor } from "./taxonomy";
 
@@ -229,7 +227,6 @@ export class MockRepository implements Repository {
   private mySpaces: HostSpace[] = [];
   private bookings: Booking[] = [];
   private hostBookings: HostBooking[] = [];
-  private ledger: CreditEntry[] = [];
 
   constructor() {
     this.publicSpaces = SEED_SPACES.map((seed, index) => {
@@ -368,24 +365,13 @@ export class MockRepository implements Repository {
 
     const now = new Date();
     const isInstant = isInstantSlot(startsAt, now);
-    const balance = await this.getCreditBalanceCents();
 
     const priced = quote({
       hostRateCents: space.hourlyRateCents,
       isInstant,
       isPro: this.profile.isPro,
-      creditBalanceCents: balance,
     });
     const money: BookingMoneyRecord = bookingMoneyFromQuote(priced);
-
-    if (money.creditAppliedCents > 0) {
-      this.ledger.unshift({
-        id: id("cr"),
-        deltaCents: -money.creditAppliedCents,
-        reason: `${space.name} booking`,
-        createdAt: now,
-      });
-    }
 
     const endsAt = new Date(startsAt.getTime() + SESSION_MINUTES * 60 * 1000);
     const booking: Booking = {
@@ -415,25 +401,10 @@ export class MockRepository implements Repository {
     const booking = this.bookings.find((b) => b.id === bookingId);
     if (!booking) throw new Error(`no such booking: ${bookingId}`);
 
-    const outcome = resolveCancellation(booking, actor, booking.startsAt, new Date());
-    const now = new Date();
-
-    if (outcome.creditRestoredCents > 0) {
-      this.ledger.unshift({
-        id: id("cr"),
-        deltaCents: outcome.creditRestoredCents,
-        reason: `${booking.spaceName} — credit returned`,
-        createdAt: now,
-      });
-    }
-    if (outcome.goodwillCreditCents > 0) {
-      this.ledger.unshift({
-        id: id("cr"),
-        deltaCents: outcome.goodwillCreditCents,
-        reason: `${booking.spaceName} cancelled on you`,
-        createdAt: now,
-      });
-    }
+    // Resolved for its side effects on the real path — the hold is voided or
+    // captured there. Here there is no card, so the outcome is only the reason
+    // the status changes.
+    resolveCancellation(booking, actor, booking.startsAt, new Date());
 
     booking.status = actor === "host" ? "cancelled_by_host" : "cancelled_by_practitioner";
     return this.withRevealedCode(booking);
@@ -482,29 +453,11 @@ export class MockRepository implements Repository {
 
   /* ---------------- standing ---------------- */
 
-  /**
-   * Computed from the same rules as the real view, over what this repository
-   * holds — so the tier shown here is the tier a real account would reach.
-   */
-  async getPoints(): Promise<number> {
-    const completed = this.bookings.filter((b) => b.status === "completed");
-    return totalPoints(
-      completed.flatMap(() => [
-        { kind: "completedSession" as const, at: new Date() },
-        { kind: "cleanSession" as const, at: new Date() },
-      ]),
-    );
+  async getSessionCount(): Promise<number> {
+    return this.bookings.filter((b) => b.status === "completed").length;
   }
 
   /* ---------------- credit ---------------- */
-
-  async getCreditBalanceCents(): Promise<number> {
-    return this.ledger.reduce((sum, entry) => sum + entry.deltaCents, 0);
-  }
-
-  async listCreditEntries(): Promise<CreditEntry[]> {
-    return [...this.ledger];
-  }
 
   async listCancellationHistory(): Promise<CancellationEvent[]> {
     return this.bookings

@@ -17,7 +17,7 @@ import { BreathCoach } from "@/components/breath-coach";
 import { ConfettiBurst } from "@/components/primitives";
 import { SpaceDirections } from "@/components/space-directions";
 import { CancellationConsequence } from "@/components/standing-notice";
-import type { Booking, CreditEntry, SpaceAccessDetails } from "@/lib/domain";
+import type { Booking, SpaceAccessDetails } from "@/lib/domain";
 import { PRO_PRICE_CENTS, formatCents, isFreeCancellation } from "@/lib/money";
 import type { Standing } from "@/lib/reliability";
 
@@ -82,13 +82,6 @@ export function Confirmed({
             <DarkRow
               label="Pro discount"
               value={`-${formatCents(booking.proDiscountCents)}`}
-              positive
-            />
-          )}
-          {booking.creditAppliedCents > 0 && (
-            <DarkRow
-              label="Credit applied"
-              value={`-${formatCents(booking.creditAppliedCents)}`}
               positive
             />
           )}
@@ -227,8 +220,6 @@ function isToday(date: Date): boolean {
 
 export function MyBookings({
   bookings,
-  creditBalanceCents,
-  creditEntries,
   accessFor,
   standing,
   onBack,
@@ -237,8 +228,6 @@ export function MyBookings({
   onMessage,
 }: {
   bookings: Booking[];
-  creditBalanceCents: number;
-  creditEntries: CreditEntry[];
   accessFor: (spaceId: string) => SpaceAccessDetails | null;
   standing: Standing;
   onBack: () => void;
@@ -249,7 +238,6 @@ export function MyBookings({
   onMessage?: (id: string) => void;
 }) {
   const [openId, setOpenId] = useState<string | null>(null);
-  const [showLedger, setShowLedger] = useState(false);
   const [now, setNow] = useState(() => new Date());
 
   useEffect(() => {
@@ -277,16 +265,6 @@ export function MyBookings({
           >
             <ArrowLeft size={16} color="#fff" />
           </button>
-          {creditBalanceCents > 0 && (
-            <button
-              type="button"
-              onClick={() => setShowLedger((v) => !v)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full font-body text-[11.5px] font-medium press"
-              style={{ backgroundColor: "rgba(143,198,245,0.18)", color: "#8FC6F5" }}
-            >
-              <Check size={11} /> {formatCents(creditBalanceCents)} credit
-            </button>
-          )}
         </div>
         <div className="mt-3 relative z-10">
           <Headline pre="Your" accent="bookings." size={24} light />
@@ -294,39 +272,6 @@ export function MyBookings({
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 pt-5 pb-8">
-        {/* The ledger the prototype built but never showed anywhere. */}
-        {showLedger && creditEntries.length > 0 && (
-          <div
-            className="rounded-2xl p-4 mb-5 card-in"
-            style={{ backgroundColor: "#EDF6FE", border: "1px solid #D4E8FA" }}
-          >
-            <p className="font-body font-medium text-[10px] uppercase tracking-[0.14em] text-[#6B95BE] mb-2.5">
-              Credit history
-            </p>
-            <div className="flex flex-col gap-2">
-              {creditEntries.map((entry) => (
-                <div key={entry.id} className="flex items-baseline justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="font-body text-[12px] text-navy truncate">{entry.reason}</p>
-                    <p className="font-body font-light text-[10px] text-ink-faint">
-                      {entry.createdAt.toLocaleDateString("en-US", {
-                        month: "short",
-                        day: "numeric",
-                      })}
-                    </p>
-                  </div>
-                  <span
-                    className="font-body font-medium text-[12.5px] shrink-0"
-                    style={{ color: entry.deltaCents > 0 ? "#5E7D5E" : "#6B84A0" }}
-                  >
-                    {entry.deltaCents > 0 ? "+" : "−"}
-                    {formatCents(Math.abs(entry.deltaCents))}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
 
         <SectionLabel>Upcoming</SectionLabel>
         {upcoming.length === 0 && (

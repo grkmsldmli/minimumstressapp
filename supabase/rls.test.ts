@@ -450,11 +450,11 @@ describe("hosts can only manage their own listings", () => {
  * Its only protection is the filter written into the view body — which makes
  * it exactly the kind of thing that looks fine in review and leaks everything.
  */
-describe("standing points are your own", () => {
+describe("session counts are your own", () => {
   it("shows a practitioner their own total", async () => {
     const rows = await asUser<{ user_id: string }>(
       PRACTITIONER,
-      `select user_id::text from standing_points`,
+      `select user_id::text from session_counts`,
     );
 
     // Whatever the total is, every row returned must belong to the caller.
@@ -464,7 +464,7 @@ describe("standing points are your own", () => {
   it("never shows one account another's total", async () => {
     const rows = await asUser<{ user_id: string }>(
       HOST,
-      `select user_id::text from standing_points`,
+      `select user_id::text from session_counts`,
     );
 
     expect(rows.every((r) => r.user_id === HOST)).toBe(true);
@@ -475,14 +475,14 @@ describe("standing points are your own", () => {
   it("returns nothing when asked for another account by id", async () => {
     const rows = await asUser(
       HOST,
-      `select points from standing_points where user_id = '${PRACTITIONER}'`,
+      `select sessions from session_counts where user_id = '${PRACTITIONER}'`,
     );
 
     expect(rows).toHaveLength(0);
   });
 
   it("gives an anonymous caller nothing at all", async () => {
-    await expect(asAnon(`select points from standing_points`)).rejects.toThrow();
+    await expect(asAnon(`select sessions from session_counts`)).rejects.toThrow();
   });
 });
 

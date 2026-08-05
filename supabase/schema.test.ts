@@ -216,7 +216,7 @@ describe("private columns stay out of the public views", () => {
      *
      * Listed separately so the filter is asserted rather than assumed.
      */
-    const SELF_FILTERED = ["standing_points"];
+    const SELF_FILTERED = ["session_counts"];
 
     const views = await rows<{ viewname: string; options: string[] | null }>(
       `select c.relname as viewname, c.reloptions as options

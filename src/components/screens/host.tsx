@@ -17,7 +17,7 @@ import {
 
 import { DeleteAccount } from "@/components/delete-account";
 import { EmergencyContactCard } from "@/components/emergency-contact";
-import { StandingCard } from "@/components/standing-card";
+import { BadgeCard } from "@/components/badge-card";
 import { Ambient, Headline, LogoBadge } from "@/components/brand";
 import { PrimaryButton } from "@/components/primitives";
 import { StandingNotice } from "@/components/standing-notice";
@@ -597,7 +597,7 @@ export function HostProfile({
   standing,
   onBack,
   onUpdate,
-  points,
+  sessions,
   onDeleteAccount,
   onGoLegal,
   onConnectPayouts,
@@ -608,7 +608,8 @@ export function HostProfile({
   standing: Standing;
   onBack: () => void;
   onUpdate: (patch: Partial<Profile>) => void;
-  points: number;
+  /** Completed, paid sessions. Drives the badges and nothing else. */
+  sessions: number;
   /** Irreversible, and the screen says so before it runs. */
   onDeleteAccount: () => Promise<void>;
   onGoLegal: () => void;
@@ -760,7 +761,7 @@ export function HostProfile({
 
         {/* Where they stand, and what the next step actually gets them. */}
         <div className="mt-6">
-          <StandingCard party="host" points={points} />
+          <BadgeCard party="host" sessions={sessions} />
         </div>
 
         <div className="mt-6">

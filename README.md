@@ -42,7 +42,7 @@ backend.
 ```bash
 npm install
 npm run dev     # http://localhost:3000
-npm test        # 593 tests: money, availability, geo, repository, schema, RLS, webhook
+npm test        # 557 tests: money, availability, geo, repository, schema, RLS, webhook
 ```
 
 Start at the splash screen and pick either role. Nothing is seeded for *you* — no listings, no
@@ -66,12 +66,14 @@ all-in total.
 
 Two decisions the brief left open, resolved in code and documented at the call site:
 
-- **Pro's discount is not floored, but credit redemption is.** Pro is a paid entitlement, so
-  advertising 10% and delivering less would be the worse failure; credit is goodwill, so partial
-  redemption with the remainder rolled over stays honest and keeps us cash-positive.
-- **When a host cancels, goodwill credit equals the platform's *net* take**, and any credit already
-  spent is restored separately. Refunding the gross fee as fresh credit would mint liability we
-  never earned. With no credit involved this is identical to the brief's plain reading.
+- **Pro's discount is not floored.** It is a paid entitlement, so advertising 10% and delivering
+  less would be the worse failure, and the subscription covers the few cents lost on an unusually
+  cheap booking.
+- **A host cancellation releases the hold in full and charges nothing.** There was a goodwill
+  credit on top, with a ledger behind it, and both are gone — not because the compensation was
+  wrong but because a balance somebody has to track, explain and reconcile is a second system.
+  Losing a room to a host's cancellation still costs the practitioner nothing, which is the part
+  that mattered.
 
 ## The database
 

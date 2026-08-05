@@ -28,7 +28,6 @@ const FULL = {
   amountCents: 5400,
   chargedCents: 0,
   refundedCents: 5400,
-  creditCents: 900,
   strikes: 3,
   limit: 3,
   until: "18 March",
@@ -108,7 +107,8 @@ describe("what SMS is for", () => {
 describe("money", () => {
   it("quotes the amount as currency, not cents", () => {
     expect(render("booking_confirmed", FULL).body).toContain("$54.00");
-    expect(render("cancelled_by_host", FULL).body).toContain("$9.00");
+    // The refund, which is now the whole of what a host cancellation returns.
+    expect(render("cancelled_by_host", FULL).body).toContain("$54.00");
   });
 
   /**
@@ -165,16 +165,14 @@ describe("money", () => {
 
   /** A host cancelling before capture owes an apology, not a refund promise. */
   it("does not promise a host-cancel refund that was never captured", () => {
-    const body = render("cancelled_by_host", { ...FULL, refundedCents: 0, creditCents: 900 }).body;
+    const body = render("cancelled_by_host", { ...FULL, refundedCents: 0 }).body;
 
     expect(body).toMatch(/not charged/i);
     expect(body).toMatch(/nothing to refund/i);
-    expect(body).toContain("$9.00");
   });
 
-  /** Goodwill credit is optional; a host cancellation with none must not invent it. */
   it("omits the credit line when no credit was given", () => {
-    const body = render("cancelled_by_host", { ...FULL, creditCents: 0 }).body;
+    const body = render("cancelled_by_host", { ...FULL }).body;
     expect(body).not.toMatch(/credit to your account/i);
     expect(body).toMatch(/refunded/i);
   });

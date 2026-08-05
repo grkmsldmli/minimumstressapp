@@ -12,7 +12,6 @@
 import type {
   Booking,
   CreatedBooking,
-  CreditEntry,
   HostBooking,
   HostSpace,
   Message,
@@ -65,10 +64,7 @@ export interface Repository {
 
   /* ---------------- standing ---------------- */
 
-  getPoints(): Promise<number>;
-
-  getCreditBalanceCents(): Promise<number>;
-  listCreditEntries(): Promise<CreditEntry[]>;
+  getSessionCount(): Promise<number>;
 
   /**
    * Every cancellation involving this user, either side.

@@ -317,7 +317,7 @@ export function AddSpace({
                   style={{ color: rateIsNumber ? "#3B9BE8" : "#B9CBDD" }}
                 >
                   {rateIsNumber
-                    ? `Lists at ${formatCents(quote({ hostRateCents: rateCents, isInstant: false, isPro: false, creditBalanceCents: 0 }).totalCents)}/hr`
+                    ? `Lists at ${formatCents(quote({ hostRateCents: rateCents, isInstant: false, isPro: false }).totalCents)}/hr`
                     : "Lists at —"}
                 </p>
                 {/*
@@ -612,7 +612,6 @@ export function AddSpace({
                           hostRateCents: rateCents,
                           isInstant: false,
                           isPro: false,
-                          creditBalanceCents: 0,
                         }).totalCents,
                       )
                     : "—"}

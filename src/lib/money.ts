@@ -5,7 +5,7 @@
  * prove it:
  *
  *   1. The host receives exactly the rate they set. Nothing is ever deducted
- *      from it — not the service fee, not a Pro discount, not goodwill credit.
+ *      from it — not the service fee, not a Pro discount, nothing.
  *   2. The platform's cut never falls below what Stripe charges to process the
  *      payment, so a heavily credited booking costs us $0 rather than real cash.
  */
@@ -69,7 +69,7 @@ function computeMinViableHostRate(isPro: boolean): number {
 
   // Instant slots only add platform revenue, so a normal slot is the worst case.
   for (let rate = 1; rate <= SCAN_LIMIT; rate += 1) {
-    const q = quote({ hostRateCents: rate, isInstant: false, isPro, creditBalanceCents: 0 });
+    const q = quote({ hostRateCents: rate, isInstant: false, isPro });
     if (q.platformNetCents < 0) {
       lastUnviable = rate;
       run = 0;
@@ -99,13 +99,6 @@ export interface QuoteInput {
   hostRateCents: number;
   isInstant: boolean;
   isPro: boolean;
-  /** Practitioner's available goodwill credit. Redemption may be partial. */
-  creditBalanceCents: number;
-  /**
-   * Instant fee waived by earned standing rather than by the subscription.
-   * Defaults to false, so an existing caller keeps its current behaviour.
-   */
-  instantFeeWaived?: boolean;
 }
 
 export interface Quote {
@@ -114,17 +107,14 @@ export interface Quote {
   serviceFeeCents: number;
   instantFeeCents: number;
   proDiscountCents: number;
-  creditAppliedCents: number;
   /** What the practitioner's card is authorized for. */
   totalCents: number;
   /** Platform's gross cut: what Stripe takes as the application fee. */
   platformCents: number;
   /** Estimated Stripe processing cost, paid out of the platform's cut. */
   stripeFeeCents: number;
-  /** Platform's cut after processing. Guaranteed >= 0 by the credit floor. */
+  /** Platform's cut after processing. */
   platformNetCents: number;
-  /** Credit the practitioner could not spend here and keeps for next time. */
-  creditRemainingCents: number;
 }
 
 function assertMoney(value: number, label: string): void {
@@ -178,15 +168,11 @@ export function minPlatformCents(hostRateCents: number): number {
  * with the remainder rolled over is honest and keeps us cash-positive.
  */
 export function quote(input: QuoteInput): Quote {
-  const { hostRateCents, isInstant, isPro, creditBalanceCents, instantFeeWaived = false } = input;
+  const { hostRateCents, isInstant, isPro } = input;
   assertMoney(hostRateCents, "hostRateCents");
-  assertMoney(creditBalanceCents, "creditBalanceCents");
 
   const serviceFeeCents = Math.round(hostRateCents * SERVICE_FEE_RATE);
-  // Waived by the subscription or by standing — the two are the same benefit
-  // bought two different ways, and charging somebody who earned it would be
-  // the ladder failing to pay out.
-  const instantFeeCents = isInstant && !isPro && !instantFeeWaived ? INSTANT_FEE_CENTS : 0;
+  const instantFeeCents = isInstant && !isPro ? INSTANT_FEE_CENTS : 0;
 
   const listPriceCents = hostRateCents + serviceFeeCents + instantFeeCents;
   const platformBeforeDiscount = serviceFeeCents + instantFeeCents;
@@ -197,14 +183,7 @@ export function quote(input: QuoteInput): Quote {
     ? Math.min(Math.round(listPriceCents * PRO_DISCOUNT_RATE), platformBeforeDiscount)
     : 0;
 
-  const platformBeforeCredit = platformBeforeDiscount - proDiscountCents;
-
-  // Credit eats only into the platform's cut, and only down to the Stripe floor.
-  const floor = minPlatformCents(hostRateCents);
-  const creditCapCents = Math.max(0, platformBeforeCredit - floor);
-  const creditAppliedCents = Math.min(creditBalanceCents, creditCapCents);
-
-  const platformCents = platformBeforeCredit - creditAppliedCents;
+  const platformCents = platformBeforeDiscount - proDiscountCents;
   const totalCents = hostRateCents + platformCents;
   const stripeFeeCents = estimateStripeFeeCents(totalCents);
 
@@ -213,12 +192,10 @@ export function quote(input: QuoteInput): Quote {
     serviceFeeCents,
     instantFeeCents,
     proDiscountCents,
-    creditAppliedCents,
     totalCents,
     platformCents,
     stripeFeeCents,
     platformNetCents: platformCents - stripeFeeCents,
-    creditRemainingCents: creditBalanceCents - creditAppliedCents,
   };
 }
 
@@ -228,7 +205,6 @@ export interface BookingMoney {
   serviceFeeCents: number;
   instantFeeCents: number;
   proDiscountCents: number;
-  creditAppliedCents: number;
   totalCents: number;
   platformCents: number;
 }
@@ -239,7 +215,6 @@ export function bookingMoneyFromQuote(q: Quote): BookingMoney {
     serviceFeeCents: q.serviceFeeCents,
     instantFeeCents: q.instantFeeCents,
     proDiscountCents: q.proDiscountCents,
-    creditAppliedCents: q.creditAppliedCents,
     totalCents: q.totalCents,
     platformCents: q.platformCents,
   };
@@ -251,24 +226,18 @@ export interface CancellationOutcome {
   /** `void` releases the authorization; `capture_full` charges the held amount. */
   action: "void" | "capture_full";
   chargedCents: number;
-  /** Credit spent on this booking, handed back. Undoes a spend, not new liability. */
-  creditRestoredCents: number;
-  /** Goodwill on top of the refund. Only ever awarded when the host cancels. */
-  goodwillCreditCents: number;
   reason: string;
 }
 
 /**
  * Resolve a cancellation.
  *
- * The host-cancels branch is the one the brief leaves ambiguous. It says the
- * goodwill credit is "service fee + instant fee, never more", and separately
- * guarantees the platform never goes negative. Those conflict when the
- * practitioner already spent credit on the booking being cancelled: refunding
- * the *gross* fee as fresh credit would mint liability we never earned. So
- * goodwill is the platform's **net** take, and any credit already spent is
- * restored separately. With no credit involved the two readings are identical;
- * with credit involved, only this one keeps the brief's own invariant intact.
+ * A host cancelling releases the hold in full and the practitioner is charged
+ * nothing. There was a goodwill credit on top of that, and it is gone — not
+ * because the compensation was wrong but because a balance somebody has to
+ * track, explain and reconcile is a second system, and the point right now is
+ * one that works. Losing a room to a host's cancellation still costs the
+ * practitioner nothing, which is the part that matters.
  */
 export function resolveCancellation(
   booking: BookingMoney,
@@ -280,9 +249,7 @@ export function resolveCancellation(
     return {
       action: "void",
       chargedCents: 0,
-      creditRestoredCents: booking.creditAppliedCents,
-      goodwillCreditCents: booking.platformCents,
-      reason: "Host cancelled — full release plus goodwill credit",
+      reason: "Host cancelled — authorization released in full, nothing charged",
     };
   }
 
@@ -290,19 +257,13 @@ export function resolveCancellation(
     return {
       action: "void",
       chargedCents: 0,
-      creditRestoredCents: booking.creditAppliedCents,
-      goodwillCreditCents: 0,
       reason: "Cancelled 24 or more hours ahead — authorization voided, never charged",
     };
   }
 
-  // Credit already spent is not returned here: it discounted a booking the
-  // practitioner is now being charged for, so they did receive its benefit.
   return {
     action: "capture_full",
     chargedCents: booking.totalCents,
-    creditRestoredCents: 0,
-    goodwillCreditCents: 0,
     reason: "Cancelled inside 24 hours — captured in full",
   };
 }

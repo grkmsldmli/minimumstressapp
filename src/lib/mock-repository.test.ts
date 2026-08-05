@@ -26,11 +26,10 @@ function testFile(name: string, type: string): File {
 }
 
 describe("a brand-new account starts genuinely empty", () => {
-  it("has no listings, bookings, credit, or Pro", async () => {
+  it("has no listings, bookings, or Pro", async () => {
     expect(await repo.listMySpaces()).toEqual([]);
     expect(await repo.listMyBookings()).toEqual([]);
     expect(await repo.listHostBookings()).toEqual([]);
-    expect(await repo.getCreditBalanceCents()).toBe(0);
     expect((await repo.getProfile()).isPro).toBe(false);
   });
 
@@ -101,38 +100,9 @@ describe("cancellation", () => {
     const cancelled = await repo.cancelBooking(booking.id, "practitioner");
 
     expect(cancelled.status).toBe("cancelled_by_practitioner");
-    expect(await repo.getCreditBalanceCents()).toBe(0);
   });
 
-  it("credits the platform's fee when the host cancels", async () => {
-    const spaceId = await firstSpaceId();
-    const { booking: booking } = await repo.createBooking({ spaceId, startsAt: daysFromNow(3) });
 
-    await repo.cancelBooking(booking.id, "host");
-
-    // The $9.00 service fee, and not a cent more.
-    expect(await repo.getCreditBalanceCents()).toBe(900);
-    const entries = await repo.listCreditEntries();
-    expect(entries[0].reason).toContain("cancelled on you");
-  });
-
-  it("never lets a host cancellation mint credit beyond what we earned", async () => {
-    const spaceId = await firstSpaceId();
-
-    // Build a balance, spend part of it, then have the host cancel.
-    const { booking: first } = await repo.createBooking({ spaceId, startsAt: daysFromNow(3) });
-    await repo.cancelBooking(first.id, "host");
-    const balanceBefore = await repo.getCreditBalanceCents();
-
-    const { booking: second } = await repo.createBooking({ spaceId, startsAt: daysFromNow(4) });
-    expect(second.creditAppliedCents).toBeGreaterThan(0);
-
-    await repo.cancelBooking(second.id, "host");
-    const balanceAfter = await repo.getCreditBalanceCents();
-
-    // Spent credit comes back, plus exactly the platform's net take.
-    expect(balanceAfter - balanceBefore).toBe(second.platformCents);
-  });
 
   it("keeps spent credit when the practitioner cancels late", async () => {
     const spaceId = await firstSpaceId();
@@ -141,25 +111,10 @@ describe("cancellation", () => {
 
     const soon = new Date(Date.now() + 45 * 60 * 1000);
     const { booking: second } = await repo.createBooking({ spaceId, startsAt: soon });
-    const balanceAfterSpending = await repo.getCreditBalanceCents();
 
     await repo.cancelBooking(second.id, "practitioner");
 
     // They were charged in full, so the credit they spent stays spent.
-    expect(await repo.getCreditBalanceCents()).toBe(balanceAfterSpending);
-  });
-});
-
-describe("the credit ledger is append-only", () => {
-  it("derives the balance from its entries", async () => {
-    const spaceId = await firstSpaceId();
-    const { booking: booking } = await repo.createBooking({ spaceId, startsAt: daysFromNow(3) });
-    await repo.cancelBooking(booking.id, "host");
-
-    const entries = await repo.listCreditEntries();
-    const summed = entries.reduce((total, entry) => total + entry.deltaCents, 0);
-
-    expect(summed).toBe(await repo.getCreditBalanceCents());
   });
 });
 

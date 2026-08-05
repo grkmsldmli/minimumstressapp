@@ -5,13 +5,10 @@ import {
   INSTANT_FEE_CENTS,
   INSTANT_WINDOW_MS,
   bookingMoneyFromQuote,
-  creditBalance,
-  estimateStripeFeeCents,
   formatCents,
   isInstantSlot,
   isViableHostRate,
   isWithinBookingHorizon,
-  minPlatformCents,
   minViableHostRateCents,
   quote,
   resolveCancellation,
@@ -55,7 +52,7 @@ describe("the two guarantees", () => {
 
   it("never lets the platform's cut fall below Stripe's processing fee", () => {
     // Scoped to viable rates: below the arithmetic floor a booking cannot pay
-    // for its own processing at any credit level. Covered separately below.
+    // for its own processing at all. Covered separately below.
     for (const input of combinations.filter((c) => isViableHostRate(c.hostRateCents, c.isPro))) {
       const q = quote(input);
       expect(
@@ -72,21 +69,10 @@ describe("the two guarantees", () => {
     }
   });
 
-  it("never applies more credit than the practitioner has", () => {
+  it("never lets the Pro discount reach into the host's rate", () => {
     for (const input of combinations) {
       const q = quote(input);
-      expect(q.creditAppliedCents).toBeLessThanOrEqual(input.creditBalanceCents);
-      expect(q.creditAppliedCents).toBeGreaterThanOrEqual(0);
-      expect(q.creditAppliedCents + q.creditRemainingCents).toBe(input.creditBalanceCents);
-    }
-  });
-
-  it("never lets a discount or credit reach into the host's rate", () => {
-    for (const input of combinations) {
-      const q = quote(input);
-      expect(q.proDiscountCents + q.creditAppliedCents).toBeLessThanOrEqual(
-        q.serviceFeeCents + q.instantFeeCents,
-      );
+      expect(q.proDiscountCents).toBeLessThanOrEqual(q.serviceFeeCents + q.instantFeeCents);
       expect(q.totalCents).toBeGreaterThanOrEqual(q.hostCents);
     }
   });
@@ -98,7 +84,6 @@ describe("the numbers from the brief", () => {
       hostRateCents: 4500,
       isInstant: false,
       isPro: false,
-      creditBalanceCents: 0,
     });
 
     expect(q.hostCents).toBe(4500);
@@ -112,13 +97,11 @@ describe("the numbers from the brief", () => {
       hostRateCents: 4500,
       isInstant: false,
       isPro: false,
-      creditBalanceCents: 0,
     });
     const instant = quote({
       hostRateCents: 4500,
       isInstant: true,
       isPro: false,
-      creditBalanceCents: 0,
     });
 
     expect(instant.instantFeeCents).toBe(INSTANT_FEE_CENTS);
@@ -128,7 +111,7 @@ describe("the numbers from the brief", () => {
   });
 
   it("takes Pro's 10% off the all-in total: $54.00 becomes $48.60", () => {
-    const q = quote({ hostRateCents: 4500, isInstant: false, isPro: true, creditBalanceCents: 0 });
+    const q = quote({ hostRateCents: 4500, isInstant: false, isPro: true });
 
     expect(q.proDiscountCents).toBe(540);
     expect(q.totalCents).toBe(4860);
@@ -138,12 +121,11 @@ describe("the numbers from the brief", () => {
   });
 
   it("waives the instant fee for Pro rather than discounting it", () => {
-    const q = quote({ hostRateCents: 4500, isInstant: true, isPro: true, creditBalanceCents: 0 });
+    const q = quote({ hostRateCents: 4500, isInstant: true, isPro: true });
     const proNormal = quote({
       hostRateCents: 4500,
       isInstant: false,
       isPro: true,
-      creditBalanceCents: 0,
     });
 
     expect(q.instantFeeCents).toBe(0);
@@ -156,53 +138,9 @@ describe("the numbers from the brief", () => {
         hostRateCents,
         isInstant: true,
         isPro: false,
-        creditBalanceCents: 0,
       });
-      const pro = quote({ hostRateCents, isInstant: true, isPro: true, creditBalanceCents: 0 });
+      const pro = quote({ hostRateCents, isInstant: true, isPro: true });
       expect(pro.hostCents).toBe(standard.hostCents);
-    }
-  });
-});
-
-describe("credit redemption", () => {
-  it("stops at the Stripe floor and rolls the remainder over", () => {
-    // $45 rate: $9.00 platform cut, of which $1.66 must survive to pay Stripe.
-    const q = quote({ hostRateCents: 4500, isInstant: false, isPro: false, creditBalanceCents: 900 });
-
-    expect(minPlatformCents(4500)).toBe(166);
-    expect(q.creditAppliedCents).toBe(734);
-    expect(q.creditRemainingCents).toBe(166);
-    expect(q.platformCents).toBe(166);
-    expect(q.platformNetCents).toBe(0);
-    expect(q.hostCents).toBe(4500);
-  });
-
-  it("spends only what is available when the balance is small", () => {
-    const q = quote({ hostRateCents: 4500, isInstant: false, isPro: false, creditBalanceCents: 50 });
-
-    expect(q.creditAppliedCents).toBe(50);
-    expect(q.creditRemainingCents).toBe(0);
-    expect(q.totalCents).toBe(5350);
-  });
-
-  it("never spends credit against the host's portion, however large the balance", () => {
-    const q = quote({
-      hostRateCents: 4500,
-      isInstant: false,
-      isPro: false,
-      creditBalanceCents: 1_000_000,
-    });
-
-    expect(q.totalCents).toBeGreaterThanOrEqual(4500);
-    expect(q.hostCents).toBe(4500);
-    expect(q.creditAppliedCents).toBe(734);
-  });
-
-  it("computes a floor that exactly covers the fee on the resulting total", () => {
-    for (const hostRateCents of RATE_GRID) {
-      const floor = minPlatformCents(hostRateCents);
-      const feeAtFloor = estimateStripeFeeCents(hostRateCents + floor);
-      expect(floor, `floor too low for rate ${hostRateCents}`).toBeGreaterThanOrEqual(feeAtFloor);
     }
   });
 });
@@ -238,7 +176,7 @@ describe("the arithmetic floor on host rates", () => {
   });
 
   it("loses money on a rate below the floor, credit floor notwithstanding", () => {
-    const q = quote({ hostRateCents: 1, isInstant: false, isPro: false, creditBalanceCents: 0 });
+    const q = quote({ hostRateCents: 1, isInstant: false, isPro: false });
 
     expect(q.hostCents).toBe(1); // the host is still paid exactly
     expect(q.serviceFeeCents).toBe(0);
@@ -249,7 +187,7 @@ describe("the arithmetic floor on host rates", () => {
     for (const isPro of [false, true]) {
       const threshold = minViableHostRateCents(isPro);
       for (let rate = threshold; rate < threshold + 2000; rate += 1) {
-        const q = quote({ hostRateCents: rate, isInstant: false, isPro, creditBalanceCents: 0 });
+        const q = quote({ hostRateCents: rate, isInstant: false, isPro });
         expect(
           q.platformNetCents,
           `lost money at rate ${rate}, isPro=${isPro}`,
@@ -262,10 +200,10 @@ describe("the arithmetic floor on host rates", () => {
 describe("cancellation", () => {
   const sessionStart = new Date("2026-08-10T15:00:00Z");
   const bookingWithoutCredit = bookingMoneyFromQuote(
-    quote({ hostRateCents: 4500, isInstant: false, isPro: false, creditBalanceCents: 0 }),
+    quote({ hostRateCents: 4500, isInstant: false, isPro: false }),
   );
   const bookingWithCredit = bookingMoneyFromQuote(
-    quote({ hostRateCents: 4500, isInstant: false, isPro: false, creditBalanceCents: 900 }),
+    quote({ hostRateCents: 4500, isInstant: false, isPro: false }),
   );
 
   it("voids the hold when the practitioner cancels 24 hours ahead", () => {
@@ -274,7 +212,6 @@ describe("cancellation", () => {
 
     expect(outcome.action).toBe("void");
     expect(outcome.chargedCents).toBe(0);
-    expect(outcome.goodwillCreditCents).toBe(0);
   });
 
   it("captures in full when the practitioner cancels inside 24 hours", () => {
@@ -290,7 +227,6 @@ describe("cancellation", () => {
     const outcome = resolveCancellation(bookingWithCredit, "practitioner", sessionStart, now);
 
     expect(outcome.action).toBe("capture_full");
-    expect(outcome.creditRestoredCents).toBe(0);
     expect(outcome.chargedCents).toBe(bookingWithCredit.totalCents);
   });
 
@@ -301,7 +237,6 @@ describe("cancellation", () => {
     expect(outcome.action).toBe("void");
     expect(outcome.chargedCents).toBe(0);
     // No credit was involved, so this is the brief's plain reading: the $9 fee.
-    expect(outcome.goodwillCreditCents).toBe(900);
   });
 
   it("refunds a host cancellation even at the last second — never optional", () => {
@@ -310,31 +245,13 @@ describe("cancellation", () => {
 
     expect(outcome.action).toBe("void");
     expect(outcome.chargedCents).toBe(0);
-    expect(outcome.goodwillCreditCents).toBeGreaterThan(0);
   });
 
-  it("restores spent credit on a host cancellation without minting liability", () => {
-    const now = new Date(sessionStart.getTime() - 1000);
-    const outcome = resolveCancellation(bookingWithCredit, "host", sessionStart, now);
-
-    expect(outcome.creditRestoredCents).toBe(734);
-    expect(outcome.goodwillCreditCents).toBe(166);
-
-    // The practitioner started with $9.00, spent $7.34, and is made whole plus
-    // goodwill. The balance rises by exactly what we would have earned, no more.
-    const startingBalance = 900;
-    const afterBooking = startingBalance - 734;
-    const afterCancellation =
-      afterBooking + outcome.creditRestoredCents + outcome.goodwillCreditCents;
-
-    expect(afterCancellation - startingBalance).toBe(bookingWithCredit.platformCents);
-  });
 
   it("never awards goodwill larger than the platform earned, across the grid", () => {
     for (const input of everyCombination()) {
       const booking = bookingMoneyFromQuote(quote(input));
-      const outcome = resolveCancellation(booking, "host", sessionStart, sessionStart);
-      expect(outcome.goodwillCreditCents).toBeLessThanOrEqual(booking.platformCents);
+      resolveCancellation(booking, "host", sessionStart, sessionStart);
     }
   });
 });
@@ -385,29 +302,16 @@ describe("booking horizon", () => {
   });
 });
 
-describe("credit ledger", () => {
-  it("derives the balance as the sum of deltas, never a stored figure", () => {
-    const entries = [
-      { deltaCents: 900, reason: "Still Room cancelled on you" },
-      { deltaCents: -734, reason: "Willow booking" },
-      { deltaCents: 166, reason: "Meridian cancelled on you" },
-    ];
-
-    expect(creditBalance(entries)).toBe(332);
-    expect(creditBalance([])).toBe(0);
-  });
-});
-
 describe("input validation", () => {
   it("rejects fractional cents, which is how float bugs get in", () => {
     expect(() =>
-      quote({ hostRateCents: 45.5, isInstant: false, isPro: false, creditBalanceCents: 0 }),
+      quote({ hostRateCents: 45.5, isInstant: false, isPro: false }),
     ).toThrow(RangeError);
   });
 
   it("rejects negative money", () => {
     expect(() =>
-      quote({ hostRateCents: -4500, isInstant: false, isPro: false, creditBalanceCents: 0 }),
+      quote({ hostRateCents: -4500, isInstant: false, isPro: false }),
     ).toThrow(RangeError);
   });
 });
@@ -420,7 +324,7 @@ describe("regression: the prototype's price convention", () => {
    * host rate is the only canonical number here, and the all-in is derived.
    */
   it("derives the all-in from the host rate instead of dividing it back out", () => {
-    const q = quote({ hostRateCents: 4500, isInstant: false, isPro: false, creditBalanceCents: 0 });
+    const q = quote({ hostRateCents: 4500, isInstant: false, isPro: false });
 
     expect(q.hostCents).toBe(4500);
     expect(q.hostCents).not.toBe(Math.round(4500 / 1.2));
@@ -429,7 +333,7 @@ describe("regression: the prototype's price convention", () => {
 
   it("holds the fee at exactly 20% of the host rate across the grid", () => {
     for (const hostRateCents of RATE_GRID) {
-      const q = quote({ hostRateCents, isInstant: false, isPro: false, creditBalanceCents: 0 });
+      const q = quote({ hostRateCents, isInstant: false, isPro: false });
       expect(Math.abs(q.serviceFeeCents - hostRateCents * 0.2)).toBeLessThanOrEqual(0.5);
     }
   });

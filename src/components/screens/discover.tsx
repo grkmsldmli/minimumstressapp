@@ -14,6 +14,7 @@ import {
   Moon,
   Search,
   Sun,
+  X,
 } from "lucide-react";
 
 import {
@@ -80,6 +81,7 @@ export function Discover({
   locationError: string | null;
 }) {
   const [filter, setFilter] = useState<Filter>("all");
+  const [query, setQuery] = useState("");
   // Dismissing hides the prompt for this visit only. Storing the refusal would
   // mean remembering a "no" that was about one moment, not about the feature.
   const [askedAlready, setAskedAlready] = useState(false);
@@ -113,13 +115,41 @@ export function Discover({
    * end rather than vanishing.
    */
   const visible = useMemo(() => {
-    if (!nearbyOrder) return byCategory;
+    const ordered = nearbyOrder
+      ? [...byCategory].sort(
+          (a, b) =>
+            (new Map(nearbyOrder.map((id, i) => [id, i])).get(a.id) ?? Infinity) -
+            (new Map(nearbyOrder.map((id, i) => [id, i])).get(b.id) ?? Infinity),
+        )
+      : byCategory;
 
-    const rank = new Map(nearbyOrder.map((id, i) => [id, i]));
-    return [...byCategory].sort(
-      (a, b) => (rank.get(a.id) ?? Infinity) - (rank.get(b.id) ?? Infinity),
-    );
-  }, [byCategory, nearbyOrder]);
+    const needle = query.trim().toLowerCase();
+    if (!needle) return ordered;
+
+    /**
+     * Searches what a listing says about itself, not where it is.
+     *
+     * The address is deliberately absent — matching on it would turn the
+     * search box into an oracle: type a street, see whether anything comes
+     * back, and a room that is private until booked is no longer private. Name,
+     * room type, description and amenities are all things the listing already
+     * shows to everyone.
+     */
+    return ordered.filter((space) => {
+      const haystack = [
+        space.name,
+        roomTypeFor(space.category),
+        space.description,
+        ...space.amenities,
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      // Every word has to appear somewhere, so "quiet mirror" narrows rather
+      // than widening the way an any-word match would.
+      return needle.split(/\s+/).every((word) => haystack.includes(word));
+    });
+  }, [byCategory, nearbyOrder, query]);
 
   return (
     <div className="h-full flex flex-col screen-in bg-white">
@@ -182,9 +212,23 @@ export function Discover({
           }}
         >
           <Search size={14} color="#8FC6F5" />
-          <span className="font-body font-light text-[12.5px] text-white/60">
-            Search coming soon
-          </span>
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search by name, room type or what's in it"
+            aria-label="Search spaces"
+            className="font-body font-light text-[12.5px] outline-none w-full bg-transparent text-white placeholder:text-white/50"
+          />
+          {query && (
+            <button
+              type="button"
+              onClick={() => setQuery("")}
+              aria-label="Clear search"
+              className="press shrink-0"
+            >
+              <X size={13} color="#8FC6F5" />
+            </button>
+          )}
         </div>
       </div>
 

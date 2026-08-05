@@ -235,7 +235,6 @@ export function MyBookings({
   onCancel,
   onReview,
   onMessage,
-  onSimulateHostCancel,
 }: {
   bookings: Booking[];
   creditBalanceCents: number;
@@ -248,7 +247,6 @@ export function MyBookings({
   onReview?: (id: string) => void;
   /** Opens the thread for a booking. */
   onMessage?: (id: string) => void;
-  onSimulateHostCancel: (id: string) => void;
 }) {
   const [openId, setOpenId] = useState<string | null>(null);
   const [showLedger, setShowLedger] = useState(false);
@@ -350,10 +348,6 @@ export function MyBookings({
                 onCancel(booking.id);
                 setOpenId(null);
               }}
-              onSimulateHostCancel={() => {
-                onSimulateHostCancel(booking.id);
-                setOpenId(null);
-              }}
             />
           ))}
         </div>
@@ -425,7 +419,6 @@ function UpcomingBooking({
   onToggle,
   onCancel,
   onMessage,
-  onSimulateHostCancel,
 }: {
   booking: Booking;
   access: SpaceAccessDetails | null;
@@ -435,7 +428,6 @@ function UpcomingBooking({
   onToggle: () => void;
   onCancel: () => void;
   onMessage?: () => void;
-  onSimulateHostCancel: () => void;
 }) {
   const [from, to] = categoryGradient(booking.category);
   // Derived from the real start time, so the warning changes as the session
@@ -571,14 +563,6 @@ function UpcomingBooking({
             Cancel booking
           </button>
 
-          <button
-            type="button"
-            onClick={onSimulateHostCancel}
-            className="w-full py-2.5 rounded-xl font-body text-[10.5px] press mt-2 text-ink-faint"
-            style={{ border: "1px dashed #DCE7F2" }}
-          >
-            Prototype only — simulate the host cancelling this →
-          </button>
         </div>
       )}
     </div>

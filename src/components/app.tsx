@@ -461,7 +461,6 @@ export function App() {
           bookings={hostBookings}
           onBack={() => go("discover")}
           onAddSpace={() => go("addspace")}
-          onApprove={(spaceId) => void mutate(() => repo.approveSpace(spaceId))}
           onEditHours={(spaceId) => {
             setEditingSpaceId(spaceId);
             go("edit-hours");
@@ -687,7 +686,6 @@ export function App() {
             setThreadBookingId(id);
             go("thread");
           }}
-          onSimulateHostCancel={(id) => void mutate(() => repo.cancelBooking(id, "host"))}
         />
       );
 

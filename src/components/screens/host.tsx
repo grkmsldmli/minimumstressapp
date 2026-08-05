@@ -40,7 +40,6 @@ export function HostDashboard({
   bookings,
   onBack,
   onAddSpace,
-  onApprove,
   onEditHours,
   onOpenEarnings,
   onOpenProfile,
@@ -51,7 +50,6 @@ export function HostDashboard({
   bookings: HostBooking[];
   onBack: () => void;
   onAddSpace: () => void;
-  onApprove: (spaceId: string) => void;
   onEditHours: (spaceId: string) => void;
   onOpenEarnings: () => void;
   onOpenProfile: () => void;
@@ -196,14 +194,6 @@ export function HostDashboard({
             this space goes live and starts taking bookings.
           </p>
 
-          <button
-            type="button"
-            onClick={() => onApprove(active.id)}
-            className="mt-8 px-4 py-2.5 rounded-xl font-body text-[11px] press text-ink-faint"
-            style={{ border: "1px dashed #DCE7F2" }}
-          >
-            Prototype only — simulate approval →
-          </button>
         </div>
       ) : (
         <>
@@ -705,9 +695,6 @@ export function HostProfile({
               >
                 Set up payouts
               </button>
-              <p className="font-body font-light text-[10px] mt-2 text-center text-ink-faint">
-                Prototype only — the real button opens Stripe&apos;s hosted onboarding.
-              </p>
             </div>
           )}
 

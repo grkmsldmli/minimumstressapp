@@ -63,7 +63,16 @@ const ENDPOINTS = [
   {
     label: "payments (platform account)",
     connect: false,
-    events: ["payment_intent.succeeded", "payment_intent.canceled", "charge.refunded"],
+    events: [
+      "payment_intent.succeeded",
+      "payment_intent.canceled",
+      "charge.refunded",
+      // Subscriptions live on the platform account, not the connected one.
+      // These are the only thing that ever marks somebody Pro.
+      "customer.subscription.created",
+      "customer.subscription.updated",
+      "customer.subscription.deleted",
+    ],
   },
   {
     label: "hosts (connected accounts)",
@@ -112,6 +121,26 @@ for (const endpoint of ENDPOINTS) {
       });
       console.log(`  Description updated to "${description}".`);
     }
+
+    /**
+     * The event list is synced, not just reported.
+     *
+     * Handling a new event in code does nothing until Stripe is told to send
+     * it, and there is no error when it is missed — the handler simply never
+     * runs. That is how subscription support shipped complete and unable to
+     * make anybody Pro.
+     */
+    const registered = new Set(already.enabled_events ?? []);
+    const missing = endpoint.events.filter((event) => !registered.has(event));
+
+    if (missing.length > 0) {
+      await stripe(`webhook_endpoints/${already.id}`, {
+        method: "POST",
+        params: endpoint.events.map((event) => ["enabled_events[]", event]),
+      });
+      console.log(`  Added: ${missing.join(", ")}`);
+    }
+
     continue;
   }
 

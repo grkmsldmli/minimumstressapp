@@ -178,8 +178,28 @@ export class SupabaseRepository implements Repository {
     return this.getProfile();
   }
 
+  /**
+   * Hands off to Stripe and leaves.
+   *
+   * Nothing is set here. The route decides whether this is a new subscription
+   * or a visit to the billing portal, and the webhook is what eventually marks
+   * the account Pro — a flag written on this side would be one the client
+   * granted itself.
+   */
   async startProSubscription(): Promise<Profile> {
-    throw new Error("Pro subscriptions need Stripe. Not available until the payments milestone.");
+    const response = await fetch("/api/pro", { method: "POST" });
+
+    if (!response.ok) {
+      const { error } = await response.json().catch(() => ({ error: null }));
+      throw new Error(error ?? "Could not open Pro");
+    }
+
+    const { url } = (await response.json()) as { url: string };
+    window.location.href = url;
+
+    // The redirect ends this page. Returning the current profile keeps the
+    // signature honest for the moment before the browser leaves.
+    return this.getProfile();
   }
 
   /**

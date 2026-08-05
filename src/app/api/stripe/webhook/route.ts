@@ -4,6 +4,7 @@ import type Stripe from "stripe";
 import { recipientFor } from "@/lib/notify/for-booking";
 import { notify } from "@/lib/notify/send";
 import { stripe } from "@/lib/stripe/client";
+import { grantsPro } from "@/lib/stripe/subscription";
 import { supabaseAdmin } from "@/lib/supabase/server";
 
 /**
@@ -183,6 +184,37 @@ async function handle(event: Stripe.Event): Promise<void> {
         subjectId: payout.id,
         context: { reason },
       });
+      return;
+    }
+
+    /**
+     * The only place anybody becomes Pro, or stops being.
+     *
+     * Not on the checkout redirect: that URL is reachable by anyone who knows
+     * it, and a flag set there is a subscription anybody can grant themselves.
+     * Stripe sends this when the money actually cleared, and sends it again
+     * every renewal, every failure and every cancellation — so the flag tracks
+     * the subscription rather than the moment somebody once paid.
+     */
+    case "customer.subscription.created":
+    case "customer.subscription.updated":
+    case "customer.subscription.deleted": {
+      const subscription = event.data.object;
+      const userId = subscription.metadata?.app_user_id;
+
+      // Matched by customer id when the metadata is missing — a subscription
+      // created from the Stripe dashboard by hand has no metadata, and that is
+      // exactly how a support fix gets applied.
+      const query = admin.from("profiles").update({
+        is_pro: grantsPro(subscription.status),
+        pro_since: grantsPro(subscription.status) ? new Date().toISOString() : null,
+      });
+
+      const { error } = userId
+        ? await query.eq("id", userId)
+        : await query.eq("stripe_customer_id", subscription.customer as string);
+
+      if (error) throw error;
       return;
     }
 

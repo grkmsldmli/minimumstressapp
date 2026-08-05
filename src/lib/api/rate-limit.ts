@@ -76,6 +76,9 @@ export const LIMITS = {
   /** Starting Stripe onboarding — a link a host follows once, maybe twice. */
   connect: { limit: 5, windowMs: 60_000 },
 
+  /** Opening Stripe checkout or the billing portal. A link, followed once. */
+  pro: { limit: 5, windowMs: 60_000 },
+
   /**
    * Leaving a review. One per booking per side is already enforced in the
    * database, so this only stops a loop probing which bookings exist.

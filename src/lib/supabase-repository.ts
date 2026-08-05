@@ -126,6 +126,7 @@ export class SupabaseRepository implements Repository {
       notifyBookings: data?.notify_bookings ?? true,
       notifyPayouts: data?.notify_payouts ?? true,
       notifyOffers: data?.notify_offers ?? false,
+      accountType: data?.account_type ?? null,
       // Read back only for its owner — this query runs as the signed-in user,
       // and no policy lets anyone select another person's profile row.
       emergencyContact: {
@@ -151,6 +152,14 @@ export class SupabaseRepository implements Repository {
       row.emergency_contact_phone = patch.emergencyContact.phone;
       row.emergency_contact_relationship = patch.emergencyContact.relationship;
     }
+    /**
+     * Writable exactly once, and the database is what enforces that — a
+     * trigger refuses any change from one value to another. Sending it again
+     * with the same value is harmless; sending a different one fails loudly
+     * rather than quietly turning a practitioner into a host.
+     */
+    if (patch.accountType !== undefined) row.account_type = patch.accountType;
+
     // isPro and stripeConnected are absent on purpose: both are set by webhooks
     // after money or verification actually clears, never by the client asking.
 

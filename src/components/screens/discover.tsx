@@ -6,7 +6,6 @@ import { LocationPrompt, type LocationChoice } from "@/components/location-promp
 import { RatingBadge } from "@/components/stars";
 import { summariseAggregate } from "@/lib/reviews";
 import {
-  Building2,
   Calendar,
   ChevronRight,
   List,
@@ -55,7 +54,6 @@ export function Discover({
   spaces,
   isPro,
   onOpenSpace,
-  onGoHost,
   onGoPro,
   onGoBookings,
   onGoProfile,
@@ -69,7 +67,6 @@ export function Discover({
   spaces: PublicSpace[];
   isPro: boolean;
   onOpenSpace: (id: string) => void;
-  onGoHost: () => void;
   onGoPro: () => void;
   onGoBookings: () => void;
   onGoProfile: () => void;
@@ -169,9 +166,6 @@ export function Discover({
               onClick={() => setView(view === "list" ? "map" : "list")}
             >
               {view === "list" ? <MapIcon size={15} color="#fff" /> : <List size={15} color="#fff" />}
-            </RoundButton>
-            <RoundButton label="Host studio" onClick={onGoHost}>
-              <Building2 size={15} color="#fff" />
             </RoundButton>
           </div>
         </div>

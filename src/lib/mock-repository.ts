@@ -219,6 +219,7 @@ export class MockRepository implements Repository {
     notifyPayouts: true,
     notifyOffers: false,
     emergencyContact: { name: null, phone: null, relationship: null },
+    accountType: null,
   };
 
   private publicSpaces: PublicSpace[] = [];

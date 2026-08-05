@@ -13,6 +13,15 @@ export type SpaceStatus = "pending" | "active" | "delisted";
 export type MediaKind = "image" | "video";
 export type PayoutSchedule = "standard" | "instant";
 
+/**
+ * Which side of the marketplace an account is, chosen once at sign-up.
+ *
+ * Null means the choice has not been made yet — a profile row exists from the
+ * moment someone signs in, and the question comes on the screen after that.
+ * The app treats null as "the only screen you may see".
+ */
+export type AccountType = "practitioner" | "host";
+
 export type BookingStatus =
   | "upcoming"
   | "completed"
@@ -47,6 +56,8 @@ export interface Profile {
   notifyPayouts: boolean;
   notifyOffers: boolean;
   emergencyContact: EmergencyContact;
+  /** Null until chosen. Cannot be changed afterwards — see migration 0012. */
+  accountType: AccountType | null;
 }
 
 export interface SpaceMedia {

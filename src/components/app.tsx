@@ -21,7 +21,7 @@ import {
   verifyEmailCode,
 } from "@/lib/supabase/auth";
 
-import { useApp } from "./app-state";
+import { type Screen, useApp } from "./app-state";
 import { AddSpace } from "./screens/add-space";
 import { Confirmed, MyBookings } from "./screens/bookings";
 import { Discover } from "./screens/discover";
@@ -291,6 +291,32 @@ export function App() {
         />
   );
 
+  // Shown from two places: the switch below, and the guard that catches an
+  // account which signed in but never answered the question.
+  const renderRoleSelect = () => (
+        <RoleSelect
+          /*
+            Written before navigating, and awaited. Landing on a practitioner
+            screen while the account is still typeless would show someone a
+            side they may not have chosen.
+          */
+          choosePractitioner={() => {
+            void (async () => {
+              await repo.updateProfile({ accountType: "practitioner" });
+              refresh();
+              go("verify");
+            })();
+          }}
+          chooseHost={() => {
+            void (async () => {
+              await repo.updateProfile({ accountType: "host" });
+              refresh();
+              go("addspace");
+            })();
+          }}
+        />
+  );
+
   // Rendered before the data guard, because these are exactly the screens that
   // exist to get someone to the point where there is data to load.
   if (screen === "splash") return <Splash next={() => go("how")} />;
@@ -317,7 +343,107 @@ export function App() {
    * first, and putting the rule here means both entry points — Role Select and
    * the Discover header — obey it without repeating themselves.
    */
-  const goHosting = () => go(mySpaces.length === 0 ? "addspace" : "host");
+  /**
+   * Where a host belongs on arrival.
+   *
+   * The brief is explicit that a host should never meet an empty dashboard
+   * first, so one with no listings goes straight to the form. Used by the
+   * routing guard below rather than by a switch button, which no longer
+   * exists — an account is one side or the other.
+   */
+  const hostLanding = () => (mySpaces.length === 0 ? renderAddSpace() : renderHostDashboard());
+
+  /**
+   * An account that has not chosen a side yet gets exactly one screen.
+   *
+   * Reached by anyone who signed in and closed the app before answering. Their
+   * profile row exists, so the data loads and every screen would render — but
+   * which side they belong to is not yet decided, and guessing is how somebody
+   * ends up in the wrong half of the app.
+   */
+  if (onSupabase && profile.accountType === null && screen !== "role" && screen !== "legal") {
+    return renderRoleSelect();
+  }
+
+  // Both are rendered from the switch below and from the guard above it, so
+  // they are functions rather than inline cases.
+  const renderAddSpace = () => (
+        <AddSpace
+          onBack={() => go("host")}
+          onListed={async (input) => {
+            await repo.createSpace(input);
+            refresh();
+          }}
+        />
+  );
+
+  const renderDiscover = () => (
+        <Discover
+          spaces={spaces}
+          isPro={profile.isPro}
+          greetingName={profile.displayName}
+          onOpenSpace={(spaceId) => {
+            setActiveSpaceId(spaceId);
+            go("detail");
+          }}
+          onGoPro={() => go("pro")}
+          onGoBookings={() => go("bookings")}
+          onGoProfile={() => go("practitioner-profile")}
+          onGoLegal={() => go("legal")}
+          nearbyOrder={nearbyOrder}
+          onChooseLocation={(choice) => void chooseLocation(choice)}
+          distanceLabels={distanceLabels}
+          locationError={locationError}
+        />
+  );
+
+  const renderHostDashboard = () => (
+        <HostDashboard
+          spaces={mySpaces}
+          bookings={hostBookings}
+          onBack={() => go("discover")}
+          onAddSpace={() => go("addspace")}
+          onApprove={(spaceId) => void mutate(() => repo.approveSpace(spaceId))}
+          onEditHours={(spaceId) => {
+            setEditingSpaceId(spaceId);
+            go("edit-hours");
+          }}
+          onOpenEarnings={() => go("earnings")}
+          onOpenProfile={() => go("host-profile")}
+          onReviewBooking={(bookingId) => {
+            setReviewing({ bookingId, role: "host" });
+            go("review");
+          }}
+        />
+  );
+
+  /**
+   * A host never lands on the practitioner side, and the reverse.
+   *
+   * Sign-in and session resume both aim at Discover, which is right for a
+   * practitioner and wrong for everybody else — a studio owner opening the app
+   * was shown a list of rooms to book, on an account that cannot book one.
+   * Correcting it here rather than at each entry point means a screen added
+   * later cannot forget.
+   */
+  const practitionerOnly: Screen[] = [
+    "discover",
+    "detail",
+    "payment",
+    "confirmed",
+    "bookings",
+    "pro",
+    "practitioner-profile",
+    "verify",
+  ];
+  const hostOnly: Screen[] = ["host", "addspace", "edit-hours", "earnings", "host-profile"];
+
+  if (profile.accountType === "host" && practitionerOnly.includes(screen)) {
+    return hostLanding();
+  }
+  if (profile.accountType === "practitioner" && hostOnly.includes(screen)) {
+    return renderDiscover();
+  }
 
   const activeSpace = spaces.find((s) => s.id === activeSpaceId) ?? null;
   const activeBooking = bookings.find((b) => b.id === activeBookingId) ?? null;
@@ -325,7 +451,7 @@ export function App() {
 
   switch (screen) {
     case "role":
-      return <RoleSelect choosePractitioner={() => go("verify")} chooseHost={goHosting} />;
+      return renderRoleSelect();
 
     case "verify":
       return (
@@ -339,26 +465,7 @@ export function App() {
       );
 
     case "discover":
-      return (
-        <Discover
-          spaces={spaces}
-          isPro={profile.isPro}
-          greetingName={profile.displayName}
-          onOpenSpace={(spaceId) => {
-            setActiveSpaceId(spaceId);
-            go("detail");
-          }}
-          onGoHost={goHosting}
-          onGoPro={() => go("pro")}
-          onGoBookings={() => go("bookings")}
-          onGoProfile={() => go("practitioner-profile")}
-          onGoLegal={() => go("legal")}
-          nearbyOrder={nearbyOrder}
-          onChooseLocation={(choice) => void chooseLocation(choice)}
-          distanceLabels={distanceLabels}
-          locationError={locationError}
-        />
-      );
+      return renderDiscover();
 
     case "detail":
       if (!activeSpace) return <Fallback onBack={() => go("discover")} />;
@@ -509,36 +616,10 @@ export function App() {
       return <Legal onBack={back} />;
 
     case "host":
-      return (
-        <HostDashboard
-          spaces={mySpaces}
-          bookings={hostBookings}
-          onBack={() => go("discover")}
-          onAddSpace={() => go("addspace")}
-          onApprove={(spaceId) => void mutate(() => repo.approveSpace(spaceId))}
-          onEditHours={(spaceId) => {
-            setEditingSpaceId(spaceId);
-            go("edit-hours");
-          }}
-          onOpenEarnings={() => go("earnings")}
-          onOpenProfile={() => go("host-profile")}
-          onReviewBooking={(bookingId) => {
-            setReviewing({ bookingId, role: "host" });
-            go("review");
-          }}
-        />
-      );
+      return renderHostDashboard();
 
     case "addspace":
-      return (
-        <AddSpace
-          onBack={() => go("host")}
-          onListed={async (input) => {
-            await repo.createSpace(input);
-            refresh();
-          }}
-        />
-      );
+      return renderAddSpace();
 
     case "edit-hours":
       if (!editingSpace) return <Fallback onBack={() => go("host")} />;

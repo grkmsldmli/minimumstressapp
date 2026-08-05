@@ -81,6 +81,12 @@ export const LIMITS = {
    * database, so this only stops a loop probing which bookings exist.
    */
   review: { limit: 10, windowMs: 60_000 },
+
+  /**
+   * Asking to switch sides. One open request is already enforced by a unique
+   * index, so this only stops somebody hammering the endpoint after a refusal.
+   */
+  accountChange: { limit: 3, windowMs: 60 * 60_000 },
 } as const satisfies Record<string, RateLimit>;
 
 export interface RateLimitResult {

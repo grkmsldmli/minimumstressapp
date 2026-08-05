@@ -169,3 +169,51 @@ join profiles hp on hp.id = s.host_id
 where b.status = 'cancelled_by_host'
 group by hp.display_name
 order by cancellations desc;
+
+-- ------------------------------------------------------------------
+-- 8. Who has asked to move to the other side of the marketplace
+--
+-- Nothing switches an account automatically, and that is deliberate. A host
+-- needs sublease proof, a legal acknowledgement and payout setup; a
+-- practitioner needs insurance. Approving a change hands somebody the
+-- obligations of a side they have not been checked against, so read the reason
+-- and look at what they already have before running the statement below.
+-- ------------------------------------------------------------------
+select
+  r.id,
+  r.created_at,
+  p.display_name,
+  u.email,
+  r.current_type,
+  r.requested_type,
+  r.reason,
+  -- What they would be giving up or taking on, so the decision is informed
+  -- rather than a yes/no on a name.
+  (select count(*) from spaces s where s.host_id = r.user_id) as spaces_listed,
+  (select count(*) from bookings b where b.practitioner_id = r.user_id) as bookings_made,
+  p.stripe_connect_charges_enabled as can_be_paid,
+  p.insurance_doc_path is not null as has_insurance
+from account_type_change_requests r
+join profiles p on p.id = r.user_id
+join auth.users u on u.id = r.user_id
+where r.state = 'open'
+order by r.created_at;
+
+-- To approve one. Both statements or neither — a request marked approved
+-- without the profile changing is a promise nobody kept, and a profile changed
+-- without the request closed comes back tomorrow.
+--
+--   begin;
+--   update profiles
+--      set account_type = (select requested_type from account_type_change_requests where id = '<request-id>')
+--    where id = (select user_id from account_type_change_requests where id = '<request-id>');
+--   update account_type_change_requests
+--      set state = 'approved', decided_at = now(), decided_note = '<why>'
+--    where id = '<request-id>';
+--   commit;
+--
+-- To decline:
+--
+--   update account_type_change_requests
+--      set state = 'declined', decided_at = now(), decided_note = '<why>'
+--    where id = '<request-id>';

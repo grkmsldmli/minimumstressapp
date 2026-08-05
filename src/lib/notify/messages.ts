@@ -22,7 +22,8 @@ export type NotificationKind =
   | "reliability_warning"
   | "reliability_suspended"
   | "payout_failed"
-  | "safety_escalation";
+  | "safety_escalation"
+  | "account_change_requested";
 
 export interface Message {
   subject: string;
@@ -290,6 +291,26 @@ export function render(kind: NotificationKind, context: MessageContext): Message
         ),
         // Nobody is standing at a door waiting for this, and a text cannot
         // carry the comment that makes it actionable.
+        sms: null,
+      };
+
+    /**
+     * Somebody wants to move to the other side. Not urgent, but it is a person
+     * waiting on a human, so it says who and why rather than just that it
+     * happened.
+     */
+    case "account_change_requested":
+      return {
+        subject: `Account change requested: ${context.role} → ${context.reason}`,
+        body: lines(
+          `${context.name ?? "Someone"} has asked to move from ${context.role} to ${context.reason}.`,
+          context.note ? `They wrote:
+
+"${context.note}"` : "They gave no reason.",
+          `Nothing has changed. Approving means they take on what that side requires — sublease proof and payout setup for a host, insurance for a practitioner — so check those before you switch it.`,
+          `The open requests are in account_type_change_requests, and supabase/admin-queries.sql has the statement that applies one.`,
+          SIGN_OFF,
+        ),
         sms: null,
       };
 

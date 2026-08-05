@@ -409,6 +409,15 @@ export function AuthVerify({
 /*  Role select                                                        */
 /* ------------------------------------------------------------------ */
 
+/**
+ * The one choice on this screen cannot be undone, so it is made twice.
+ *
+ * Tapping a card selects it; a second, explicit confirm commits it. That is
+ * more friction than a normal choice deserves and exactly right for this one —
+ * an account is one side of the marketplace, the two have different paperwork,
+ * fees and payouts, and getting it wrong means starting again with a different
+ * email. The warning is shown before the commit, not as a footnote after it.
+ */
 export function RoleSelect({
   choosePractitioner,
   chooseHost,
@@ -416,6 +425,81 @@ export function RoleSelect({
   choosePractitioner: () => void;
   chooseHost: () => void;
 }) {
+  const [pending, setPending] = useState<"practitioner" | "host" | null>(null);
+
+  if (pending) {
+    const isPractitioner = pending === "practitioner";
+    return (
+      <NavyScreen className="items-center justify-between text-center px-8 pt-16 pb-9">
+        <div className="relative z-10">
+          <p className="font-body font-medium text-[10.5px] uppercase tracking-[0.2em] text-coral-soft">
+            Before you continue
+          </p>
+          <div className="mt-2">
+            <Headline
+              pre="This can't be"
+              accent="changed later."
+              size={26}
+              light
+            />
+          </div>
+        </div>
+
+        <div className="relative z-10 w-full">
+          <div
+            className="rounded-2xl p-5 text-left"
+            style={{
+              backgroundColor: "rgba(255,255,255,0.07)",
+              border: "1px solid rgba(255,255,255,0.14)",
+            }}
+          >
+            <div className="flex items-center gap-2.5">
+              {isPractitioner ? (
+                <Users color="#8FC6F5" size={18} />
+              ) : (
+                <Building2 color="#F2A79E" size={18} />
+              )}
+              <p className="font-body font-medium text-[14px] text-white">
+                {isPractitioner ? "I teach or practice" : "I have a space"}
+              </p>
+            </div>
+
+            <p className="font-body font-light text-[12px] text-white/70 mt-3 leading-relaxed">
+              {isPractitioner
+                ? "You'll be able to find and book rooms by the hour. You won't be able to list a space from this account."
+                : "You'll be able to list your space and take bookings. You won't be able to book other people's rooms from this account."}
+            </p>
+
+            <p className="font-body font-light text-[11.5px] text-white/45 mt-3 leading-relaxed">
+              If you do both, open a second account with a different email for the other side.
+            </p>
+          </div>
+
+          <div className="flex gap-2.5 mt-4">
+            <button
+              type="button"
+              onClick={() => setPending(null)}
+              className="flex-1 py-3.5 rounded-full font-body font-medium text-[13px] press text-white"
+              style={{ border: "1px solid rgba(255,255,255,0.22)" }}
+            >
+              Go back
+            </button>
+            <button
+              type="button"
+              onClick={isPractitioner ? choosePractitioner : chooseHost}
+              className="flex-1 py-3.5 rounded-full font-body font-medium text-[13px] text-white press"
+              style={{ backgroundColor: isPractitioner ? "#3B9BE8" : "#F2695C" }}
+            >
+              Yes, continue
+            </button>
+          </div>
+        </div>
+
+        <div />
+      </NavyScreen>
+    );
+  }
+
   return (
     <NavyScreen className="items-center justify-between text-center px-8 pt-16 pb-9">
       <div className="relative z-10">
@@ -423,14 +507,14 @@ export function RoleSelect({
           One quick thing
         </p>
         <div className="mt-2">
-          <Headline pre="Where should we" accent="start?" size={27} light />
+          <Headline pre="Which brings you" accent="here?" size={27} light />
         </div>
       </div>
 
       <div className="relative z-10 w-full flex flex-col gap-3.5">
         <button
           type="button"
-          onClick={choosePractitioner}
+          onClick={() => setPending("practitioner")}
           className="text-left rounded-2xl p-5 press"
           style={{ backgroundColor: "#3B9BE8" }}
         >
@@ -446,7 +530,7 @@ export function RoleSelect({
 
         <button
           type="button"
-          onClick={chooseHost}
+          onClick={() => setPending("host")}
           className="text-left rounded-2xl p-5 press"
           style={{ backgroundColor: "#F2695C" }}
         >
@@ -461,9 +545,10 @@ export function RoleSelect({
         </button>
       </div>
 
-      <p className="relative z-10 font-body font-light text-[11px] text-white/45 pt-7">
-        You can switch anytime from the top of either screen.
+      <p className="relative z-10 font-body font-light text-[11px] text-white/45 pt-7 leading-relaxed">
+        An account is one or the other, and this can&apos;t be changed afterwards.
       </p>
     </NavyScreen>
   );
 }
+

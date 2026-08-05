@@ -1271,3 +1271,183 @@ with (security_invoker = false) as
 
 grant select on space_ratings to anon, authenticated;
 grant select on space_ratings to service_role;
+
+
+-- ===================================================================
+-- 0012_account_type.sql
+-- ===================================================================
+
+-- One account is one side of the marketplace, chosen once.
+--
+-- This reverses an earlier decision, so the reasoning is worth recording. The
+-- brief said "you can switch anytime from the top of either screen", and the
+-- schema had no role column on purpose: the same person could book a room on
+-- Tuesday and let one on Wednesday.
+--
+-- In practice the two sides are not two moods of one person. A practitioner
+-- does not acquire a leasable room by changing a setting, and a studio owner
+-- browsing for somewhere to teach is a different business with different
+-- paperwork, a different fee, a different payout arrangement and a different
+-- insurance position. Showing both sets of controls to everyone made the app
+-- ask each person to ignore half of it.
+--
+-- So: an account is one or the other, picked at sign-up, and not switchable
+-- afterwards. Somebody who genuinely is both opens a second account, which is
+-- the honest shape of "these are two businesses".
+
+do $$
+begin
+  create type account_type as enum ('practitioner', 'host');
+exception
+  when duplicate_object then null;
+end $$;
+
+-- Nullable, because a profile row is created the moment someone signs in and
+-- the choice happens on the screen after that. Null means "has not chosen
+-- yet", which the app treats as the one screen it must show them.
+alter table profiles add column if not exists account_type account_type;
+
+-- ------------------------------------------------------------------
+-- Making "cannot be changed" true rather than merely unoffered.
+--
+-- Hiding the control is not the rule; it is a description of the current UI.
+-- A client holding a publishable key can PATCH any column its grant allows,
+-- so without this a practitioner could make themselves a host with one
+-- request — and skip the sublease proof, the legal acknowledgement and the
+-- payout setup that being a host is supposed to require.
+--
+-- Null to a value is permitted: that is the one-time choice. Value to a
+-- different value is refused. The service role is exempt so staff can fix a
+-- genuine mistake, which is the difference between immutable and a trap.
+-- ------------------------------------------------------------------
+create or replace function profiles_account_type_is_final()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if old.account_type is not null
+     and new.account_type is distinct from old.account_type
+     and current_user <> 'service_role'
+  then
+    raise exception 'account_type cannot be changed once it has been chosen'
+      using errcode = 'check_violation';
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists profiles_account_type_is_final on profiles;
+
+create trigger profiles_account_type_is_final
+  before update on profiles
+  for each row
+  execute function profiles_account_type_is_final();
+
+-- ------------------------------------------------------------------
+-- Listing a space requires being a host.
+--
+-- The trigger above stops the column changing; this stops it being
+-- irrelevant. Without it, an account that never chose "host" could still
+-- insert into spaces and the whole split would be decoration.
+--
+-- The existing policy is REPLACED rather than joined by a second one. Postgres
+-- ORs permissive policies together, so adding "must be a host" beside "must be
+-- your own row" would have meant either one passing — a restriction that
+-- restricted nothing, and one that reads correct in a diff.
+-- ------------------------------------------------------------------
+drop policy if exists "spaces: host inserts own rows" on spaces;
+drop policy if exists "spaces: only hosts may list" on spaces;
+
+create policy "spaces: only hosts may list"
+  on spaces for insert
+  with check (
+    host_id = auth.uid()
+    and exists (
+      select 1 from profiles p
+      where p.id = auth.uid() and p.account_type = 'host'
+    )
+  );
+
+
+-- ===================================================================
+-- 0013_account_type_change_requests.sql
+-- ===================================================================
+
+-- Asking to move to the other side of the marketplace.
+--
+-- 0012 made account_type unchangeable by the client and left the service role
+-- able to change it, which is the difference between a rule and a trap. This
+-- is the front door to that exemption: somebody who picked wrong, or whose
+-- circumstances genuinely changed, asks — and a person decides.
+--
+-- Deliberately not self-service. Becoming a host means sublease proof, a legal
+-- acknowledgement and payout setup; becoming a practitioner means insurance.
+-- A switch that skipped those would let an account acquire obligations it had
+-- never satisfied, which is the whole reason the column is locked.
+
+do $$
+begin
+  create type account_change_state as enum ('open', 'approved', 'declined');
+exception
+  when duplicate_object then null;
+end $$;
+
+create table if not exists account_type_change_requests (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references profiles (id) on delete cascade,
+
+  -- Recorded rather than derived, so the record still reads correctly after
+  -- the change has been applied and the profile no longer says what it was.
+  current_type account_type not null,
+  requested_type account_type not null,
+
+  reason text not null default '',
+  state account_change_state not null default 'open',
+
+  created_at timestamptz not null default now(),
+  decided_at timestamptz,
+  decided_note text,
+
+  constraint account_change_is_a_change check (current_type <> requested_type)
+);
+
+-- One open request per person. Without this, a refusal can be answered by
+-- asking again immediately, and the queue becomes a way to apply pressure.
+create unique index if not exists account_change_one_open_per_user
+  on account_type_change_requests (user_id)
+  where state = 'open';
+
+create index if not exists account_change_open_idx
+  on account_type_change_requests (created_at)
+  where state = 'open';
+
+-- ------------------------------------------------------------------
+-- Access
+--
+-- Someone may read their own requests, so the app can show "we are looking at
+-- this" rather than swallowing the ask. Writing goes through a server route —
+-- the current_type on the row must be the profile's real one, and a client
+-- that could set it could describe a change it is not actually making.
+-- ------------------------------------------------------------------
+alter table account_type_change_requests enable row level security;
+
+do $$
+declare existing record;
+begin
+  for existing in
+    select policyname from pg_policies
+    where schemaname = 'public' and tablename = 'account_type_change_requests'
+  loop
+    execute format('drop policy if exists %I on public.account_type_change_requests', existing.policyname);
+  end loop;
+end $$;
+
+create policy "account changes: read own"
+  on account_type_change_requests for select
+  using (user_id = auth.uid());
+
+grant select on account_type_change_requests to authenticated;
+grant select, insert, update on account_type_change_requests to service_role;

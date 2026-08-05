@@ -203,6 +203,20 @@ describe("private columns stay out of the public views", () => {
       "space_ratings",
     ];
 
+    /**
+     * A third kind, and the one easiest to get wrong.
+     *
+     * Definer, like the public views, so it can read base tables the caller
+     * has no grant on — but its rows are not public. It filters itself down to
+     * auth.uid() in the view body, because a definer view applies no row
+     * policy and a missing filter would hand every signed-in account everyone
+     * else's total. That total divides straight back into how many sessions
+     * somebody has had.
+     *
+     * Listed separately so the filter is asserted rather than assumed.
+     */
+    const SELF_FILTERED = ["standing_points"];
+
     const views = await rows<{ viewname: string; options: string[] | null }>(
       `select c.relname as viewname, c.reloptions as options
        from pg_class c
@@ -212,14 +226,16 @@ describe("private columns stay out of the public views", () => {
     const optionsFor = (name: string) =>
       views.find((v) => v.viewname === name)?.options ?? [];
 
-    expect(views.map((v) => v.viewname).sort()).toEqual([...PER_USER, ...PUBLIC].sort());
+    expect(views.map((v) => v.viewname).sort()).toEqual(
+      [...PER_USER, ...PUBLIC, ...SELF_FILTERED].sort(),
+    );
 
     for (const name of PER_USER) {
       expect(optionsFor(name), `${name} must be security_invoker`).toContain(
         "security_invoker=true",
       );
     }
-    for (const name of PUBLIC) {
+    for (const name of [...PUBLIC, ...SELF_FILTERED]) {
       expect(optionsFor(name), `${name} must not be security_invoker`).not.toContain(
         "security_invoker=true",
       );

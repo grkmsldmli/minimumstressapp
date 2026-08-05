@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { PGlite } from "@electric-sql/pglite";
@@ -63,16 +63,20 @@ async function currentRole(userId: string): Promise<string> {
 
 beforeAll(async () => {
   db = new PGlite();
-  for (const file of [
-    "0000_supabase_stubs.sql",
-    "0001_schema.sql",
-    "0002_rls.sql",
-    "0003_storage.sql",
-    "0004_narrow_public_profiles.sql",
-    "0005_host_bookings.sql",
-    "0006_service_role_grants.sql",
-    "0007_space_details.sql",
-  ]) {
+  /*
+   * Read from disk, in order. This was a written-out list that stopped at
+   * 0007, so every policy added after that — reviews, account types, points —
+   * was absent from the database these tests query. They passed by asking
+   * questions about tables that were not there.
+   *
+   * The stubs come first and are not a migration: they stand in for what
+   * Supabase provides.
+   */
+  const files = readdirSync(migrationsDir)
+    .filter((file) => file.endsWith(".sql"))
+    .sort();
+
+  for (const file of files) {
     await db.exec(read(file));
   }
 
@@ -438,5 +442,46 @@ describe("hosts can only manage their own listings", () => {
 
   it("refuses anonymous access to the availability table itself", async () => {
     await expect(asAnon(`select id from availability`)).rejects.toThrow(/permission denied/i);
+  });
+});
+
+/**
+ * The points view is a security definer view, so no row policy applies to it.
+ * Its only protection is the filter written into the view body — which makes
+ * it exactly the kind of thing that looks fine in review and leaks everything.
+ */
+describe("standing points are your own", () => {
+  it("shows a practitioner their own total", async () => {
+    const rows = await asUser<{ user_id: string }>(
+      PRACTITIONER,
+      `select user_id::text from standing_points`,
+    );
+
+    // Whatever the total is, every row returned must belong to the caller.
+    for (const row of rows) expect(row.user_id).toBe(PRACTITIONER);
+  });
+
+  it("never shows one account another's total", async () => {
+    const rows = await asUser<{ user_id: string }>(
+      HOST,
+      `select user_id::text from standing_points`,
+    );
+
+    expect(rows.every((r) => r.user_id === HOST)).toBe(true);
+    expect(rows.some((r) => r.user_id === PRACTITIONER)).toBe(false);
+  });
+
+  /** Asking for somebody else by name must not work around the filter. */
+  it("returns nothing when asked for another account by id", async () => {
+    const rows = await asUser(
+      HOST,
+      `select points from standing_points where user_id = '${PRACTITIONER}'`,
+    );
+
+    expect(rows).toHaveLength(0);
+  });
+
+  it("gives an anonymous caller nothing at all", async () => {
+    await expect(asAnon(`select points from standing_points`)).rejects.toThrow();
   });
 });

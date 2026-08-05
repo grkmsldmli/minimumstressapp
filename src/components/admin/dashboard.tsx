@@ -5,13 +5,15 @@ import {
   Building2,
   CalendarClock,
   Check,
+  ChevronRight,
   FileText,
+  Search,
   Users,
   X,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
-import type { AdminQueue } from "@/lib/admin/queue";
+import type { AdminQueue, ListingRow, Person } from "@/lib/admin/queue";
 import { formatCents } from "@/lib/money";
 
 /**
@@ -224,6 +226,8 @@ export function AdminDashboard() {
 
         <Chart days={queue.bookingsByDay} />
 
+        <Directory people={queue.people} listings={queue.listings} />
+
         <div
           className="grid gap-4 mt-6"
           style={{ gridTemplateColumns: "repeat(auto-fit,minmax(340px,1fr))" }}
@@ -433,6 +437,264 @@ export function AdminDashboard() {
 }
 
 /* ------------------------------------------------------------------ */
+
+/**
+ * Who and what, behind every number on this page.
+ *
+ * A count answers nothing on its own — "1 listing" tells an operator there is
+ * work without telling them whose, and the next thing they do is go looking in
+ * the database. So both directories are here, searchable, and a row opens into
+ * everything already known about that person or that room.
+ *
+ * Expanded in place rather than routed to. The detail is read at the same
+ * moment as the row above it, from the same fetch, so the two can never
+ * disagree about what is true — which a separate detail page could.
+ */
+function Directory({ people, listings }: { people: Person[]; listings: ListingRow[] }) {
+  const [tab, setTab] = useState<"people" | "listings">("people");
+  const [query, setQuery] = useState("");
+  const [openId, setOpenId] = useState<string | null>(null);
+
+  const term = query.trim().toLowerCase();
+  const match = (...fields: (string | null)[]) =>
+    term === "" || fields.some((field) => (field ?? "").toLowerCase().includes(term));
+
+  const shownPeople = people.filter((person) =>
+    match(person.email, person.displayName, person.accountType),
+  );
+  const shownListings = listings.filter((listing) =>
+    match(listing.name, listing.hostEmail, listing.status, listing.category, listing.addressLine),
+  );
+
+  const total = tab === "people" ? shownPeople.length : shownListings.length;
+  const date = (value: string | null) =>
+    value
+      ? new Date(value).toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+        })
+      : "unknown";
+
+  return (
+    <section
+      className="rounded-xl px-4 py-4 mt-3"
+      style={{ backgroundColor: PANEL, border: `1px solid ${LINE}` }}
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        <Tab
+          label="People"
+          active={tab === "people"}
+          count={people.length}
+          onClick={() => {
+            setTab("people");
+            setOpenId(null);
+          }}
+        />
+        <Tab
+          label="Listings"
+          active={tab === "listings"}
+          count={listings.length}
+          onClick={() => {
+            setTab("listings");
+            setOpenId(null);
+          }}
+        />
+
+        <div
+          className="flex items-center gap-1.5 ml-auto rounded-lg px-2.5 py-1.5"
+          style={{ backgroundColor: BG, border: `1px solid ${LINE}` }}
+        >
+          <Search size={12} color={MUTED} />
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder={tab === "people" ? "email or name" : "room, host or address"}
+            className="font-body text-[11.5px] bg-transparent outline-none"
+            style={{ color: "#fff", width: 170 }}
+          />
+        </div>
+      </div>
+
+      {total === 0 ? (
+        <p className="font-body font-light text-[11.5px] mt-3" style={{ color: MUTED }}>
+          {term === "" ? "Nobody yet." : "Nothing matching that."}
+        </p>
+      ) : (
+        <div className="flex flex-col mt-3">
+          {tab === "people"
+            ? shownPeople.map((person) => (
+                <Row
+                  key={person.id}
+                  open={openId === person.id}
+                  onToggle={() => setOpenId(openId === person.id ? null : person.id)}
+                  title={person.displayName ?? person.email ?? "No name yet"}
+                  subtitle={person.displayName ? person.email : null}
+                  tag={person.accountType ?? "no type"}
+                  right={`${person.sessions} ${person.sessions === 1 ? "session" : "sessions"}`}
+                  alert={person.payoutsReady === false && person.earnedCents > 0}
+                  details={[
+                    ["Signed up", date(person.joinedAt)],
+                    ["Sessions", String(person.sessions)],
+                    person.accountType === "host"
+                      ? ["Earned", formatCents(person.earnedCents)]
+                      : ["Spent", formatCents(person.spentCents)],
+                    ["Listings", String(person.listings)],
+                    [
+                      "Late cancellations",
+                      person.lateCancellations === 0 ? "none" : String(person.lateCancellations),
+                    ],
+                    person.payoutsReady === null
+                      ? ["Payouts", "not applicable"]
+                      : ["Payouts", person.payoutsReady ? "ready" : "not set up"],
+                    ["Account id", person.id],
+                  ]}
+                />
+              ))
+            : shownListings.map((listing) => (
+                <Row
+                  key={listing.id}
+                  open={openId === listing.id}
+                  onToggle={() => setOpenId(openId === listing.id ? null : listing.id)}
+                  title={listing.name}
+                  subtitle={listing.hostEmail}
+                  tag={listing.status}
+                  right={`${listing.sessions} ${listing.sessions === 1 ? "session" : "sessions"}`}
+                  alert={listing.status === "pending"}
+                  details={[
+                    ["Host", listing.hostEmail ?? "unknown"],
+                    ["Status", listing.status],
+                    ["Type", listing.category || "unset"],
+                    ["Host rate", `${formatCents(listing.hourlyRateCents)}/hr`],
+                    ["Sessions", String(listing.sessions)],
+                    ["Paid to host", formatCents(listing.earnedCents)],
+                    /*
+                     * The address is on this screen and nowhere else. An
+                     * operator has to be able to find a room; a practitioner
+                     * who has not booked it still cannot see this.
+                     */
+                    ["Address", listing.addressLine ?? "not set"],
+                    ["Listed", date(listing.createdAt)],
+                    ["Listing id", listing.id],
+                  ]}
+                />
+              ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function Tab({
+  label,
+  active,
+  count,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  count: number;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="px-3 py-1.5 rounded-lg font-body font-medium text-[11.5px] press"
+      style={{
+        backgroundColor: active ? "rgba(59,155,232,0.18)" : BG,
+        color: active ? "#9CCBF3" : MUTED,
+        border: `1px solid ${active ? "rgba(59,155,232,0.4)" : LINE}`,
+      }}
+    >
+      {label} · {count}
+    </button>
+  );
+}
+
+/** One line, and everything about it one click away. */
+function Row({
+  open,
+  onToggle,
+  title,
+  subtitle,
+  tag,
+  right,
+  alert,
+  details,
+}: {
+  open: boolean;
+  onToggle: () => void;
+  title: string;
+  subtitle: string | null;
+  tag: string;
+  right: string;
+  alert: boolean;
+  details: [string, string][];
+}) {
+  return (
+    <div style={{ borderBottom: `1px solid ${LINE}` }}>
+      <button
+        type="button"
+        onClick={onToggle}
+        className="flex items-center gap-2.5 w-full text-left py-2.5"
+      >
+        <ChevronRight
+          size={12}
+          color={MUTED}
+          style={{ transform: open ? "rotate(90deg)" : "none", transition: "transform 140ms" }}
+          className="shrink-0"
+        />
+        <div className="min-w-0 flex-1">
+          <p className="font-body text-[12px] truncate" style={{ color: "#fff" }}>
+            {title}
+          </p>
+          {subtitle && (
+            <p className="font-body font-light text-[10.5px] truncate" style={{ color: MUTED }}>
+              {subtitle}
+            </p>
+          )}
+        </div>
+        <span
+          className="shrink-0 px-2 py-0.5 rounded-full font-body text-[10px]"
+          style={{
+            backgroundColor: alert ? "rgba(232,163,61,0.16)" : "rgba(255,255,255,0.06)",
+            color: alert ? "#E8A33D" : MUTED,
+          }}
+        >
+          {tag}
+        </span>
+        <span
+          className="shrink-0 font-body text-[11px] text-right"
+          style={{ color: MUTED, width: 76 }}
+        >
+          {right}
+        </span>
+      </button>
+
+      {open && (
+        <div
+          className="grid gap-x-4 gap-y-1.5 pb-3 pl-6"
+          style={{ gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))" }}
+        >
+          {details.map(([label, value]) => (
+            <div key={label}>
+              <p
+                className="font-body font-light text-[9.5px] uppercase tracking-[0.1em]"
+                style={{ color: MUTED }}
+              >
+                {label}
+              </p>
+              <p className="font-body text-[11.5px] break-words" style={{ color: "#fff" }}>
+                {value}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 /** One colour per kind, so the feed can be scanned without reading it. */
 function activityColour(kind: string): string {

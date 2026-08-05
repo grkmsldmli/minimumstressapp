@@ -97,7 +97,7 @@ recordDeployed("database", "reviews are unreachable without a session", await re
 recordDeployed("database", "escalations are unreachable", await rest("review_escalations?select=id&limit=1"), (s) => s === 401);
 recordDeployed("database", "messages are unreachable without a session", await rest("messages?select=body&limit=1"), (s) => s === 401);
 recordDeployed("database", "the message view is unreachable too", await rest("messages_visible?select=body&limit=1"), (s) => s === 401);
-recordDeployed("database", "points are unreachable without a session", await rest("standing_points?select=points&limit=1"), (s) => s === 401);
+recordDeployed("database", "session counts are unreachable without a session", await rest("session_counts?select=sessions&limit=1"), (s) => s === 401);
 
 record("database", "the public listing view is readable", (await rest("spaces_public?select=id&limit=1")).status === 200);
 
@@ -245,10 +245,26 @@ record(
   `status ${traversal.status}`,
 );
 
+/**
+ * A skipped check is not a passing one.
+ *
+ * `results.length` counts the boundaries that could not be tested at all —
+ * their table is not deployed yet — so reporting it as the number that hold
+ * claims proof this run never obtained. The same shape as an audit run against
+ * an empty bucket: green, and evidence of nothing.
+ */
+const tested = results.length - undeployed;
+
 console.log(
   failures === 0
-    ? `\nAll ${results.length} boundaries hold against ${base}.`
-    : `\n${failures} of ${results.length} FAILED against ${base}.`,
+    ? `\nAll ${tested} boundaries hold against ${base}.`
+    : `\n${failures} of ${tested} FAILED against ${base}.`,
 );
+
+if (undeployed > 0) {
+  console.log(
+    `${undeployed} could not be checked — their table is missing. Run apply.sql, then this again.`,
+  );
+}
 
 process.exit(failures === 0 ? 0 : 1);

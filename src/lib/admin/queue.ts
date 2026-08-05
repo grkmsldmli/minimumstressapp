@@ -1,5 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { type Party, THRESHOLDS } from "@/lib/reliability";
+
 /**
  * Everything a person needs to run this, in one read.
  *
@@ -96,6 +98,36 @@ export interface ActivityEntry {
   text: string;
 }
 
+/** One account, with everything an operator would ask about them. */
+export interface Person {
+  id: string;
+  email: string | null;
+  accountType: string | null;
+  displayName: string | null;
+  joinedAt: string | null;
+  listings: number;
+  sessions: number;
+  lateCancellations: number;
+  /** Hosts only. Null for a practitioner, who has nothing to be paid into. */
+  payoutsReady: boolean | null;
+  earnedCents: number;
+  spentCents: number;
+}
+
+/** Every listing, not only the ones waiting for review. */
+export interface ListingRow {
+  id: string;
+  name: string;
+  status: string;
+  category: string;
+  hourlyRateCents: number;
+  hostEmail: string | null;
+  addressLine: string | null;
+  sessions: number;
+  earnedCents: number;
+  createdAt: string | null;
+}
+
 export interface RecentBooking {
   id: string;
   spaceName: string;
@@ -142,6 +174,9 @@ export interface AdminQueue {
 
   failedNotifications: FailedNotification[];
   atRisk: AtRiskAccount[];
+  /** Everyone, so a number on this page can always be turned into a name. */
+  people: Person[];
+  listings: ListingRow[];
   /** Everything, newest first. The feed an operator actually watches. */
   activity: ActivityEntry[];
 }
@@ -179,9 +214,15 @@ export async function loadQueue(admin: SupabaseClient): Promise<AdminQueue> {
       .eq("state", "open")
       .order("created_at"),
 
-    admin.from("profiles").select("id, account_type, stripe_connect_charges_enabled"),
+    admin
+      .from("profiles")
+      .select("id, account_type, display_name, stripe_connect_charges_enabled, created_at"),
 
-    admin.from("spaces").select("id, host_id, name, status, created_at"),
+    admin
+      .from("spaces")
+      .select(
+        "id, host_id, name, status, created_at, category, hourly_rate_cents, address_line",
+      ),
 
     /**
      * Every booking, rather than several filtered queries.
@@ -193,7 +234,7 @@ export async function loadQueue(admin: SupabaseClient): Promise<AdminQueue> {
     admin
       .from("bookings")
       .select(
-        "id, space_id, starts_at, status, captured_at, cancelled_at, total_cents, host_rate_cents, platform_cents",
+        "id, space_id, practitioner_id, starts_at, status, captured_at, cancelled_at, total_cents, host_rate_cents, platform_cents",
       )
       .order("starts_at", { ascending: false }),
 
@@ -292,33 +333,61 @@ export async function loadQueue(admin: SupabaseClient): Promise<AdminQueue> {
     if (new Date(booking.starts_at as string) < lateWindow) continue;
 
     const byHost = booking.status === "cancelled_by_host";
-    const who = byHost ? spaceHost.get(booking.space_id as string) : null;
-    if (byHost && !who) continue;
+    const who = byHost
+      ? spaceHost.get(booking.space_id as string)
+      : (booking.practitioner_id as string | null);
+    if (!who) continue;
 
-    const key = byHost ? who! : (booking.id as string);
-    // Practitioner ids are not on this projection, so only the host side can
-    // be attributed by person. Named rather than quietly half-counted.
-    if (!byHost) continue;
-
-    const entry = lateCounts.get(key) ?? { count: 0, role: "host" };
+    const entry = lateCounts.get(who) ?? { count: 0, role: byHost ? "host" : "practitioner" };
     entry.count += 1;
-    lateCounts.set(key, entry);
-    userIds.add(key);
+    lateCounts.set(who, entry);
+    userIds.add(who);
   }
 
+  /**
+   * Everyone, not only the ids that turned up in a queue.
+   *
+   * A count on this page is useless if it cannot be turned back into a name —
+   * "1 listing" answers nothing an operator actually wants to know. So the
+   * lookup covers every account, and the panels below can always say who.
+   */
+  for (const profile of profiles.data ?? []) userIds.add(profile.id as string);
   const emails = await emailsFor(admin, [...userIds]);
 
+  /**
+   * The published thresholds, not a second copy of them.
+   *
+   * The two sides are held to different bars on purpose — a host cancellation
+   * is the one nothing makes right, a practitioner's is already paid for — and
+   * a dashboard that invented its own numbers would warn about people the
+   * policy considers fine, and stay silent about people it has suspended.
+   */
   const atRisk: AtRiskAccount[] = [...lateCounts.entries()]
-    // Two is the warning threshold for a host; three suspends.
-    .filter(([, entry]) => entry.count >= 2)
+    .filter(([, entry]) => entry.count >= THRESHOLDS[entry.role as Party].warnAt)
     .map(([id, entry]) => ({
       id,
       email: emails.get(id) ?? null,
       role: entry.role,
       lateCancellations: entry.count,
-      suspended: entry.count >= 3,
+      suspended: entry.count >= THRESHOLDS[entry.role as Party].suspendAt,
     }))
     .sort((a, b) => b.lateCancellations - a.lateCancellations);
+
+  const { perPerson, perListing } = rollUp(
+    paid.map((booking) => ({
+      spaceId: booking.space_id as string,
+      practitionerId: (booking.practitioner_id as string | null) ?? null,
+      hostRateCents: (booking.host_rate_cents as number) ?? 0,
+      totalCents: (booking.total_cents as number) ?? 0,
+    })),
+    spaceHost,
+  );
+
+  const listingCounts = new Map<string, number>();
+  for (const space of spaces.data ?? []) {
+    const hostId = space.host_id as string;
+    listingCounts.set(hostId, (listingCounts.get(hostId) ?? 0) + 1);
+  }
 
   // Fourteen buckets, pre-seeded so a quiet day is a gap in the chart rather
   // than a missing bar that shifts every other one along.
@@ -415,6 +484,54 @@ export async function loadQueue(admin: SupabaseClient): Promise<AdminQueue> {
 
     atRisk,
 
+    people: (profiles.data ?? [])
+      .map((row) => {
+        const id = row.id as string;
+        const totals = perPerson.get(id) ?? EMPTY_TOTALS;
+        const isHost = row.account_type === "host";
+        return {
+          id,
+          email: emails.get(id) ?? null,
+          accountType: (row.account_type as string) ?? null,
+          displayName: (row.display_name as string) ?? null,
+          joinedAt: (row.created_at as string) ?? null,
+          listings: listingCounts.get(id) ?? 0,
+          sessions: totals.sessions,
+          lateCancellations: lateCounts.get(id)?.count ?? 0,
+          // Null rather than false for a practitioner, who has nothing to be
+          // paid into — an unpaid host is a problem, a practitioner without a
+          // payout account is simply how it works.
+          payoutsReady: isHost ? Boolean(payable.get(id)) : null,
+          earnedCents: totals.earned,
+          spentCents: totals.spent,
+        };
+      })
+      // Busiest first, then whoever arrived most recently among the quiet ones.
+      .sort(
+        (a, b) =>
+          b.sessions - a.sessions ||
+          (b.joinedAt ?? "").localeCompare(a.joinedAt ?? ""),
+      ),
+
+    listings: (spaces.data ?? [])
+      .map((row) => {
+        const id = row.id as string;
+        const totals = perListing.get(id) ?? { sessions: 0, earned: 0 };
+        return {
+          id,
+          name: row.name as string,
+          status: row.status as string,
+          category: (row.category as string) ?? "",
+          hourlyRateCents: (row.hourly_rate_cents as number) ?? 0,
+          hostEmail: emails.get(row.host_id as string) ?? null,
+          addressLine: (row.address_line as string) ?? null,
+          sessions: totals.sessions,
+          earnedCents: totals.earned,
+          createdAt: (row.created_at as string) ?? null,
+        };
+      })
+      .sort((a, b) => b.sessions - a.sessions || (b.createdAt ?? "").localeCompare(a.createdAt ?? "")),
+
     activity: buildActivity({
       rows,
       spaceName,
@@ -434,6 +551,75 @@ export async function loadQueue(admin: SupabaseClient): Promise<AdminQueue> {
       hostRateCents: (row.host_rate_cents as number) ?? 0,
     })),
   };
+}
+
+
+/* ------------------------------------------------------------------ */
+
+/** A booking that was actually charged, reduced to what a rollup needs. */
+export interface PaidBooking {
+  spaceId: string;
+  practitionerId: string | null;
+  /** What the host is owed. Never the same number as `totalCents`. */
+  hostRateCents: number;
+  /** What the practitioner paid, fees included. */
+  totalCents: number;
+}
+
+export interface Totals {
+  sessions: number;
+  earned: number;
+  spent: number;
+}
+
+export const EMPTY_TOTALS: Totals = { sessions: 0, earned: 0, spent: 0 };
+
+/**
+ * Sessions and money per person and per room.
+ *
+ * Both sides of a paid booking are credited from the same row, in one pass:
+ * the host with their rate, the practitioner with what they actually paid.
+ * Two queries, one per side, is where the two columns start disagreeing about
+ * a booking that landed between them.
+ *
+ * The two amounts are deliberately different numbers and must never be
+ * summed together — the difference is the platform's fee, and adding them
+ * would count the same session's revenue twice.
+ */
+export function rollUp(
+  bookings: PaidBooking[],
+  spaceHost: Map<string, string>,
+): { perPerson: Map<string, Totals>; perListing: Map<string, Totals> } {
+  const perPerson = new Map<string, Totals>();
+  const perListing = new Map<string, Totals>();
+
+  const bump = (into: Map<string, Totals>, key: string, patch: Partial<Totals>) => {
+    const entry = into.get(key) ?? { ...EMPTY_TOTALS };
+    entry.sessions += patch.sessions ?? 0;
+    entry.earned += patch.earned ?? 0;
+    entry.spent += patch.spent ?? 0;
+    into.set(key, entry);
+  };
+
+  for (const booking of bookings) {
+    bump(perListing, booking.spaceId, { sessions: 1, earned: booking.hostRateCents });
+
+    const hostId = spaceHost.get(booking.spaceId);
+    if (hostId) bump(perPerson, hostId, { sessions: 1, earned: booking.hostRateCents });
+
+    /*
+     * A host booking their own room is one session for them, not two.
+     * Crediting both sides would show a studio twice the sessions they ran,
+     * and the same discipline the badges use for the same reason.
+     */
+    if (booking.practitionerId && booking.practitionerId !== hostId) {
+      bump(perPerson, booking.practitionerId, { sessions: 1, spent: booking.totalCents });
+    } else if (booking.practitionerId) {
+      bump(perPerson, booking.practitionerId, { spent: booking.totalCents });
+    }
+  }
+
+  return { perPerson, perListing };
 }
 
 const rank = (priority: OpenEscalation["priority"]) =>

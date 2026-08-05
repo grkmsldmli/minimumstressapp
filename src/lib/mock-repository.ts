@@ -43,6 +43,7 @@ import { explainRedaction, redact } from "./message-redaction";
 import type { CancellationEvent } from "./reliability";
 import type { CreateBookingInput, Repository } from "./repository";
 import { type CategoryKey, roomTypeFor } from "./taxonomy";
+import { rejectionReason } from "./uploads";
 
 const ME = "me";
 const SESSION_MINUTES = 60;
@@ -276,6 +277,16 @@ export class MockRepository implements Repository {
 
   async updateProfile(patch: Partial<Profile>): Promise<Profile> {
     this.profile = { ...this.profile, ...patch, id: ME };
+    return { ...this.profile };
+  }
+
+  async uploadAvatar(file: File): Promise<Profile> {
+    const reason = rejectionReason(file, "image");
+    if (reason) throw new Error(reason);
+
+    // No bucket here, so the name stands in for the stored object. What
+    // matters for the fake is that it survives the call, which a blob does not.
+    this.profile = { ...this.profile, avatarUrl: `mock://avatars/${file.name}` };
     return { ...this.profile };
   }
 

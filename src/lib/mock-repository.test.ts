@@ -320,3 +320,41 @@ describe("simulated inbound bookings pay the host their rate", () => {
     expect(await repo.simulateInboundBooking(space.id)).toBeNull();
   });
 });
+
+/**
+ * A photo that survives the tab it was picked in.
+ *
+ * The screens used to hand `URL.createObjectURL(file)` straight to the profile:
+ * it renders instantly, is never uploaded, and dies the moment the tab
+ * navigates. The picture looked saved, the app said nothing, and it was gone
+ * on the way back. Nothing in a test could see it, because nothing was asked.
+ */
+describe("uploadAvatar", () => {
+  const png = () =>
+    new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], "me.png", { type: "image/png" });
+
+  it("returns a profile pointing at something that is not a blob", async () => {
+    const repo = new MockRepository();
+
+    const profile = await repo.uploadAvatar(png());
+
+    expect(profile.avatarUrl).toBeTruthy();
+    expect(profile.avatarUrl).not.toMatch(/^blob:/);
+  });
+
+  it("is still there on the next read", async () => {
+    const repo = new MockRepository();
+
+    const uploaded = await repo.uploadAvatar(png());
+    const readBack = await repo.getProfile();
+
+    expect(readBack.avatarUrl).toBe(uploaded.avatarUrl);
+  });
+
+  it("refuses a file that is not an image", async () => {
+    const repo = new MockRepository();
+    const pdf = new File([new Uint8Array([1])], "lease.pdf", { type: "application/pdf" });
+
+    await expect(repo.uploadAvatar(pdf)).rejects.toThrow();
+  });
+});

@@ -62,7 +62,9 @@ export function HostDashboard({
   const active = spaces.find((s) => s.id === activeId) ?? spaces[0] ?? null;
 
   if (!active) {
-    return <HostEmptyState onBack={onBack} onAddSpace={onAddSpace} />;
+    return (
+      <HostEmptyState onBack={onBack} onAddSpace={onAddSpace} onOpenProfile={onOpenProfile} />
+    );
   }
 
   const pending = active.status === "pending";
@@ -298,9 +300,11 @@ export function HostDashboard({
 function HostEmptyState({
   onBack,
   onAddSpace,
+  onOpenProfile,
 }: {
   onBack: () => void;
   onAddSpace: () => void;
+  onOpenProfile: () => void;
 }) {
   return (
     <div className="h-full flex flex-col screen-in bg-white">
@@ -319,7 +323,25 @@ function HostEmptyState({
           >
             <ArrowLeft size={16} color="#fff" />
           </button>
-          <LogoBadge size={34} />
+          {/*
+            The profile has to be reachable here too.
+            This is the screen a host sees until their first listing is live —
+            which is exactly when they want to add a payout account, a photo,
+            or an emergency contact. The logo sat here alone, so the only way
+            to their own settings was to first finish listing a room.
+          */}
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onOpenProfile}
+              aria-label="Host profile"
+              className="w-9 h-9 rounded-full flex items-center justify-center press"
+              style={{ backgroundColor: "rgba(255,255,255,0.14)" }}
+            >
+              <User size={15} color="#fff" />
+            </button>
+            <LogoBadge size={34} />
+          </div>
         </div>
         <p className="font-body font-medium text-[10.5px] uppercase tracking-[0.2em] mt-4 relative z-10 text-sky-soft">
           Host studio
@@ -599,6 +621,7 @@ export function HostProfile({
   onUpdate,
   sessions,
   onDeleteAccount,
+  onPickAvatar,
   onGoLegal,
   onConnectPayouts,
   onSignOut,
@@ -607,16 +630,17 @@ export function HostProfile({
   spaces: HostSpace[];
   standing: Standing;
   onBack: () => void;
-  onUpdate: (patch: Partial<Profile>) => void;
+  onUpdate: (patch: Partial<Profile>) => Promise<unknown>;
   /** Completed, paid sessions. Drives the badges and nothing else. */
   sessions: number;
   /** Irreversible, and the screen says so before it runs. */
   onDeleteAccount: () => Promise<void>;
+  /** Uploads the picture and resolves once it is stored, not once it is shown. */
+  onPickAvatar: (file: File) => Promise<unknown>;
   onGoLegal: () => void;
   onConnectPayouts: () => void;
   onSignOut: () => void;
 }) {
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(profile.avatarUrl);
   const activeCount = spaces.filter((s) => s.status === "active").length;
   const pendingCount = spaces.filter((s) => s.status === "pending").length;
 
@@ -629,12 +653,8 @@ export function HostProfile({
     <div className="h-full flex flex-col screen-in bg-white">
       <ProfileHeader
         onBack={onBack}
-        avatarUrl={avatarUrl}
-        onPickAvatar={(file) => {
-          const url = URL.createObjectURL(file);
-          setAvatarUrl(url);
-          onUpdate({ avatarUrl: url });
-        }}
+        avatarUrl={profile.avatarUrl}
+        onPickAvatar={onPickAvatar}
         name={profile.displayName ?? ""}
         onName={(displayName) => onUpdate({ displayName })}
         sub={`${activeCount} active space${activeCount === 1 ? "" : "s"}${pendingCount > 0 ? ` · ${pendingCount} pending` : ""}`}

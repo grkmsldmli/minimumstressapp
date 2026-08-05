@@ -26,6 +26,16 @@ export interface Repository {
   getProfile(): Promise<Profile>;
   updateProfile(patch: Partial<Profile>): Promise<Profile>;
 
+  /**
+   * Stores a profile photo and returns the profile that now points at it.
+   *
+   * Separate from updateProfile because a picture is bytes, not a field. It
+   * was once handled by handing the screen a `blob:` URL from
+   * URL.createObjectURL — which renders perfectly, survives nothing, and
+   * vanishes the moment the tab navigates. It looked saved and never was.
+   */
+  uploadAvatar(file: File): Promise<Profile>;
+
   /** Active listings only — mirrors the spaces_public view. */
   listPublicSpaces(): Promise<PublicSpace[]>;
   getPublicSpace(id: string): Promise<PublicSpace | null>;

@@ -252,6 +252,7 @@ export function PractitionerProfile({
   onUpdate,
   sessions,
   onDeleteAccount,
+  onPickAvatar,
   onGoLegal,
   onGoInsurance,
   onSignOut,
@@ -260,44 +261,29 @@ export function PractitionerProfile({
   bookingsCount: number;
   standing: Standing;
   onBack: () => void;
-  onUpdate: (patch: Partial<Profile>) => void;
+  onUpdate: (patch: Partial<Profile>) => Promise<unknown>;
   /** Completed, paid sessions. Drives the badges and nothing else. */
   sessions: number;
   /** Irreversible, and the screen says so before it runs. */
   onDeleteAccount: () => Promise<void>;
+  /** Uploads the picture and resolves once it is stored, not once it is shown. */
+  onPickAvatar: (file: File) => Promise<unknown>;
   onGoLegal: () => void;
   onGoInsurance: () => void;
   onSignOut: () => void;
 }) {
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(profile.avatarUrl);
-
   return (
     <div className="h-full flex flex-col screen-in bg-white">
       <ProfileHeader
         onBack={onBack}
-        avatarUrl={avatarUrl}
-        onPickAvatar={(file) => {
-          const url = URL.createObjectURL(file);
-          setAvatarUrl(url);
-          onUpdate({ avatarUrl: url });
-        }}
+        avatarUrl={profile.avatarUrl}
+        onPickAvatar={onPickAvatar}
         name={profile.displayName ?? ""}
         onName={(displayName) => onUpdate({ displayName })}
         sub={`${bookingsCount} booking${bookingsCount === 1 ? "" : "s"} so far${profile.email ? ` · ${profile.email}` : ""}`}
       />
 
       <div className="flex-1 overflow-y-auto px-6 pt-5 pb-8">
-        <div
-          className="rounded-2xl p-4 mb-6"
-          style={{ backgroundColor: "#EDF6FE", border: "1px solid #D4E8FA" }}
-        >
-          <p className="font-body text-[10px] uppercase tracking-wide text-[#6B95BE]">
-            Credit balance
-          </p>
-          <p className="font-display italic font-semibold text-[24px] mt-1 text-navy">
-          </p>
-        </div>
-
         {/*
           Shown always, not only when something is wrong. A rule nobody can see
           until it costs them is a trap; this way "where do I stand" is a tap
@@ -316,8 +302,8 @@ export function PractitionerProfile({
             onToggle={() => onUpdate({ notifyBookings: !profile.notifyBookings })}
           />
           <SettingToggle
-            label="Offers & credits"
-            sub="Pro deals and promo updates"
+            label="Offers"
+            sub="Pro deals and occasional updates"
             on={profile.notifyOffers}
             onToggle={() => onUpdate({ notifyOffers: !profile.notifyOffers })}
           />

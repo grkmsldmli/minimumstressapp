@@ -27,6 +27,7 @@ import type { AvailabilityBlock } from "./availability";
 import {
   rejectionReason,
   spaceDocPath,
+  avatarPath,
   spaceMediaPath,
 } from "./uploads";
 import type {
@@ -174,6 +175,35 @@ export class SupabaseRepository implements Repository {
 
     const { error } = await this.db.from("profiles").upsert(row);
     if (error) throw error;
+    return this.getProfile();
+  }
+
+  /**
+   * A profile photo, actually stored.
+   *
+   * The screen used to be handed `URL.createObjectURL(file)` — a blob that
+   * renders immediately, is never uploaded, and disappears the moment the tab
+   * navigates. It looked saved and never was, and nothing said otherwise
+   * because nothing was ever asked.
+   *
+   * Uploaded first, recorded second, so the path in the row always points at
+   * bytes that are already there — the same order the listing documents use.
+   */
+  async uploadAvatar(file: File): Promise<Profile> {
+    const reason = rejectionReason(file, "image");
+    if (reason) throw new Error(reason);
+
+    const id = await this.userId();
+    const path = avatarPath(id, file.type, crypto.randomUUID());
+
+    const { error: uploadError } = await this.db.storage
+      .from("avatars")
+      .upload(path, file, { contentType: file.type, upsert: false });
+    if (uploadError) throw uploadError;
+
+    const { error } = await this.db.from("profiles").upsert({ id, avatar_path: path });
+    if (error) throw error;
+
     return this.getProfile();
   }
 

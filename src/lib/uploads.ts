@@ -115,6 +115,11 @@ export function spaceDocPath(
   return `space/${hostId}/${spaceId}/${storageName(type, id)}`;
 }
 
+/** Path inside the avatars bucket. One folder per person, as 0003 requires. */
+export function avatarPath(userId: string, type: string, id: string): string {
+  return `${userId}/${storageName(type, id)}`;
+}
+
 /** Path inside verification-docs for a practitioner's own certificate. */
 export function practitionerDocPath(userId: string, type: string, id: string): string {
   return `practitioner/${userId}/${storageName(type, id)}`;

@@ -688,7 +688,8 @@ export function App() {
           bookingsCount={bookings.length}
           standing={practitionerStanding}
           onBack={back}
-          onUpdate={(patch) => void mutate(() => repo.updateProfile(patch))}
+          onUpdate={(patch) => mutate(() => repo.updateProfile(patch))}
+          onPickAvatar={(file) => mutate(() => repo.uploadAvatar(file))}
           onGoLegal={() => go("legal")}
           onGoInsurance={() => go("verify")}
           onSignOut={signOut}
@@ -737,7 +738,8 @@ export function App() {
           spaces={mySpaces}
           standing={hostStanding}
           onBack={back}
-          onUpdate={(patch) => void mutate(() => repo.updateProfile(patch))}
+          onUpdate={(patch) => mutate(() => repo.updateProfile(patch))}
+          onPickAvatar={(file) => mutate(() => repo.uploadAvatar(file))}
           onGoLegal={() => go("legal")}
           onConnectPayouts={() => void mutate(() => repo.connectPayouts())}
           onSignOut={signOut}

@@ -24,12 +24,13 @@ export function EmergencyContactCard({
   onSave,
 }: {
   contact: EmergencyContact;
-  onSave: (contact: EmergencyContact) => void;
+  /** Resolves once it is stored. A rejection is shown, not swallowed. */
+  onSave: (contact: EmergencyContact) => Promise<unknown> | void;
 }) {
   const [name, setName] = useState(contact.name ?? "");
   const [phone, setPhone] = useState(contact.phone ?? "");
   const [relationship, setRelationship] = useState(contact.relationship ?? "");
-  const [saved, setSaved] = useState(false);
+  const [state, setState] = useState<"idle" | "saving" | "saved">("idle");
   const [error, setError] = useState<string | null>(null);
 
   const dirty =
@@ -37,7 +38,10 @@ export function EmergencyContactCard({
     phone !== (contact.phone ?? "") ||
     relationship !== (contact.relationship ?? "");
 
-  const save = () => {
+  /** Whether anything is actually on file, rather than whether a button was pressed. */
+  const onFile = Boolean(contact.name || contact.phone || contact.relationship);
+
+  const save = async () => {
     const trimmedPhone = phone.trim();
 
     /**
@@ -51,13 +55,28 @@ export function EmergencyContactCard({
     }
 
     setError(null);
-    onSave({
-      name: name.trim() || null,
-      phone: trimmedPhone ? trimmedPhone.replace(/[\s()-]/g, "") : null,
-      relationship: relationship.trim() || null,
-    });
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2500);
+    setState("saving");
+
+    /**
+     * Awaited, which it was not before.
+     *
+     * The button turned green the instant it was pressed, whether or not the
+     * write ever landed — so a failure was indistinguishable from success, and
+     * the number somebody entered for an emergency was not there when it
+     * mattered. Nothing about that is visible from inside the app.
+     */
+    try {
+      await onSave({
+        name: name.trim() || null,
+        phone: trimmedPhone ? trimmedPhone.replace(/[\s()-]/g, "") : null,
+        relationship: relationship.trim() || null,
+      });
+      setState("saved");
+      setTimeout(() => setState("idle"), 2500);
+    } catch {
+      setState("idle");
+      setError("That did not save. Check your connection and try again.");
+    }
   };
 
   return (
@@ -97,18 +116,32 @@ export function EmergencyContactCard({
         <p className="font-body font-light text-[11px] mt-2 text-coral-deep">{error}</p>
       )}
 
+      {/*
+        The label says what is true, not what was pressed.
+        An untouched empty form used to read "Saved", which is the app claiming
+        to hold a number nobody had given it — and the one moment that lie
+        costs something is the one moment nobody is looking at the screen.
+      */}
       <button
         type="button"
-        onClick={save}
-        disabled={!dirty && !saved}
+        onClick={() => void save()}
+        disabled={!dirty || state === "saving"}
         className="w-full mt-3 py-2.5 rounded-xl font-body font-medium text-[12px] press"
         style={
-          dirty
+          dirty && state !== "saving"
             ? { backgroundColor: "#16304E", color: "#fff" }
-            : { border: "1px solid #DCE7F2", color: saved ? "#5E7D5E" : "#B0BFCF" }
+            : { border: "1px solid #DCE7F2", color: state === "saved" ? "#5E7D5E" : "#B0BFCF" }
         }
       >
-        {saved ? "Saved" : dirty ? "Save contact" : "Saved"}
+        {state === "saving"
+          ? "Saving…"
+          : state === "saved"
+            ? "Saved"
+            : dirty
+              ? "Save contact"
+              : onFile
+                ? "Saved"
+                : "Nothing saved yet"}
       </button>
     </div>
   );

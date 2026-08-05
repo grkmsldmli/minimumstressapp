@@ -211,6 +211,40 @@ for (const { area, claim, passed, detail } of results) {
   if (passed !== true && detail) console.log(`      ${detail}`);
 }
 
+console.log("\nTHE STAFF QUEUE");
+
+/**
+ * The admin surface holds every lease document and every home address, so it
+ * is checked from outside like everything else — and it must answer 404 rather
+ * than 403, because a 403 confirms there is something there.
+ */
+for (const [label, path] of [
+  ["the dashboard is not reachable without a session", "/admin"],
+  ["the queue API is not reachable without a session", "/api/admin"],
+  ["document signing is not reachable without a session", "/api/admin/document?path=space/x/y.pdf"],
+]) {
+  const response = await fetch(`${base}${path}`, { redirect: "manual" });
+  record(
+    "staff queue",
+    label,
+    response.status === 404 || response.status === 401 || response.status === 307,
+    `status ${response.status}`,
+  );
+}
+
+// A signed URL is a bearer token, so the path parameter must not be a way to
+// ask for anything else in the bucket.
+const traversal = await fetch(
+  `${base}/api/admin/document?path=${encodeURIComponent("../../avatars/someone.png")}`,
+  { redirect: "manual" },
+);
+record(
+  "staff queue",
+  "a traversal path is refused",
+  traversal.status !== 200,
+  `status ${traversal.status}`,
+);
+
 console.log(
   failures === 0
     ? `\nAll ${results.length} boundaries hold against ${base}.`

@@ -518,7 +518,11 @@ function Directory({ people, listings }: { people: Person[]; listings: ListingRo
 
       {total === 0 ? (
         <p className="font-body font-light text-[11.5px] mt-3" style={{ color: MUTED }}>
-          {term === "" ? "Nobody yet." : "Nothing matching that."}
+          {term !== ""
+            ? "Nothing matching that."
+            : tab === "people"
+              ? "Nobody yet."
+              : "No rooms listed yet."}
         </p>
       ) : (
         <div className="flex flex-col mt-3">

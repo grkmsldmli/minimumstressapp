@@ -35,7 +35,10 @@ export async function GET(request: NextRequest): Promise<Response> {
      * absolute-looking paths are exactly what storage layers disagree about.
      * Staff are trusted; a staff session that has been taken is not.
      */
-    if (!/^(space|practitioner)\/[0-9a-f-]{36}\/[\w.-]+$/i.test(path)) {
+    if (
+      !/^space\/[0-9a-f-]{36}\/[0-9a-f-]{36}\/[\w.-]+$/i.test(path) &&
+      !/^practitioner\/[0-9a-f-]{36}\/[\w.-]+$/i.test(path)
+    ) {
       return jsonError("That is not a verification document path", 400);
     }
 

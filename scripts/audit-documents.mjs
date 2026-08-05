@@ -181,6 +181,82 @@ say(
   `delete ${removed.status}, ${leftovers.length} file(s) left behind`,
 );
 
+/*
+ * Can the person who is supposed to upload actually upload?
+ *
+ * Everything above runs on the secret key, which bypasses RLS — so it proved
+ * documents are unreachable and proved nothing about whether a host can put
+ * one there. Both were true at once: nothing could be read because nothing
+ * could ever be written. Listing a space failed at the upload with "new row
+ * violates row-level security policy" and no audit noticed, because no audit
+ * had ever held a real session.
+ *
+ * So this signs in as a real host and tries it in both directions.
+ */
+console.log("\nA HOST'S OWN UPLOADS");
+
+const host = (env.ADMIN_EMAILS ?? "").split(",")[0]?.trim();
+
+if (!host) {
+  console.log("  · ADMIN_EMAILS is empty — nobody to sign in as");
+} else {
+  const link = await fetch(`${URL_BASE}/auth/v1/admin/generate_link`, {
+    method: "POST",
+    headers: {
+      apikey: SECRET,
+      Authorization: `Bearer ${SECRET}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ type: "magiclink", email: host }),
+  });
+
+  if (!link.ok) {
+    console.log(`  · could not mint a session for ${host} (${link.status})`);
+  } else {
+    const { hashed_token: token } = await link.json();
+    const verified = await fetch(`${URL_BASE}/auth/v1/verify`, {
+      method: "POST",
+      headers: { apikey: ANON, "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "magiclink", token_hash: token }),
+    });
+
+    const session = await verified.json();
+    const uid = session.user?.id;
+    const asHost = { apikey: ANON, Authorization: `Bearer ${session.access_token}` };
+    const bytes = Buffer.from("%PDF-1.4 audit");
+
+    const SPACE = "00000000-0000-0000-0000-0000000000fe";
+    const STRANGER = "00000000-0000-0000-0000-000000000001";
+    const stamp = Date.now();
+
+    const attempts = [
+      ["verification-docs", `space/${uid}/${SPACE}/a-${stamp}.pdf`, "application/pdf", true,
+       "a host can upload their own space's paperwork"],
+      ["verification-docs", `space/${STRANGER}/${SPACE}/b-${stamp}.pdf`, "application/pdf", false,
+       "a host cannot write into another host's document folder"],
+      ["space-media", `${uid}/${SPACE}/c-${stamp}.png`, "image/png", true,
+       "a host can upload their own space's photos"],
+      ["space-media", `${STRANGER}/${SPACE}/d-${stamp}.png`, "image/png", false,
+       "a host cannot write into another host's media folder"],
+    ];
+
+    for (const [bucket, path, type, shouldPass, claim] of attempts) {
+      const result = await fetch(`${URL_BASE}/storage/v1/object/${bucket}/${path}`, {
+        method: "POST",
+        headers: { ...asHost, "Content-Type": type },
+        body: bytes,
+      });
+      say(shouldPass ? result.ok : !result.ok, claim, `status ${result.status}`);
+
+      // Whatever landed comes back out, same as the canary above.
+      await fetch(`${URL_BASE}/storage/v1/object/${bucket}/${path}`, {
+        method: "DELETE",
+        headers: { apikey: SECRET, Authorization: `Bearer ${SECRET}` },
+      });
+    }
+  }
+}
+
 console.log(
   failures === 0
     ? "\nDocuments are reachable only by their owner and by staff."

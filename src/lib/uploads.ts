@@ -88,14 +88,31 @@ export function storageName(type: string, id: string): string {
   return `${id}.${extension}`;
 }
 
-/** Path inside the space-media bucket, matching the policy in 0003. */
-export function spaceMediaPath(spaceId: string, type: string, id: string): string {
-  return `${spaceId}/${storageName(type, id)}`;
+/**
+ * Path inside the space-media bucket, matching the policy in 0017.
+ *
+ * Owner first, then the listing. The policy compares only the first segment to
+ * auth.uid(), which is what lets it answer "is this yours" without asking
+ * another table — a question that turned out not to be answerable from inside
+ * a storage policy, and took every upload down with it.
+ */
+export function spaceMediaPath(
+  hostId: string,
+  spaceId: string,
+  type: string,
+  id: string,
+): string {
+  return `${hostId}/${spaceId}/${storageName(type, id)}`;
 }
 
 /** Path inside verification-docs for a space's sublease proof. */
-export function spaceDocPath(spaceId: string, type: string, id: string): string {
-  return `space/${spaceId}/${storageName(type, id)}`;
+export function spaceDocPath(
+  hostId: string,
+  spaceId: string,
+  type: string,
+  id: string,
+): string {
+  return `space/${hostId}/${spaceId}/${storageName(type, id)}`;
 }
 
 /** Path inside verification-docs for a practitioner's own certificate. */

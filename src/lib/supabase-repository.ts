@@ -699,7 +699,7 @@ export class SupabaseRepository implements Repository {
       const reason = rejectionReason(item.file, item.kind);
       if (reason) throw new Error(reason);
 
-      const path = spaceMediaPath(spaceId, item.file.type, crypto.randomUUID());
+      const path = spaceMediaPath(hostId, spaceId, item.file.type, crypto.randomUUID());
       const { error } = await this.db.storage.from("space-media").upload(path, item.file, {
         contentType: item.file.type,
         // Never overwrite. A generated name should not collide, and if it
@@ -719,7 +719,7 @@ export class SupabaseRepository implements Repository {
     const subleaseReason = rejectionReason(input.subleaseDoc, "document");
     if (subleaseReason) throw new Error(subleaseReason);
 
-    const subleasePath = spaceDocPath(spaceId, input.subleaseDoc.type, crypto.randomUUID());
+    const subleasePath = spaceDocPath(hostId, spaceId, input.subleaseDoc.type, crypto.randomUUID());
     const { error: subleaseError } = await this.db.storage
       .from("verification-docs")
       .upload(subleasePath, input.subleaseDoc, {
@@ -733,7 +733,7 @@ export class SupabaseRepository implements Repository {
       const insuranceReason = rejectionReason(input.insuranceDoc, "document");
       if (insuranceReason) throw new Error(insuranceReason);
 
-      insurancePath = spaceDocPath(spaceId, input.insuranceDoc.type, crypto.randomUUID());
+      insurancePath = spaceDocPath(hostId, spaceId, input.insuranceDoc.type, crypto.randomUUID());
       const { error } = await this.db.storage
         .from("verification-docs")
         .upload(insurancePath, input.insuranceDoc, {

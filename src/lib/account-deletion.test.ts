@@ -170,21 +170,45 @@ describe("deleteAccount", () => {
     expect(calls.at(-1)).toBe("auth-delete");
   });
 
-  it("collects documents from both the host and practitioner folders", async () => {
+  it("collects files from every folder the account owns", async () => {
     const { client, removedPaths } = fakeAdmin({
       spaces: ["space-1"],
       files: {
-        "verification-docs/space/space-1": [{ name: "lease.pdf", id: "f1" }],
+        "verification-docs/space/user-1/space-1": [{ name: "lease.pdf", id: "f1" }],
         "verification-docs/practitioner/user-1": [{ name: "cert.pdf", id: "f2" }],
-        "avatars/user-1": [{ name: "me.jpg", id: "f3" }],
+        "space-media/user-1/space-1": [{ name: "room.jpg", id: "f3" }],
+        "avatars/user-1": [{ name: "me.jpg", id: "f4" }],
       },
     });
 
     await deleteAccount(client, USER);
 
-    expect(removedPaths).toContain("space/space-1/lease.pdf");
+    expect(removedPaths).toContain("space/user-1/space-1/lease.pdf");
     expect(removedPaths).toContain("practitioner/user-1/cert.pdf");
     expect(removedPaths).toContain("user-1/me.jpg");
+  });
+
+  /**
+   * These were left behind entirely until the storage paths were reworked.
+   *
+   * space-media is public-read, so a room's photos outlived the account that
+   * uploaded them and stayed fetchable by anyone holding the URL — which is
+   * precisely what the deletion promise says does not happen. Nothing links to
+   * them once the rows are gone, so nobody would ever have noticed.
+   */
+  it("removes the room photos, not only the paperwork", async () => {
+    const { client, removedPaths } = fakeAdmin({
+      spaces: ["space-1", "space-2"],
+      files: {
+        "space-media/user-1/space-1": [{ name: "a.jpg", id: "m1" }],
+        "space-media/user-1/space-2": [{ name: "b.jpg", id: "m2" }],
+      },
+    });
+
+    await deleteAccount(client, USER);
+
+    expect(removedPaths).toContain("user-1/space-1/a.jpg");
+    expect(removedPaths).toContain("user-1/space-2/b.jpg");
   });
 
   /** A folder entry with no id is a prefix, not a file. */

@@ -27,6 +27,7 @@ export type DeletionResult =
 
 const DOCUMENT_BUCKET = "verification-docs";
 const AVATAR_BUCKET = "avatars";
+const MEDIA_BUCKET = "space-media";
 
 export async function deleteAccount(
   admin: SupabaseClient,
@@ -160,13 +161,27 @@ async function removeDocuments(
 ): Promise<number> {
   const paths: { bucket: string; path: string }[] = [];
 
-  for (const prefix of [`practitioner/${userId}`, ...spaceIds.map((id) => `space/${id}`)]) {
-    const { data, error } = await admin.storage.from(DOCUMENT_BUCKET).list(prefix);
-    if (error) continue;
+  const collect = async (bucket: string, prefix: string) => {
+    const { data, error } = await admin.storage.from(bucket).list(prefix);
+    if (error) return;
     for (const file of data ?? []) {
-      if (file.id) paths.push({ bucket: DOCUMENT_BUCKET, path: `${prefix}/${file.name}` });
+      if (file.id) paths.push({ bucket, path: `${prefix}/${file.name}` });
     }
-  }
+  };
+
+  // Paperwork: the practitioner's own certificates, then one folder per room.
+  await collect(DOCUMENT_BUCKET, `practitioner/${userId}`);
+  for (const id of spaceIds) await collect(DOCUMENT_BUCKET, `space/${userId}/${id}`);
+
+  /*
+   * The room photos, which were left behind entirely until now.
+   *
+   * They are public-read, so a listing's pictures outlived the account that
+   * uploaded them and stayed fetchable by anyone holding the URL — the exact
+   * thing the deletion promise says does not happen. Cheap to miss: nothing
+   * links to them once the rows are gone, so nobody would notice.
+   */
+  for (const id of spaceIds) await collect(MEDIA_BUCKET, `${userId}/${id}`);
 
   const { data: avatars } = await admin.storage.from(AVATAR_BUCKET).list(userId);
   for (const file of avatars ?? []) {

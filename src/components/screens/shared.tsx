@@ -349,7 +349,16 @@ export function AuthVerify({
   };
 
   return (
-    <NavyScreen className="justify-between px-8 pt-16 pb-9">
+    /*
+      Centred, not spread.
+      
+      This screen borrowed `justify-between` from the one before it, where a
+      heading at the top and buttons at the bottom are both real content. Here
+      there is a heading and six boxes, and holding them apart left a third of
+      the screen empty with the input stranded at the bottom edge — which reads
+      as a rendering failure rather than a layout.
+    */
+    <NavyScreen className="justify-center px-8 py-16">
       <div className="relative z-10 text-center">
         <div className="flex justify-center">
           <Wordmark size={13} />
@@ -362,7 +371,8 @@ export function AuthVerify({
         </p>
       </div>
 
-      <div className="relative z-10">
+      {/* Close to the heading it belongs to, rather than a screen away. */}
+      <div className="relative z-10 mt-10">
         <div className="flex justify-center gap-2">
           {digits.map((digit, i) => (
             <input

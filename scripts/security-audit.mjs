@@ -95,6 +95,9 @@ record("database", "the profiles table is unreachable", (await rest("profiles?se
 record("database", "notifications are unreachable", (await rest("notifications?select=id&limit=1")).status === 401);
 recordDeployed("database", "reviews are unreachable without a session", await rest("reviews?select=id&limit=1"), (s) => s === 401);
 recordDeployed("database", "escalations are unreachable", await rest("review_escalations?select=id&limit=1"), (s) => s === 401);
+recordDeployed("database", "messages are unreachable without a session", await rest("messages?select=body&limit=1"), (s) => s === 401);
+recordDeployed("database", "the message view is unreachable too", await rest("messages_visible?select=body&limit=1"), (s) => s === 401);
+recordDeployed("database", "points are unreachable without a session", await rest("standing_points?select=points&limit=1"), (s) => s === 401);
 
 record("database", "the public listing view is readable", (await rest("spaces_public?select=id&limit=1")).status === 200);
 
@@ -130,6 +133,18 @@ recordDeployed(
   "database",
   "the safety flag is absent from the public review view",
   await rest("public_reviews?select=safety_concern&limit=1"),
+  (s) => s === 400,
+);
+
+/*
+ * The unmasked text a sender typed. Masking is what keeps a phone number away
+ * from the other side, and a view that exposed the original would undo all of
+ * it — so this asks for the column by name rather than trusting it is absent.
+ */
+recordDeployed(
+  "database",
+  "the unmasked message text is absent from the view participants read",
+  await rest("messages_visible?select=original_body&limit=1"),
   (s) => s === 400,
 );
 

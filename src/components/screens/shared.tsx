@@ -466,12 +466,21 @@ export function RoleSelect({
 
             <p className="font-body font-light text-[12px] text-white/70 mt-3 leading-relaxed">
               {isPractitioner
-                ? "You'll be able to find and book rooms by the hour. You won't be able to list a space from this account."
-                : "You'll be able to list your space and take bookings. You won't be able to book other people's rooms from this account."}
+                ? "Find and book rooms by the hour, with your insurance and your booking history in one place."
+                : "List your space, set your hours, and get paid — with your lease, your payouts and your calendar in one place."}
             </p>
 
+            {/*
+              The separation is the product, not a shortfall. Renting a room
+              and letting one out are two businesses with different paperwork,
+              different money and different obligations; keeping them apart is
+              what stops a lease sitting next to a booking history. Said as the
+              reason it is, rather than as an apology for something missing.
+            */}
             <p className="font-body font-light text-[11.5px] text-white/45 mt-3 leading-relaxed">
-              If you do both, open a second account with a different email for the other side.
+              {isPractitioner ? "Renting a room" : "Letting a room"} and{" "}
+              {isPractitioner ? "letting one out" : "renting one"} are two different businesses, so
+              they get two separate accounts. Plenty of people run both.
             </p>
           </div>
 
@@ -546,7 +555,8 @@ export function RoleSelect({
       </div>
 
       <p className="relative z-10 font-body font-light text-[11px] text-white/45 pt-7 leading-relaxed">
-        An account is one or the other, and this can&apos;t be changed afterwards.
+        Each side has its own account, with its own paperwork and payments. Pick the one you&apos;re
+        here for — you can always add the other later.
       </p>
     </NavyScreen>
   );

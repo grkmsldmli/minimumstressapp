@@ -142,6 +142,16 @@ export function AdminDashboard() {
           },
         ]
       : []),
+    ...(queue.failedNotifications.filter((n) => n.givenUp).length > 0
+      ? [
+          {
+            key: "notifications",
+            text: `${queue.failedNotifications.filter((n) => n.givenUp).length} message${
+              queue.failedNotifications.filter((n) => n.givenUp).length === 1 ? "" : "s"
+            } never reached anybody`,
+          },
+        ]
+      : []),
     ...(counts.uncaptured > 0
       ? [
           {
@@ -241,6 +251,44 @@ export function AdminDashboard() {
                     busy={busy === item.id}
                     onResolve={(note) => void act("resolve_escalation", item.id, note)}
                   />
+                </Card>
+              ))}
+            </Panel>
+
+            <Panel title="Messages that failed" count={queue.failedNotifications.length}>
+              {queue.failedNotifications.map((item) => (
+                <Card key={item.id} tone={item.givenUp ? "bad" : "warn"}>
+                  <p className="font-body font-medium text-[12.5px]" style={{ color: "#fff" }}>
+                    {item.kind.replace(/_/g, " ")} · {item.channel}
+                  </p>
+                  <p className="font-body font-light text-[11px] mt-1" style={{ color: MUTED }}>
+                    {item.givenUp
+                      ? `Given up after ${item.attempts} attempt${item.attempts === 1 ? "" : "s"}`
+                      : `${item.attempts} attempt${item.attempts === 1 ? "" : "s"} so far — still retrying`}
+                  </p>
+                  {item.lastError && (
+                    <p
+                      className="font-body font-light text-[10.5px] mt-1.5 leading-relaxed"
+                      style={{ color: "#9FB3C8" }}
+                    >
+                      {item.lastError}
+                    </p>
+                  )}
+                </Card>
+              ))}
+            </Panel>
+
+            <Panel title="Accounts at risk" count={queue.atRisk.length}>
+              {queue.atRisk.map((account) => (
+                <Card key={account.id} tone={account.suspended ? "bad" : "warn"}>
+                  <p className="font-body font-medium text-[12.5px]" style={{ color: "#fff" }}>
+                    {account.email ?? account.id}
+                  </p>
+                  <p className="font-body font-light text-[11.5px] mt-1" style={{ color: MUTED }}>
+                    {account.lateCancellations} late cancellation
+                    {account.lateCancellations === 1 ? "" : "s"} in 90 days ·{" "}
+                    {account.suspended ? "new bookings paused" : "one more pauses new bookings"}
+                  </p>
                 </Card>
               ))}
             </Panel>
@@ -345,33 +393,35 @@ export function AdminDashboard() {
               ))}
             </Panel>
 
-            <Panel title="Latest bookings" count={queue.recent.length}>
-              {queue.recent.map((booking) => (
+            <Panel title="Everything, newest first" count={queue.activity.length}>
+              {queue.activity.map((entry) => (
                 <div
-                  key={booking.id}
-                  className="flex items-center justify-between gap-3 py-2"
+                  key={entry.id}
+                  className="flex items-start gap-2.5 py-1.5"
                   style={{ borderBottom: `1px solid ${LINE}` }}
                 >
+                  <span
+                    className="shrink-0 mt-1.5"
+                    style={{
+                      width: 6,
+                      height: 6,
+                      borderRadius: 99,
+                      backgroundColor: activityColour(entry.kind),
+                    }}
+                  />
                   <div className="min-w-0">
-                    <p className="font-body text-[12px] truncate" style={{ color: "#fff" }}>
-                      {booking.spaceName}
+                    <p className="font-body text-[11.5px]" style={{ color: "#fff" }}>
+                      {entry.text}
                     </p>
-                    <p className="font-body font-light text-[10.5px]" style={{ color: MUTED }}>
-                      {new Date(booking.startsAt).toLocaleString("en-US", {
+                    <p className="font-body font-light text-[10px]" style={{ color: MUTED }}>
+                      {new Date(entry.at).toLocaleString("en-US", {
                         month: "short",
                         day: "numeric",
                         hour: "numeric",
                         minute: "2-digit",
-                      })}{" "}
-                      · {booking.status.replace(/_/g, " ")}
+                      })}
                     </p>
                   </div>
-                  <span
-                    className="font-body font-medium text-[12px] shrink-0"
-                    style={{ color: "#fff" }}
-                  >
-                    {formatCents(booking.totalCents)}
-                  </span>
                 </div>
               ))}
             </Panel>
@@ -383,6 +433,15 @@ export function AdminDashboard() {
 }
 
 /* ------------------------------------------------------------------ */
+
+/** One colour per kind, so the feed can be scanned without reading it. */
+function activityColour(kind: string): string {
+  if (kind === "cancellation") return CORAL;
+  if (kind === "review") return "#E8A33D";
+  if (kind === "listing") return "#4ADE80";
+  if (kind === "message") return "#9B8AFB";
+  return SKY;
+}
 
 /** Says when the numbers were last true, which is the only honest "live". */
 function LiveDot({ updatedAt, onRefresh }: { updatedAt: Date | null; onRefresh: () => void }) {

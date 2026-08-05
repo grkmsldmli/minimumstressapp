@@ -87,6 +87,12 @@ export const LIMITS = {
    * index, so this only stops somebody hammering the endpoint after a refusal.
    */
   accountChange: { limit: 3, windowMs: 60 * 60_000 },
+
+  /**
+   * Deleting an account. Once is the whole story, and the second attempt is
+   * either a mistake or somebody else's.
+   */
+  accountDelete: { limit: 3, windowMs: 60 * 60_000 },
 } as const satisfies Record<string, RateLimit>;
 
 export interface RateLimitResult {

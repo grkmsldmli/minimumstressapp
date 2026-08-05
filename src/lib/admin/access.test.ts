@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { adminUnconfigured, isStaff, staffEmails } from "./access";
+import { adminUnconfigured, isStaff, safetyRecipient, staffEmails } from "./access";
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -79,5 +79,35 @@ describe("adminUnconfigured", () => {
   it("is false once somebody has", () => {
     vi.stubEnv("ADMIN_EMAILS", "owner@example.com");
     expect(adminUnconfigured()).toBe(false);
+  });
+});
+
+describe("safetyRecipient", () => {
+  it("uses the dedicated address when one is set", () => {
+    vi.stubEnv("SAFETY_ALERT_EMAIL", "safety@minimumstress.app");
+    vi.stubEnv("ADMIN_EMAILS", "owner@minimumstress.app");
+    expect(safetyRecipient()).toBe("safety@minimumstress.app");
+  });
+
+  /**
+   * The case this exists for. Nothing ever told anybody to set the dedicated
+   * variable, so a safety report reached the queue and nobody was told it had.
+   */
+  it("falls back to the operator when it is not", () => {
+    vi.stubEnv("SAFETY_ALERT_EMAIL", "");
+    vi.stubEnv("ADMIN_EMAILS", "owner@minimumstress.app, second@minimumstress.app");
+    expect(safetyRecipient()).toBe("owner@minimumstress.app");
+  });
+
+  it("treats whitespace as not set", () => {
+    vi.stubEnv("SAFETY_ALERT_EMAIL", "   ");
+    vi.stubEnv("ADMIN_EMAILS", "owner@minimumstress.app");
+    expect(safetyRecipient()).toBe("owner@minimumstress.app");
+  });
+
+  it("has nobody to tell when neither is configured", () => {
+    vi.stubEnv("SAFETY_ALERT_EMAIL", "");
+    vi.stubEnv("ADMIN_EMAILS", "");
+    expect(safetyRecipient()).toBeNull();
   });
 });

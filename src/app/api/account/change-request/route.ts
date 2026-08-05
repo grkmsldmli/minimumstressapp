@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 
+import { safetyRecipient } from "@/lib/admin/access";
 import { LIMITS, check, identify, tooManyRequests } from "@/lib/api/rate-limit";
 import { handled, jsonError, requireUser } from "@/lib/api/session";
 import { jsonObject, oneOf, optionalString } from "@/lib/api/validate";
@@ -69,7 +70,7 @@ export async function POST(request: NextRequest): Promise<Response> {
       throw error;
     }
 
-    const staffEmail = process.env.SAFETY_ALERT_EMAIL;
+    const staffEmail = safetyRecipient();
     if (staffEmail) {
       await notify({
         kind: "account_change_requested",
@@ -84,7 +85,7 @@ export async function POST(request: NextRequest): Promise<Response> {
       });
     } else {
       console.error(
-        `ACCOUNT CHANGE requested by ${auth.user.id} (${profile.account_type} → ${requested.value}) — SAFETY_ALERT_EMAIL is not set, so nobody was told.`,
+        `ACCOUNT CHANGE requested by ${auth.user.id} (${profile.account_type} → ${requested.value}) — no SAFETY_ALERT_EMAIL and no ADMIN_EMAILS, so nobody was told.`,
       );
     }
 

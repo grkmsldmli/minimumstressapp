@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { safetyRecipient } from "./admin/access";
 import { notify } from "./notify/send";
 import {
   type HostReview,
@@ -195,10 +196,10 @@ async function raiseEscalation(
     console.error(`Could not raise escalation for review ${reviewId}:`, error);
   }
 
-  const staffEmail = process.env.SAFETY_ALERT_EMAIL;
+  const staffEmail = safetyRecipient();
   if (!staffEmail) {
     console.error(
-      `ESCALATION (${priority}) on review ${reviewId} — SAFETY_ALERT_EMAIL is not set, so nobody was told.`,
+      `ESCALATION (${priority}) on review ${reviewId} — no SAFETY_ALERT_EMAIL and no ADMIN_EMAILS, so nobody was told.`,
     );
     return;
   }

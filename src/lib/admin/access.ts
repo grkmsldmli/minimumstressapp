@@ -46,3 +46,23 @@ export function isStaff(email: string | null | undefined): boolean {
 export function adminUnconfigured(): boolean {
   return staffEmails().length === 0;
 }
+
+/**
+ * Where a safety report goes.
+ *
+ * `SAFETY_ALERT_EMAIL` when it is set, and otherwise the first person on the
+ * allowlist — because "who runs this" is already answered there, and a second
+ * variable that has to be set separately is a second chance to not set it.
+ *
+ * That chance was taken: nothing ever told anybody to configure it, so a
+ * report reached the queue and no one was told it had. Falling back does not
+ * make the report safer, it makes the silent case impossible to reach without
+ * also having nobody able to open the dashboard at all — by which point the
+ * missing email is not the problem.
+ *
+ * Null only when neither is set, which the callers already log loudly.
+ */
+export function safetyRecipient(): string | null {
+  const explicit = process.env.SAFETY_ALERT_EMAIL?.trim();
+  return explicit || staffEmails()[0] || null;
+}

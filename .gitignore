@@ -33,6 +33,14 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*
 
+# ...except the one whose entire purpose is to be shared. `.env*` swallowed it,
+# so the file listing every variable the app needs existed on one machine and
+# nowhere else — which is how a variable ends up unset in production with
+# nothing anywhere to say it was ever required. It holds names and reasons,
+# never values; the check that it stays that way is that a value here is a
+# review comment, not a build failure.
+!.env.example
+
 # vercel
 .vercel
 

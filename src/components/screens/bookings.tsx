@@ -60,7 +60,7 @@ export function Confirmed({
         <div className="mt-6">
           <Headline pre="The room is" accent="yours." size={26} light />
         </div>
-        <p className="font-body font-light text-[13px] text-white/70 leading-relaxed mt-3">
+        <p className="font-body font-normal text-[14.5px] text-white/70 leading-relaxed mt-3">
           {booking.spaceName} · {startLabel} {dayLabel}.
         </p>
 
@@ -86,11 +86,11 @@ export function Confirmed({
             />
           )}
           <div className="h-px my-2.5" style={{ backgroundColor: "rgba(255,255,255,0.12)" }} />
-          <div className="flex justify-between font-body font-semibold text-[13px] text-white">
+          <div className="flex justify-between font-body font-semibold text-[14.5px] text-white">
             <span>Held on your card</span>
             <span>{formatCents(booking.totalCents)}</span>
           </div>
-          <p className="font-body font-light text-[10.5px] text-white/50 mt-2 leading-relaxed">
+          <p className="font-body font-normal text-[13.5px] text-white/50 mt-2 leading-relaxed">
             Not charged yet. We capture it when the session starts.
           </p>
         </div>
@@ -106,10 +106,10 @@ export function Confirmed({
             }}
           >
             <span className="text-left">
-              <span className="block font-body font-medium text-[12px] text-coral-soft">
+              <span className="block font-body font-medium text-[13.5px] text-coral-soft">
                 Skip this fee with Pro
               </span>
-              <span className="block font-body font-light text-[10.5px] text-white/50 mt-0.5">
+              <span className="block font-body font-normal text-[13.5px] text-white/50 mt-0.5">
                 {formatCents(PRO_PRICE_CENTS)}/mo · unlimited instant booking
               </span>
             </span>
@@ -122,8 +122,8 @@ export function Confirmed({
         <button
           type="button"
           onClick={onDone}
-          className="mt-5 px-8 py-3.5 rounded-full font-body font-medium text-[13px] text-white press"
-          style={{ backgroundColor: "#3B9BE8" }}
+          className="mt-5 px-8 py-3.5 rounded-full font-body font-medium text-[14.5px] text-white press"
+          style={{ backgroundColor: "#2578C2" }}
         >
           Back to spaces
         </button>
@@ -158,7 +158,7 @@ function AccessPanel({
     >
       <div className="flex items-center gap-2">
         <KeyRound size={13} color="#8FC6F5" />
-        <p className="font-body font-medium text-[11px] uppercase tracking-[0.14em] text-sky-soft">
+        <p className="font-body font-medium text-[13.5px] uppercase tracking-[0.14em] text-sky-soft">
           Getting in
         </p>
       </div>
@@ -168,7 +168,7 @@ function AccessPanel({
           {revealed}
         </p>
       ) : (
-        <p className="font-body font-light text-[12px] text-white/65 mt-2 leading-relaxed">
+        <p className="font-body font-normal text-[13.5px] text-white/65 mt-2 leading-relaxed">
           Your code is generated and waiting. It appears here at{" "}
           {booking.accessCodeRevealedAt.toLocaleTimeString("en-US", {
             hour: "numeric",
@@ -198,8 +198,8 @@ function DarkRow({
   positive?: boolean;
 }) {
   return (
-    <div className="flex justify-between font-body text-[12px] mt-2 first:mt-0">
-      <span className="font-light text-white/70">{label}</span>
+    <div className="flex justify-between font-body text-[13.5px] mt-2 first:mt-0">
+      <span className="font-normal text-white/70">{label}</span>
       <span style={{ color: positive ? "#9AD4B8" : "#fff" }}>{value}</span>
     </div>
   );
@@ -275,7 +275,7 @@ export function MyBookings({
 
         <SectionLabel>Upcoming</SectionLabel>
         {upcoming.length === 0 && (
-          <p className="font-body font-light text-[12.5px] text-ink-faint">Nothing booked yet.</p>
+          <p className="font-body font-normal text-[14px] text-ink-faint">Nothing booked yet.</p>
         )}
 
         <div className="flex flex-col gap-2.5">
@@ -320,10 +320,10 @@ export function MyBookings({
                   >
                     <div className="flex items-center justify-between gap-3">
                       <div className="min-w-0">
-                        <p className="font-body font-medium text-[13px] text-navy truncate">
+                        <p className="font-body font-medium text-[14.5px] text-navy truncate">
                           {booking.spaceName} · {booking.roomType}
                         </p>
-                        <p className="font-body font-light text-[11px] text-ink-faint">
+                        <p className="font-body font-normal text-[13.5px] text-ink-faint">
                           {booking.startsAt.toLocaleDateString("en-US", {
                             month: "short",
                             day: "numeric",
@@ -338,7 +338,7 @@ export function MyBookings({
                       <button
                         type="button"
                         onClick={() => onReview(booking.id)}
-                        className="w-full mt-2.5 py-2.5 rounded-xl font-body font-medium text-[11.5px] press bg-white"
+                        className="w-full mt-2.5 py-2.5 rounded-xl font-body font-medium text-[14px] press bg-white"
                         style={{ border: "1px solid #DCE7F2", color: "#16304E" }}
                       >
                         How was it? Leave a review
@@ -399,16 +399,16 @@ function UpcomingBooking({
           <Calendar size={18} color="rgba(255,255,255,0.92)" />
         </div>
         <div className="flex-1 min-w-0">
-          <p className="font-body font-medium text-[13.5px] text-navy truncate">
+          <p className="font-body font-medium text-[15px] text-navy truncate">
             {booking.spaceName} · {booking.roomType}
           </p>
-          <p className="font-body font-light text-[11.5px] mt-0.5 text-ink-soft">
+          <p className="font-body font-normal text-[14px] mt-0.5 text-ink-soft">
             {booking.startsAt.toLocaleDateString("en-US", { month: "short", day: "numeric" })} ·{" "}
             {booking.startsAt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })} ·{" "}
             {formatCents(booking.totalCents)}
           </p>
           {codeReady && (
-            <p className="font-body font-medium text-[11px] mt-0.5 text-sky">
+            <p className="font-body font-medium text-[13.5px] mt-0.5 text-sky-text">
               Code {booking.revealedAccessCode}
             </p>
           )}
@@ -429,7 +429,7 @@ function UpcomingBooking({
               border: `1px solid ${codeReady ? "#D4E8FA" : "#E7EEF6"}`,
             }}
           >
-            <p className="flex items-center gap-1.5 font-body font-medium text-[10px] uppercase tracking-[0.14em] text-sky mb-1.5">
+            <p className="flex items-center gap-1.5 font-body font-medium text-[10.5px] uppercase tracking-[0.14em] text-sky-text mb-1.5">
               <KeyRound size={11} /> Getting in
             </p>
             {codeReady ? (
@@ -437,7 +437,7 @@ function UpcomingBooking({
                 {booking.revealedAccessCode}
               </p>
             ) : (
-              <p className="font-body font-light text-[11px] leading-relaxed text-ink-soft">
+              <p className="font-body font-normal text-[13.5px] leading-relaxed text-ink-soft">
                 Your code appears here at{" "}
                 {booking.accessCodeRevealedAt.toLocaleTimeString("en-US", {
                   hour: "numeric",
@@ -462,7 +462,7 @@ function UpcomingBooking({
               <button
                 type="button"
                 onClick={onMessage}
-                className="w-full mt-3 py-2.5 rounded-xl font-body font-medium text-[11.5px] press flex items-center justify-center gap-1.5"
+                className="w-full mt-3 py-2.5 rounded-xl font-body font-medium text-[14px] press flex items-center justify-center gap-1.5"
                 style={{ border: "1px solid #DCE7F2", color: "#16304E" }}
               >
                 <MessageCircle size={13} /> Message the studio
@@ -480,10 +480,10 @@ function UpcomingBooking({
             {freeToCancel ? (
               <Check size={13} color="#3B9BE8" className="mt-0.5 shrink-0" />
             ) : (
-              <AlertTriangle size={13} color="#C05A4B" className="mt-0.5 shrink-0" />
+              <AlertTriangle size={13} color="#B45143" className="mt-0.5 shrink-0" />
             )}
             <p
-              className="font-body font-light text-[11px] leading-relaxed"
+              className="font-body font-normal text-[13.5px] leading-relaxed"
               style={{ color: freeToCancel ? "#2E5578" : "#7A4A42" }}
             >
               {freeToCancel
@@ -502,7 +502,7 @@ function UpcomingBooking({
           <button
             type="button"
             onClick={onCancel}
-            className="w-full py-3 rounded-xl font-body font-medium text-[13px] press bg-white text-danger mt-3"
+            className="w-full py-3 rounded-xl font-body font-medium text-[14.5px] press bg-white text-danger mt-3"
             style={{ border: "1px solid #F5C4BC" }}
           >
             Cancel booking
@@ -516,16 +516,16 @@ function UpcomingBooking({
 
 function StatusPill({ status }: { status: Booking["status"] }) {
   const style = {
-    cancelled_by_practitioner: { bg: "#FEF2F0", fg: "#C05A4B", label: "Cancelled" },
+    cancelled_by_practitioner: { bg: "#FEF2F0", fg: "#B45143", label: "Cancelled" },
     cancelled_by_host: { bg: "#EDF6FE", fg: "#3B9BE8", label: "Host cancelled" },
-    no_show: { bg: "#FEF2F0", fg: "#C05A4B", label: "No-show" },
-    completed: { bg: "#EFF4EC", fg: "#5E7D5E", label: "Completed" },
-    upcoming: { bg: "#EFF4EC", fg: "#5E7D5E", label: "Upcoming" },
+    no_show: { bg: "#FEF2F0", fg: "#B45143", label: "No-show" },
+    completed: { bg: "#EFF4EC", fg: "#557255", label: "Completed" },
+    upcoming: { bg: "#EFF4EC", fg: "#557255", label: "Upcoming" },
   }[status];
 
   return (
     <span
-      className="px-2.5 py-1 rounded-full font-body text-[10px] font-medium shrink-0"
+      className="px-2.5 py-1 rounded-full font-body text-[12px] font-medium shrink-0"
       style={{ backgroundColor: style.bg, color: style.fg }}
     >
       {style.label}
@@ -535,7 +535,7 @@ function StatusPill({ status }: { status: Booking["status"] }) {
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <p className="font-body font-medium text-[10.5px] uppercase tracking-[0.2em] mb-3 text-sky">
+    <p className="font-body font-medium text-[11px] uppercase tracking-[0.2em] mb-3 text-sky-text">
       {children}
     </p>
   );

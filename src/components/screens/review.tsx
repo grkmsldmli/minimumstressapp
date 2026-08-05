@@ -113,7 +113,7 @@ export function ReviewScreen({
         <div className="mt-3 relative z-10">
           <Headline pre="How was" accent={`${subject}?`} size={22} light />
         </div>
-        <p className="font-body font-light text-[11px] text-white/55 mt-1 relative z-10">
+        <p className="font-body font-normal text-[13.5px] text-white/55 mt-1 relative z-10">
           Only you and they will see this, and not until you have both written.
         </p>
       </div>
@@ -192,7 +192,7 @@ export function ReviewScreen({
                 : "Anything the next studio should know?"
             }
             aria-label="Your comments"
-            className="w-full font-body font-light text-[13px] leading-relaxed px-4 py-3 rounded-xl outline-none resize-none text-navy"
+            className="w-full font-body font-normal text-[14.5px] leading-relaxed px-4 py-3 rounded-xl outline-none resize-none text-navy"
             style={{ border: "1px solid #DCE7F2" }}
           />
         </Section>
@@ -210,17 +210,17 @@ export function ReviewScreen({
           <div className="flex items-start gap-2.5">
             <ShieldAlert size={15} color="#C4503F" className="mt-0.5 shrink-0" />
             <div className="flex-1">
-              <p className="font-body font-medium text-[12.5px] text-coral-deep">
+              <p className="font-body font-medium text-[14px] text-coral-deep">
                 Was there anything unsafe?
               </p>
-              <p className="font-body font-light text-[11.5px] mt-1 leading-relaxed text-ink-soft">
+              <p className="font-body font-normal text-[14px] mt-1 leading-relaxed text-ink-soft">
                 A blocked exit, a lock that didn&apos;t hold, someone who shouldn&apos;t have been
                 there. Tick this and a person reads it — whatever rating you gave.
               </p>
             </div>
           </div>
           <div className="flex items-center justify-between mt-3">
-            <span className="font-body text-[12px] text-navy">Flag a safety concern</span>
+            <span className="font-body text-[13.5px] text-navy">Flag a safety concern</span>
             <Toggle
               on={safetyConcern}
               onClick={() => setSafetyConcern((v) => !v)}
@@ -235,7 +235,7 @@ export function ReviewScreen({
             style={{ backgroundColor: "#FEF2F0", border: "1px solid #F6D5D0" }}
           >
             <AlertTriangle size={13} color="#C4503F" className="mt-0.5 shrink-0" />
-            <p className="font-body font-light text-[11.5px] leading-relaxed text-coral-deep">
+            <p className="font-body font-normal text-[14px] leading-relaxed text-coral-deep">
               {error}
             </p>
           </div>
@@ -246,7 +246,7 @@ export function ReviewScreen({
         <PrimaryButton disabled={overall === null || busy} onClick={() => void submit()}>
           {busy ? "Sending…" : "Send review"}
         </PrimaryButton>
-        <p className="font-body font-light text-[10.5px] text-center mt-2.5 text-ink-faint">
+        <p className="font-body font-normal text-[13.5px] text-center mt-2.5 text-ink-faint">
           Sealed until you have both written, or for 14 days.
         </p>
       </div>
@@ -257,7 +257,7 @@ export function ReviewScreen({
 function Section({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="mb-6">
-      <p className="font-body font-medium text-[11px] uppercase tracking-wide text-sky mb-2.5">
+      <p className="font-body font-medium text-[13.5px] uppercase tracking-wide text-sky-text mb-2.5">
         {label}
       </p>
       {children}
@@ -287,7 +287,7 @@ function YesNo({
 }) {
   return (
     <div className="mb-6">
-      <p className="font-body text-[12.5px] text-navy mb-2.5">{question}</p>
+      <p className="font-body text-[14px] text-navy mb-2.5">{question}</p>
       <div role="radiogroup" aria-label={question} className="flex gap-2">
         {[
           { on: true, label: yes },
@@ -299,7 +299,7 @@ function YesNo({
             role="radio"
             aria-checked={value === option.on}
             onClick={() => onChange(option.on)}
-            className="flex-1 py-2.5 rounded-full font-body text-[12px] press"
+            className="flex-1 py-2.5 rounded-full font-body text-[13.5px] press"
             style={
               value === option.on
                 ? { backgroundColor: "#16304E", color: "#fff" }

@@ -176,14 +176,14 @@ export function PrimaryButton({
       type={type}
       onClick={onClick}
       disabled={disabled}
-      className={`w-full py-4 rounded-full font-body font-medium text-[14px] press transition-all sheen-wrap ${className}`}
+      className={`w-full py-4 rounded-full font-body font-medium text-[15.5px] press transition-all sheen-wrap ${className}`}
       style={
         disabled
-          ? { backgroundColor: "#E9F0F7", color: "#8CA3BD" }
+          ? { backgroundColor: "#E9F0F7", color: "#4D6480" }
           : {
-              backgroundColor: "#3B9BE8",
+              backgroundColor: "#2578C2",
               color: "#fff",
-              boxShadow: "0 12px 28px -8px rgba(59,155,232,0.5)",
+              boxShadow: "0 12px 28px -8px rgba(37,120,194,0.45)",
             }
       }
     >

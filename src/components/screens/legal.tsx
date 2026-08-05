@@ -106,7 +106,7 @@ export function Legal({ onBack }: { onBack: () => void }) {
         <div className="mt-3 relative z-10">
           <Headline pre="The" accent="fine print." size={24} light />
         </div>
-        <p className="font-body font-light text-[11.5px] text-white/65 mt-1 relative z-10">
+        <p className="font-body font-normal text-[14px] text-white/65 mt-1 relative z-10">
           A plain-language summary. The binding text lives on minimumstress.app.
         </p>
       </div>
@@ -127,7 +127,7 @@ export function Legal({ onBack }: { onBack: () => void }) {
                   aria-expanded={isOpen}
                   className="w-full flex items-center justify-between p-4 press bg-white"
                 >
-                  <span className="flex items-center gap-2.5 font-body font-medium text-[13.5px] text-navy">
+                  <span className="flex items-center gap-2.5 font-body font-medium text-[15px] text-navy">
                     <ScrollText size={15} color="#3B9BE8" />
                     {section.title}
                   </span>
@@ -149,7 +149,7 @@ export function Legal({ onBack }: { onBack: () => void }) {
                             className="w-1 h-1 rounded-full mt-2 shrink-0"
                             style={{ backgroundColor: "#8CA3BD" }}
                           />
-                          <p className="font-body font-light text-[12px] leading-relaxed text-ink-muted">
+                          <p className="font-body font-normal text-[13.5px] leading-relaxed text-ink-muted">
                             {point}
                           </p>
                         </li>

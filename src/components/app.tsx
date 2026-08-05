@@ -765,14 +765,14 @@ function describeAuthError(error: unknown): string {
 function Fallback({ onBack }: { onBack: () => void }) {
   return (
     <div className="h-full flex flex-col items-center justify-center gap-4 bg-white px-9 text-center">
-      <p className="font-body font-light text-[13px] text-ink-soft">
+      <p className="font-body font-normal text-[14.5px] text-ink-soft">
         That page needs something we couldn&apos;t find.
       </p>
       <button
         type="button"
         onClick={onBack}
-        className="px-6 py-3 rounded-full font-body font-medium text-[13px] text-white press"
-        style={{ backgroundColor: "#3B9BE8" }}
+        className="px-6 py-3 rounded-full font-body font-medium text-[14.5px] text-white press"
+        style={{ backgroundColor: "#2578C2" }}
       >
         Go back
       </button>

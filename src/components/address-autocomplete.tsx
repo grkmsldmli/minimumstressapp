@@ -210,7 +210,7 @@ export function AddressAutocomplete({
           aria-controls={listId}
           aria-autocomplete="list"
           aria-activedescendant={highlighted >= 0 ? `${listId}-${highlighted}` : undefined}
-          className="font-body text-[13px] outline-none w-full text-navy bg-transparent"
+          className="font-body text-[14.5px] outline-none w-full text-navy bg-transparent"
         />
         {(loading || resolving) && (
           <Loader2 size={13} color="#8CA3BD" className="animate-spin shrink-0" />
@@ -223,7 +223,7 @@ export function AddressAutocomplete({
           style={{ border: "1px solid #DCE7F2", boxShadow: "0 10px 30px rgba(22,48,78,0.12)" }}
         >
           {showEmpty ? (
-            <p className="px-4 py-3 font-body font-light text-[12px] text-ink-faint">
+            <p className="px-4 py-3 font-body font-normal text-[13.5px] text-ink-faint">
               No match — you can type the address yourself and place the pin on the map.
             </p>
           ) : (
@@ -245,11 +245,11 @@ export function AddressAutocomplete({
                     className="w-full text-left px-4 py-2.5"
                     style={{ backgroundColor: index === highlighted ? "#F1F6FB" : "transparent" }}
                   >
-                    <span className="block font-body text-[13px] text-navy">
+                    <span className="block font-body text-[14.5px] text-navy">
                       {suggestion.primary}
                     </span>
                     {suggestion.secondary && (
-                      <span className="block font-body font-light text-[11px] text-ink-faint">
+                      <span className="block font-body font-normal text-[13.5px] text-ink-faint">
                         {suggestion.secondary}
                       </span>
                     )}

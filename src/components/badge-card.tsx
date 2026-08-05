@@ -29,16 +29,16 @@ export function BadgeCard({ party, sessions }: { party: Party; sessions: number 
       <div className="flex items-start gap-2.5">
         <Award size={15} color="#E8A33D" className="mt-0.5 shrink-0" />
         <div className="min-w-0">
-          <p className="font-body font-medium text-[13px] text-navy">
+          <p className="font-body font-medium text-[14.5px] text-navy">
             {sessions} {sessions === 1 ? "session" : "sessions"}
           </p>
 
           {progress.earned.length > 0 ? (
-            <p className="font-body font-light text-[11.5px] mt-1 leading-relaxed text-ink-soft">
+            <p className="font-body font-normal text-[14px] mt-1 leading-relaxed text-ink-soft">
               {progress.earned[progress.earned.length - 1].meaning}
             </p>
           ) : (
-            <p className="font-body font-light text-[11.5px] mt-1 leading-relaxed text-ink-soft">
+            <p className="font-body font-normal text-[14px] mt-1 leading-relaxed text-ink-soft">
               {progress.toNext} more to your first badge.
             </p>
           )}
@@ -50,8 +50,8 @@ export function BadgeCard({ party, sessions }: { party: Party; sessions: number 
           {progress.earned.map((badge) => (
             <span
               key={badge.key}
-              className="px-2.5 py-1 rounded-full font-body font-medium text-[10.5px]"
-              style={{ backgroundColor: "#FDF6EA", color: "#9A6B1F" }}
+              className="px-2.5 py-1 rounded-full font-body font-medium text-[13.5px]"
+              style={{ backgroundColor: "#FDF6EA", color: "#8A5F1B" }}
             >
               {badge.name}
             </span>
@@ -60,7 +60,7 @@ export function BadgeCard({ party, sessions }: { party: Party; sessions: number 
       )}
 
       {progress.next && progress.earned.length > 0 && (
-        <p className="font-body font-light text-[11px] mt-2.5 text-ink-faint">
+        <p className="font-body font-normal text-[13.5px] mt-2.5 text-ink-faint">
           {progress.toNext} more to {progress.next.name}.
         </p>
       )}

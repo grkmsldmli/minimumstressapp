@@ -115,7 +115,7 @@ export function SpaceDetail({
           </button>
           <div>
             <span
-              className="px-2.5 py-1 rounded-full font-body text-[10px] text-white"
+              className="px-2.5 py-1 rounded-full font-body text-[12px] text-white"
               style={{ backgroundColor: "rgba(255,255,255,0.2)", backdropFilter: "blur(6px)" }}
             >
               {roomTypeFor(space.category)}
@@ -126,7 +126,7 @@ export function SpaceDetail({
             >
               {space.name}
             </h2>
-            <p className="font-body font-light text-[12px] text-white/80 mt-0.5">
+            <p className="font-body font-normal text-[13.5px] text-white/80 mt-0.5">
               {space.distanceLabel} · fits {space.capacity}
             </p>
           </div>
@@ -134,7 +134,7 @@ export function SpaceDetail({
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 pt-5 pb-36">
-        <p className="font-body font-light text-[13px] leading-relaxed text-ink-muted">
+        <p className="font-body font-normal text-[14.5px] leading-relaxed text-ink-muted">
           {space.description}
         </p>
 
@@ -148,7 +148,7 @@ export function SpaceDetail({
         <div className="flex flex-wrap gap-1.5">
           {space.accessible !== null && (
             <Tag>
-              <Accessibility size={11} color={space.accessible ? "#5E7D5E" : "#B08D4F"} />
+              <Accessibility size={11} color={space.accessible ? "#557255" : "#8B6C37"} />
               {space.accessible ? "Wheelchair accessible" : "Not wheelchair accessible"}
             </Tag>
           )}
@@ -178,7 +178,7 @@ export function SpaceDetail({
             >
               {requirementGroups.map((group, i) => (
                 <div key={group.kind} className={i > 0 ? "mt-3" : ""}>
-                  <p className="font-body font-medium text-[10px] uppercase tracking-[0.14em] text-warn mb-1.5">
+                  <p className="font-body font-medium text-[10.5px] uppercase tracking-[0.14em] text-warn mb-1.5">
                     {group.heading}
                   </p>
                   <ul className="flex flex-col gap-1">
@@ -186,9 +186,9 @@ export function SpaceDetail({
                       <li key={item.key} className="flex items-start gap-2">
                         <span
                           className="w-1 h-1 rounded-full mt-1.5 shrink-0"
-                          style={{ backgroundColor: "#B08D4F" }}
+                          style={{ backgroundColor: "#8B6C37" }}
                         />
-                        <span className="font-body font-light text-[12px] leading-relaxed text-[#7A5B33]">
+                        <span className="font-body font-normal text-[13.5px] leading-relaxed text-[#7A5B33]">
                           {item.label}
                         </span>
                       </li>
@@ -199,7 +199,7 @@ export function SpaceDetail({
 
               {space.houseRules && (
                 <p
-                  className={`font-body font-light text-[11.5px] leading-relaxed text-[#7A5B33] ${requirementGroups.length > 0 ? "mt-3 pt-3" : ""}`}
+                  className={`font-body font-normal text-[14px] leading-relaxed text-[#7A5B33] ${requirementGroups.length > 0 ? "mt-3 pt-3" : ""}`}
                   style={
                     requirementGroups.length > 0 ? { borderTop: "1px solid #F5DFC4" } : undefined
                   }
@@ -216,7 +216,7 @@ export function SpaceDetail({
           style={{ backgroundColor: "#F4F8FC", border: "1px solid #E7EEF6" }}
         >
           <Lock size={13} color="#8CA3BD" className="mt-0.5 shrink-0" />
-          <p className="font-body font-light text-[11px] leading-relaxed text-ink-soft">
+          <p className="font-body font-normal text-[13.5px] leading-relaxed text-ink-soft">
             The address and entry instructions are shared once you&apos;ve booked, shortly before
             your session.
           </p>
@@ -234,7 +234,7 @@ export function SpaceDetail({
                   setDayOffset(i);
                   setSelected(null);
                 }}
-                className="px-3.5 py-2 rounded-full font-body text-[12px] whitespace-nowrap press"
+                className="px-3.5 py-2 rounded-full font-body text-[13.5px] whitespace-nowrap press"
                 style={{
                   backgroundColor: dayOffset === i ? "#16304E" : "#fff",
                   color: dayOffset === i ? "#fff" : "#16304E",
@@ -250,7 +250,7 @@ export function SpaceDetail({
         )}
 
         {slots.length === 0 ? (
-          <p className="font-body font-light text-[12.5px] text-ink-faint">
+          <p className="font-body font-normal text-[14px] text-ink-faint">
             Nothing open {dayOffset === 0 ? "for the rest of today" : "on this day"}.
           </p>
         ) : (
@@ -263,7 +263,7 @@ export function SpaceDetail({
                   key={startsAt.toISOString()}
                   type="button"
                   onClick={() => setSelected(startsAt)}
-                  className={`relative py-3 rounded-xl font-body text-[13px] press transition-colors ${active ? "slot-pop" : ""}`}
+                  className={`relative py-3 rounded-xl font-body text-[14.5px] press transition-colors ${active ? "slot-pop" : ""}`}
                   style={{
                     backgroundColor: active ? "#16304E" : "#FFFFFF",
                     color: active ? "#fff" : "#16304E",
@@ -272,10 +272,10 @@ export function SpaceDetail({
                 >
                   {isInstant && (
                     <span
-                      className="absolute -top-1.5 -right-1.5 px-1.5 py-0.5 rounded-full font-body text-[8px] font-medium"
+                      className="absolute -top-1.5 -right-1.5 px-1.5 py-0.5 rounded-full font-body text-[10.5px] font-medium"
                       style={{
                         backgroundColor: active ? "#8FC6F5" : chargesInstantFee ? "#FFF8F1" : "#EFF4EC",
-                        color: active ? "#16304E" : chargesInstantFee ? "#B08D4F" : "#5E7D5E",
+                        color: active ? "#16304E" : chargesInstantFee ? "#8B6C37" : "#557255",
                         border: active
                           ? "none"
                           : `1px solid ${chargesInstantFee ? "#F5DFC4" : "#DCE6D6"}`,
@@ -298,11 +298,11 @@ export function SpaceDetail({
             className="w-full mt-3 rounded-2xl p-3.5 text-left press"
             style={{ backgroundColor: "#FFF8F1", border: "1px solid #F5DFC4" }}
           >
-            <span className="flex items-center gap-1.5 font-body font-medium text-[12px] text-navy">
+            <span className="flex items-center gap-1.5 font-body font-medium text-[13.5px] text-navy">
               <Zap size={12} color="#E8A23D" />
               Pro books up to {PRO_HORIZON_DAYS} days ahead
             </span>
-            <span className="block font-body font-light text-[11px] mt-0.5 text-ink-soft">
+            <span className="block font-body font-normal text-[13.5px] mt-0.5 text-ink-soft">
               Without it, bookings are same-day only — and instant slots cost{" "}
               {formatCents(INSTANT_FEE_CENTS)}.
             </span>
@@ -315,8 +315,8 @@ export function SpaceDetail({
           style={{ backgroundColor: "#F4F8FC", border: "1px solid #E7EEF6" }}
         >
           <div className="flex items-center gap-1.5 mb-3">
-            <Check size={11} color="#5E7D5E" />
-            <p className="font-body font-medium text-[10px] uppercase tracking-[0.14em] text-positive">
+            <Check size={11} color="#557255" />
+            <p className="font-body font-medium text-[10.5px] uppercase tracking-[0.14em] text-positive">
               All In Price — nothing added later
             </p>
           </div>
@@ -331,11 +331,11 @@ export function SpaceDetail({
           )}
 
           <div className="h-px my-2" style={{ backgroundColor: "#E7EEF6" }} />
-          <div className="flex justify-between font-body font-semibold text-[13.5px] text-navy">
+          <div className="flex justify-between font-body font-semibold text-[15px] text-navy">
             <span>Total</span>
             <span>{formatCents(priced.totalCents)}</span>
           </div>
-          <p className="font-body font-light text-[10.5px] leading-relaxed mt-2.5 text-ink-faint">
+          <p className="font-body font-normal text-[13.5px] leading-relaxed mt-2.5 text-ink-faint">
             The service fee helps us verify every space, protect your booking, and keep the app
             running.
           </p>
@@ -346,7 +346,7 @@ export function SpaceDetail({
           style={{ backgroundColor: "#EDF6FE", border: "1px solid #D4E8FA" }}
         >
           <Check size={14} color="#3B9BE8" className="mt-0.5 shrink-0" />
-          <p className="font-body font-light text-[11.5px] leading-relaxed text-[#2E5578]">
+          <p className="font-body font-normal text-[14px] leading-relaxed text-[#2E5578]">
             Your card is held, never charged, until the session starts — cancel 24 hours ahead for a
             full release. If the host ever cancels on you, you&apos;re refunded automatically, plus
             a credit for next time.
@@ -383,8 +383,8 @@ function Fact({
       style={{ backgroundColor: "#F4F8FC", border: "1px solid #E7EEF6" }}
     >
       <Icon size={14} color="#3B9BE8" className="mx-auto" />
-      <p className="font-body font-medium text-[11.5px] mt-1.5 text-navy">{value}</p>
-      <p className="font-body text-[9.5px] uppercase tracking-wide mt-0.5 text-ink-faint">
+      <p className="font-body font-medium text-[14px] mt-1.5 text-navy">{value}</p>
+      <p className="font-body text-[10.5px] uppercase tracking-wide mt-0.5 text-ink-faint">
         {label}
       </p>
     </div>
@@ -393,7 +393,7 @@ function Fact({
 
 function Label({ children }: { children: React.ReactNode }) {
   return (
-    <p className="font-body font-medium text-[10.5px] uppercase tracking-[0.2em] mt-7 mb-3 text-sky">
+    <p className="font-body font-medium text-[11px] uppercase tracking-[0.2em] mt-7 mb-3 text-sky-text">
       {children}
     </p>
   );
@@ -402,7 +402,7 @@ function Label({ children }: { children: React.ReactNode }) {
 function Tag({ children }: { children: React.ReactNode }) {
   return (
     <span
-      className="flex items-center gap-1 px-2.5 py-1.5 rounded-full font-body text-[11px] text-ink-muted"
+      className="flex items-center gap-1 px-2.5 py-1.5 rounded-full font-body text-[13.5px] text-ink-muted"
       style={{ backgroundColor: "#F4F8FC" }}
     >
       {children}
@@ -421,7 +421,7 @@ function Row({
 }) {
   return (
     <div
-      className={`flex justify-between font-body text-[12px] mb-1.5 ${positive ? "text-positive" : "text-ink-soft"}`}
+      className={`flex justify-between font-body text-[13.5px] mb-1.5 ${positive ? "text-positive" : "text-ink-soft"}`}
     >
       <span>{label}</span>
       <span className={positive ? "" : "text-navy"}>{value}</span>

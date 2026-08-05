@@ -57,13 +57,13 @@ export function InsuranceUpload({
           </button>
         )}
 
-        <p className="font-body font-medium text-[10.5px] uppercase tracking-[0.2em] text-sky-soft">
+        <p className="font-body font-medium text-[11px] uppercase tracking-[0.2em] text-sky-soft">
           Optional, takes 10 seconds
         </p>
         <div className="mt-2">
           <Headline pre="Add your" accent="insurance?" size={27} light />
         </div>
-        <p className="font-body font-light text-[12.5px] leading-relaxed text-white/65 mt-3">
+        <p className="font-body font-normal text-[14px] leading-relaxed text-white/65 mt-3">
           Hosts approve you faster when a certificate is already on file. You can add this later
           from your profile — it never blocks a booking.
         </p>
@@ -77,7 +77,7 @@ export function InsuranceUpload({
             onRemove={() => setFile(null)}
           />
           {!file && initialDocName && (
-            <p className="font-body font-light text-[11px] mt-2 text-ink-faint">
+            <p className="font-body font-normal text-[13.5px] mt-2 text-ink-faint">
               On file: {initialDocName}
             </p>
           )}
@@ -92,7 +92,7 @@ export function InsuranceUpload({
           href="https://www.thimble.com"
           target="_blank"
           rel="noopener noreferrer"
-          className="font-body text-[11.5px] mt-3 text-sky-soft"
+          className="font-body text-[14px] mt-3 text-sky-soft"
         >
           Don&apos;t have coverage yet? Get a quote →
         </a>
@@ -149,15 +149,15 @@ export function ProScreen({
           <div className="mt-6">
             <Headline pre="You're" accent="Pro." size={28} light />
           </div>
-          <p className="font-body font-light text-[13px] text-white/70 leading-relaxed mt-3">
+          <p className="font-body font-normal text-[14.5px] text-white/70 leading-relaxed mt-3">
             Instant fees are waived, your 10% discount is live, and you can book up to{" "}
             {PRO_HORIZON_DAYS} days ahead.
           </p>
           <button
             type="button"
             onClick={onBack}
-            className="mt-7 px-8 py-3.5 rounded-full font-body font-medium text-[13px] text-white press"
-            style={{ backgroundColor: "#3B9BE8" }}
+            className="mt-7 px-8 py-3.5 rounded-full font-body font-medium text-[14.5px] text-white press"
+            style={{ backgroundColor: "#2578C2" }}
           >
             Done
           </button>
@@ -183,7 +183,7 @@ export function ProScreen({
           <ArrowLeft size={16} color="#fff" />
         </button>
         <div className="relative z-10 pt-1">
-          <p className="font-body font-medium text-[10.5px] uppercase tracking-[0.2em] text-sky-soft">
+          <p className="font-body font-medium text-[11px] uppercase tracking-[0.2em] text-sky-soft">
             Minimum Stress
           </p>
           <div className="mt-2 flex justify-center">
@@ -191,7 +191,7 @@ export function ProScreen({
           </div>
           <p className="font-display italic font-semibold text-white mt-3" style={{ fontSize: 38 }}>
             {formatCents(PRO_PRICE_CENTS)}
-            <span className="font-body font-light text-[14px] text-white/60">/mo</span>
+            <span className="font-body font-normal text-[15.5px] text-white/60">/mo</span>
           </p>
         </div>
       </div>
@@ -215,8 +215,8 @@ export function ProScreen({
                 <Icon size={15} color="#fff" />
               </div>
               <div>
-                <p className="font-body font-medium text-[13px] text-navy">{title}</p>
-                <p className="font-body font-light text-[11.5px] mt-0.5 text-ink-soft">{sub}</p>
+                <p className="font-body font-medium text-[14.5px] text-navy">{title}</p>
+                <p className="font-body font-normal text-[14px] mt-0.5 text-ink-soft">{sub}</p>
               </div>
             </div>
           ))}
@@ -232,7 +232,7 @@ export function ProScreen({
         >
           Start Pro — {formatCents(PRO_PRICE_CENTS)}/mo
         </PrimaryButton>
-        <p className="text-center font-body font-light text-[10.5px] mt-2.5 text-ink-faint">
+        <p className="text-center font-body font-normal text-[13.5px] mt-2.5 text-ink-faint">
           Cancel anytime. For practitioners only — hosting stays commission-based.
         </p>
       </div>
@@ -401,14 +401,14 @@ export function ProfileHeader({
           onChange={(e) => onName(e.target.value)}
           placeholder="Add your name"
           aria-label="Your name"
-          className="text-center font-body font-medium text-[14px] bg-transparent outline-none text-white mt-3 placeholder:text-white/40"
+          className="text-center font-body font-medium text-[15.5px] bg-transparent outline-none text-white mt-3 placeholder:text-white/40"
           style={{
             borderBottom: "1px solid rgba(255,255,255,0.25)",
             paddingBottom: 3,
             width: 190,
           }}
         />
-        <p className="font-body font-light text-[11px] text-white/55 mt-2">{sub}</p>
+        <p className="font-body font-normal text-[13.5px] text-white/55 mt-2">{sub}</p>
       </div>
     </div>
   );
@@ -416,7 +416,7 @@ export function ProfileHeader({
 
 export function GroupLabel({ children }: { children: React.ReactNode }) {
   return (
-    <p className="font-body font-medium text-[10.5px] uppercase tracking-[0.2em] mb-2.5 text-sky">
+    <p className="font-body font-medium text-[11px] uppercase tracking-[0.2em] mb-2.5 text-sky-text">
       {children}
     </p>
   );
@@ -435,7 +435,7 @@ export function ProfileRow({
   onClick?: () => void;
   danger?: boolean;
 }) {
-  const tint = danger ? "#C05A4B" : "#3B9BE8";
+  const tint = danger ? "#B45143" : "#3B9BE8";
 
   // A row without an action is a label, not a button — rendering it as one
   // would promise a tap that does nothing.
@@ -446,8 +446,8 @@ export function ProfileRow({
         style={{ border: "1px solid #E7EEF6" }}
       >
         <Icon size={15} color={tint} />
-        <span className="flex-1 font-body font-medium text-[13px] text-navy">{label}</span>
-        {value && <span className="font-body font-light text-[12px] text-ink-faint">{value}</span>}
+        <span className="flex-1 font-body font-medium text-[14.5px] text-navy">{label}</span>
+        {value && <span className="font-body font-normal text-[13.5px] text-ink-faint">{value}</span>}
       </div>
     );
   }
@@ -461,12 +461,12 @@ export function ProfileRow({
     >
       <Icon size={15} color={tint} />
       <span
-        className="flex-1 font-body font-medium text-[13px]"
-        style={{ color: danger ? "#C05A4B" : "#16304E" }}
+        className="flex-1 font-body font-medium text-[14.5px]"
+        style={{ color: danger ? "#B45143" : "#16304E" }}
       >
         {label}
       </span>
-      {value && <span className="font-body font-light text-[12px] text-ink-faint">{value}</span>}
+      {value && <span className="font-body font-normal text-[13.5px] text-ink-faint">{value}</span>}
       <ChevronRight size={14} color="#B9CBDD" />
     </button>
   );
@@ -489,8 +489,8 @@ export function SettingToggle({
       style={{ border: "1px solid #E7EEF6" }}
     >
       <div className="pr-3">
-        <p className="font-body font-medium text-[13px] text-navy">{label}</p>
-        <p className="font-body font-light text-[11px] mt-0.5 text-ink-faint">{sub}</p>
+        <p className="font-body font-medium text-[14.5px] text-navy">{label}</p>
+        <p className="font-body font-normal text-[13.5px] mt-0.5 text-ink-faint">{sub}</p>
       </div>
       <Toggle on={on} onClick={onToggle} label={label} />
     </div>

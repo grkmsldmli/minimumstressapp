@@ -84,10 +84,10 @@ export function EmergencyContactCard({
       <div className="flex items-start gap-2.5">
         <ShieldCheck size={15} color="#3B9BE8" className="mt-0.5 shrink-0" />
         <div className="min-w-0">
-          <p className="font-body font-medium text-[13px] text-navy">
+          <p className="font-body font-medium text-[14.5px] text-navy">
             Emergency contact — optional
           </p>
-          <p className="font-body font-light text-[11.5px] mt-1 leading-relaxed text-ink-soft">
+          <p className="font-body font-normal text-[14px] mt-1 leading-relaxed text-ink-soft">
             Someone we can call if something goes wrong during a session. Nobody you book with ever
             sees this — only our team, and only if there is an emergency.
           </p>
@@ -113,7 +113,7 @@ export function EmergencyContactCard({
       </div>
 
       {error && (
-        <p className="font-body font-light text-[11px] mt-2 text-coral-deep">{error}</p>
+        <p className="font-body font-normal text-[13.5px] mt-2 text-coral-deep">{error}</p>
       )}
 
       {/*
@@ -126,11 +126,11 @@ export function EmergencyContactCard({
         type="button"
         onClick={() => void save()}
         disabled={!dirty || state === "saving"}
-        className="w-full mt-3 py-2.5 rounded-xl font-body font-medium text-[12px] press"
+        className="w-full mt-3 py-2.5 rounded-xl font-body font-medium text-[13.5px] press"
         style={
           dirty && state !== "saving"
             ? { backgroundColor: "#16304E", color: "#fff" }
-            : { border: "1px solid #DCE7F2", color: state === "saved" ? "#5E7D5E" : "#B0BFCF" }
+            : { border: "1px solid #DCE7F2", color: state === "saved" ? "#4F6B4F" : "#5D768F" }
         }
       >
         {state === "saving"
@@ -175,7 +175,7 @@ function Field({
         aria-label={`Emergency contact ${label.toLowerCase()}`}
         inputMode={inputMode}
         autoComplete="off"
-        className="font-body text-[13px] outline-none w-full text-navy bg-transparent"
+        className="font-body text-[14.5px] outline-none w-full text-navy bg-transparent"
       />
     </div>
   );

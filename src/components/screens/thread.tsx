@@ -96,7 +96,7 @@ export function Thread({
         <div className="mt-3 relative z-10">
           <Headline pre="Message" accent={otherName} size={22} light />
         </div>
-        <p className="font-body font-light text-[11px] text-white/55 mt-1 relative z-10">
+        <p className="font-body font-normal text-[13.5px] text-white/55 mt-1 relative z-10">
           {spaceName} · {when}
         </p>
       </div>
@@ -112,7 +112,7 @@ export function Thread({
           style={{ backgroundColor: "#F4F8FC", border: "1px solid #E7EEF6" }}
         >
           <ShieldCheck size={14} color="#3B9BE8" className="mt-0.5 shrink-0" />
-          <p className="font-body font-light text-[11.5px] leading-relaxed text-ink-soft">
+          <p className="font-body font-normal text-[14px] leading-relaxed text-ink-soft">
             Messages stay here, and so does everything else about this booking — the address, the
             door code, and the refund if it goes wrong. Neither of you sees the other&apos;s phone
             number or email.
@@ -120,7 +120,7 @@ export function Thread({
         </div>
 
         {messages.length === 0 ? (
-          <p className="font-body font-light text-[12.5px] text-ink-faint text-center mt-8">
+          <p className="font-body font-normal text-[14px] text-ink-faint text-center mt-8">
             No messages yet. Ask about parking, the door, or anything you need before you arrive.
           </p>
         ) : (
@@ -139,14 +139,14 @@ export function Thread({
           style={{ backgroundColor: "#FEF8F7", border: "1px solid #F6D5D0" }}
         >
           <Info size={13} color="#C4503F" className="mt-0.5 shrink-0" />
-          <p className="font-body font-light text-[11.5px] leading-relaxed text-coral-deep">
+          <p className="font-body font-normal text-[14px] leading-relaxed text-coral-deep">
             {notice}
           </p>
         </div>
       )}
 
       {error && (
-        <p className="mx-6 mb-2 font-body font-light text-[11.5px] text-coral-deep">{error}</p>
+        <p className="mx-6 mb-2 font-body font-normal text-[14px] text-coral-deep">{error}</p>
       )}
 
       <div className="px-6 pt-3 pb-6 shrink-0" style={{ borderTop: "1px solid #F0ECE0" }}>
@@ -172,7 +172,7 @@ export function Thread({
             maxLength={2000}
             placeholder="Write a message"
             aria-label="Write a message"
-            className="flex-1 font-body text-[13px] px-4 py-3 rounded-2xl outline-none resize-none text-navy"
+            className="flex-1 font-body text-[14.5px] px-4 py-3 rounded-2xl outline-none resize-none text-navy"
             style={{ border: "1px solid #DCE7F2", maxHeight: 120 }}
           />
           <button
@@ -204,13 +204,13 @@ function Bubble({ message, mine }: { message: ThreadMessage; mine: boolean }) {
         }
       >
         <p
-          className="font-body font-light text-[13px] leading-relaxed whitespace-pre-wrap"
+          className="font-body font-normal text-[14.5px] leading-relaxed whitespace-pre-wrap"
           style={{ color: mine ? "#fff" : "#16304E" }}
         >
           {message.body}
         </p>
         <p
-          className="font-body font-light text-[10px] mt-1"
+          className="font-body font-normal text-[12px] mt-1"
           style={{ color: mine ? "rgba(255,255,255,0.5)" : "#8CA3BD" }}
         >
           {message.createdAt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}

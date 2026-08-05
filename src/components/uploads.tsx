@@ -46,11 +46,11 @@ export function DocumentUpload({
   return (
     <div>
       <div className="flex items-center justify-between mb-1.5">
-        <p className="font-body text-[11px] text-ink-soft">
+        <p className="font-body text-[13.5px] text-ink-soft">
           {label}
           {required && <span className="text-coral"> *</span>}
         </p>
-        {!required && <span className="font-body text-[9.5px] text-ink-faint">Optional</span>}
+        {!required && <span className="font-body text-[10.5px] text-ink-faint">Optional</span>}
       </div>
 
       {file ? (
@@ -59,7 +59,7 @@ export function DocumentUpload({
           style={{ border: "1px solid #D4E8FA", backgroundColor: "#EDF6FE" }}
         >
           <FileCheck size={16} color="#3B9BE8" className="shrink-0" />
-          <span className="font-body text-[12px] flex-1 truncate text-navy">{file.name}</span>
+          <span className="font-body text-[13.5px] flex-1 truncate text-navy">{file.name}</span>
           <button type="button" onClick={onRemove} aria-label={`Remove ${label}`}>
             <X size={14} color="#8CA3BD" />
           </button>
@@ -80,7 +80,7 @@ export function DocumentUpload({
             }}
           />
           <FileUp size={16} color="#3B9BE8" className="shrink-0" />
-          <span className="font-body text-[12px] text-ink-faint">{hint}</span>
+          <span className="font-body text-[13.5px] text-ink-faint">{hint}</span>
         </label>
       )}
     </div>
@@ -135,7 +135,7 @@ export function AddMediaTile({
         }}
       />
       <Plus size={18} color="#3B9BE8" />
-      <span className="font-body text-[9.5px] font-medium mt-1 text-navy">{label}</span>
+      <span className="font-body text-[10.5px] font-medium mt-1 text-navy">{label}</span>
     </label>
   );
 }
@@ -179,7 +179,7 @@ export function AvatarUpload({
       </div>
       <div
         className="absolute bottom-0 right-0 rounded-full flex items-center justify-center"
-        style={{ width: 26, height: 26, backgroundColor: "#3B9BE8", border: "2px solid #16304E" }}
+        style={{ width: 26, height: 26, backgroundColor: "#2578C2", border: "2px solid #16304E" }}
       >
         <Camera size={12} color="#fff" />
       </div>

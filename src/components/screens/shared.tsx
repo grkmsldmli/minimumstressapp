@@ -62,17 +62,17 @@ export function Splash({ next }: { next: () => void }) {
         <BreathingLogo size={160} />
         <div>
           <p
-            className="font-body font-light text-[12px] text-white/60 tracking-[0.12em] uppercase"
+            className="font-body font-normal text-[13.5px] text-white/60 tracking-[0.12em] uppercase"
             aria-live="polite"
           >
             {BREATH_PHASES[phase].label}
           </p>
-          <p className="font-body text-[10px] text-white/35 tracking-[0.3em] mt-1">4 · 7 · 8</p>
+          <p className="font-body text-[12px] text-white/35 tracking-[0.3em] mt-1">4 · 7 · 8</p>
         </div>
       </div>
 
       <div className="w-full relative z-10">
-        <p className="font-body font-light text-[12.5px] leading-relaxed text-white/65 mb-6">
+        <p className="font-body font-normal text-[14px] leading-relaxed text-white/65 mb-6">
           Private rooms by the hour for every kind of practice — movement, coaching, meditation,
           and healing.
         </p>
@@ -90,7 +90,7 @@ export function HowItWorks({ next }: { next: () => void }) {
   return (
     <NavyScreen className="items-center justify-between px-8 pt-14 pb-9">
       <div className="relative z-10 text-center">
-        <p className="font-body font-medium text-[10.5px] uppercase tracking-[0.2em] text-sky-soft">
+        <p className="font-body font-medium text-[11px] uppercase tracking-[0.2em] text-sky-soft">
           How it works
         </p>
         <div className="mt-2">
@@ -123,7 +123,7 @@ export function HowItWorks({ next }: { next: () => void }) {
       </div>
 
       <div className="relative z-10 w-full text-center">
-        <p className="font-body font-light text-[12.5px] leading-relaxed text-white/60 mb-6">
+        <p className="font-body font-normal text-[14px] leading-relaxed text-white/60 mb-6">
           Practitioners book the hour. Studios fill the gap.
           <br />
           Payout follows every completed session.
@@ -171,7 +171,7 @@ function DiagramNode({
       >
         {children}
       </div>
-      <p className="font-body font-medium text-[11.5px] text-white mt-2">{label}</p>
+      <p className="font-body font-medium text-[14px] text-white mt-2">{label}</p>
     </div>
   );
 }
@@ -225,7 +225,7 @@ export function AuthEntry({
         <div className="mt-6">
           <Headline pre="Let's get" accent="you in." size={27} light />
         </div>
-        <p className="font-body font-light text-[12.5px] text-white/60 mt-3 leading-relaxed">
+        <p className="font-body font-normal text-[14px] text-white/60 mt-3 leading-relaxed">
           One tap with Apple or Google — or use email below.
         </p>
       </div>
@@ -235,7 +235,7 @@ export function AuthEntry({
           <button
             type="button"
             onClick={() => onProvider("apple")}
-            className="w-full flex items-center justify-center gap-2 py-3.5 rounded-full font-body font-medium text-[13.5px] press"
+            className="w-full flex items-center justify-center gap-2 py-3.5 rounded-full font-body font-medium text-[15px] press"
             style={{ backgroundColor: "#fff", color: "#000" }}
           >
             <AppleGlyph /> Continue with Apple
@@ -243,7 +243,7 @@ export function AuthEntry({
           <button
             type="button"
             onClick={() => onProvider("google")}
-            className="w-full flex items-center justify-center gap-2 py-3.5 rounded-full font-body font-medium text-[13.5px] press text-navy"
+            className="w-full flex items-center justify-center gap-2 py-3.5 rounded-full font-body font-medium text-[15px] press text-navy"
             style={{ backgroundColor: "#fff", border: "1px solid #E1E6EC" }}
           >
             <GoogleGlyph /> Continue with Google
@@ -252,7 +252,7 @@ export function AuthEntry({
 
         <div className="flex items-center gap-3 my-5">
           <div className="flex-1 h-px" style={{ backgroundColor: "rgba(255,255,255,0.16)" }} />
-          <span className="font-body font-light text-[10.5px] text-white/40 uppercase tracking-wide">
+          <span className="font-body font-normal text-[11px] text-white/40 uppercase tracking-wide">
             or with email
           </span>
           <div className="flex-1 h-px" style={{ backgroundColor: "rgba(255,255,255,0.16)" }} />
@@ -280,11 +280,11 @@ export function AuthEntry({
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@email.com"
-              className="font-body text-[13.5px] outline-none w-full bg-transparent text-white placeholder:text-white/40"
+              className="font-body text-[15px] outline-none w-full bg-transparent text-white placeholder:text-white/40"
             />
           </div>
           {error && (
-            <p className="font-body font-light text-[11.5px] mt-2.5 leading-relaxed text-coral-soft">
+            <p className="font-body font-normal text-[14px] mt-2.5 leading-relaxed text-coral-soft">
               {error}
             </p>
           )}
@@ -366,7 +366,7 @@ export function AuthVerify({
         <div className="mt-6">
           <Headline pre="Enter the" accent="code." size={27} light />
         </div>
-        <p className="font-body font-light text-[12.5px] text-white/60 mt-3 leading-relaxed">
+        <p className="font-body font-normal text-[14px] text-white/60 mt-3 leading-relaxed">
           Sent to {email}
         </p>
       </div>
@@ -400,7 +400,7 @@ export function AuthVerify({
         </div>
 
         {error && (
-          <p className="font-body font-light text-[11.5px] text-center mt-3 text-coral-soft">
+          <p className="font-body font-normal text-[14px] text-center mt-3 text-coral-soft">
             {error}
           </p>
         )}
@@ -442,7 +442,7 @@ export function RoleSelect({
     return (
       <NavyScreen className="items-center justify-between text-center px-8 pt-16 pb-9">
         <div className="relative z-10">
-          <p className="font-body font-medium text-[10.5px] uppercase tracking-[0.2em] text-coral-soft">
+          <p className="font-body font-medium text-[11px] uppercase tracking-[0.2em] text-coral-soft">
             Before you continue
           </p>
           <div className="mt-2">
@@ -469,12 +469,12 @@ export function RoleSelect({
               ) : (
                 <Building2 color="#F2A79E" size={18} />
               )}
-              <p className="font-body font-medium text-[14px] text-white">
+              <p className="font-body font-medium text-[15.5px] text-white">
                 {isPractitioner ? "I teach or practice" : "I have a space"}
               </p>
             </div>
 
-            <p className="font-body font-light text-[12px] text-white/70 mt-3 leading-relaxed">
+            <p className="font-body font-normal text-[13.5px] text-white/70 mt-3 leading-relaxed">
               {isPractitioner
                 ? "Find and book rooms by the hour, with your insurance and your booking history in one place."
                 : "List your space, set your hours, and get paid — with your lease, your payouts and your calendar in one place."}
@@ -487,7 +487,7 @@ export function RoleSelect({
               what stops a lease sitting next to a booking history. Said as the
               reason it is, rather than as an apology for something missing.
             */}
-            <p className="font-body font-light text-[11.5px] text-white/45 mt-3 leading-relaxed">
+            <p className="font-body font-normal text-[14px] text-white/45 mt-3 leading-relaxed">
               {isPractitioner ? "Renting a room" : "Letting a room"} and{" "}
               {isPractitioner ? "letting one out" : "renting one"} are two different businesses, so
               they get two separate accounts. Plenty of people run both.
@@ -498,7 +498,7 @@ export function RoleSelect({
             <button
               type="button"
               onClick={() => setPending(null)}
-              className="flex-1 py-3.5 rounded-full font-body font-medium text-[13px] press text-white"
+              className="flex-1 py-3.5 rounded-full font-body font-medium text-[14.5px] press text-white"
               style={{ border: "1px solid rgba(255,255,255,0.22)" }}
             >
               Go back
@@ -506,7 +506,7 @@ export function RoleSelect({
             <button
               type="button"
               onClick={isPractitioner ? choosePractitioner : chooseHost}
-              className="flex-1 py-3.5 rounded-full font-body font-medium text-[13px] text-white press"
+              className="flex-1 py-3.5 rounded-full font-body font-medium text-[14.5px] text-white press"
               style={{ backgroundColor: isPractitioner ? "#3B9BE8" : "#F2695C" }}
             >
               Yes, continue
@@ -522,7 +522,7 @@ export function RoleSelect({
   return (
     <NavyScreen className="items-center justify-between text-center px-8 pt-16 pb-9">
       <div className="relative z-10">
-        <p className="font-body font-medium text-[10.5px] uppercase tracking-[0.2em] text-sky-soft">
+        <p className="font-body font-medium text-[11px] uppercase tracking-[0.2em] text-sky-soft">
           One quick thing
         </p>
         <div className="mt-2">
@@ -535,14 +535,14 @@ export function RoleSelect({
           type="button"
           onClick={() => setPending("practitioner")}
           className="text-left rounded-2xl p-5 press"
-          style={{ backgroundColor: "#3B9BE8" }}
+          style={{ backgroundColor: "#2578C2" }}
         >
           <Users color="#fff" size={20} />
-          <p className="font-body font-medium text-[15px] text-white mt-3">I teach or practice</p>
-          <p className="font-body font-light text-[12px] text-white/80 mt-1">
+          <p className="font-body font-medium text-[16.5px] text-white mt-3">I teach or practice</p>
+          <p className="font-body font-normal text-[13.5px] text-white/80 mt-1">
             Find a private room by the hour — no membership, one all-in price.
           </p>
-          <span className="inline-flex items-center gap-1 font-body text-[12px] font-medium text-white mt-3">
+          <span className="inline-flex items-center gap-1 font-body text-[13.5px] font-medium text-white mt-3">
             Browse spaces <ChevronRight size={14} />
           </span>
         </button>
@@ -554,17 +554,17 @@ export function RoleSelect({
           style={{ backgroundColor: "#F2695C" }}
         >
           <Building2 color="#fff" size={20} />
-          <p className="font-body font-medium text-[15px] text-white mt-3">I have a space</p>
-          <p className="font-body font-light text-[12px] text-white/80 mt-1">
+          <p className="font-body font-medium text-[16.5px] text-white mt-3">I have a space</p>
+          <p className="font-body font-normal text-[13.5px] text-white/80 mt-1">
             List your open hours and get paid when they&apos;re booked.
           </p>
-          <span className="inline-flex items-center gap-1 font-body text-[12px] font-medium text-white mt-3">
+          <span className="inline-flex items-center gap-1 font-body text-[13.5px] font-medium text-white mt-3">
             Set up hosting <ChevronRight size={14} />
           </span>
         </button>
       </div>
 
-      <p className="relative z-10 font-body font-light text-[11px] text-white/45 pt-7 leading-relaxed">
+      <p className="relative z-10 font-body font-normal text-[13.5px] text-white/45 pt-7 leading-relaxed">
         Each side has its own account, with its own paperwork and payments. Pick the one you&apos;re
         here for — you can always add the other later.
       </p>

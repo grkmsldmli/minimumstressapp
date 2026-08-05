@@ -114,7 +114,7 @@ function SheetBody({
         <div className="mt-3 relative z-10">
           <Headline pre="Hold the" accent="hour." size={24} light />
         </div>
-        <p className="font-body font-light text-[11.5px] text-white/65 mt-1 relative z-10">
+        <p className="font-body font-normal text-[14px] text-white/65 mt-1 relative z-10">
           {spaceName} ·{" "}
           {startsAt.toLocaleString("en-US", {
             weekday: "short",
@@ -133,8 +133,8 @@ function SheetBody({
           style={{ backgroundColor: "#F4F8FC", border: "1px solid #E7EEF6" }}
         >
           <div className="flex items-center gap-1.5 mb-3">
-            <Check size={11} color="#5E7D5E" />
-            <p className="font-body font-medium text-[10px] uppercase tracking-[0.14em] text-positive">
+            <Check size={11} color="#557255" />
+            <p className="font-body font-medium text-[10.5px] uppercase tracking-[0.14em] text-positive">
               All In Price — nothing added later
             </p>
           </div>
@@ -147,7 +147,7 @@ function SheetBody({
             <Row label="Pro discount" value={`-${formatCents(money.proDiscountCents)}`} positive />
           )}
           <div className="h-px my-2" style={{ backgroundColor: "#E7EEF6" }} />
-          <div className="flex justify-between font-body font-semibold text-[13.5px] text-navy">
+          <div className="flex justify-between font-body font-semibold text-[15px] text-navy">
             <span>Held on your card</span>
             <span>{formatCents(money.totalCents)}</span>
           </div>
@@ -158,7 +158,7 @@ function SheetBody({
           style={{ backgroundColor: "#EDF6FE", border: "1px solid #D4E8FA" }}
         >
           <Lock size={13} color="#3B9BE8" className="mt-0.5 shrink-0" />
-          <p className="font-body font-light text-[11px] leading-relaxed text-[#2E5578]">
+          <p className="font-body font-normal text-[13.5px] leading-relaxed text-[#2E5578]">
             This places a hold, not a charge. We take the payment when your session starts, so
             cancelling 24 hours ahead costs you nothing at all.
           </p>
@@ -168,7 +168,7 @@ function SheetBody({
 
         {error && (
           <p
-            className="font-body font-light text-[11.5px] leading-relaxed mt-3 rounded-xl p-3"
+            className="font-body font-normal text-[14px] leading-relaxed mt-3 rounded-xl p-3"
             style={{ backgroundColor: "#FEF2F0", border: "1px solid #F5C4BC", color: "#7A4A42" }}
             role="alert"
           >
@@ -181,7 +181,7 @@ function SheetBody({
         <PrimaryButton disabled={!stripe || busy} onClick={submit}>
           {busy ? "Holding…" : `Hold ${formatCents(money.totalCents)}`}
         </PrimaryButton>
-        <p className="text-center font-body font-light text-[10px] mt-2.5 text-ink-faint">
+        <p className="text-center font-body font-normal text-[12px] mt-2.5 text-ink-faint">
           Card details go straight to Stripe. They never touch our servers.
         </p>
       </div>
@@ -200,7 +200,7 @@ function Row({
 }) {
   return (
     <div
-      className={`flex justify-between font-body text-[12px] mb-1.5 ${positive ? "text-positive" : "text-ink-soft"}`}
+      className={`flex justify-between font-body text-[13.5px] mb-1.5 ${positive ? "text-positive" : "text-ink-soft"}`}
     >
       <span>{label}</span>
       <span className={positive ? "" : "text-navy"}>{value}</span>

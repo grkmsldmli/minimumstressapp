@@ -159,11 +159,11 @@ export function Discover({
           className="flex items-center justify-between px-6 py-2.5 press shrink-0"
           style={{ backgroundColor: "#16304E" }}
         >
-          <span className="font-body font-light text-[11px] text-white/70">
+          <span className="font-body font-normal text-[13.5px] text-white/70">
             Book instantly, no extra fee, with{" "}
             <span className="font-medium text-sky-soft">Pro</span>
           </span>
-          <span className="flex items-center gap-0.5 font-body text-[11px] font-medium text-white shrink-0">
+          <span className="flex items-center gap-0.5 font-body text-[13.5px] font-medium text-white shrink-0">
             Go Pro <ChevronRight size={12} />
           </span>
         </button>
@@ -181,7 +181,7 @@ export function Discover({
             </button>
             <div className="flex items-center gap-1.5">
               <GreetIcon size={11} color="#8FC6F5" />
-              <p className="font-body font-light text-[11px] tracking-wide text-white/70">
+              <p className="font-body font-normal text-[13.5px] tracking-wide text-white/70">
                 {greetingName ? `${greeting}, ${greetingName}` : greeting}
               </p>
             </div>
@@ -216,7 +216,7 @@ export function Discover({
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search by name, room type or what's in it"
             aria-label="Search spaces"
-            className="font-body font-light text-[12.5px] outline-none w-full bg-transparent text-white placeholder:text-white/50"
+            className="font-body font-normal text-[14px] outline-none w-full bg-transparent text-white placeholder:text-white/50"
           />
           {query && (
             <button
@@ -282,7 +282,7 @@ export function Discover({
           )}
 
           {locationError && (
-            <p className="px-6 mb-3 font-body font-light text-[11.5px] text-coral-deep">
+            <p className="px-6 mb-3 font-body font-normal text-[14px] text-coral-deep">
               {locationError}
             </p>
           )}
@@ -296,7 +296,7 @@ export function Discover({
           </SectionLabel>
 
           {visible.length === 0 ? (
-            <p className="px-6 font-body font-light text-[12.5px] text-ink-faint">
+            <p className="px-6 font-body font-normal text-[14px] text-ink-faint">
               No spaces listed yet.
             </p>
           ) : (
@@ -317,7 +317,7 @@ export function Discover({
           <button
             type="button"
             onClick={onGoLegal}
-            className="w-full text-center font-body font-light text-[11px] mt-6 press text-ink-ghost"
+            className="w-full text-center font-body font-normal text-[13.5px] mt-6 press text-ink-faint"
           >
             Terms &amp; Privacy
           </button>
@@ -363,7 +363,7 @@ function FilterChip({
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className="flex items-center gap-1.5 px-3.5 py-2 rounded-full whitespace-nowrap font-body text-[12px] press transition-colors"
+      className="flex items-center gap-1.5 px-3.5 py-2 rounded-full whitespace-nowrap font-body text-[13.5px] press transition-colors"
       style={{
         backgroundColor: active ? "#3B9BE8" : "#FFFFFF",
         color: active ? "#fff" : "#16304E",
@@ -384,7 +384,7 @@ function SectionLabel({
 }) {
   return (
     <p
-      className={`font-body font-medium text-[10.5px] uppercase tracking-[0.2em] mb-3 text-sky ${className}`}
+      className={`font-body font-medium text-[11px] uppercase tracking-[0.2em] mb-3 text-sky-text ${className}`}
     >
       {children}
     </p>
@@ -421,7 +421,7 @@ function FeaturedCard({
       >
         <CatIcon cat={space.category} size={24} color="rgba(255,255,255,0.92)" />
         <span
-          className="px-2 py-1 rounded-full font-body text-[9px] text-white"
+          className="px-2 py-1 rounded-full font-body text-[10.5px] text-white"
           style={{ backgroundColor: "rgba(255,255,255,0.18)", backdropFilter: "blur(6px)" }}
         >
           {roomTypeFor(space.category)}
@@ -430,15 +430,15 @@ function FeaturedCard({
       <div className="p-4 bg-white">
         <div className="flex items-baseline justify-between">
           <p className="font-display italic font-semibold text-[17px] text-navy">{space.name}</p>
-          <p className="font-body text-[12px] text-navy">
+          <p className="font-body text-[13.5px] text-navy">
             <span className="font-semibold">{formatCents(price)}</span>
             <span className="text-ink-faint">/hr</span>
           </p>
         </div>
-        <p className="font-body font-light text-[9.5px] mt-0.5 text-ink-ghost">
+        <p className="font-body font-normal text-[10.5px] mt-0.5 text-ink-faint">
           All fees included
         </p>
-        <p className="font-body font-light text-[11px] mt-0.5 text-ink-soft">
+        <p className="font-body font-normal text-[13.5px] mt-0.5 text-ink-soft">
           {roomTypeFor(space.category)} · {space.distanceLabel}
         </p>
       </div>
@@ -481,16 +481,16 @@ function SpaceRow({
         <CatIcon cat={space.category} size={18} color="rgba(255,255,255,0.92)" />
       </div>
       <div className="flex-1 min-w-0">
-        <p className="font-body font-medium text-[13.5px] text-navy">
+        <p className="font-body font-medium text-[15px] text-navy">
           {space.name} · {roomTypeFor(space.category)}
         </p>
-        <p className="font-body font-light text-[11.5px] mt-0.5 text-ink-soft truncate">
+        <p className="font-body font-normal text-[14px] mt-0.5 text-ink-soft truncate">
           {space.description}
         </p>
         <div className="mt-1">
           <RatingBadge summary={summariseAggregate(space.reviewCount, space.averageRating)} />
         </div>
-        <p className="font-body font-light text-[11px] mt-0.5 flex items-center gap-1 text-ink-faint">
+        <p className="font-body font-normal text-[13.5px] mt-0.5 flex items-center gap-1 text-ink-faint">
           {/*
             The measured distance when somebody has shared where they are,
             and the listing's own vague word when they have not. Never a
@@ -501,9 +501,9 @@ function SpaceRow({
         </p>
       </div>
       <div className="text-right shrink-0">
-        <p className="font-body font-semibold text-[13px] text-navy">{formatCents(price)}</p>
-        <p className="font-body font-light text-[8.5px] text-ink-ghost">incl. fees</p>
-        <ChevronRight size={14} color="#B9CBDD" className="ml-auto mt-0.5" />
+        <p className="font-body font-semibold text-[14.5px] text-navy">{formatCents(price)}</p>
+        <p className="font-body font-normal text-[10.5px] text-ink-faint">incl. fees</p>
+        <ChevronRight size={14} color="#8BA3BD" className="ml-auto mt-0.5" />
       </div>
     </button>
   );
@@ -556,19 +556,19 @@ function MapView({
               <CatIcon cat={active.category} size={18} color="rgba(255,255,255,0.92)" />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="font-body font-medium text-[13px] text-navy">
+              <p className="font-body font-medium text-[14.5px] text-navy">
                 {active.name} · {roomTypeFor(active.category)}
               </p>
-              <p className="font-body font-light text-[11px] mt-0.5 text-ink-soft">
+              <p className="font-body font-normal text-[13.5px] mt-0.5 text-ink-soft">
                 {active.distanceLabel} · {formatCents(browsePriceCents(active, isPro))}/hr{" "}
-                <span className="text-ink-ghost">incl. fees</span>
+                <span className="text-ink-faint">incl. fees</span>
               </p>
             </div>
             <button
               type="button"
               onClick={() => onOpen(active.id)}
-              className="px-3.5 py-2 rounded-full font-body font-medium text-[11.5px] text-white shrink-0 press"
-              style={{ backgroundColor: "#3B9BE8" }}
+              className="px-3.5 py-2 rounded-full font-body font-medium text-[14px] text-white shrink-0 press"
+              style={{ backgroundColor: "#2578C2" }}
             >
               View
             </button>

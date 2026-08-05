@@ -108,7 +108,7 @@ export function LocationMap({
         style={{ height, border: "1px solid #E7EEF6", backgroundColor: "#F1F6FB" }}
       >
         {!centre && (
-          <span className="font-body font-light text-[11px] text-ink-faint px-6 text-center">
+          <span className="font-body font-normal text-[13.5px] text-ink-faint px-6 text-center">
             Start typing an address above and pick it from the list.
           </span>
         )}
@@ -175,7 +175,7 @@ export function LocationMap({
 
         {/* Required by the tile provider's licence, and it is their work. */}
         <span
-          className="absolute bottom-0 right-0 px-1.5 py-0.5 font-body text-[8px] text-ink-faint"
+          className="absolute bottom-0 right-0 px-1.5 py-0.5 font-body text-[10.5px] text-ink-faint"
           style={{ backgroundColor: "rgba(255,255,255,0.75)" }}
         >
           © OpenStreetMap
@@ -188,7 +188,7 @@ export function LocationMap({
         difference between an obvious next step and a Continue button that is
         greyed out for no visible reason.
       */}
-      <p className="font-body font-light text-[11px] mt-2 text-ink-faint">
+      <p className="font-body font-normal text-[13.5px] mt-2 text-ink-faint">
         {point
           ? onPick && "Pin in the wrong spot? Tap the map to move it."
           : "Address edited — pick it from the list again to place the pin."}

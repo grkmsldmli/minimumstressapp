@@ -125,7 +125,7 @@ export function HostDashboard({
             <button
               type="button"
               onClick={onAddSpace}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-full font-body font-medium text-[11.5px] press text-white"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-full font-body font-medium text-[14px] press text-white"
               style={{ backgroundColor: "rgba(255,255,255,0.14)" }}
             >
               <Plus size={13} /> Add space
@@ -149,7 +149,7 @@ export function HostDashboard({
                 key={space.id}
                 type="button"
                 onClick={() => setActiveId(space.id)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full font-body text-[11.5px] whitespace-nowrap press text-white"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full font-body text-[14px] whitespace-nowrap press text-white"
                 style={{
                   backgroundColor: space.id === active.id ? "#3B9BE8" : "rgba(255,255,255,0.1)",
                   border: `1px solid ${space.id === active.id ? "#3B9BE8" : "rgba(255,255,255,0.18)"}`,
@@ -167,13 +167,13 @@ export function HostDashboard({
           </div>
         )}
 
-        <p className="font-body font-medium text-[10.5px] uppercase tracking-[0.2em] relative z-10 text-sky-soft">
+        <p className="font-body font-medium text-[11px] uppercase tracking-[0.2em] relative z-10 text-sky-soft">
           Host studio
         </p>
         <div className="mt-1 relative z-10">
           <Headline pre={`${active.name} —`} accent={roomTypeFor(active.category)} size={23} light />
         </div>
-        <p className="font-body font-light text-[11.5px] text-white/65 mt-1 relative z-10">
+        <p className="font-body font-normal text-[14px] text-white/65 mt-1 relative z-10">
           {pending
             ? "Under review — usually same day"
             : `${formatCents(active.hourlyRateCents)} an hour, yours in full`}
@@ -191,7 +191,7 @@ export function HostDashboard({
           <p className="font-display italic font-semibold text-[19px] text-navy">
             Checking your documents
           </p>
-          <p className="font-body font-light text-[12.5px] leading-relaxed mt-2 text-ink-soft">
+          <p className="font-body font-normal text-[14px] leading-relaxed mt-2 text-ink-soft">
             We&apos;re confirming your sublease proof and any insurance you added. Once it clears,
             this space goes live and starts taking bookings.
           </p>
@@ -210,24 +210,24 @@ export function HostDashboard({
               }}
             >
               <div>
-                <p className="font-body text-[10px] uppercase tracking-wide text-ink-faint">
+                <p className="font-body text-[10.5px] uppercase tracking-wide text-ink-faint">
                   This month
                 </p>
                 <p className="font-display italic font-semibold text-[26px] mt-1 text-navy">
                   {formatCents(monthCents)}
                 </p>
-                <p className="font-body text-[10.5px] mt-0.5 flex items-center gap-1 text-sky">
+                <p className="font-body text-[13.5px] mt-0.5 flex items-center gap-1 text-sky-text">
                   View earnings <ChevronRight size={11} />
                 </p>
               </div>
               <div>
-                <p className="font-body text-[10px] uppercase tracking-wide text-ink-faint">
+                <p className="font-body text-[10.5px] uppercase tracking-wide text-ink-faint">
                   Hours booked
                 </p>
                 <p className="font-display italic font-semibold text-[26px] mt-1 text-navy">
                   {hoursFilled}
                 </p>
-                <p className="font-body font-light text-[10.5px] mt-0.5 text-ink-faint">
+                <p className="font-body font-normal text-[13.5px] mt-0.5 text-ink-faint">
                   {hoursFilled === 0 ? "Nothing booked yet" : "So far this month"}
                 </p>
               </div>
@@ -236,13 +236,13 @@ export function HostDashboard({
 
           <div className="flex-1 overflow-y-auto px-6 pt-6 pb-8">
             <div className="flex items-center justify-between mb-3">
-              <p className="font-body font-medium text-[10.5px] uppercase tracking-[0.2em] text-sky">
+              <p className="font-body font-medium text-[11px] uppercase tracking-[0.2em] text-sky-text">
                 Upcoming
               </p>
               <button
                 type="button"
                 onClick={() => onEditHours(active.id)}
-                className="flex items-center gap-1 font-body text-[12px] font-medium press text-coral"
+                className="flex items-center gap-1 font-body text-[13.5px] font-medium press text-coral"
               >
                 <Plus size={13} /> Open more hours
               </button>
@@ -253,7 +253,7 @@ export function HostDashboard({
                 className="rounded-2xl p-4"
                 style={{ backgroundColor: "#F4F8FC", border: "1px solid #E7EEF6" }}
               >
-                <p className="font-body font-light text-[11.5px] leading-relaxed text-ink-soft">
+                <p className="font-body font-normal text-[14px] leading-relaxed text-ink-soft">
                   {past.length > 0
                     ? "Nothing booked ahead right now. Opening more hours is the single thing that helps most, since practitioners search by time before anything else."
                     : "No bookings yet. That's normal for a new listing — opening more hours is the single thing that helps most, since practitioners search by time before anything else."}
@@ -274,7 +274,7 @@ export function HostDashboard({
 
             {past.length > 0 && (
               <>
-                <p className="font-body font-medium text-[10.5px] uppercase tracking-[0.2em] text-sky mt-7 mb-3">
+                <p className="font-body font-medium text-[11px] uppercase tracking-[0.2em] text-sky-text mt-7 mb-3">
                   Past
                 </p>
                 <div className="flex flex-col gap-2.5">
@@ -343,7 +343,7 @@ function HostEmptyState({
             <LogoBadge size={34} />
           </div>
         </div>
-        <p className="font-body font-medium text-[10.5px] uppercase tracking-[0.2em] mt-4 relative z-10 text-sky-soft">
+        <p className="font-body font-medium text-[11px] uppercase tracking-[0.2em] mt-4 relative z-10 text-sky-soft">
           Host studio
         </p>
         <div className="mt-1 relative z-10">
@@ -361,15 +361,15 @@ function HostEmptyState({
         <p className="font-display italic font-semibold text-[19px] text-navy">
           No spaces listed yet
         </p>
-        <p className="font-body font-light text-[12.5px] leading-relaxed mt-2 max-w-[240px] text-ink-soft">
+        <p className="font-body font-normal text-[14px] leading-relaxed mt-2 max-w-[240px] text-ink-soft">
           Add your room&apos;s location, a rate, and a couple of photos — it takes about two
           minutes.
         </p>
         <button
           type="button"
           onClick={onAddSpace}
-          className="mt-6 px-7 py-3.5 rounded-full font-body font-medium text-[13.5px] text-white press sheen-wrap"
-          style={{ backgroundColor: "#3B9BE8", boxShadow: "0 12px 28px -8px rgba(59,155,232,0.5)" }}
+          className="mt-6 px-7 py-3.5 rounded-full font-body font-medium text-[15px] text-white press sheen-wrap"
+          style={{ backgroundColor: "#2578C2", boxShadow: "0 12px 28px -8px rgba(37,120,194,0.45)" }}
         >
           List your first space
           <span className="sheen" aria-hidden="true" />
@@ -411,7 +411,7 @@ export function EditAvailability({
         >
           <ArrowLeft size={16} color="#fff" />
         </button>
-        <p className="font-body font-medium text-[10.5px] uppercase tracking-[0.2em] mt-4 relative z-10 text-sky-soft">
+        <p className="font-body font-medium text-[11px] uppercase tracking-[0.2em] mt-4 relative z-10 text-sky-soft">
           {space.name}
         </p>
         <div className="mt-1 relative z-10">
@@ -420,7 +420,7 @@ export function EditAvailability({
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 pt-5 pb-8">
-        <p className="font-body font-light text-[11px] mb-3 text-ink-faint">
+        <p className="font-body font-normal text-[13.5px] mb-3 text-ink-faint">
           Turn on the days you&apos;re open. This repeats every week until you change it again.
         </p>
         <WeekSchedule blocks={blocks} onChange={setBlocks} />
@@ -534,11 +534,11 @@ export function Earnings({
           <StatCard label="Year to date" value={formatCents(yearCents)} />
         </div>
 
-        <p className="font-body font-medium text-[10.5px] uppercase tracking-[0.2em] mt-7 mb-3 text-sky">
+        <p className="font-body font-medium text-[11px] uppercase tracking-[0.2em] mt-7 mb-3 text-sky-text">
           Transaction history
         </p>
         {thisYear.length === 0 ? (
-          <p className="font-body font-light text-[12.5px] text-ink-faint">Nothing paid out yet.</p>
+          <p className="font-body font-normal text-[14px] text-ink-faint">Nothing paid out yet.</p>
         ) : (
           <div className="flex flex-col gap-2">
             {thisYear.map((booking) => (
@@ -548,10 +548,10 @@ export function Earnings({
                 style={{ backgroundColor: "#F9FAFB" }}
               >
                 <div className="min-w-0">
-                  <p className="font-body font-medium text-[13px] text-navy truncate">
+                  <p className="font-body font-medium text-[14.5px] text-navy truncate">
                     {booking.practitionerName}
                   </p>
-                  <p className="font-body font-light text-[11px] text-ink-faint truncate">
+                  <p className="font-body font-normal text-[13.5px] text-ink-faint truncate">
                     {nameFor(booking.spaceId)} ·{" "}
                     {booking.startsAt.toLocaleDateString("en-US", {
                       month: "short",
@@ -559,7 +559,7 @@ export function Earnings({
                     })}
                   </p>
                 </div>
-                <p className="font-body font-semibold text-[13px] text-navy shrink-0">
+                <p className="font-body font-semibold text-[14.5px] text-navy shrink-0">
                   +{formatCents(booking.netCents)}
                 </p>
               </div>
@@ -567,14 +567,14 @@ export function Earnings({
           </div>
         )}
 
-        <p className="font-body font-medium text-[10.5px] uppercase tracking-[0.2em] mt-7 mb-3 text-sky">
+        <p className="font-body font-medium text-[11px] uppercase tracking-[0.2em] mt-7 mb-3 text-sky-text">
           Tax documents
         </p>
         <div
           className="rounded-2xl p-4"
           style={{ backgroundColor: "#F4F8FC", border: "1px solid #E7EEF6" }}
         >
-          <p className="font-body font-light text-[11.5px] leading-relaxed text-ink-muted">
+          <p className="font-body font-normal text-[14px] leading-relaxed text-ink-muted">
             {meets1099K
               ? `You've passed $${FORM_1099K_DOLLARS.toLocaleString()} across ${FORM_1099K_TRANSACTIONS}+ bookings this year, so a 1099-K will be issued automatically at year-end.`
               : `A 1099-K is issued only above $${FORM_1099K_DOLLARS.toLocaleString()} and ${FORM_1099K_TRANSACTIONS} bookings in a year — both, not either. You're at ${formatCents(yearCents)} across ${thisYear.length}, so no form is due. Your state may set a lower threshold.`}
@@ -583,7 +583,7 @@ export function Earnings({
             type="button"
             onClick={exportCsv}
             disabled={thisYear.length === 0}
-            className="w-full mt-3 py-3 rounded-xl font-body font-medium text-[12.5px] press"
+            className="w-full mt-3 py-3 rounded-xl font-body font-medium text-[14px] press"
             style={{
               backgroundColor: thisYear.length === 0 ? "#E9F0F7" : "#3B9BE8",
               color: thisYear.length === 0 ? "#8CA3BD" : "#fff",
@@ -603,7 +603,7 @@ function StatCard({ label, value }: { label: string; value: string }) {
       className="rounded-2xl p-4"
       style={{ backgroundColor: "#F4F8FC", border: "1px solid #E7EEF6" }}
     >
-      <p className="font-body text-[10px] uppercase tracking-wide text-ink-faint">{label}</p>
+      <p className="font-body text-[10.5px] uppercase tracking-wide text-ink-faint">{label}</p>
       <p className="font-display italic font-semibold text-[22px] mt-1 text-navy">{value}</p>
     </div>
   );
@@ -699,20 +699,20 @@ export function HostProfile({
               style={{ backgroundColor: "#FFF8F1", border: "1px solid #F5DFC4" }}
             >
               <div className="flex items-center gap-2">
-                <ShieldAlert size={15} color="#B08D4F" />
-                <span className="font-body font-medium text-[13px] text-navy">
+                <ShieldAlert size={15} color="#8B6C37" />
+                <span className="font-body font-medium text-[14.5px] text-navy">
                   Payouts not set up
                 </span>
               </div>
-              <p className="font-body font-light text-[11.5px] leading-relaxed mt-1.5 text-[#7A5B33]">
+              <p className="font-body font-normal text-[14px] leading-relaxed mt-1.5 text-[#7A5B33]">
                 Your space can still take bookings, but nothing can reach your bank until this is
                 done. Stripe collects your bank and identity details directly — we never see them.
               </p>
               <button
                 type="button"
                 onClick={onConnectPayouts}
-                className="w-full mt-3 py-3 rounded-xl font-body font-medium text-[12.5px] text-white press"
-                style={{ backgroundColor: "#3B9BE8" }}
+                className="w-full mt-3 py-3 rounded-xl font-body font-medium text-[14px] text-white press"
+                style={{ backgroundColor: "#2578C2" }}
               >
                 Set up payouts
               </button>
@@ -723,7 +723,7 @@ export function HostProfile({
           <div className="rounded-xl bg-white p-3.5" style={{ border: "1px solid #E7EEF6" }}>
             <div className="flex items-center gap-3 mb-3">
               <Wallet size={15} color="#3B9BE8" />
-              <span className="font-body font-medium text-[13px] text-navy">Payout schedule</span>
+              <span className="font-body font-medium text-[14.5px] text-navy">Payout schedule</span>
             </div>
             <div className="flex gap-2">
               {(
@@ -745,10 +745,10 @@ export function HostProfile({
                       border: `1px solid ${selected ? "#3B9BE8" : "#DCE7F2"}`,
                     }}
                   >
-                    <span className="block font-body font-medium text-[12px] text-navy">
+                    <span className="block font-body font-medium text-[13.5px] text-navy">
                       {option.label}
                     </span>
-                    <span className="block font-body font-light text-[10px] mt-0.5 text-ink-faint">
+                    <span className="block font-body font-normal text-[12px] mt-0.5 text-ink-faint">
                       {option.sub}
                     </span>
                   </button>
@@ -762,7 +762,7 @@ export function HostProfile({
               moving money early does — so it is stated as a number they can
               check against their bank.
             */}
-            <p className="font-body font-light text-[10.5px] leading-relaxed mt-2.5 text-ink-faint">
+            <p className="font-body font-normal text-[13.5px] leading-relaxed mt-2.5 text-ink-faint">
               {selectedSpeed.arrival}
               {selectedSpeed.costLine ? ` — ${selectedSpeed.costLine}` : "."}
             </p>
@@ -840,16 +840,16 @@ function HostBookingRow({
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3 min-w-0">
           <div
-            className="w-10 h-10 rounded-full flex items-center justify-center font-display italic font-semibold text-[14px] shrink-0"
+            className="w-10 h-10 rounded-full flex items-center justify-center font-display italic font-semibold text-[15.5px] shrink-0"
             style={{ backgroundColor: "#EDF6FE", color: "#16304E" }}
           >
             {booking.practitionerName[0]}
           </div>
           <div className="min-w-0">
-            <p className="font-body font-medium text-[13px] text-navy truncate">
+            <p className="font-body font-medium text-[14.5px] text-navy truncate">
               {booking.practitionerName}
             </p>
-            <p className="font-body font-light text-[11px] text-ink-soft truncate">
+            <p className="font-body font-normal text-[13.5px] text-ink-soft truncate">
               {booking.practitionerCraft} ·{" "}
               {booking.startsAt.toLocaleDateString("en-US", { month: "short", day: "numeric" })}{" "}
               {booking.startsAt.toLocaleTimeString("en-US", {
@@ -861,7 +861,7 @@ function HostBookingRow({
         </div>
 
         <p
-          className="font-body font-semibold text-[14px] shrink-0"
+          className="font-body font-semibold text-[15.5px] shrink-0"
           style={{ color: cancelled ? "#8CA3BD" : "#16304E" }}
         >
           {cancelled ? "—" : `+${formatCents(booking.netCents)}`}
@@ -869,7 +869,7 @@ function HostBookingRow({
       </div>
 
       {past && cancelled && (
-        <p className="font-body font-light text-[11px] mt-2 text-ink-faint">
+        <p className="font-body font-normal text-[13.5px] mt-2 text-ink-faint">
           Cancelled by {booking.status === "cancelled_by_host" ? "you" : "the practitioner"}.
         </p>
       )}
@@ -882,7 +882,7 @@ function HostBookingRow({
         <button
           type="button"
           onClick={onMessage}
-          className="w-full mt-3 py-2.5 rounded-xl font-body font-medium text-[11.5px] press flex items-center justify-center gap-1.5"
+          className="w-full mt-3 py-2.5 rounded-xl font-body font-medium text-[14px] press flex items-center justify-center gap-1.5"
           style={{ border: "1px solid #DCE7F2", color: "#16304E" }}
         >
           <MessageCircle size={13} /> Message
@@ -893,7 +893,7 @@ function HostBookingRow({
         <button
           type="button"
           onClick={onReview}
-          className="w-full mt-3 py-2.5 rounded-xl font-body font-medium text-[11.5px] press"
+          className="w-full mt-3 py-2.5 rounded-xl font-body font-medium text-[14px] press"
           style={{ border: "1px solid #DCE7F2", color: "#16304E" }}
         >
           Leave a review

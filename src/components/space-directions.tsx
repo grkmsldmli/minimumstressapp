@@ -76,14 +76,14 @@ export function SpaceDirections({
   return (
     <div>
       <p
-        className={`flex items-start gap-2 font-body font-light text-[11.5px] leading-relaxed ${muted}`}
+        className={`flex items-start gap-2 font-body font-normal text-[14px] leading-relaxed ${muted}`}
       >
         <MapPin size={12} className="mt-0.5 shrink-0" color={dark ? "#8FC6F5" : "#3B9BE8"} />
         {access.addressLine}
       </p>
 
       {access.entryInstructions && (
-        <p className={`font-body font-light text-[11px] mt-1.5 leading-relaxed ${faint}`}>
+        <p className={`font-body font-normal text-[13.5px] mt-1.5 leading-relaxed ${faint}`}>
           {access.entryInstructions}
         </p>
       )}
@@ -111,11 +111,11 @@ export function SpaceDirections({
           }}
           target="_blank"
           rel="noopener noreferrer"
-          className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-full font-body font-medium text-[12px] press"
+          className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-full font-body font-medium text-[13.5px] press"
           style={
             dark
               ? { backgroundColor: "rgba(255,255,255,0.14)", color: "#fff" }
-              : { backgroundColor: "#3B9BE8", color: "#fff" }
+              : { backgroundColor: "#2578C2", color: "#fff" }
           }
         >
           <Navigation size={12} />
@@ -126,7 +126,7 @@ export function SpaceDirections({
           type="button"
           onClick={() => void copy()}
           aria-label="Copy address"
-          className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-full font-body font-medium text-[12px] press"
+          className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-full font-body font-medium text-[13.5px] press"
           style={
             dark
               ? { backgroundColor: "rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.75)" }

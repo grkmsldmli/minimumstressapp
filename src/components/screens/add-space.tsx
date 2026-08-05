@@ -191,15 +191,15 @@ export function AddSpace({
           <div className="mt-6">
             <Headline pre="Space" accent="listed." size={26} light />
           </div>
-          <p className="font-body font-light text-[13px] text-white/70 leading-relaxed mt-3">
+          <p className="font-body font-normal text-[14.5px] text-white/70 leading-relaxed mt-3">
             Your listing is in. We&apos;re reviewing your documents — usually the same day — and
             we&apos;ll let you know the moment a practitioner books an open hour.
           </p>
           <button
             type="button"
             onClick={onBack}
-            className="mt-7 px-8 py-3.5 rounded-full font-body font-medium text-[13px] text-white press"
-            style={{ backgroundColor: "#3B9BE8" }}
+            className="mt-7 px-8 py-3.5 rounded-full font-body font-medium text-[14.5px] text-white press"
+            style={{ backgroundColor: "#2578C2" }}
           >
             Back to dashboard
           </button>
@@ -227,7 +227,7 @@ export function AddSpace({
         <div className="mt-3 relative z-10">
           <Headline pre="List a" accent="new space." size={22} light />
         </div>
-        <p className="font-body font-light text-[11px] text-white/55 mt-1 relative z-10">
+        <p className="font-body font-normal text-[13.5px] text-white/55 mt-1 relative z-10">
           Step {step} of 3 · {STEP_LABELS[step - 1]}
         </p>
         <div className="flex gap-1.5 mt-3 relative z-10">
@@ -268,7 +268,7 @@ export function AddSpace({
                 setPoint({ lat: picked.lat, lng: picked.lng });
               }}
             />
-            <p className="font-body font-light text-[11px] mt-2 text-ink-faint">
+            <p className="font-body font-normal text-[13.5px] mt-2 text-ink-faint">
               Only shown to a practitioner once they&apos;ve booked — never public.
             </p>
 
@@ -293,7 +293,7 @@ export function AddSpace({
             <div className="grid grid-cols-2 gap-3 mt-5">
               <div>
                 <FieldLabel>
-                  Hourly rate <span className="text-ink-ghost">(you keep this)</span>
+                  Hourly rate <span className="text-ink-faint">(you keep this)</span>
                 </FieldLabel>
                 <div
                   className="flex items-center gap-2 px-4 py-3 rounded-xl"
@@ -309,12 +309,12 @@ export function AddSpace({
                     onChange={(e) => setRate(e.target.value)}
                     placeholder="45"
                     aria-label="Hourly rate in dollars"
-                    className="font-body text-[13px] outline-none w-full text-navy"
+                    className="font-body text-[14.5px] outline-none w-full text-navy"
                   />
                 </div>
                 <p
-                  className="font-body text-[10.5px] mt-1.5"
-                  style={{ color: rateIsNumber ? "#3B9BE8" : "#B9CBDD" }}
+                  className="font-body text-[13.5px] mt-1.5"
+                  style={{ color: rateIsNumber ? "#2670B0" : "#5D768F" }}
                 >
                   {rateIsNumber
                     ? `Lists at ${formatCents(quote({ hostRateCents: rateCents, isInstant: false, isPro: false }).totalCents)}/hr`
@@ -326,7 +326,7 @@ export function AddSpace({
                   than what I typed", and it was worth nothing three scrolls
                   below the moment that question occurs.
                 */}
-                <p className="font-body font-light text-[10.5px] leading-relaxed mt-1.5 text-ink-faint">
+                <p className="font-body font-normal text-[13.5px] leading-relaxed mt-1.5 text-ink-faint">
                   Yours in full. Our fee is added on top for the practitioner,
                   never taken out of this.
                 </p>
@@ -346,7 +346,7 @@ export function AddSpace({
                     onChange={(e) => setCapacity(e.target.value)}
                     placeholder="3"
                     aria-label="Capacity"
-                    className="font-body text-[13px] outline-none w-full text-navy"
+                    className="font-body text-[14.5px] outline-none w-full text-navy"
                   />
                 </div>
               </div>
@@ -354,7 +354,7 @@ export function AddSpace({
 
             {rateIsNumber && !isViableHostRate(rateCents) && (
               <p
-                className="font-body font-light text-[11px] mt-2 rounded-xl p-3 leading-relaxed"
+                className="font-body font-normal text-[13.5px] mt-2 rounded-xl p-3 leading-relaxed"
                 style={{ backgroundColor: "#FEF2F0", border: "1px solid #F5C4BC", color: "#7A4A42" }}
               >
                 A rate this low costs more to process than it earns. The minimum is{" "}
@@ -387,10 +387,10 @@ export function AddSpace({
               }
               aria-label="Entry instructions"
               rows={3}
-              className="w-full mt-3 px-4 py-3 rounded-xl font-body text-[13px] outline-none resize-none text-navy"
+              className="w-full mt-3 px-4 py-3 rounded-xl font-body text-[14.5px] outline-none resize-none text-navy"
               style={{ border: "1px solid #DCE7F2" }}
             />
-            <p className="font-body font-light text-[11px] mt-2 text-ink-faint">
+            <p className="font-body font-normal text-[13.5px] mt-2 text-ink-faint">
               Shared with the practitioner shortly before their session, never publicly.
             </p>
           </div>
@@ -407,7 +407,7 @@ export function AddSpace({
                 <AddMediaTile label={media.length === 0 ? "Cover" : "Add"} onPick={addMedia} />
               )}
             </div>
-            <p className="font-body font-light text-[11px] mt-2 text-ink-faint">
+            <p className="font-body font-normal text-[13.5px] mt-2 text-ink-faint">
               At least one photo or video to continue — up to {MAX_MEDIA}, mixed freely.
             </p>
 
@@ -466,7 +466,7 @@ export function AddSpace({
             <SectionLabel className="mt-6">
               House rules <OptionalTag />
             </SectionLabel>
-            <p className="font-body font-light text-[11px] mb-3 text-ink-faint">
+            <p className="font-body font-normal text-[13.5px] mb-3 text-ink-faint">
               Anything a practitioner needs to know before they book. Shown on your listing, not
               sprung on them afterwards.
             </p>
@@ -501,10 +501,10 @@ export function AddSpace({
               aria-label="Other house rules"
               rows={3}
               maxLength={500}
-              className="w-full px-4 py-3 rounded-xl font-body text-[13px] outline-none resize-none text-navy"
+              className="w-full px-4 py-3 rounded-xl font-body text-[14.5px] outline-none resize-none text-navy"
               style={{ border: "1px solid #DCE7F2" }}
             />
-            <p className="font-body font-light text-[11px] mt-2 text-ink-faint">
+            <p className="font-body font-normal text-[13.5px] mt-2 text-ink-faint">
               For what is genuinely particular to your room. Rules must be about the space and how
               it is used — not about who may use it.
             </p>
@@ -512,7 +512,7 @@ export function AddSpace({
             <SectionLabel className="mt-6">
               Availability <OptionalTag />
             </SectionLabel>
-            <p className="font-body font-light text-[11px] mb-3 text-ink-faint">
+            <p className="font-body font-normal text-[13.5px] mb-3 text-ink-faint">
               Turn on the days you&apos;re open. Each day can hold several separate blocks, so you
               can keep the gaps for your own use.
             </p>
@@ -576,7 +576,7 @@ export function AddSpace({
               >
                 {agreed && <Check size={12} color="#fff" />}
               </span>
-              <span className="font-body font-light text-[11.5px] leading-relaxed text-[#2E5578]">
+              <span className="font-body font-normal text-[14px] leading-relaxed text-[#2E5578]">
                 <ShieldCheck size={12} className="inline mr-1 -mt-0.5" color="#3B9BE8" />
                 This space is legally available for paid wellness sessions, and I&apos;m responsible
                 for anything damaged during a booking.
@@ -587,25 +587,25 @@ export function AddSpace({
               className="mt-5 rounded-2xl p-4"
               style={{ backgroundColor: "#F9FAFB", border: "1px solid #E7EEF6" }}
             >
-              <p className="font-body font-medium text-[11px] uppercase tracking-wide mb-2 text-ink-faint">
+              <p className="font-body font-medium text-[13.5px] uppercase tracking-wide mb-2 text-ink-faint">
                 You&apos;re about to list
               </p>
-              <p className="font-body font-medium text-[13px] text-navy">
+              <p className="font-body font-medium text-[14.5px] text-navy">
                 {name.trim() || "Untitled space"}
               </p>
-              <p className="font-body font-light text-[11.5px] mt-0.5 text-ink-soft">
+              <p className="font-body font-normal text-[14px] mt-0.5 text-ink-soft">
                 {CATEGORIES.find((c) => c.key === category)?.roomType} · fits {capacity || "?"}
               </p>
               <div className="h-px my-3" style={{ backgroundColor: "#E7EEF6" }} />
               <div className="flex items-center justify-between">
-                <span className="font-body text-[11.5px] text-ink-soft">You keep</span>
-                <span className="font-body font-semibold text-[15px] text-navy">
+                <span className="font-body text-[14px] text-ink-soft">You keep</span>
+                <span className="font-body font-semibold text-[16.5px] text-navy">
                   {formatCents(rateCents || 0)}/hr
                 </span>
               </div>
               <div className="flex items-center justify-between mt-1">
-                <span className="font-body text-[11.5px] text-ink-soft">Practitioners see</span>
-                <span className="font-body text-[12.5px] text-ink-faint">
+                <span className="font-body text-[14px] text-ink-soft">Practitioners see</span>
+                <span className="font-body text-[14px] text-ink-faint">
                   {rateIsNumber
                     ? formatCents(
                         quote({
@@ -630,7 +630,7 @@ export function AddSpace({
             style={{ backgroundColor: "#FEF2F0", border: "1px solid #F6D5D0" }}
           >
             <AlertTriangle size={13} color="#C4503F" className="mt-0.5 shrink-0" />
-            <p className="font-body font-light text-[11.5px] leading-relaxed"
+            <p className="font-body font-normal text-[14px] leading-relaxed"
               style={{ color: "#C4503F" }}>
               {submitError}
             </p>
@@ -661,7 +661,7 @@ function SectionLabel({
 }) {
   return (
     <p
-      className={`font-body font-medium text-[10.5px] uppercase tracking-[0.2em] mb-2 text-sky ${className}`}
+      className={`font-body font-medium text-[11px] uppercase tracking-[0.2em] mb-2 text-sky-text ${className}`}
     >
       {children}
     </p>
@@ -676,12 +676,12 @@ function FieldLabel({
   className?: string;
 }) {
   return (
-    <p className={`font-body text-[11px] mb-1.5 text-ink-soft ${className}`}>{children}</p>
+    <p className={`font-body text-[13.5px] mb-1.5 text-ink-soft ${className}`}>{children}</p>
   );
 }
 
 function OptionalTag() {
-  return <span className="normal-case font-light text-ink-ghost">— optional</span>;
+  return <span className="normal-case font-normal text-ink-faint">— optional</span>;
 }
 
 function TextInput({
@@ -699,7 +699,7 @@ function TextInput({
       onChange={(e) => onChange(e.target.value)}
       placeholder={placeholder}
       aria-label={placeholder}
-      className="w-full px-4 py-3 rounded-xl font-body text-[13px] outline-none text-navy"
+      className="w-full px-4 py-3 rounded-xl font-body text-[14.5px] outline-none text-navy"
       style={{ border: "1px solid #DCE7F2" }}
     />
   );
@@ -719,7 +719,7 @@ function Chip({
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full font-body text-[12px] press"
+      className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full font-body text-[13.5px] press"
       style={{
         backgroundColor: active ? "#3B9BE8" : "#FFFFFF",
         color: active ? "#fff" : "#16304E",

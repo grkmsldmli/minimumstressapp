@@ -45,7 +45,7 @@ export function DeleteAccount({ onDelete }: { onDelete: () => Promise<void> }) {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="w-full flex items-center justify-center gap-1.5 py-3 rounded-xl font-body text-[12px] press text-ink-faint"
+        className="w-full flex items-center justify-center gap-1.5 py-3 rounded-xl font-body text-[13.5px] press text-ink-faint"
       >
         <Trash2 size={13} /> Delete my account
       </button>
@@ -60,18 +60,18 @@ export function DeleteAccount({ onDelete }: { onDelete: () => Promise<void> }) {
       <div className="flex items-start gap-2.5">
         <AlertTriangle size={15} color="#C4503F" className="mt-0.5 shrink-0" />
         <div className="min-w-0">
-          <p className="font-body font-medium text-[13px] text-coral-deep">
+          <p className="font-body font-medium text-[14.5px] text-coral-deep">
             This cannot be undone
           </p>
-          <p className="font-body font-light text-[11.5px] mt-1.5 leading-relaxed text-ink-soft">
+          <p className="font-body font-normal text-[14px] mt-1.5 leading-relaxed text-ink-soft">
             Your documents, photos, phone number and emergency contact are deleted. Your name comes
             off your reviews and your bookings.
           </p>
-          <p className="font-body font-light text-[11.5px] mt-2 leading-relaxed text-ink-soft">
+          <p className="font-body font-normal text-[14px] mt-2 leading-relaxed text-ink-soft">
             Completed bookings themselves are kept as financial records — they belong to the other
             side too, and deleting them would take their income history with them.
           </p>
-          <p className="font-body font-light text-[11.5px] mt-2 leading-relaxed text-ink-faint">
+          <p className="font-body font-normal text-[14px] mt-2 leading-relaxed text-ink-faint">
             If you have a session still to come, cancel it first.
           </p>
         </div>
@@ -87,12 +87,12 @@ export function DeleteAccount({ onDelete }: { onDelete: () => Promise<void> }) {
           placeholder="Type DELETE to confirm"
           aria-label="Type DELETE to confirm"
           autoComplete="off"
-          className="font-body text-[13px] outline-none w-full text-navy bg-transparent"
+          className="font-body text-[14.5px] outline-none w-full text-navy bg-transparent"
         />
       </div>
 
       {error && (
-        <p className="font-body font-light text-[11.5px] mt-2.5 leading-relaxed text-coral-deep">
+        <p className="font-body font-normal text-[14px] mt-2.5 leading-relaxed text-coral-deep">
           {error}
         </p>
       )}
@@ -105,7 +105,7 @@ export function DeleteAccount({ onDelete }: { onDelete: () => Promise<void> }) {
             setTyped("");
             setError(null);
           }}
-          className="flex-1 py-2.5 rounded-full font-body font-medium text-[12px] press bg-white"
+          className="flex-1 py-2.5 rounded-full font-body font-medium text-[13.5px] press bg-white"
           style={{ border: "1px solid #DCE7F2", color: "#16304E" }}
         >
           Keep my account
@@ -114,7 +114,7 @@ export function DeleteAccount({ onDelete }: { onDelete: () => Promise<void> }) {
           type="button"
           onClick={() => void run()}
           disabled={!confirmed || busy}
-          className="flex-1 py-2.5 rounded-full font-body font-medium text-[12px] press"
+          className="flex-1 py-2.5 rounded-full font-body font-medium text-[13.5px] press"
           style={{
             backgroundColor: confirmed && !busy ? "#C4503F" : "#F0D8D4",
             color: "#fff",

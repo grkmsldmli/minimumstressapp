@@ -6,17 +6,56 @@
   --color-navy-deep: #0e2138;
   --color-navy-lift: #1e4066;
   --color-sky: #3b9be8;
+  /*
+   * The same blue, dark enough to be read as words.
+   *
+   * #3b9be8 is the brand and it stays the brand — on buttons, icons and
+   * fills, where it is a surface and its contrast is measured against what
+   * sits on top of it. As *text* on white it measures 2.98:1, and the section
+   * labels across the app were written in it. Anything the eye has to resolve
+   * letter by letter uses this instead: 5.2:1 on white and still above 4.5 on
+   * both tinted surfaces, so it holds wherever a card is placed.
+   */
+  --color-sky-text: #2670b0;
+  /*
+   * The fill under white lettering, which is a different problem again.
+   *
+   * White on #3b9be8 measures 2.98:1 — the app's primary action, the one
+   * button on every screen somebody is meant to press. Contrast on a filled
+   * button is between the label and the fill, so the fill has to carry it.
+   * Deep enough for 4.6:1, shallow enough that it still reads as the brand
+   * blue rather than as navy.
+   *
+   * Three blues, each with one job: --color-sky fills and draws where nothing
+   * sits on top, --color-sky-text is read as words, --color-sky-cta is
+   * pressed. Mixing them up is what produced both failures.
+   */
+  --color-sky-cta: #2578c2;
   --color-sky-soft: #8fc6f5;
   --color-sky-pale: #bae0fa;
   --color-coral: #f2695c;
   --color-coral-soft: #f2a79e;
 
-  /* Ink and surfaces, lifted from the prototype's repeated literals */
+  /*
+   * Ink, and every step of it readable.
+   *
+   * The scale came off the prototype, where it was chosen by eye on a desktop
+   * monitor. Measured against white it did not hold up: ink-soft — the colour
+   * most of the app's body text is written in — sat at 3.87:1, under the 4.5:1
+   * that WCAG asks for, and ink-faint at 2.60:1. On a phone in daylight that
+   * is the difference between reading a sentence and guessing at it.
+   *
+   * Darkened along the same blue, so nothing changes character; only the
+   * contrast does. The four levels used for real text now measure 13.4, 8.3,
+   * 6.1 and 5.4 to one, each of them clearing 4.5 on the tinted card
+   * surfaces too, not only against pure white. Ghost stays where it is and stays out of prose — it is
+   * for placeholder text and disabled controls, which is what it was for.
+   */
   --color-ink: #16304e;
-  --color-ink-muted: #3d5570;
-  --color-ink-soft: #6b84a0;
-  --color-ink-faint: #8ca3bd;
-  --color-ink-ghost: #b9cbdd;
+  --color-ink-muted: #3a5069;
+  --color-ink-soft: #4d6480;
+  --color-ink-faint: #566d85;
+  --color-ink-ghost: #8ba3bd;
   --color-line: #e7eef6;
   --color-line-strong: #dce7f2;
   --color-surface: #f4f8fc;
@@ -24,13 +63,13 @@
   --color-surface-blue-line: #d4e8fa;
 
   /* Semantic accents */
-  --color-positive: #5e7d5e;
+  --color-positive: #557255;
   --color-positive-bg: #eff4ec;
   --color-positive-line: #dce6d6;
-  --color-warn: #b08d4f;
+  --color-warn: #8b6c37;
   --color-warn-bg: #fff8f1;
   --color-warn-line: #f5dfc4;
-  --color-danger: #c05a4b;
+  --color-danger: #b45143;
   --color-danger-bg: #fef2f0;
   --color-danger-line: #f5c4bc;
 

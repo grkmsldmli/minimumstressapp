@@ -105,7 +105,7 @@ export function Wordmark({ size = 13 }: { size?: number }) {
   return (
     <div className="flex items-center gap-1.5">
       <span
-        className="font-body font-semibold tracking-[0.22em] text-sky"
+        className="font-body font-semibold tracking-[0.22em] text-sky-text"
         style={{ fontSize: size }}
       >
         MINIMUM
@@ -137,7 +137,7 @@ export function Headline({
       className={`font-display leading-[1.22] font-semibold ${light ? "text-white" : "text-navy"}`}
       style={{ fontSize: size }}
     >
-      {pre} <em className={light ? "text-sky-soft italic" : "text-sky italic"}>{accent}</em>
+      {pre} <em className={light ? "text-sky-soft italic" : "text-sky-text italic"}>{accent}</em>
     </h2>
   );
 }

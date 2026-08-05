@@ -78,8 +78,8 @@ export function LocationPrompt({
       <div className="flex items-start gap-2.5">
         <MapPin size={15} color="#3B9BE8" className="mt-0.5 shrink-0" />
         <div className="min-w-0">
-          <p className="font-body font-medium text-[13px] text-navy">Show me what&apos;s close</p>
-          <p className="font-body font-light text-[11.5px] mt-1 leading-relaxed text-ink-soft">
+          <p className="font-body font-medium text-[14.5px] text-navy">Show me what&apos;s close</p>
+          <p className="font-body font-normal text-[14px] mt-1 leading-relaxed text-ink-soft">
             We use your location once, to put the nearest rooms first. It is not saved, not shared,
             and never attached to your account.
           </p>
@@ -90,8 +90,8 @@ export function LocationPrompt({
         type="button"
         onClick={askBrowser}
         disabled={asking}
-        className="w-full mt-3 flex items-center justify-center gap-1.5 py-2.5 rounded-full font-body font-medium text-[12px] text-white press"
-        style={{ backgroundColor: "#3B9BE8", opacity: asking ? 0.6 : 1 }}
+        className="w-full mt-3 flex items-center justify-center gap-1.5 py-2.5 rounded-full font-body font-medium text-[13.5px] text-white press"
+        style={{ backgroundColor: "#2578C2", opacity: asking ? 0.6 : 1 }}
       >
         <Navigation size={13} />
         {asking ? "Asking your browser…" : "Use my location"}
@@ -99,7 +99,7 @@ export function LocationPrompt({
 
       <div className="flex items-center gap-3 my-3">
         <div className="flex-1 h-px" style={{ backgroundColor: "#DCE7F2" }} />
-        <span className="font-body font-light text-[10px] uppercase tracking-wide text-ink-faint">
+        <span className="font-body font-normal text-[10.5px] uppercase tracking-wide text-ink-faint">
           or
         </span>
         <div className="flex-1 h-px" style={{ backgroundColor: "#DCE7F2" }} />
@@ -125,17 +125,17 @@ export function LocationPrompt({
             inputMode="numeric"
             autoComplete="postal-code"
             maxLength={10}
-            className="font-body text-[13px] outline-none w-full text-navy bg-transparent"
+            className="font-body text-[14.5px] outline-none w-full text-navy bg-transparent"
           />
         </div>
         <button
           type="submit"
           disabled={!valid}
-          className="px-4 rounded-xl font-body font-medium text-[12px] press"
+          className="px-4 rounded-xl font-body font-medium text-[13.5px] press"
           style={
             valid
               ? { backgroundColor: "#16304E", color: "#fff" }
-              : { border: "1px solid #DCE7F2", color: "#B0BFCF" }
+              : { border: "1px solid #DCE7F2", color: "#7B93AE" }
           }
         >
           Go
@@ -143,13 +143,13 @@ export function LocationPrompt({
       </form>
 
       {error && (
-        <p className="font-body font-light text-[11px] mt-2.5 text-ink-soft">{error}</p>
+        <p className="font-body font-normal text-[13.5px] mt-2.5 text-ink-soft">{error}</p>
       )}
 
       <button
         type="button"
         onClick={onDismiss}
-        className="w-full mt-3 font-body font-light text-[11px] press text-ink-faint"
+        className="w-full mt-3 font-body font-normal text-[13.5px] press text-ink-faint"
       >
         Not now — show me everything
       </button>

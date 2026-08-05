@@ -85,7 +85,7 @@ export function WeekSchedule({
               style={{ backgroundColor: open ? "#F4F8FC" : "#fff" }}
             >
               <span
-                className={`font-body font-medium text-[12.5px] w-8 ${open ? "text-navy" : "text-ink-ghost"}`}
+                className={`font-body font-medium text-[14px] w-8 ${open ? "text-navy" : "text-ink-faint"}`}
               >
                 {short}
               </span>
@@ -95,7 +95,7 @@ export function WeekSchedule({
                 label={`${short} availability`}
               />
               {!open && (
-                <span className="flex-1 text-right font-body text-[11.5px] text-ink-ghost">
+                <span className="flex-1 text-right font-body text-[14px] text-ink-faint">
                   Closed
                 </span>
               )}
@@ -115,7 +115,7 @@ export function WeekSchedule({
                             onChange={(v) => updateBlock(block, "startMinute", v)}
                             label={`${short} block start`}
                           />
-                          <span className="font-body text-[10px] shrink-0 text-ink-faint">–</span>
+                          <span className="font-body text-[12px] shrink-0 text-ink-faint">–</span>
                           <TimeSelect
                             value={block.endMinute}
                             invalid={Boolean(problem)}
@@ -132,7 +132,7 @@ export function WeekSchedule({
                           </button>
                         </div>
                         {problem && (
-                          <p className="font-body text-[10.5px] mt-1 text-danger">
+                          <p className="font-body text-[13.5px] mt-1 text-danger">
                             {problem.kind === "inverted"
                               ? "This block ends before it starts."
                               : "This overlaps an earlier block on the same day."}
@@ -152,7 +152,7 @@ export function WeekSchedule({
                   className="flex items-center gap-1 mt-2 press"
                 >
                   <Plus size={11} color="#3B9BE8" />
-                  <span className="font-body text-[11px] font-medium text-sky">
+                  <span className="font-body text-[13.5px] font-medium text-sky-text">
                     Add another block
                   </span>
                 </button>
@@ -186,7 +186,7 @@ function TimeSelect({
       aria-label={label}
       value={value}
       onChange={(e) => onChange(Number(e.target.value))}
-      className="font-body text-[11.5px] rounded-lg px-1.5 py-1.5 outline-none flex-1 min-w-0 text-navy"
+      className="font-body text-[14px] rounded-lg px-1.5 py-1.5 outline-none flex-1 min-w-0 text-navy"
       style={{ border: `1px solid ${invalid ? "#F5C4BC" : "#DCE7F2"}` }}
     >
       {options.map((minute) => (

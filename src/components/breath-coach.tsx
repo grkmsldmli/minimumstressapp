@@ -35,8 +35,8 @@ export function BreathCoach() {
           border: "1px solid rgba(143,198,245,0.3)",
         }}
       >
-        <p className="font-body font-medium text-[12.5px] text-sky-soft">Calm state unlocked</p>
-        <p className="font-body font-light text-[11.5px] text-white/60 mt-1">
+        <p className="font-body font-medium text-[14px] text-sky-soft">Calm state unlocked</p>
+        <p className="font-body font-normal text-[14px] text-white/60 mt-1">
           Walk in steady. Your client will feel it too.
         </p>
       </div>
@@ -54,10 +54,10 @@ export function BreathCoach() {
         }}
       >
         <div className="flex items-baseline justify-between">
-          <p className="font-body font-medium text-[13px] uppercase tracking-[0.15em] text-white">
+          <p className="font-body font-medium text-[14.5px] uppercase tracking-[0.15em] text-white">
             {current.name}
           </p>
-          <p className="font-body text-[11px] text-white/50">{current.ms / 1000}s</p>
+          <p className="font-body text-[13.5px] text-white/50">{current.ms / 1000}s</p>
         </div>
         <div
           className="h-1.5 rounded-full mt-3 overflow-hidden"
@@ -72,7 +72,7 @@ export function BreathCoach() {
             }}
           />
         </div>
-        <p className="font-body text-[10px] text-white/40 tracking-[0.25em] text-center mt-2.5">
+        <p className="font-body text-[12px] text-white/40 tracking-[0.25em] text-center mt-2.5">
           4 · 7 · 8
         </p>
       </div>
@@ -86,7 +86,7 @@ export function BreathCoach() {
         setStep(0);
         setState("running");
       }}
-      className="w-full mt-4 py-3.5 rounded-2xl font-body text-[12.5px] press text-sky-soft"
+      className="w-full mt-4 py-3.5 rounded-2xl font-body text-[14px] press text-sky-soft"
       style={{
         backgroundColor: "rgba(255,255,255,0.07)",
         border: "1px solid rgba(255,255,255,0.16)",

@@ -21,9 +21,9 @@ import {
  */
 export function StandingNotice({ party, standing }: { party: Party; standing: Standing }) {
   const palette = {
-    clear: { bg: "#EFF4EC", border: "#DCE6D6", text: "#4A5D4A", accent: "#5E7D5E" },
-    warned: { bg: "#FFF8F1", border: "#F5DFC4", text: "#7A5B33", accent: "#B08D4F" },
-    suspended: { bg: "#FEF2F0", border: "#F5C4BC", text: "#7A4A42", accent: "#C05A4B" },
+    clear: { bg: "#EFF4EC", border: "#DCE6D6", text: "#4A5D4A", accent: "#557255" },
+    warned: { bg: "#FFF8F1", border: "#F5DFC4", text: "#7A5B33", accent: "#8B6C37" },
+    suspended: { bg: "#FEF2F0", border: "#F5C4BC", text: "#7A4A42", accent: "#B45143" },
   }[standing.level];
 
   const Icon =
@@ -37,7 +37,7 @@ export function StandingNotice({ party, standing }: { party: Party; standing: St
       <div className="flex items-center gap-2">
         <Icon size={14} color={palette.accent} />
         <p
-          className="font-body font-medium text-[10.5px] uppercase tracking-[0.14em]"
+          className="font-body font-medium text-[11px] uppercase tracking-[0.14em]"
           style={{ color: palette.accent }}
         >
           {standing.level === "clear"
@@ -49,7 +49,7 @@ export function StandingNotice({ party, standing }: { party: Party; standing: St
       </div>
 
       <p
-        className="font-body font-light text-[11.5px] leading-relaxed mt-2"
+        className="font-body font-normal text-[14px] leading-relaxed mt-2"
         style={{ color: palette.text }}
       >
         {explainStanding(party, standing)}
@@ -85,7 +85,7 @@ export function CancellationConsequence({
       }}
     >
       <p
-        className="font-body font-light text-[11px] leading-relaxed"
+        className="font-body font-normal text-[13.5px] leading-relaxed"
         style={{ color: willSuspend ? "#7A4A42" : "#7A5B33" }}
       >
         {willSuspend ? (

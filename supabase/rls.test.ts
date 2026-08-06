@@ -692,3 +692,46 @@ describe("what a host may change on a listing", () => {
     ).rejects.toThrow(/permission denied/i);
   });
 });
+
+/**
+ * Both sides can read the same booking row, for different reasons, and an
+ * app that forgets which side it is on reads it from the wrong one.
+ */
+describe("the two sides of one booking", () => {
+  it("lets a host see bookings on their own space", async () => {
+    const found = await asUser(HOST, `select id from bookings where space_id = '${SPACE}'`);
+    expect(found.length).toBeGreaterThan(0);
+  });
+
+  /**
+   * Which is why "my bookings" has to say whose.
+   *
+   * The host policy is correct and deliberate — it is how their calendar
+   * works — so a query that means "sessions I booked" cannot lean on row
+   * security to filter for it. It has to ask. The app's own list did not,
+   * and showed a host somebody else's session in their room as though the
+   * host had booked it.
+   */
+  it("distinguishes booked-by-me from booked-in-my-space", async () => {
+    const asPractitioner = await asUser(
+      PRACTITIONER,
+      `select id from bookings where practitioner_id = auth.uid()`,
+    );
+    const hostAsPractitioner = await asUser(
+      HOST,
+      `select id from bookings where practitioner_id = auth.uid()`,
+    );
+
+    expect(asPractitioner.length).toBeGreaterThan(0);
+    expect(hostAsPractitioner).toHaveLength(0);
+  });
+
+  /** The code is the practitioner's alone, whoever else can see the row. */
+  it("withholds the access code from the host of the space", async () => {
+    const [row] = await asUser<{ revealed_access_code: string | null }>(
+      HOST,
+      `select revealed_access_code from bookings_with_access_code where space_id = '${SPACE}'`,
+    );
+    expect(row.revealed_access_code).toBeNull();
+  });
+});

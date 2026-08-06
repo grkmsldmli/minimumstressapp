@@ -385,9 +385,28 @@ export class SupabaseRepository implements Repository {
   /* ---------------- bookings ---------------- */
 
   async listMyBookings(): Promise<Booking[]> {
+    /**
+     * Mine as in "I booked it", which is what the name says and what the
+     * query did not do.
+     *
+     * The view runs as the caller, and a host's row policy on `bookings`
+     * lets them read every booking on their own spaces — correctly, that is
+     * how their calendar works. Without this filter those came back here too,
+     * and the app treated a session somebody else had booked in the host's
+     * room as a session the host had booked: it appeared in their own
+     * bookings list, and the message thread greeted the studio owner with
+     * "message the studio".
+     *
+     * The access code was never exposed by this — the view withholds it
+     * unless the reader is the practitioner — but everything around it was
+     * being read from the wrong side.
+     */
+    const me = await this.userId();
+
     const { data, error } = await this.db
       .from("bookings_with_access_code")
       .select("*")
+      .eq("practitioner_id", me)
       .order("starts_at", { ascending: false });
     if (error) throw error;
     if (!data?.length) return [];

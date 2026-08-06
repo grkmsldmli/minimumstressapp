@@ -14,6 +14,7 @@ import type {
   CreatedBooking,
   HostBooking,
   HostSpace,
+  MediaKind,
   Message,
   NewSpaceInput,
   Profile,
@@ -100,6 +101,32 @@ export interface Repository {
    * listed.
    */
   editSpace(spaceId: string, edit: SpaceEdit): Promise<HostSpace>;
+
+  /**
+   * Adds photos or a video to a listing that already exists.
+   *
+   * There was no way to do this at all: media could only be attached while
+   * the listing was being created, so a host with a badly lit photo had to
+   * delist and start over — losing the reviews and the history with it.
+   */
+  addSpaceMedia(spaceId: string, files: { file: File; kind: MediaKind }[]): Promise<HostSpace>;
+
+  /**
+   * Removes one item, from the bucket as well as the table.
+   *
+   * A row deleted on its own leaves the file sitting in storage with nothing
+   * pointing at it — invisible, unreferenced, and still ours to hold.
+   */
+  removeSpaceMedia(spaceId: string, mediaId: string): Promise<HostSpace>;
+
+  /**
+   * Takes a listing off search, or puts it back.
+   *
+   * Delisting is not deletion and never touches a booking that already
+   * exists: sessions on the calendar go ahead, because cancelling them to
+   * tidy up a listing lands the harm on somebody who did nothing.
+   */
+  setSpaceListed(spaceId: string, listed: boolean): Promise<HostSpace>;
   updateSpaceAvailability(spaceId: string, blocks: HostSpace["availability"]): Promise<HostSpace>;
   listHostBookings(): Promise<HostBooking[]>;
 

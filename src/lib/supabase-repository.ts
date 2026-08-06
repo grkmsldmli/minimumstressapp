@@ -700,6 +700,94 @@ export class SupabaseRepository implements Repository {
     return updated;
   }
 
+  async addSpaceMedia(
+    spaceId: string,
+    files: { file: File; kind: MediaKind }[],
+  ): Promise<HostSpace> {
+    const hostId = await this.userId();
+
+    for (const item of files) {
+      const reason = rejectionReason(item.file, item.kind === "video" ? "video" : "image");
+      if (reason) throw new Error(reason);
+    }
+
+    // Appended after whatever is already there, so adding a photo does not
+    // reshuffle the order a host chose for the ones they had.
+    const { data: existing } = await this.db
+      .from("space_media")
+      .select("position")
+      .eq("space_id", spaceId)
+      .order("position", { ascending: false })
+      .limit(1);
+
+    let position = ((existing?.[0]?.position as number) ?? -1) + 1;
+
+    for (const item of files) {
+      const path = spaceMediaPath(hostId, spaceId, item.file.type, crypto.randomUUID());
+
+      const { error: uploadError } = await this.db.storage
+        .from("space-media")
+        .upload(path, item.file, { contentType: item.file.type, upsert: false });
+      if (uploadError) throw uploadError;
+
+      // Uploaded first, recorded second, so a row always points at bytes that
+      // are already there.
+      const { error } = await this.db
+        .from("space_media")
+        .insert({ space_id: spaceId, storage_path: path, kind: item.kind, position });
+      if (error) throw error;
+
+      position += 1;
+    }
+
+    const [updated] = (await this.listMySpaces()).filter((s) => s.id === spaceId);
+    return updated;
+  }
+
+  async removeSpaceMedia(spaceId: string, mediaId: string): Promise<HostSpace> {
+    const { data: row, error: readError } = await this.db
+      .from("space_media")
+      .select("storage_path")
+      .eq("id", mediaId)
+      .eq("space_id", spaceId)
+      .maybeSingle();
+    if (readError) throw readError;
+    if (!row) throw new Error("That photo is no longer on this listing.");
+
+    const { error } = await this.db
+      .from("space_media")
+      .delete()
+      .eq("id", mediaId)
+      .eq("space_id", spaceId);
+    if (error) throw error;
+
+    /*
+     * The row goes first, the file second.
+     *
+     * If the storage delete fails the listing is already correct and an
+     * orphaned object is a cleanup job. The other order leaves a row pointing
+     * at a file that is gone, which is a broken image on somebody's screen.
+     */
+    await this.db.storage.from("space-media").remove([row.storage_path as string]);
+
+    const [updated] = (await this.listMySpaces()).filter((s) => s.id === spaceId);
+    return updated;
+  }
+
+  async setSpaceListed(spaceId: string, listed: boolean): Promise<HostSpace> {
+    const hostId = await this.userId();
+
+    const { error } = await this.db
+      .from("spaces")
+      .update({ status: listed ? "pending" : "delisted" })
+      .eq("id", spaceId)
+      .eq("host_id", hostId);
+    if (error) throw error;
+
+    const [updated] = (await this.listMySpaces()).filter((s) => s.id === spaceId);
+    return updated;
+  }
+
   async createSpace(input: NewSpaceInput): Promise<HostSpace> {
     const hostId = await this.userId();
 

@@ -39,7 +39,6 @@ import { GroupLabel, ProfileHeader, ProfileRow, SettingToggle } from "./practiti
 export function HostDashboard({
   spaces,
   bookings,
-  onBack,
   onAddSpace,
   onEditHours,
   onEditSpace,
@@ -51,7 +50,6 @@ export function HostDashboard({
 }: {
   spaces: HostSpace[];
   bookings: HostBooking[];
-  onBack: () => void;
   onAddSpace: () => void;
   onEditHours: (spaceId: string) => void;
   onEditSpace: (spaceId: string) => void;
@@ -69,7 +67,7 @@ export function HostDashboard({
 
   if (!active) {
     return (
-      <HostEmptyState onBack={onBack} onAddSpace={onAddSpace} onOpenProfile={onOpenProfile} />
+      <HostEmptyState onAddSpace={onAddSpace} onOpenProfile={onOpenProfile} />
     );
   }
 
@@ -117,16 +115,14 @@ export function HostDashboard({
         style={{ background: "radial-gradient(140% 120% at 15% 0%, #1E4066 0%, #16304E 85%)" }}
       >
         <Ambient />
+        {/*
+          No back button. This is the host's root screen and there is nothing
+          behind it — the browse screen belongs to the other side of the
+          marketplace, so the guard bounced straight back here and the button
+          did nothing every time it was pressed.
+        */}
         <div className="flex items-center justify-between mb-4 relative z-10">
-          <button
-            type="button"
-            onClick={onBack}
-            aria-label="Back"
-            className="w-9 h-9 rounded-full flex items-center justify-center press"
-            style={{ backgroundColor: "rgba(255,255,255,0.14)" }}
-          >
-            <ArrowLeft size={16} color="#fff" />
-          </button>
+          <LogoBadge size={30} />
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -350,11 +346,9 @@ export function HostDashboard({
 }
 
 function HostEmptyState({
-  onBack,
   onAddSpace,
   onOpenProfile,
 }: {
-  onBack: () => void;
   onAddSpace: () => void;
   onOpenProfile: () => void;
 }) {
@@ -366,15 +360,7 @@ function HostEmptyState({
       >
         <Ambient />
         <div className="flex items-center justify-between relative z-10">
-          <button
-            type="button"
-            onClick={onBack}
-            aria-label="Back"
-            className="w-9 h-9 rounded-full flex items-center justify-center press"
-            style={{ backgroundColor: "rgba(255,255,255,0.14)" }}
-          >
-            <ArrowLeft size={16} color="#fff" />
-          </button>
+          <LogoBadge size={30} />
           {/*
             The profile has to be reachable here too.
             This is the screen a host sees until their first listing is live —
@@ -392,7 +378,6 @@ function HostEmptyState({
             >
               <User size={15} color="#fff" />
             </button>
-            <LogoBadge size={34} />
           </div>
         </div>
         <p className="font-body font-medium text-[11px] uppercase tracking-[0.2em] mt-4 relative z-10 text-sky-soft">

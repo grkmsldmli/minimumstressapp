@@ -5,6 +5,7 @@ import { AlertTriangle, ArrowLeft } from "lucide-react";
 
 import { DocumentStatus } from "@/components/document-status";
 import { PrimaryButton } from "@/components/primitives";
+import { SpaceMediaManager } from "@/components/space-media-manager";
 import type { HostSpace, SpaceEdit } from "@/lib/domain";
 import { formatCents, quote } from "@/lib/money";
 import { CATEGORY_KEYS, roomTypeFor } from "@/lib/taxonomy";
@@ -25,12 +26,20 @@ export function EditSpace({
   space,
   bookedSessions,
   onSave,
+  onAddMedia,
+  onRemoveMedia,
+  onSetListed,
+  onEditHours,
   onBack,
 }: {
   space: HostSpace;
   /** Sessions still ahead on this listing. Locks the address and room type. */
   bookedSessions: number;
   onSave: (edit: SpaceEdit) => Promise<unknown>;
+  onAddMedia: (files: { file: File; kind: "image" | "video" }[]) => Promise<unknown>;
+  onRemoveMedia: (mediaId: string) => Promise<unknown>;
+  onSetListed: (listed: boolean) => Promise<unknown>;
+  onEditHours: () => void;
   onBack: () => void;
 }) {
   const [name, setName] = useState(space.name);
@@ -58,6 +67,15 @@ export function EditSpace({
     Number(buffer) !== space.bufferMinutes ||
     category !== space.category ||
     address !== space.addressLine;
+
+  const toggleListed = async () => {
+    setError(null);
+    try {
+      await onSetListed(space.status === "delisted");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "That did not change.");
+    }
+  };
 
   const save = async () => {
     if (!rateIsNumber) {
@@ -108,6 +126,9 @@ export function EditSpace({
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 pb-8">
+        <Label>Photos</Label>
+        <SpaceMediaManager media={space.media} onAdd={onAddMedia} onRemove={onRemoveMedia} />
+
         <Label>Space name</Label>
         <Text value={name} onChange={setName} />
 
@@ -226,6 +247,50 @@ export function EditSpace({
           />
         </div>
 
+        <div className="h-px my-7" style={{ backgroundColor: "#E7EEF6" }} />
+
+        <p className="font-body font-medium text-[11px] uppercase tracking-[0.2em] mb-3 text-sky-text">
+          This listing
+        </p>
+
+        <div className="flex flex-col gap-2.5">
+          <Line
+            label="Open hours"
+            value={
+              space.availability.length === 0
+                ? "None set"
+                : `${space.availability.length} ${space.availability.length === 1 ? "block" : "blocks"} a week`
+            }
+            action="Change"
+            onAction={onEditHours}
+          />
+          <Line
+            label="Status"
+            value={
+              space.status === "active"
+                ? "Live and bookable"
+                : space.status === "pending"
+                  ? "Waiting on review"
+                  : "Not listed"
+            }
+            action={space.status === "delisted" ? "List again" : "Take it down"}
+            onAction={() => void toggleListed()}
+          />
+        </div>
+
+        {/*
+          Delisting is not deletion, and it never touches a booking that
+          already exists. Sessions on the calendar go ahead — cancelling them
+          to tidy up a listing lands the harm on somebody who did nothing,
+          which is the same rule the suspension policy runs on.
+        */}
+        {space.status !== "delisted" && bookedSessions > 0 && (
+          <Note>
+            {bookedSessions === 1 ? "One session stays" : `${bookedSessions} sessions stay`} on the
+            calendar either way.
+          </Note>
+        )}
+
         {error && (
           <p className="font-body font-normal text-[13.5px] mt-4 text-coral-deep">{error}</p>
         )}
@@ -258,6 +323,37 @@ function Note({ children, tone = "plain" }: { children: React.ReactNode; tone?: 
     >
       {children}
     </p>
+  );
+}
+
+function Line({
+  label,
+  value,
+  action,
+  onAction,
+}: {
+  label: string;
+  value: string;
+  action: string;
+  onAction: () => void;
+}) {
+  return (
+    <div
+      className="rounded-xl px-3.5 py-3 flex items-center gap-3"
+      style={{ backgroundColor: "#F4F8FC", border: "1px solid #E7EEF6" }}
+    >
+      <div className="min-w-0 flex-1">
+        <p className="font-body font-medium text-[14px] text-navy">{label}</p>
+        <p className="font-body font-normal text-[13.5px] mt-0.5 text-ink-soft">{value}</p>
+      </div>
+      <button
+        type="button"
+        onClick={onAction}
+        className="font-body font-medium text-[13.5px] shrink-0 press text-sky-text"
+      >
+        {action}
+      </button>
+    </div>
   );
 }
 

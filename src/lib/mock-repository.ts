@@ -42,7 +42,7 @@ import {
 import { explainRedaction, redact } from "./message-redaction";
 import type { CancellationEvent } from "./reliability";
 import type { CreateBookingInput, Repository } from "./repository";
-import type { SpaceEdit } from "./domain";
+import type { MediaKind, SpaceEdit } from "./domain";
 import { type CategoryKey, roomTypeFor } from "./taxonomy";
 import { rejectionReason } from "./uploads";
 
@@ -525,6 +525,45 @@ export class MockRepository implements Repository {
       space.reviewNote = null;
     }
 
+    return { ...space };
+  }
+
+  async addSpaceMedia(
+    spaceId: string,
+    files: { file: File; kind: MediaKind }[],
+  ): Promise<HostSpace> {
+    const space = this.mySpaces.find((s) => s.id === spaceId);
+    if (!space) throw new Error("No such space");
+
+    for (const item of files) {
+      const reason = rejectionReason(item.file, item.kind === "video" ? "video" : "image");
+      if (reason) throw new Error(reason);
+    }
+
+    space.media = [
+      ...space.media,
+      ...files.map((item) => ({
+        id: id("media"),
+        url: `mock://space-media/${item.file.name}`,
+        kind: item.kind,
+      })),
+    ];
+    return { ...space };
+  }
+
+  async removeSpaceMedia(spaceId: string, mediaId: string): Promise<HostSpace> {
+    const space = this.mySpaces.find((s) => s.id === spaceId);
+    if (!space) throw new Error("No such space");
+
+    space.media = space.media.filter((m) => m.id !== mediaId);
+    return { ...space };
+  }
+
+  async setSpaceListed(spaceId: string, listed: boolean): Promise<HostSpace> {
+    const space = this.mySpaces.find((s) => s.id === spaceId);
+    if (!space) throw new Error("No such space");
+
+    space.status = listed ? "pending" : "delisted";
     return { ...space };
   }
 

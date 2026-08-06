@@ -471,7 +471,6 @@ export function App() {
         <HostDashboard
           spaces={mySpaces}
           bookings={hostBookings}
-          onBack={() => go("discover")}
           onAddSpace={() => go("addspace")}
           onEditHours={(spaceId) => {
             setEditingSpaceId(spaceId);
@@ -788,6 +787,12 @@ export function App() {
           bookedSessions={booked}
           onBack={() => go("host")}
           onSave={(edit) => mutate(() => repo.editSpace(editingSpace.id, edit))}
+          onAddMedia={(files) => mutate(() => repo.addSpaceMedia(editingSpace.id, files))}
+          onRemoveMedia={(mediaId) =>
+            mutate(() => repo.removeSpaceMedia(editingSpace.id, mediaId))
+          }
+          onSetListed={(listed) => mutate(() => repo.setSpaceListed(editingSpace.id, listed))}
+          onEditHours={() => go("edit-hours")}
         />
       );
     }

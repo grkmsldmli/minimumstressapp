@@ -144,6 +144,8 @@ export class SupabaseRepository implements Repository {
       notifyPayouts: data?.notify_payouts ?? true,
       notifyOffers: data?.notify_offers ?? false,
       accountType: data?.account_type ?? null,
+      termsVersion: data?.terms_version ?? null,
+      termsAcceptedAt: data?.terms_accepted_at ? new Date(data.terms_accepted_at) : null,
       // Read back only for its owner — this query runs as the signed-in user,
       // and no policy lets anyone select another person's profile row.
       emergencyContact: {
@@ -176,6 +178,11 @@ export class SupabaseRepository implements Repository {
      * rather than quietly turning a practitioner into a host.
      */
     if (patch.accountType !== undefined) row.account_type = patch.accountType;
+    /*
+     * The version travels; the timestamp does not. A trigger sets it from the
+     * server clock, so a client cannot record that somebody agreed last year.
+     */
+    if (patch.termsVersion !== undefined) row.terms_version = patch.termsVersion;
 
     // isPro and stripeConnected are absent on purpose: both are set by webhooks
     // after money or verification actually clears, never by the client asking.

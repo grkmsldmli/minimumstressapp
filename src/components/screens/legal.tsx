@@ -27,6 +27,16 @@ const SECTIONS = [
     ],
   },
   {
+    key: "off-platform",
+    title: "Booking outside the app",
+    points: [
+      "Book and pay through Minimum Stress. Everything we do for you runs off that record: the authorisation that is held rather than charged, the refund when a host cancels, the door code, the review, the emergency contact, and a person to call when something goes wrong.",
+      "Do not exchange phone numbers, email addresses or payment details. We mask them in messages, and asking for them is a reason we may suspend an account.",
+      "If you arrange a session outside the app, it is between the two of you. We have no record of it, we cannot verify it happened, and we cannot help with payment, access, damage, injury or a dispute arising from it. None of the protections above apply, and Minimum Stress accepts no responsibility for it.",
+      "This is not a penalty we invented. We can only stand behind what we can see.",
+    ],
+  },
+  {
     key: "privacy",
     title: "Privacy Policy",
     points: [

@@ -58,6 +58,15 @@ export interface Profile {
   emergencyContact: EmergencyContact;
   /** Null until chosen. Cannot be changed afterwards — see migration 0012. */
   accountType: AccountType | null;
+  /**
+   * Which version of the terms this account accepted, and when.
+   *
+   * Null for everyone who signed up before there was anything to accept.
+   * Deliberately not backfilled — recording an acceptance that never happened
+   * is worse than having none, since being true is the whole value of it.
+   */
+  termsVersion: number | null;
+  termsAcceptedAt: Date | null;
 }
 
 export interface SpaceMedia {

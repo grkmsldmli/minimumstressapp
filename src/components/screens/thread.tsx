@@ -112,11 +112,23 @@ export function Thread({
           style={{ backgroundColor: "#F4F8FC", border: "1px solid #E7EEF6" }}
         >
           <ShieldCheck size={14} color="#3B9BE8" className="mt-0.5 shrink-0" />
-          <p className="font-body font-normal text-[14px] leading-relaxed text-ink-soft">
-            Messages stay here, and so does everything else about this booking — the address, the
-            door code, and the refund if it goes wrong. Neither of you sees the other&apos;s phone
-            number or email.
-          </p>
+          <div>
+            <p className="font-body font-normal text-[14px] leading-relaxed text-ink-soft">
+              Messages stay here, and so does everything else about this booking — the address, the
+              door code, and the refund if it goes wrong. Neither of you sees the other&apos;s phone
+              number or email.
+            </p>
+            {/*
+              The consequence, not only the rule.
+              "Don't share your number" on its own reads as a house style. What
+              somebody needs before they type it is what stops applying the
+              moment they do — and that it stops applying to them, not to us.
+            */}
+            <p className="font-body font-normal text-[14px] leading-relaxed mt-2 text-ink-faint">
+              Please don&apos;t swap contact details or arrange anything off the app. A session
+              booked elsewhere is between the two of you — no cover, no refund, and nobody to call.
+            </p>
+          </div>
         </div>
 
         {messages.length === 0 ? (

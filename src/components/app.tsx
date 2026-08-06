@@ -20,7 +20,10 @@ import {
   verifyEmailCode,
 } from "@/lib/supabase/auth";
 
+import { TERMS_VERSION, hasAcceptedTerms } from "@/lib/terms";
+
 import { type Screen, useApp } from "./app-state";
+import { AcceptTerms } from "./screens/accept-terms";
 import { AddSpace } from "./screens/add-space";
 import { Confirmed, MyBookings } from "./screens/bookings";
 import { Discover } from "./screens/discover";
@@ -433,6 +436,29 @@ export function App() {
    */
   if (onSupabase && profile.accountType === null && screen !== "role" && screen !== "legal") {
     return renderRoleSelect();
+  }
+
+  /**
+   * And then the terms, once, before anything else.
+   *
+   * After the side is chosen rather than before it, because half of what is
+   * being agreed to differs by side — a host is taking on a sublease
+   * declaration, a practitioner is not.
+   *
+   * The legal screen stays reachable from here, since asking somebody to agree
+   * to something they cannot open would make the acceptance worth nothing.
+   */
+  if (
+    onSupabase &&
+    !hasAcceptedTerms({ version: profile.termsVersion }) &&
+    screen !== "legal"
+  ) {
+    return (
+      <AcceptTerms
+        onAccept={() => mutate(() => repo.updateProfile({ termsVersion: TERMS_VERSION }))}
+        onReadFull={() => go("legal")}
+      />
+    );
   }
 
   // Both are rendered from the switch below and from the guard above it, so

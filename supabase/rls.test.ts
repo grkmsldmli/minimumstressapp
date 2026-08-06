@@ -735,3 +735,64 @@ describe("the two sides of one booking", () => {
     expect(row.revealed_access_code).toBeNull();
   });
 });
+
+/**
+ * Acceptance is a fact about a past moment, and the only thing that makes it
+ * worth anything is that it is true.
+ */
+describe("accepting the terms", () => {
+  it("records the version the account agreed to", async () => {
+    await asUser(PRACTITIONER, `update profiles set terms_version = 1 where id = auth.uid()`);
+
+    const [row] = await asUser<{ terms_version: number; terms_accepted_at: string | null }>(
+      PRACTITIONER,
+      `select terms_version, terms_accepted_at from profiles where id = auth.uid()`,
+    );
+    expect(row.terms_version).toBe(1);
+    expect(row.terms_accepted_at).not.toBeNull();
+  });
+
+  /**
+   * A client that could set the timestamp could say somebody agreed last year.
+   * The trigger takes the server's clock whatever was sent.
+   */
+  it("ignores a backdated timestamp from the client", async () => {
+    await asUser(
+      PRACTITIONER,
+      `update profiles set terms_version = 2, terms_accepted_at = '2020-01-01'
+         where id = auth.uid()`,
+    );
+
+    const [row] = await asUser<{ terms_accepted_at: string }>(
+      PRACTITIONER,
+      `select terms_accepted_at from profiles where id = auth.uid()`,
+    );
+    expect(new Date(row.terms_accepted_at).getFullYear()).toBeGreaterThan(2024);
+  });
+
+  it("refuses to un-accept", async () => {
+    await expect(
+      asUser(
+        PRACTITIONER,
+        `update profiles set terms_version = null, terms_accepted_at = null where id = auth.uid()`,
+      ),
+    ).rejects.toThrow(/cannot be withdrawn/i);
+  });
+
+  /** Otherwise a change somebody was already shown could be rolled back. */
+  it("refuses to go back to an older version", async () => {
+    await expect(
+      asUser(PRACTITIONER, `update profiles set terms_version = 1 where id = auth.uid()`),
+    ).rejects.toThrow(/backwards/i);
+  });
+
+  it("stops anyone recording an acceptance on somebody else's behalf", async () => {
+    await asUser(STRANGER, `update profiles set terms_version = 5 where id = '${HOST}'`);
+
+    const [row] = await asUser<{ terms_version: number | null }>(
+      HOST,
+      `select terms_version from profiles where id = auth.uid()`,
+    );
+    expect(row.terms_version).toBeNull();
+  });
+});

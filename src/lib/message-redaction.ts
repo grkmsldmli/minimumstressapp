@@ -124,7 +124,19 @@ export function explainRedaction(found: RedactionKind[]): string | null {
       ? list[0]
       : `${list.slice(0, -1).join(", ")} and ${list[list.length - 1]}`;
 
-  return `We hid ${phrase}. Everything about this booking — the address, the door code, the refund if it goes wrong — only works while it stays here.`;
+  /*
+   * Says what the sender loses, not what we prefer.
+   *
+   * The old wording listed what the app does, which reads as marketing at the
+   * exact moment somebody is trying to move a conversation elsewhere. What
+   * they need to weigh is that a session arranged off the app has nothing
+   * behind it — and that this is the sentence they were shown beforehand.
+   */
+  return (
+    `We hid ${phrase}. Keep this booking in the app: the door code, the refund if it falls ` +
+    `through, and anyone to call if it goes wrong all depend on it. A session arranged ` +
+    `elsewhere is between the two of you.`
+  );
 }
 
 /**

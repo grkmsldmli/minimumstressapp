@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 
 import { DeleteAccount } from "@/components/delete-account";
+import { DocumentStatus } from "@/components/document-status";
 import { EmergencyContactCard } from "@/components/emergency-contact";
 import { BadgeCard } from "@/components/badge-card";
 import { Ambient, Headline, LogoBadge } from "@/components/brand";
@@ -41,6 +42,7 @@ export function HostDashboard({
   onBack,
   onAddSpace,
   onEditHours,
+  onEditSpace,
   onOpenEarnings,
   onOpenProfile,
   onReviewBooking,
@@ -51,6 +53,7 @@ export function HostDashboard({
   onBack: () => void;
   onAddSpace: () => void;
   onEditHours: (spaceId: string) => void;
+  onEditSpace: (spaceId: string) => void;
   onOpenEarnings: () => void;
   onOpenProfile: () => void;
   /** Absent until the review window opens for a session. */
@@ -181,21 +184,47 @@ export function HostDashboard({
       </div>
 
       {pending ? (
-        <div className="flex-1 flex flex-col items-center justify-center px-9 text-center">
-          <div
-            className="w-14 h-14 rounded-full flex items-center justify-center mb-4"
-            style={{ backgroundColor: "#FEF2F0" }}
-          >
-            <ShieldAlert size={22} color="#F2695C" />
+        <div className="flex-1 overflow-y-auto px-6 pt-8 pb-8">
+          <div className="flex flex-col items-center text-center">
+            <div
+              className="w-14 h-14 rounded-full flex items-center justify-center mb-4"
+              style={{ backgroundColor: "#FEF2F0" }}
+            >
+              <ShieldAlert size={22} color="#F2695C" />
+            </div>
+            <p className="font-display italic font-semibold text-[19px] text-navy">
+              Checking your documents
+            </p>
           </div>
-          <p className="font-display italic font-semibold text-[19px] text-navy">
-            Checking your documents
-          </p>
-          <p className="font-body font-normal text-[14px] leading-relaxed mt-2 text-ink-soft">
-            We&apos;re confirming your sublease proof and any insurance you added. Once it clears,
-            this space goes live and starts taking bookings.
-          </p>
 
+          {/*
+            Which file, and where it got to. The screen used to say only that
+            something was being checked, which is the same word for "nobody has
+            opened it yet" and "we read it and it was unreadable".
+          */}
+          <div className="flex flex-col gap-2.5 mt-6">
+            <DocumentStatus
+              label="Proof you can sublease"
+              fileName={active.subleaseDocName}
+              review={active.subleaseReview}
+              note={active.reviewNote}
+            />
+            <DocumentStatus
+              label="Space insurance"
+              fileName={active.insuranceDocName}
+              review={active.insuranceReview}
+              optional
+            />
+          </div>
+
+          <button
+            type="button"
+            onClick={() => onEditSpace(active.id)}
+            className="w-full mt-5 py-3 rounded-xl font-body font-medium text-[14px] press"
+            style={{ border: "1px solid #DCE7F2", color: "#16304E" }}
+          >
+            Edit this listing
+          </button>
         </div>
       ) : (
         <>
@@ -239,13 +268,22 @@ export function HostDashboard({
               <p className="font-body font-medium text-[11px] uppercase tracking-[0.2em] text-sky-text">
                 Upcoming
               </p>
-              <button
-                type="button"
-                onClick={() => onEditHours(active.id)}
-                className="flex items-center gap-1 font-body text-[13.5px] font-medium press text-coral"
-              >
-                <Plus size={13} /> Open more hours
-              </button>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => onEditSpace(active.id)}
+                  className="font-body text-[13.5px] font-medium press text-sky-text"
+                >
+                  Edit
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onEditHours(active.id)}
+                  className="flex items-center gap-1 font-body text-[13.5px] font-medium press text-coral"
+                >
+                  <Plus size={13} /> Open more hours
+                </button>
+              </div>
             </div>
 
             {upcoming.length === 0 ? (
@@ -254,9 +292,7 @@ export function HostDashboard({
                 style={{ backgroundColor: "#F4F8FC", border: "1px solid #E7EEF6" }}
               >
                 <p className="font-body font-normal text-[14px] leading-relaxed text-ink-soft">
-                  {past.length > 0
-                    ? "Nothing booked ahead right now. Opening more hours is the single thing that helps most, since practitioners search by time before anything else."
-                    : "No bookings yet. That's normal for a new listing — opening more hours is the single thing that helps most, since practitioners search by time before anything else."}
+                  {past.length > 0 ? "Nothing booked ahead." : "No bookings yet."}
                 </p>
               </div>
             ) : (

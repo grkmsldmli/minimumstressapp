@@ -81,9 +81,25 @@ export async function POST(request: NextRequest): Promise<Response> {
          * uploaded cannot be approved by clicking quickly, which is the whole
          * reason that constraint is on the row rather than in a comment.
          */
+        /*
+         * The document is marked read at the same moment the listing goes
+         * live, in one write, because 0018 refuses an active listing whose
+         * lease is not verified. Two updates could leave the pair disagreeing
+         * if the second one failed; one cannot.
+         *
+         * This is also the only place the host learns anything. Until now the
+         * app went quiet after an upload and "pending" covered three different
+         * answers — not looked at, looked at and fine, looked at and wrong.
+         */
+        const reviewedAt = new Date().toISOString();
         const { error } = await admin
           .from("spaces")
-          .update({ status: "active" })
+          .update({
+            status: "active",
+            sublease_doc_state: "verified",
+            sublease_doc_reviewed_at: reviewedAt,
+            doc_review_note: null,
+          })
           .eq("id", id.value)
           .eq("status", "pending");
 
@@ -103,7 +119,14 @@ export async function POST(request: NextRequest): Promise<Response> {
         // submitted survives, and so does ours of what we decided.
         const { error } = await admin
           .from("spaces")
-          .update({ status: "delisted" })
+          .update({
+            status: "delisted",
+            sublease_doc_state: "rejected",
+            sublease_doc_reviewed_at: new Date().toISOString(),
+            // Shown to the host verbatim, so a rejection can say "the second
+            // page is cut off" rather than leaving them to guess.
+            doc_review_note: note.value || null,
+          })
           .eq("id", id.value);
         if (error) throw error;
         return Response.json({ ok: true });

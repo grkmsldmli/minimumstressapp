@@ -128,6 +128,15 @@ export interface CreatedBooking {
 }
 
 /** A host's own listing, including the fields never shown to practitioners. */
+export type DocReviewState = "pending" | "verified" | "rejected";
+
+/** What became of a file a host handed over. */
+export interface DocumentReview {
+  state: DocReviewState;
+  /** When somebody looked. Null while nobody has. */
+  reviewedAt: Date | null;
+}
+
 export interface HostSpace extends PublicSpace {
   status: SpaceStatus;
   addressLine: string;
@@ -137,6 +146,37 @@ export interface HostSpace extends PublicSpace {
   entryInstructions: string;
   subleaseDocName: string | null;
   insuranceDocName: string | null;
+  /*
+   * We are holding somebody's lease. They should not have to guess whether it
+   * was read, and "pending" on the listing covered three different answers.
+   */
+  subleaseReview: DocumentReview;
+  insuranceReview: DocumentReview;
+  /** Written by staff when something is rejected, and shown verbatim. */
+  reviewNote: string | null;
+}
+
+/**
+ * What a host may change after a listing exists.
+ *
+ * The set is narrower than the create form on purpose, and the database
+ * enforces the same list — see 0019. Address and room type are in here, but
+ * changing either sends the listing back for review and is refused outright
+ * while sessions are booked against it.
+ */
+export interface SpaceEdit {
+  name?: string;
+  hourlyRateCents?: number;
+  capacity?: number;
+  accessType?: AccessTypeKey;
+  entryInstructions?: string;
+  bufferMinutes?: number;
+  accessible?: boolean | null;
+  restroom?: RestroomOption | null;
+  category?: CategoryKey;
+  addressLine?: string;
+  lat?: number;
+  lng?: number;
 }
 
 /** The money frozen onto the booking at creation. Mirrors bookings' columns. */

@@ -335,10 +335,6 @@ export function SpaceDetail({
             <span>Total</span>
             <span>{formatCents(priced.totalCents)}</span>
           </div>
-          <p className="font-body font-normal text-[13.5px] leading-relaxed mt-2.5 text-ink-faint">
-            The service fee helps us verify every space, protect your booking, and keep the app
-            running.
-          </p>
         </div>
 
         <div

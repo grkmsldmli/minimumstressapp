@@ -42,6 +42,7 @@ import {
 import { explainRedaction, redact } from "./message-redaction";
 import type { CancellationEvent } from "./reliability";
 import type { CreateBookingInput, Repository } from "./repository";
+import type { SpaceEdit } from "./domain";
 import { type CategoryKey, roomTypeFor } from "./taxonomy";
 import { rejectionReason } from "./uploads";
 
@@ -488,6 +489,45 @@ export class MockRepository implements Repository {
     return this.mySpaces.map((s) => ({ ...s }));
   }
 
+  async editSpace(spaceId: string, edit: SpaceEdit): Promise<HostSpace> {
+    const space = this.mySpaces.find((s) => s.id === spaceId);
+    if (!space) throw new Error("No such space");
+
+    const moved =
+      (edit.addressLine !== undefined && edit.addressLine !== space.addressLine) ||
+      (edit.category !== undefined && edit.category !== space.category);
+
+    /*
+     * The same refusal the trigger in 0019 raises, in the same words.
+     * Somebody has arranged their day around a room at that address, and
+     * moving it underneath them is the harm the cancellation policy exists to
+     * prevent, done quietly instead of with a notification.
+     */
+    if (moved) {
+      const booked = this.hostBookings.filter(
+        (b) => b.spaceId === spaceId && b.status === "upcoming" && b.startsAt > new Date(),
+      ).length;
+
+      if (booked > 0) {
+        throw new Error(
+          `This space has ${booked} upcoming ${booked === 1 ? "session" : "sessions"}. ` +
+            "Its address and room type cannot change until those sessions are done or cancelled.",
+        );
+      }
+    }
+
+    Object.assign(space, edit);
+
+    // What was verified is no longer what is listed.
+    if (moved) {
+      space.status = "pending";
+      space.subleaseReview = { state: "pending", reviewedAt: null };
+      space.reviewNote = null;
+    }
+
+    return { ...space };
+  }
+
   async createSpace(input: NewSpaceInput): Promise<HostSpace> {
     const space: HostSpace = {
       id: id("sp"),
@@ -527,6 +567,10 @@ export class MockRepository implements Repository {
       entryInstructions: input.entryInstructions,
       subleaseDocName: input.subleaseDoc.name,
       insuranceDocName: input.insuranceDoc?.name ?? null,
+      // Nobody has looked at either file yet, and saying so is the point.
+      subleaseReview: { state: "pending", reviewedAt: null },
+      insuranceReview: { state: "pending", reviewedAt: null },
+      reviewNote: null,
     };
 
     this.mySpaces.push(space);

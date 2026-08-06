@@ -91,16 +91,20 @@ beforeAll(async () => {
       ('${PRACTITIONER}', 'Elena R.', 'cus_prac'),
       ('${STRANGER}', 'Nosy Parker', 'cus_stranger');
 
+    -- A live listing carries a verified lease, which 0018 now enforces on the
+    -- row. Seeding one without it used to be possible and is the exact state
+    -- that constraint exists to prevent.
     insert into spaces (
       id, host_id, name, category, hourly_rate_cents, capacity, access_type,
-      entry_instructions, address_line, status, sublease_doc_path, legal_ack_at
+      entry_instructions, address_line, status, sublease_doc_path, legal_ack_at,
+      sublease_doc_state, sublease_doc_reviewed_at
     ) values
       ('${SPACE}', '${HOST}', 'Willow', 'physical', 4500, 3, 'keypad',
        'Panel to the left of the blue door', '12 Alder Lane', 'active',
-       'space/x/lease.pdf', now()),
+       'space/x/lease.pdf', now(), 'verified', now()),
       ('${PENDING_SPACE}', '${HOST}', 'Not Yet Live', 'spirit', 2600, 6, 'lockbox',
        'Lockbox under the bench', '9 Hidden Way', 'pending',
-       'space/y/lease.pdf', now());
+       'space/y/lease.pdf', now(), 'pending', null);
 
     -- One booking for PRACTITIONER, already past its reveal time.
     insert into bookings (
@@ -566,5 +570,125 @@ describe("messages stay inside their booking", () => {
          values ('${id}', '${PRACTITIONER}', 'call me on 415 555 0134')`,
       ),
     ).rejects.toThrow();
+  });
+});
+
+/**
+ * Editing a listing, and the one sentence underneath every rule here: a change
+ * must never rewrite something somebody has already agreed to.
+ */
+describe("what a host may change on a listing", () => {
+  it("lets them fix the things that only describe the room", async () => {
+    await asUser(
+      HOST,
+      `update spaces set name = 'Willow Room', entry_instructions = 'Now the green door',
+         capacity = 4, buffer_minutes = 20 where id = '${PENDING_SPACE}'`,
+    );
+
+    const [space] = await asUser<{ name: string; capacity: number }>(
+      HOST,
+      `select name, capacity from spaces where id = '${PENDING_SPACE}'`,
+    );
+    expect(space.name).toBe("Willow Room");
+    expect(space.capacity).toBe(4);
+  });
+
+  /**
+   * A booking froze its own money when it was made, so a rate change cannot
+   * reach one that already exists. Which is why this one needs no ceremony.
+   */
+  it("lets them change the rate without disturbing the listing", async () => {
+    await asUser(HOST, `update spaces set hourly_rate_cents = 5200 where id = '${SPACE}'`);
+
+    const [space] = await asUser<{ hourly_rate_cents: number; status: string }>(
+      HOST,
+      `select hourly_rate_cents, status from spaces where id = '${SPACE}'`,
+    );
+    expect(space.hourly_rate_cents).toBe(5200);
+    expect(space.status).toBe("active");
+  });
+
+  /**
+   * Somebody has arranged their day around a room at that address. Moving it
+   * underneath them is the harm the cancellation policy exists to prevent,
+   * done quietly instead of with a notification.
+   */
+  it("refuses to move a space that has sessions booked", async () => {
+    await expect(
+      asUser(HOST, `update spaces set address_line = '99 Elsewhere' where id = '${SPACE}'`),
+    ).rejects.toThrow(/upcoming session/i);
+  });
+
+  it("refuses to change the room type out from under a booking", async () => {
+    await expect(
+      asUser(HOST, `update spaces set category = 'spirit' where id = '${SPACE}'`),
+    ).rejects.toThrow(/upcoming session/i);
+  });
+
+  it("allows the move once nothing is booked", async () => {
+    await asUser(
+      HOST,
+      `update spaces set address_line = '7 New Street' where id = '${PENDING_SPACE}'`,
+    );
+
+    const [space] = await asUser<{ address_line: string }>(
+      HOST,
+      `select address_line from spaces where id = '${PENDING_SPACE}'`,
+    );
+    expect(space.address_line).toBe("7 New Street");
+  });
+
+  /**
+   * We verified a particular lease for a particular address. Changing either
+   * means what was checked is not what is listed, so it comes off search until
+   * somebody has looked again — and the document state goes back with it,
+   * since leaving it verified is how a listing goes live with a lease for
+   * somewhere else.
+   */
+  it("sends a moved listing back for review, document state and all", async () => {
+    // Staff approve, as they do in the app — a host cannot reach these columns,
+    // which the last test in this block is about.
+    await db.exec(
+      `update spaces set status = 'active', sublease_doc_state = 'verified',
+         sublease_doc_reviewed_at = now() where id = '${PENDING_SPACE}'`,
+    );
+    await asUser(
+      HOST,
+      `update spaces set address_line = '8 Another Road' where id = '${PENDING_SPACE}'`,
+    );
+
+    const [space] = await asUser<{
+      status: string;
+      sublease_doc_state: string;
+      sublease_doc_reviewed_at: string | null;
+    }>(
+      HOST,
+      `select status, sublease_doc_state, sublease_doc_reviewed_at
+         from spaces where id = '${PENDING_SPACE}'`,
+    );
+    expect(space.status).toBe("pending");
+    expect(space.sublease_doc_state).toBe("pending");
+    expect(space.sublease_doc_reviewed_at).toBeNull();
+  });
+
+  it("re-reviews a replaced sublease document even if nothing else moved", async () => {
+    await asUser(
+      HOST,
+      `update spaces set sublease_doc_path = 'space/z/new-lease.pdf' where id = '${SPACE}'`,
+    );
+
+    const [space] = await asUser<{ status: string; sublease_doc_state: string }>(
+      HOST,
+      `select status, sublease_doc_state from spaces where id = '${SPACE}'`,
+    );
+    expect(space.status).toBe("pending");
+    expect(space.sublease_doc_state).toBe("pending");
+  });
+
+  /** A host approving their own listing is the whole review, skipped. */
+  it("refuses to let a host switch their own listing on", async () => {
+    await expect(
+      asUser(HOST, `update spaces set status = 'active' where id = '${SPACE}'`),
+    ).rejects.toThrow(/permission denied/i);
   });
 });

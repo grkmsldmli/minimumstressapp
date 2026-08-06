@@ -19,6 +19,7 @@ import type {
   Profile,
   PublicSpace,
   SpaceAccessDetails,
+  SpaceEdit,
 } from "./domain";
 import type { CancellationEvent } from "./reliability";
 
@@ -87,6 +88,18 @@ export interface Repository {
 
   listMySpaces(): Promise<HostSpace[]>;
   createSpace(input: NewSpaceInput): Promise<HostSpace>;
+
+  /**
+   * Changes an existing listing.
+   *
+   * Rejects rather than silently doing less: moving a space that has sessions
+   * booked against it throws, because somebody has arranged their day around
+   * that address and changing it quietly is the harm the cancellation policy
+   * exists to prevent. Changing the address, the room type or the lease sends
+   * the listing back to pending — what was verified is no longer what is
+   * listed.
+   */
+  editSpace(spaceId: string, edit: SpaceEdit): Promise<HostSpace>;
   updateSpaceAvailability(spaceId: string, blocks: HostSpace["availability"]): Promise<HostSpace>;
   listHostBookings(): Promise<HostBooking[]>;
 

@@ -34,6 +34,7 @@ import type {
   Booking,
   BookingStatus,
   CreatedBooking,
+  DocReviewState,
   HostBooking,
   HostSpace,
   MediaKind,
@@ -42,6 +43,7 @@ import type {
   Profile,
   PublicSpace,
   SpaceAccessDetails,
+  SpaceEdit,
 } from "./domain";
 import type { CancellationEvent } from "./reliability";
 import type { CreateBookingInput, Repository, ReviewInput } from "./repository";
@@ -68,6 +70,11 @@ interface SpaceRow {
   entry_instructions?: string;
   sublease_doc_path?: string;
   insurance_doc_path?: string | null;
+  sublease_doc_state?: string;
+  sublease_doc_reviewed_at?: string | null;
+  insurance_doc_state?: string;
+  insurance_doc_reviewed_at?: string | null;
+  doc_review_note?: string | null;
   lat?: number | null;
   lng?: number | null;
   // numeric(4,1) arrives as a string from PostgREST, not a number.
@@ -629,11 +636,68 @@ export class SupabaseRepository implements Repository {
         entryInstructions: row.entry_instructions ?? "",
         subleaseDocName: row.sublease_doc_path ?? null,
         insuranceDocName: row.insurance_doc_path ?? null,
+        subleaseReview: {
+          state: (row.sublease_doc_state as DocReviewState) ?? "pending",
+          reviewedAt: row.sublease_doc_reviewed_at
+            ? new Date(row.sublease_doc_reviewed_at as string)
+            : null,
+        },
+        insuranceReview: {
+          state: (row.insurance_doc_state as DocReviewState) ?? "pending",
+          reviewedAt: row.insurance_doc_reviewed_at
+            ? new Date(row.insurance_doc_reviewed_at as string)
+            : null,
+        },
+        reviewNote: (row.doc_review_note as string) ?? null,
         distanceLabel: "your space",
         reviewCount: 0,
         averageRating: null,
       };
     });
+  }
+
+  async editSpace(spaceId: string, edit: SpaceEdit): Promise<HostSpace> {
+    const hostId = await this.userId();
+
+    const patch: Record<string, unknown> = {};
+    if (edit.name !== undefined) patch.name = edit.name;
+    if (edit.hourlyRateCents !== undefined) patch.hourly_rate_cents = edit.hourlyRateCents;
+    if (edit.capacity !== undefined) patch.capacity = edit.capacity;
+    if (edit.accessType !== undefined) patch.access_type = edit.accessType;
+    if (edit.entryInstructions !== undefined) patch.entry_instructions = edit.entryInstructions;
+    if (edit.bufferMinutes !== undefined) patch.buffer_minutes = edit.bufferMinutes;
+    if (edit.accessible !== undefined) patch.accessible = edit.accessible;
+    if (edit.restroom !== undefined) patch.restroom = edit.restroom;
+    if (edit.category !== undefined) patch.category = edit.category;
+    if (edit.addressLine !== undefined) patch.address_line = edit.addressLine;
+    if (edit.lat !== undefined) patch.lat = edit.lat;
+    if (edit.lng !== undefined) patch.lng = edit.lng;
+
+    if (Object.keys(patch).length === 0) {
+      const [unchanged] = (await this.listMySpaces()).filter((s) => s.id === spaceId);
+      return unchanged;
+    }
+
+    /**
+     * The host id is in the filter as well as the policy.
+     *
+     * Belt and braces on the one call that can rewrite a live listing: the
+     * policy is what stops it, and this is what makes a mistake here fail
+     * loudly rather than quietly matching nothing.
+     */
+    const { error } = await this.db
+      .from("spaces")
+      .update(patch)
+      .eq("id", spaceId)
+      .eq("host_id", hostId);
+
+    // The trigger in 0019 raises when a booked space is moved. Its message is
+    // written for the host and says how many sessions are in the way, so it is
+    // passed through rather than replaced with something vaguer.
+    if (error) throw new Error(error.message);
+
+    const [updated] = (await this.listMySpaces()).filter((s) => s.id === spaceId);
+    return updated;
   }
 
   async createSpace(input: NewSpaceInput): Promise<HostSpace> {

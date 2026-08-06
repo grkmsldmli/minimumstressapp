@@ -24,6 +24,7 @@ import { type Screen, useApp } from "./app-state";
 import { AddSpace } from "./screens/add-space";
 import { Confirmed, MyBookings } from "./screens/bookings";
 import { Discover } from "./screens/discover";
+import { EditSpace } from "./screens/edit-space";
 import { EditAvailability, Earnings, HostDashboard, HostProfile } from "./screens/host";
 import { Legal } from "./screens/legal";
 import { PaymentSheet } from "./screens/payment-sheet";
@@ -458,6 +459,10 @@ export function App() {
             setEditingSpaceId(spaceId);
             go("edit-hours");
           }}
+          onEditSpace={(spaceId) => {
+            setEditingSpaceId(spaceId);
+            go("edit-space");
+          }}
           onOpenEarnings={() => go("earnings")}
           onOpenProfile={() => go("host-profile")}
           onReviewBooking={(bookingId) => {
@@ -490,7 +495,14 @@ export function App() {
     "practitioner-profile",
     "verify",
   ];
-  const hostOnly: Screen[] = ["host", "addspace", "edit-hours", "earnings", "host-profile"];
+  const hostOnly: Screen[] = [
+    "host",
+    "addspace",
+    "edit-hours",
+    "edit-space",
+    "earnings",
+    "host-profile",
+  ];
 
   if (profile.accountType === "host" && practitionerOnly.includes(screen)) {
     return hostLanding();
@@ -725,6 +737,30 @@ export function App() {
           }
         />
       );
+
+    case "edit-space": {
+      if (!editingSpace) return <Fallback onBack={() => go("host")} />;
+
+      /*
+       * Counted here rather than asked of the server, from the bookings the
+       * screen already has. The database refuses the move regardless — this is
+       * so the host sees the address locked before they type into it, instead
+       * of after the save fails.
+       */
+      const now = new Date();
+      const booked = hostBookings.filter(
+        (b) => b.spaceId === editingSpace.id && b.status === "upcoming" && b.startsAt > now,
+      ).length;
+
+      return (
+        <EditSpace
+          space={editingSpace}
+          bookedSessions={booked}
+          onBack={() => go("host")}
+          onSave={(edit) => mutate(() => repo.editSpace(editingSpace.id, edit))}
+        />
+      );
+    }
 
     case "earnings":
       return <Earnings spaces={mySpaces} bookings={hostBookings} onBack={back} />;

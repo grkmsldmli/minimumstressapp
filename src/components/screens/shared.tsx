@@ -480,18 +480,6 @@ export function RoleSelect({
                 : "List your space, set your hours, and get paid — with your lease, your payouts and your calendar in one place."}
             </p>
 
-            {/*
-              The separation is the product, not a shortfall. Renting a room
-              and letting one out are two businesses with different paperwork,
-              different money and different obligations; keeping them apart is
-              what stops a lease sitting next to a booking history. Said as the
-              reason it is, rather than as an apology for something missing.
-            */}
-            <p className="font-body font-normal text-[14px] text-white/45 mt-3 leading-relaxed">
-              {isPractitioner ? "Renting a room" : "Letting a room"} and{" "}
-              {isPractitioner ? "letting one out" : "renting one"} are two different businesses, so
-              they get two separate accounts. Plenty of people run both.
-            </p>
           </div>
 
           <div className="flex gap-2.5 mt-4">

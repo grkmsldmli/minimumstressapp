@@ -35,6 +35,7 @@ export type Screen =
   | "host"
   | "addspace"
   | "edit-hours"
+  | "edit-space"
   | "earnings"
   | "host-profile";
 

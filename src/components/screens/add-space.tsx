@@ -327,8 +327,7 @@ export function AddSpace({
                   below the moment that question occurs.
                 */}
                 <p className="font-body font-normal text-[13.5px] leading-relaxed mt-1.5 text-ink-faint">
-                  Yours in full. Our fee is added on top for the practitioner,
-                  never taken out of this.
+                  You keep this in full.
                 </p>
               </div>
               <div>

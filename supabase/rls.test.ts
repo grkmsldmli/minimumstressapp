@@ -741,6 +741,31 @@ describe("the two sides of one booking", () => {
  * worth anything is that it is true.
  */
 describe("accepting the terms", () => {
+  /**
+   * Written the way the app writes it.
+   *
+   * These tests passed against a plain UPDATE while the screen was silently
+   * failing, because the client upserts — and Postgres checks the proposed
+   * tuple before resolving the conflict, so a trigger that only fired on
+   * UPDATE never ran and the version arrived with no timestamp beside it.
+   * Testing a statement the app never issues proves the database works and
+   * says nothing about the app.
+   */
+  it("records an acceptance sent as an upsert, the way the app sends it", async () => {
+    await asUser(
+      PRACTITIONER,
+      `insert into profiles (id, terms_version) values (auth.uid(), 1)
+         on conflict (id) do update set terms_version = excluded.terms_version`,
+    );
+
+    const [row] = await asUser<{ terms_version: number; terms_accepted_at: string | null }>(
+      PRACTITIONER,
+      `select terms_version, terms_accepted_at from profiles where id = auth.uid()`,
+    );
+    expect(row.terms_version).toBe(1);
+    expect(row.terms_accepted_at).not.toBeNull();
+  });
+
   it("records the version the account agreed to", async () => {
     await asUser(PRACTITIONER, `update profiles set terms_version = 1 where id = auth.uid()`);
 

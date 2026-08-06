@@ -43,16 +43,30 @@ language plpgsql
 security definer
 set search_path = public
 as $$
+declare
+  was integer := case when tg_op = 'UPDATE' then old.terms_version else null end;
 begin
-  if new.terms_version is distinct from old.terms_version
-     or new.terms_accepted_at is distinct from old.terms_accepted_at then
+  /*
+   * Insert as well as update, because the client upserts.
+   *
+   * The app writes a profile with `on conflict do update`, and Postgres checks
+   * the proposed tuple before the conflict is resolved. A trigger that only
+   * fired on UPDATE therefore never ran: the version arrived without a
+   * timestamp, and the constraint below — the one insisting the two agree —
+   * rejected it. Both paths, so acceptance is recorded however it arrives.
+   */
+  if new.terms_version is distinct from was
+     or (tg_op = 'UPDATE' and new.terms_accepted_at is distinct from old.terms_accepted_at) then
 
     if new.terms_version is null then
+      if was is null then
+        return new;
+      end if;
       raise exception 'Accepted terms cannot be withdrawn.'
         using errcode = 'check_violation';
     end if;
 
-    if old.terms_version is not null and new.terms_version < old.terms_version then
+    if was is not null and new.terms_version < was then
       raise exception 'Terms version cannot go backwards.'
         using errcode = 'check_violation';
     end if;
@@ -68,7 +82,7 @@ $$;
 drop trigger if exists profiles_terms_acceptance on profiles;
 
 create trigger profiles_terms_acceptance
-  before update on profiles
+  before insert or update on profiles
   for each row
   when (auth.uid() is not null)
   execute function enforce_terms_acceptance();

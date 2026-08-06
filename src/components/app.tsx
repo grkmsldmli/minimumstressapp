@@ -76,6 +76,7 @@ export function App() {
   } = useApp();
 
   const [data, setData] = useState<Snapshot | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
   const [authBusy, setAuthBusy] = useState(false);
 
@@ -210,7 +211,18 @@ export function App() {
           sessions,
         });
       }
-    })();
+    })().catch((cause) => {
+      /*
+       * A failed load used to render nothing at all.
+       *
+       * There was no catch here, so one rejected request left `data` null
+       * forever and the guard below painted a blank white screen — no message,
+       * no retry, nothing to tell anybody whether the app was slow, broken, or
+       * signed out. The person looking at it cannot tell those apart, and
+       * neither could we.
+       */
+      if (!cancelled) setLoadError(cause instanceof Error ? cause.message : String(cause));
+    });
 
     return () => {
       cancelled = true;
@@ -376,7 +388,13 @@ export function App() {
   if (screen === "auth-entry") return renderAuthEntry();
   if (screen === "auth-verify") return renderAuthVerify();
 
-  if (!data) return <div className="h-full bg-white" />;
+  if (!data) {
+    return loadError ? (
+      <LoadFailed message={loadError} onRetry={() => { setLoadError(null); refresh(); }} />
+    ) : (
+      <div className="h-full bg-white" />
+    );
+  }
 
   const { profile, spaces, bookings, mySpaces, hostBookings, access, cancellations, sessions } =
     data;
@@ -463,6 +481,10 @@ export function App() {
             setEditingSpaceId(spaceId);
             go("edit-space");
           }}
+          onPreviewSpace={(spaceId) => {
+            setActiveSpaceId(spaceId);
+            go("detail");
+          }}
           onOpenEarnings={() => go("earnings")}
           onOpenProfile={() => go("host-profile")}
           onReviewBooking={(bookingId) => {
@@ -504,7 +526,14 @@ export function App() {
     "host-profile",
   ];
 
-  if (profile.accountType === "host" && practitionerOnly.includes(screen)) {
+  const previewingOwnListing =
+    screen === "detail" && mySpaces.some((space) => space.id === activeSpaceId);
+
+  if (
+    profile.accountType === "host" &&
+    practitionerOnly.includes(screen) &&
+    !previewingOwnListing
+  ) {
     return hostLanding();
   }
   if (profile.accountType === "practitioner" && hostOnly.includes(screen)) {
@@ -539,6 +568,7 @@ export function App() {
         <SpaceDetail
           space={activeSpace}
           isPro={profile.isPro}
+          preview={previewingOwnListing}
           onBack={back}
           onGoPro={() => go("pro")}
           onBook={(startsAt) => {
@@ -798,6 +828,34 @@ function describeAuthError(error: unknown): string {
 }
 
 /** Reached only if a screen is opened without the record it needs. */
+/**
+ * Something did not load, said out loud.
+ *
+ * What this replaces is a blank white screen. A person cannot tell a slow
+ * network from a broken app from a signed-out session by looking at nothing,
+ * so this says which it was and offers the one action that ever helps.
+ */
+function LoadFailed({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <div className="h-full flex flex-col items-center justify-center px-9 text-center bg-white">
+      <p className="font-display italic font-semibold text-[19px] text-navy">
+        We could not load your account
+      </p>
+      <p className="font-body font-normal text-[14px] leading-relaxed mt-2 text-ink-soft">
+        {message}
+      </p>
+      <button
+        type="button"
+        onClick={onRetry}
+        className="mt-6 px-7 py-3 rounded-full font-body font-medium text-[14.5px] text-white press"
+        style={{ backgroundColor: "#2578C2" }}
+      >
+        Try again
+      </button>
+    </div>
+  );
+}
+
 function Fallback({ onBack }: { onBack: () => void }) {
   return (
     <div className="h-full flex flex-col items-center justify-center gap-4 bg-white px-9 text-center">

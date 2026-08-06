@@ -43,6 +43,7 @@ export function HostDashboard({
   onAddSpace,
   onEditHours,
   onEditSpace,
+  onPreviewSpace,
   onOpenEarnings,
   onOpenProfile,
   onReviewBooking,
@@ -54,6 +55,8 @@ export function HostDashboard({
   onAddSpace: () => void;
   onEditHours: (spaceId: string) => void;
   onEditSpace: (spaceId: string) => void;
+  /** Opens the listing as a practitioner sees it. Live listings only. */
+  onPreviewSpace: (spaceId: string) => void;
   onOpenEarnings: () => void;
   onOpenProfile: () => void;
   /** Absent until the review window opens for a session. */
@@ -269,6 +272,19 @@ export function HostDashboard({
                 Upcoming
               </p>
               <div className="flex items-center gap-3">
+                {/*
+                  A host cannot otherwise see their own listing the way it is
+                  actually presented — the photos they chose, in the order
+                  they chose, at the size a practitioner sees them. They were
+                  publishing a page they had never looked at.
+                */}
+                <button
+                  type="button"
+                  onClick={() => onPreviewSpace(active.id)}
+                  className="font-body text-[13.5px] font-medium press text-sky-text"
+                >
+                  Preview
+                </button>
                 <button
                   type="button"
                   onClick={() => onEditSpace(active.id)}

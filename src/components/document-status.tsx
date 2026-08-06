@@ -86,6 +86,20 @@ export function DocumentStatus({
   );
 }
 
+/**
+ * The last segment, and only that.
+ *
+ * The column holds a storage path — owner id, listing id, a generated name —
+ * and printing it whole showed a host three UUIDs and told them nothing about
+ * which file this was. The stored name is generated anyway, so the extension
+ * is the only part that carries meaning; the label above it says the rest.
+ */
+function shortName(path: string): string {
+  const tail = path.split("/").pop() ?? path;
+  const dot = tail.lastIndexOf(".");
+  return dot > 0 ? `Uploaded ${tail.slice(dot + 1).toUpperCase()}` : "Uploaded file";
+}
+
 function Row({
   tone,
   icon,
@@ -115,7 +129,9 @@ function Row({
           {detail}
         </p>
         {file && (
-          <p className="font-body font-normal text-[12px] mt-0.5 truncate text-ink-faint">{file}</p>
+          <p className="font-body font-normal text-[12px] mt-0.5 truncate text-ink-faint">
+            {shortName(file)}
+          </p>
         )}
       </div>
     </div>

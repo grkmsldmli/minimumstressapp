@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Accessibility, ArrowLeft, Bath, Check, Key, Lock, Sun, Users, Zap } from "lucide-react";
 
-import { CatIcon, categoryGradient } from "@/components/brand";
+import { SpaceGallery } from "@/components/space-gallery";
 import { PrimaryButton } from "@/components/primitives";
 import { slotStartsForDate } from "@/lib/availability";
 import type { PublicSpace } from "@/lib/domain";
@@ -46,11 +46,20 @@ export function SpaceDetail({
   onBack,
   onBook,
   onGoPro,
+  preview = false,
 }: {
   space: PublicSpace;
   isPro: boolean;
   onBack: () => void;
   onBook: (startsAt: Date) => void;
+  /**
+   * True when the viewer is this listing's host.
+   *
+   * The screen is otherwise identical, deliberately — a preview that renders
+   * differently from the thing it previews is worth nothing. Only the action
+   * changes, because a host booking their own room is not a booking.
+   */
+  preview?: boolean;
   onGoPro: () => void;
 }) {
   const now = useNow();
@@ -89,49 +98,40 @@ export function SpaceDetail({
     isPro,
   });
 
-  const [from, to] = categoryGradient(space.category);
   const accessLabel =
     ACCESS_TYPES.find((a) => a.key === space.accessType)?.label ?? "Keypad code";
   const requirementGroups = requirementsByKind(space.requirements);
 
   return (
     <div className="h-full flex flex-col relative screen-in bg-white">
-      <div
-        className="h-[240px] shrink-0 relative overflow-hidden"
-        style={{ background: `radial-gradient(150% 130% at 20% 0%, ${from} 0%, ${to} 85%)` }}
-      >
-        <div className="absolute inset-0 flex items-center justify-center">
-          <CatIcon cat={space.category} size={30} color="rgba(255,255,255,0.9)" />
-        </div>
-        <div className="absolute inset-0 flex flex-col justify-between p-6">
-          <button
-            type="button"
-            onClick={onBack}
-            aria-label="Back"
-            className="w-9 h-9 rounded-full flex items-center justify-center press"
-            style={{ backgroundColor: "rgba(255,255,255,0.22)", backdropFilter: "blur(8px)" }}
+      <SpaceGallery media={space.media} category={space.category} height={320}>
+        <button
+          type="button"
+          onClick={onBack}
+          aria-label="Back"
+          className="w-9 h-9 rounded-full flex items-center justify-center press"
+          style={{ backgroundColor: "rgba(255,255,255,0.22)", backdropFilter: "blur(8px)" }}
+        >
+          <ArrowLeft size={16} color="#fff" />
+        </button>
+        <div>
+          <span
+            className="px-2.5 py-1 rounded-full font-body text-[12px] text-white"
+            style={{ backgroundColor: "rgba(255,255,255,0.2)", backdropFilter: "blur(6px)" }}
           >
-            <ArrowLeft size={16} color="#fff" />
-          </button>
-          <div>
-            <span
-              className="px-2.5 py-1 rounded-full font-body text-[12px] text-white"
-              style={{ backgroundColor: "rgba(255,255,255,0.2)", backdropFilter: "blur(6px)" }}
-            >
-              {roomTypeFor(space.category)}
-            </span>
-            <h2
-              className="font-display italic font-semibold text-[28px] text-white leading-tight mt-2"
-              style={{ textShadow: "0 2px 12px rgba(0,0,0,0.25)" }}
-            >
-              {space.name}
-            </h2>
-            <p className="font-body font-normal text-[13.5px] text-white/80 mt-0.5">
-              {space.distanceLabel} · fits {space.capacity}
-            </p>
-          </div>
+            {roomTypeFor(space.category)}
+          </span>
+          <h2
+            className="font-display italic font-semibold text-[28px] text-white leading-tight mt-2"
+            style={{ textShadow: "0 2px 12px rgba(0,0,0,0.25)" }}
+          >
+            {space.name}
+          </h2>
+          <p className="font-body font-normal text-[13.5px] text-white/80 mt-0.5">
+            {space.distanceLabel} · fits {space.capacity}
+          </p>
         </div>
-      </div>
+      </SpaceGallery>
 
       <div className="flex-1 overflow-y-auto px-6 pt-5 pb-36">
         <p className="font-body font-normal text-[14.5px] leading-relaxed text-ink-muted">
@@ -354,11 +354,15 @@ export function SpaceDetail({
         className="absolute bottom-0 inset-x-0 px-6 pt-4 pb-6"
         style={{ background: "linear-gradient(to top, #FFFFFF 75%, transparent)" }}
       >
+        {preview ? (
+          <PrimaryButton onClick={onBack}>Back to your studio</PrimaryButton>
+        ) : (
         <PrimaryButton disabled={!selected} onClick={() => selected && onBook(selected)}>
           {selected
             ? `Book ${selected.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })} · ${formatCents(priced.totalCents)}`
             : "Choose a time"}
         </PrimaryButton>
+        )}
       </div>
     </div>
   );

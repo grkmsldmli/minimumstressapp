@@ -404,6 +404,8 @@ function FeaturedCard({
 }) {
   const [from, to] = categoryGradient(space.category);
   const price = browsePriceCents(space, isPro);
+  const cover = space.media[0] ?? null;
+  const photoCount = space.media.length;
 
   return (
     <TiltCard
@@ -415,17 +417,45 @@ function FeaturedCard({
         border: "1px solid #E7EEF6",
       }}
     >
-      <div
-        className="h-[145px] relative flex items-end justify-between p-4"
-        style={{ background: `radial-gradient(130% 110% at 20% 0%, ${from} 0%, ${to} 90%)` }}
-      >
-        <CatIcon cat={space.category} size={24} color="rgba(255,255,255,0.92)" />
+      {/*
+        The room itself, when there is one. Every card used to be the same
+        coloured rectangle with the same icon, which made a wall of listings
+        indistinguishable at exactly the moment somebody is choosing between
+        them.
+      */}
+      <div className="h-[145px] relative">
+        {cover ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={cover.url} alt="" className="absolute inset-0 w-full h-full object-cover" />
+        ) : (
+          <div
+            className="absolute inset-0 flex items-center justify-center"
+            style={{ background: `radial-gradient(130% 110% at 20% 0%, ${from} 0%, ${to} 90%)` }}
+          >
+            <CatIcon cat={space.category} size={24} color="rgba(255,255,255,0.92)" />
+          </div>
+        )}
+        <div
+          className="absolute inset-x-0 bottom-0 pointer-events-none"
+          style={{
+            height: 72,
+            background: "linear-gradient(to top, rgba(10,26,44,0.6), transparent)",
+          }}
+        />
         <span
-          className="px-2 py-1 rounded-full font-body text-[10.5px] text-white"
+          className="absolute right-4 bottom-4 px-2 py-1 rounded-full font-body text-[10.5px] text-white"
           style={{ backgroundColor: "rgba(255,255,255,0.18)", backdropFilter: "blur(6px)" }}
         >
           {roomTypeFor(space.category)}
         </span>
+        {photoCount > 1 && (
+          <span
+            className="absolute left-4 bottom-4 px-2 py-1 rounded-full font-body text-[10.5px] text-white"
+            style={{ backgroundColor: "rgba(10,26,44,0.45)", backdropFilter: "blur(6px)" }}
+          >
+            {photoCount} photos
+          </span>
+        )}
       </div>
       <div className="p-4 bg-white">
         <div className="flex items-baseline justify-between">
@@ -462,6 +492,7 @@ function SpaceRow({
 }) {
   const [from, to] = categoryGradient(space.category);
   const price = browsePriceCents(space, isPro);
+  const cover = space.media[0] ?? null;
 
   return (
     <button
@@ -474,12 +505,21 @@ function SpaceRow({
         boxShadow: "0 4px 14px -8px rgba(22,48,78,0.12)",
       }}
     >
-      <div
-        className="w-14 h-14 rounded-xl shrink-0 flex items-center justify-center"
-        style={{ background: `radial-gradient(120% 120% at 25% 15%, ${from}, ${to})` }}
-      >
-        <CatIcon cat={space.category} size={18} color="rgba(255,255,255,0.92)" />
-      </div>
+      {cover ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={cover.url}
+          alt=""
+          className="w-14 h-14 rounded-xl shrink-0 object-cover"
+        />
+      ) : (
+        <div
+          className="w-14 h-14 rounded-xl shrink-0 flex items-center justify-center"
+          style={{ background: `radial-gradient(120% 120% at 25% 15%, ${from}, ${to})` }}
+        >
+          <CatIcon cat={space.category} size={18} color="rgba(255,255,255,0.92)" />
+        </div>
+      )}
       <div className="flex-1 min-w-0">
         <p className="font-body font-medium text-[15px] text-navy">
           {space.name} · {roomTypeFor(space.category)}

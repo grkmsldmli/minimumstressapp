@@ -43,6 +43,16 @@ export function proxy(request: NextRequest): NextResponse {
     // sees before their photo has finished uploading.
     `img-src 'self' data: blob: ${SUPABASE_ORIGIN} ${TILES} https://*.stripe.com`,
 
+    /*
+     * Video, which had no directive and so fell through to default-src 'self'.
+     *
+     * A host can upload a room tour, and the browser would have refused to
+     * play it back from the bucket it was just stored in — silently, since a
+     * blocked media element looks the same as one that has not loaded yet.
+     * Same origins as img-src, for the same files.
+     */
+    `media-src 'self' data: blob: ${SUPABASE_ORIGIN}`,
+
     `font-src 'self' data:`,
 
     // The geocoder is deliberately absent: address lookups are proxied through

@@ -147,14 +147,14 @@ export function explainStanding(party: Party, standing: Standing): string {
 
   switch (standing.level) {
     case "suspended":
-      return `You can't take ${noun} until ${standing.suspendedUntil!.toLocaleDateString("en-US", { month: "long", day: "numeric" })}, after ${standing.lateCancellations} last-minute cancellations in ${STANDING_WINDOW_DAYS} days. Sessions already booked are unaffected and still go ahead. If something here is wrong, get in touch — we'd rather hear it.`;
+      return `Paused until ${standing.suspendedUntil!.toLocaleDateString("en-US", { month: "long", day: "numeric" })} after ${standing.lateCancellations} last-minute cancellations in ${STANDING_WINDOW_DAYS} days. You can't take ${noun} until then. Sessions already booked go ahead. Contact us if this is wrong.`;
 
     case "warned":
       return `${standing.lateCancellations} last-minute cancellations in the past ${STANDING_WINDOW_DAYS} days. ${standing.remainingBeforeSuspension === 1 ? "One more" : `${standing.remainingBeforeSuspension} more`} and you won't be able to take ${noun} for ${SUSPENSION_DAYS} days. Cancellations stop counting after ${STANDING_WINDOW_DAYS} days.`;
 
     case "clear":
       return standing.lateCancellations === 0
-        ? "No last-minute cancellations. Thank you — people plan their day around these."
+        ? `No last-minute cancellations in the past ${STANDING_WINDOW_DAYS} days. ${suspendAt} would pause your bookings for ${SUSPENSION_DAYS} days.`
         : `${standing.lateCancellations} last-minute cancellation${standing.lateCancellations === 1 ? "" : "s"} in the past ${STANDING_WINDOW_DAYS} days. ${suspendAt} would pause your bookings for ${SUSPENSION_DAYS} days.`;
   }
 }

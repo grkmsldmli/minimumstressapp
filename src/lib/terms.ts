@@ -25,25 +25,26 @@ export function hasAcceptedTerms(accepted: { version: number | null }): boolean 
 /**
  * The points somebody is agreeing to, in the order they matter.
  *
- * Short, and each one a consequence rather than a rule. "Don't share your
- * number" reads as a house style; what somebody needs before they type it is
- * what stops applying the moment they do.
+ * Plainly worded, and each one states what the app does or does not do rather
+ * than how it feels about it. An earlier draft ended this section with "we can
+ * only stand behind what we can see" — a sentence that sounds like a position
+ * and commits to nothing. Anything relied on in a dispute has to be a fact.
  */
 export const ACCEPTANCE_POINTS = [
   {
-    title: "Keep bookings in the app",
-    body: "The card that is held rather than charged, the refund if a host cancels, the door code, and somebody to call when it goes wrong — all of it runs off the booking record.",
+    title: "Book and pay in the app",
+    body: "Payment authorisation, refunds, cancellation cover, access codes, reviews and support are provided only for bookings made through Minimum Stress.",
   },
   {
-    title: "Don't swap contact details",
-    body: "Phone numbers and email addresses are hidden in messages. Asking for them is a reason an account can be suspended.",
+    title: "Do not exchange contact or payment details",
+    body: "Phone numbers, email addresses and payment details are removed from messages. Requesting them may result in suspension of your account.",
   },
   {
-    title: "Sessions arranged elsewhere are your own",
-    body: "If you book or pay outside Minimum Stress we have no record of it and cannot help with payment, access, damage, injury or a dispute. We can only stand behind what we can see.",
+    title: "Bookings made outside the app are not covered",
+    body: "Minimum Stress is not a party to any session arranged or paid for outside the app, holds no record of it, and provides no payment protection, refund, access, verification, insurance or dispute resolution for it. Liability for such arrangements rests with the parties who made them.",
   },
   {
-    title: "You are running your own business",
-    body: "Practitioners and hosts are independent. Hosts must hold the right to sublicense their space, and remain responsible for their property and insurance.",
+    title: "You are an independent business",
+    body: "Practitioners and hosts contract with each other, not with Minimum Stress. Hosts must hold the legal right to sublicense their space and remain responsible for their property, insurance and compliance.",
   },
 ] as const;

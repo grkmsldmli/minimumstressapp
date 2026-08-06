@@ -202,7 +202,7 @@ export function render(kind: NotificationKind, context: MessageContext): Message
         subject: `Your ${spaceName} session was cancelled by the studio`,
         body: lines(
           greeting(name),
-          `We are sorry — the studio has cancelled your session at ${spaceName} on ${when}. That is not the experience we want you to have.`,
+          `The studio has cancelled your session at ${spaceName} on ${when}.`,
           context.refundedCents
             ? `${formatCents(context.refundedCents)} is refunded in full. You are never charged when a studio cancels.`
             : `You are not charged. Your card was only ever authorised for this session, and that hold is now released — there is nothing to refund because nothing was taken.`,

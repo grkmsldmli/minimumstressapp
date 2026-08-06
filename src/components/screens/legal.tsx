@@ -30,10 +30,10 @@ const SECTIONS = [
     key: "off-platform",
     title: "Booking outside the app",
     points: [
-      "Book and pay through Minimum Stress. Everything we do for you runs off that record: the authorisation that is held rather than charged, the refund when a host cancels, the door code, the review, the emergency contact, and a person to call when something goes wrong.",
-      "Do not exchange phone numbers, email addresses or payment details. We mask them in messages, and asking for them is a reason we may suspend an account.",
-      "If you arrange a session outside the app, it is between the two of you. We have no record of it, we cannot verify it happened, and we cannot help with payment, access, damage, injury or a dispute arising from it. None of the protections above apply, and Minimum Stress accepts no responsibility for it.",
-      "This is not a penalty we invented. We can only stand behind what we can see.",
+      "All bookings and payments must be made through Minimum Stress. Payment authorisation, capture, refunds, cancellation cover, access codes, reviews, emergency contacts and support apply only to bookings recorded in the app.",
+      "Users must not exchange phone numbers, email addresses or payment details. These are removed from messages automatically. Requesting or providing them may result in suspension.",
+      "Minimum Stress is not a party to any session arranged or paid for outside the app. We hold no record of such arrangements and provide no payment protection, refund, access, verification, insurance or dispute resolution in respect of them. Liability rests with the parties who made them.",
+      "Soliciting users to transact outside the app is a breach of these terms and may result in permanent suspension.",
     ],
   },
   {
@@ -64,7 +64,7 @@ const SECTIONS = [
     points: [
       "After a session, both sides can review each other. Neither review is visible until you have both written, or until 14 days have passed — so nobody is answering a review they have already read.",
       "A rating of three or below, or a review that flags a safety concern, is read by a person on our team.",
-      "The safety flag is separate from the stars on purpose. A session can go perfectly and still end with a fire door propped open, and we would rather hear about that than lose it because the rating was good.",
+      "The safety flag is recorded separately from the rating. A session rated five stars can still carry a safety concern, and the flag is read whatever the rating says.",
       "We never tell either side whether a review was escalated, and we never share who reported what without asking first.",
       "Both hosts and practitioners can give us an emergency contact. Nobody you book with ever sees it — only our team, and only if something goes wrong during a session.",
     ],
@@ -75,7 +75,7 @@ const SECTIONS = [
     points: [
       "Your card is authorised at booking, not charged. The money moves when the session starts.",
       "Cancel 24 or more hours ahead and the authorisation is released in full. Nothing was ever taken.",
-      "Cancel inside 24 hours, or fail to show, and the full amount is captured — the host has already turned other bookings away.",
+      "Cancel inside 24 hours, or fail to attend, and the full amount is captured.",
       "If a host cancels on you, you are refunded automatically. That refund is never replaced by credit or made optional.",
       "A host cancellation also earns you goodwill credit worth our own fee on that booking. It applies to a future booking and never reduces what that future host is paid.",
     ],
@@ -84,7 +84,7 @@ const SECTIONS = [
     key: "standing",
     title: "Repeated Cancellations",
     points: [
-      "Cancelling inside 24 hours counts towards your standing. Cancelling earlier never does — that is the whole point of the 24-hour line.",
+      "Cancellations made 24 or more hours ahead do not count towards your standing. Only those inside the window do.",
       "Hosts: three last-minute cancellations in 90 days pauses new bookings on your spaces for 14 days. Two brings a warning first, so it is never a surprise.",
       "Practitioners: six in 90 days pauses new bookings for 14 days. The bar is higher because a late cancellation already charges you in full — the host is paid for the hour they set aside, so the loss between you is settled. A host cancelling leaves someone with no room and sometimes a client already waiting, which nothing makes right.",
       "A pause stops new bookings only. Every session already on the calendar goes ahead. Cancelling those would land the harm on somebody who did nothing.",

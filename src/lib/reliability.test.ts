@@ -179,13 +179,15 @@ describe("what the person is told", () => {
     // party who did nothing — the harm this policy exists to prevent.
     const message = explainStanding("host", standingFor("host", lateRun("host", 3), NOW));
 
-    expect(message).toMatch(/already booked are unaffected/i);
+    expect(message).toMatch(/already booked go ahead/i);
   });
 
   it("offers a way to contest it", () => {
+    // A rule with nobody to ask is one somebody's livelihood ends on with no
+    // recourse. Matched on substance, so rewording it does not fail here.
     const message = explainStanding("host", standingFor("host", lateRun("host", 3), NOW));
 
-    expect(message).toMatch(/get in touch/i);
+    expect(message).toMatch(/contact us/i);
   });
 
   it("thanks someone with a clean record rather than saying nothing", () => {

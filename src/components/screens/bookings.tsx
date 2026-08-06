@@ -488,7 +488,7 @@ function UpcomingBooking({
             >
               {freeToCancel
                 ? "More than 24 hours away — cancel now for a full release. Your card was only ever held."
-                : `Less than 24 hours away — the host already turned other bookings away. Cancelling now still charges ${formatCents(booking.totalCents)}.`}
+                : `Less than 24 hours away. Cancelling now still charges ${formatCents(booking.totalCents)}.`}
             </p>
           </div>
 

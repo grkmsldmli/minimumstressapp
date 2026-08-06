@@ -30,32 +30,56 @@ describe("hasAcceptedTerms", () => {
 });
 
 describe("what somebody is agreeing to", () => {
-  it("says a session arranged off the app is their own", () => {
-    const text = ACCEPTANCE_POINTS.map((p) => `${p.title} ${p.body}`).join(" ").toLowerCase();
+  const all = ACCEPTANCE_POINTS.map((p) => `${p.title} ${p.body}`).join(" ").toLowerCase();
 
-    expect(text).toContain("outside minimum stress");
-    expect(text).toContain("cannot help");
+  /**
+   * The clause the business rests on. Asserted by what it must contain rather
+   * than by its exact wording, so rephrasing it does not fail the test and
+   * dropping the substance does.
+   */
+  it("excludes bookings made outside the app", () => {
+    expect(all).toContain("outside the app");
+    expect(all).toContain("not a party");
   });
 
-  it("names what stops applying, not only the rule", () => {
-    const text = ACCEPTANCE_POINTS.map((p) => p.body).join(" ").toLowerCase();
-
-    // A refund, a door code and somebody to call: the three things a person
-    // actually loses by taking a booking elsewhere.
-    expect(text).toContain("refund");
-    expect(text).toContain("door code");
-    expect(text).toContain("call");
+  it("names the specific protections that do not apply", () => {
+    // Vague exclusions are argued over. These are the things somebody would
+    // actually come back asking for.
+    for (const protection of ["payment protection", "refund", "access", "insurance", "dispute"]) {
+      expect(all, protection).toContain(protection);
+    }
   });
 
-  it("states the suspension consequence for asking for contact details", () => {
-    const text = ACCEPTANCE_POINTS.map((p) => p.body).join(" ").toLowerCase();
-    expect(text).toContain("suspended");
+  it("places liability rather than only declining it", () => {
+    expect(all).toContain("liability");
+    expect(all).toContain("rests with the parties");
   });
 
-  it("keeps each point short enough to be read", () => {
+  it("states the consequence of asking for contact details", () => {
+    expect(all).toContain("suspension");
+  });
+
+  /** Independence, in the words that matter for employment status. */
+  it("says the two sides contract with each other", () => {
+    expect(all).toContain("contract with each other");
+    expect(all).toContain("sublicense");
+  });
+
+  /**
+   * Read on a phone, before a button. The liability clause is allowed to run
+   * longer than the rest — an exclusion that leaves a gap is worse than one
+   * that takes an extra line.
+   */
+  it("keeps every point short enough to be read", () => {
     for (const point of ACCEPTANCE_POINTS) {
-      expect(point.body.length, point.title).toBeLessThan(260);
+      expect(point.body.length, point.title).toBeLessThan(320);
       expect(point.title.length, point.title).toBeLessThan(50);
+    }
+  });
+
+  it("has no point that sounds like an opinion", () => {
+    for (const phrase of ["we can only", "we would rather", "we invented", "we believe"]) {
+      expect(all, phrase).not.toContain(phrase);
     }
   });
 });

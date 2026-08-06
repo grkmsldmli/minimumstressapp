@@ -3,6 +3,7 @@
 import { AlertTriangle, Check, Info } from "lucide-react";
 
 import {
+  LATE_CANCELLATION_HOURS,
   STANDING_WINDOW_DAYS,
   SUSPENSION_DAYS,
   THRESHOLDS,
@@ -12,12 +13,11 @@ import {
 } from "@/lib/reliability";
 
 /**
- * Where someone stands, shown to them.
+ * Where someone stands.
  *
- * A rule nobody can see is not a rule, it is a trap that springs later. This
- * sits on the profile permanently — not only once something has gone wrong —
- * so the answer to "where am I" is always one tap away rather than a surprise
- * on the day it costs something.
+ * Shown permanently rather than only once something has gone wrong, so the
+ * count is checkable before it matters rather than announced on the day it
+ * costs something.
  */
 export function StandingNotice({ party, standing }: { party: Party; standing: Standing }) {
   const palette = {
@@ -59,11 +59,10 @@ export function StandingNotice({ party, standing }: { party: Party; standing: St
 }
 
 /**
- * The rule itself, in the flow where it starts to apply.
+ * The count, at the point of cancelling inside the window.
  *
- * Shown when someone is about to cancel inside the window — the one moment
- * they can still change their mind, and the only honest time to mention that
- * it counts.
+ * Stating it here rather than afterwards is the difference between a rule and
+ * a penalty nobody was told about.
  */
 export function CancellationConsequence({
   party,
@@ -96,10 +95,8 @@ export function CancellationConsequence({
           </>
         ) : (
           <>
-            Cancelling this close counts towards your standing — {after} of {suspendAt} in{" "}
-            {STANDING_WINDOW_DAYS} days. {party === "host"
-              ? "Someone has planned their day around this room."
-              : "The host set this hour aside and turned other bookings away."}
+            Cancelling within {LATE_CANCELLATION_HOURS} hours counts towards your standing —{" "}
+            {after} of {suspendAt} in {STANDING_WINDOW_DAYS} days.
           </>
         )}
       </p>

@@ -51,22 +51,14 @@ alter table spaces
   );
 
 -- ------------------------------------------------------------------
--- A live listing has a verified lease behind it.
+-- Existing listings, recorded before the rule is imposed.
 --
--- 0010 already refuses an active listing with no sublease document. This is
--- the same rule one step further on: having the file is not the same as
--- having read it, and "active" is the app telling practitioners this room is
--- legitimately available.
--- ------------------------------------------------------------------
-alter table spaces
-  drop constraint if exists spaces_active_requires_verified_lease;
-alter table spaces
-  add constraint spaces_active_requires_verified_lease check (
-    status <> 'active' or sublease_doc_state = 'verified'
-  );
-
--- ------------------------------------------------------------------
--- Existing listings.
+-- The constraint below used to sit above this block, and adding a check
+-- validates every row already in the table — so it was judging listings that
+-- were live and correct against a column that had only just been created and
+-- still said 'pending' for all of them. It failed on the first real database
+-- it met, having passed every test, because the test database had no rows in
+-- it yet.
 --
 -- Anything already live was reviewed by a person before it was switched on,
 -- so it is recorded as verified rather than dropped back into a queue that
@@ -85,3 +77,18 @@ set insurance_doc_state = 'verified',
 where status = 'active'
   and insurance_doc_path is not null
   and insurance_doc_state = 'pending';
+
+-- ------------------------------------------------------------------
+-- A live listing has a verified lease behind it.
+--
+-- 0010 already refuses an active listing with no sublease document. This is
+-- the same rule one step further on: having the file is not the same as
+-- having read it, and "active" is the app telling practitioners this room is
+-- legitimately available.
+-- ------------------------------------------------------------------
+alter table spaces
+  drop constraint if exists spaces_active_requires_verified_lease;
+alter table spaces
+  add constraint spaces_active_requires_verified_lease check (
+    status <> 'active' or sublease_doc_state = 'verified'
+  );

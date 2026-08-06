@@ -20,6 +20,7 @@ import {
   verifyEmailCode,
 } from "@/lib/supabase/auth";
 
+import { type Provider, enabledProviders } from "@/lib/auth-providers";
 import { TERMS_VERSION, hasAcceptedTerms } from "@/lib/terms";
 
 import { type Screen, useApp } from "./app-state";
@@ -81,6 +82,7 @@ export function App() {
   const [data, setData] = useState<Snapshot | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
+
   const [authBusy, setAuthBusy] = useState(false);
 
   /**
@@ -156,6 +158,32 @@ export function App() {
   // Read once per render rather than threaded through: it is a build-time
   // constant, and every caller wants the same answer.
   const onSupabase = supabaseBackendEnabled();
+  /**
+   * Which ways in the auth server will actually accept.
+   *
+   * Asked rather than assumed. Both OAuth buttons rendered unconditionally and
+   * both failed, because neither provider was enabled on the project — two of
+   * the three ways in were broken on the first screen anybody sees. A constant
+   * would have the same problem the day somebody turns one on.
+   */
+  // The mock has no auth server to ask, and both routes work in it, so that
+  // answer is the initial state rather than an effect that sets it back.
+  const [providers, setProviders] = useState<Provider[]>(() =>
+    onSupabase ? [] : ["apple", "google"],
+  );
+
+  useEffect(() => {
+    if (!onSupabase) return;
+
+    const stop = new AbortController();
+    void enabledProviders(
+      process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
+      process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? "",
+      stop.signal,
+    ).then(setProviders);
+
+    return () => stop.abort();
+  }, [onSupabase]);
 
   /**
    * The screens someone sees before they have an account.
@@ -272,6 +300,7 @@ export function App() {
   // data guard, while every other screen renders from the switch below.
   const renderAuthEntry = () => (
         <AuthEntry
+          providers={providers}
           error={authError}
           busy={authBusy}
           onEmail={(value) => {

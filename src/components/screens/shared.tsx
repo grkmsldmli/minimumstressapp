@@ -5,6 +5,7 @@ import { Building2, ChevronRight, Mail, Sparkles, Users } from "lucide-react";
 
 import { Ambient, BreathingLogo, Headline, Wordmark } from "@/components/brand";
 import { PrimaryButton } from "@/components/primitives";
+import type { Provider } from "@/lib/auth-providers";
 
 const NAVY_WASH =
   "radial-gradient(120% 90% at 50% 0%, #1E4066 0%, #16304E 55%, #0E2138 100%)";
@@ -202,11 +203,18 @@ function GoogleGlyph({ size = 16 }: { size?: number }) {
 export function AuthEntry({
   onEmail,
   onProvider,
+  providers,
   error,
   busy = false,
 }: {
   onEmail: (email: string) => void;
-  onProvider: (provider: "apple" | "google") => void;
+  onProvider: (provider: Provider) => void;
+  /**
+   * The ways in that actually work, read from the auth server rather than
+   * assumed. Both buttons used to render unconditionally and both failed,
+   * because neither provider was enabled on the project.
+   */
+  providers: Provider[];
   /** Why the code could not be sent. Shown here because there is no code screen to show it on. */
   error?: string | null;
   busy?: boolean;
@@ -226,31 +234,42 @@ export function AuthEntry({
           <Headline pre="Let's get" accent="you in." size={27} light />
         </div>
         <p className="font-body font-normal text-[14px] text-white/60 mt-3 leading-relaxed">
-          One tap with Apple or Google — or use email below.
+          {providers.length > 0
+            ? "One tap with Apple or Google — or use email below."
+            : "We'll email you a six-digit code. No password to remember."}
         </p>
       </div>
 
       <div className="relative z-10">
-        <div className="flex flex-col gap-2.5">
-          <button
-            type="button"
-            onClick={() => onProvider("apple")}
-            className="w-full flex items-center justify-center gap-2 py-3.5 rounded-full font-body font-medium text-[15px] press"
-            style={{ backgroundColor: "#fff", color: "#000" }}
-          >
-            <AppleGlyph /> Continue with Apple
-          </button>
-          <button
-            type="button"
-            onClick={() => onProvider("google")}
-            className="w-full flex items-center justify-center gap-2 py-3.5 rounded-full font-body font-medium text-[15px] press text-navy"
-            style={{ backgroundColor: "#fff", border: "1px solid #E1E6EC" }}
-          >
-            <GoogleGlyph /> Continue with Google
-          </button>
-        </div>
+        {providers.length > 0 && (
+          <div className="flex flex-col gap-2.5">
+            {providers.includes("apple") && (
+              <button
+                type="button"
+                onClick={() => onProvider("apple")}
+                className="w-full flex items-center justify-center gap-2 py-3.5 rounded-full font-body font-medium text-[15px] press"
+                style={{ backgroundColor: "#fff", color: "#000" }}
+              >
+                <AppleGlyph /> Continue with Apple
+              </button>
+            )}
+            {providers.includes("google") && (
+              <button
+                type="button"
+                onClick={() => onProvider("google")}
+                className="w-full flex items-center justify-center gap-2 py-3.5 rounded-full font-body font-medium text-[15px] press text-navy"
+                style={{ backgroundColor: "#fff", border: "1px solid #E1E6EC" }}
+              >
+                <GoogleGlyph /> Continue with Google
+              </button>
+            )}
+          </div>
+        )}
 
-        <div className="flex items-center gap-3 my-5">
+        <div
+          className="flex items-center gap-3 my-5"
+          style={{ display: providers.length > 0 ? undefined : "none" }}
+        >
           <div className="flex-1 h-px" style={{ backgroundColor: "rgba(255,255,255,0.16)" }} />
           <span className="font-body font-normal text-[11px] text-white/40 uppercase tracking-wide">
             or with email

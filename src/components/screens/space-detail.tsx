@@ -9,7 +9,8 @@ import { slotStartsForDate } from "@/lib/availability";
 import type { PublicSpace } from "@/lib/domain";
 import {
   INSTANT_FEE_CENTS,
-  PRO_HORIZON_DAYS,
+  BOOKING_HORIZON_DAYS,
+  MAX_UPCOMING_BOOKINGS_FREE,
   formatCents,
   isInstantSlot,
   isWithinBookingHorizon,
@@ -68,7 +69,15 @@ export function SpaceDetail({
   const [dayOffset, setDayOffset] = useState(0);
   const [selected, setSelected] = useState<Date | null>(null);
 
-  const horizonDays = isPro ? PRO_HORIZON_DAYS : 0;
+  /*
+   * The same window for everybody, and the same one the booking rules use.
+   *
+   * This read `isPro ? PRO_HORIZON_DAYS : 0`, so a free account was rendered
+   * exactly one day tab — today — long after the rule underneath had stopped
+   * agreeing. The screen kept showing the empty afternoon it had always shown
+   * while the server would happily have taken a booking for Tuesday.
+   */
+  const horizonDays = BOOKING_HORIZON_DAYS;
 
   // Midnight today, as a number. Only the calendar day matters for the day
   // tabs, so keying off this rather than `now` stops the 30-second tick
@@ -313,11 +322,11 @@ export function SpaceDetail({
           >
             <span className="flex items-center gap-1.5 font-body font-medium text-[15px] text-navy">
               <Zap size={12} color="#E8A23D" />
-              Pro books up to {PRO_HORIZON_DAYS} days ahead
+              Pro holds more than {MAX_UPCOMING_BOOKINGS_FREE} at once
             </span>
             <span className="block font-body font-normal text-[13.5px] mt-0.5 text-ink-soft">
-              Without it, bookings are same-day only — and instant slots cost{" "}
-              {formatCents(INSTANT_FEE_CENTS)}.
+              A free account holds {MAX_UPCOMING_BOOKINGS_FREE} sessions at a time. Pro also waives
+              the {formatCents(INSTANT_FEE_CENTS)} instant fee and takes 10% off every booking.
             </span>
           </button>
         )}

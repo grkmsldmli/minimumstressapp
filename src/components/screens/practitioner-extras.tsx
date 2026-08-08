@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
   ChevronRight,
-  Clock,
+  CalendarRange,
   CreditCard,
   FileUp,
   LogOut,
@@ -23,7 +23,12 @@ import { StandingNotice } from "@/components/standing-notice";
 import { AvatarUpload, DocumentUpload } from "@/components/uploads";
 import type { AccountType, Profile } from "@/lib/domain";
 import type { Standing } from "@/lib/reliability";
-import { INSTANT_FEE_CENTS, PRO_HORIZON_DAYS, PRO_PRICE_CENTS, formatCents } from "@/lib/money";
+import {
+  INSTANT_FEE_CENTS,
+  MAX_UPCOMING_BOOKINGS_FREE,
+  PRO_PRICE_CENTS,
+  formatCents,
+} from "@/lib/money";
 
 import { NavyScreen } from "./shared";
 
@@ -126,9 +131,19 @@ const PERKS = [
     sub: `Book last-minute slots free — save ${formatCents(INSTANT_FEE_CENTS)} each time`,
   },
   {
-    icon: Clock,
-    title: "Priority booking window",
-    sub: `Reserve open hours up to ${PRO_HORIZON_DAYS} days out, instead of same-day only`,
+    icon: CalendarRange,
+    title: "Book as many at a time as you like",
+    /*
+     * This replaced "priority booking window", which had stopped being true.
+     * Everybody sees seven days now — a shorter window made a host open on
+     * Tuesdays and Fridays invisible five days out of seven, so it was not a
+     * benefit being sold, it was the product being withheld.
+     *
+     * The cap is the honest version of the same idea: invisible to somebody
+     * who has never booked, felt only by the practitioner already running
+     * several rooms a week.
+     */
+    sub: `Run more than ${MAX_UPCOMING_BOOKINGS_FREE} sessions at once — free accounts hold ${MAX_UPCOMING_BOOKINGS_FREE} at a time`,
   },
   {
     icon: Percent,
@@ -158,8 +173,8 @@ export function ProScreen({
             <Headline pre="You're" accent="Pro." size={28} light />
           </div>
           <p className="font-body font-normal text-[14.5px] text-white/70 leading-relaxed mt-3">
-            Instant fees are waived, your 10% discount is live, and you can book up to{" "}
-            {PRO_HORIZON_DAYS} days ahead.
+            Instant fees are waived, your 10% discount is live, and there is no limit on how many
+            sessions you hold at once.
           </p>
           <button
             type="button"

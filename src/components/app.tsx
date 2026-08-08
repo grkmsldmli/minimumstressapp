@@ -620,7 +620,19 @@ export function App() {
     return renderDiscover();
   }
 
-  const activeSpace = spaces.find((s) => s.id === activeSpaceId) ?? null;
+  /**
+   * The public catalogue first, then the host's own listings.
+   *
+   * `spaces` holds live listings only, so previewing a listing still under
+   * review found nothing and dropped the host onto the not-found screen —
+   * which is the one moment they most want to look, since it is their last
+   * chance to fix a photo before anybody else sees it. A host's own record
+   * carries everything the public one does.
+   */
+  const activeSpace =
+    spaces.find((s) => s.id === activeSpaceId) ??
+    mySpaces.find((s) => s.id === activeSpaceId) ??
+    null;
   const activeBooking = bookings.find((b) => b.id === activeBookingId) ?? null;
   const editingSpace = mySpaces.find((s) => s.id === editingSpaceId) ?? mySpaces[0] ?? null;
 

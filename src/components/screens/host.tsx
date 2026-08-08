@@ -15,6 +15,7 @@ import {
   Wallet,
 } from "lucide-react";
 
+import { AccountBadge } from "@/components/account-badge";
 import { DeleteAccount } from "@/components/delete-account";
 import { DocumentStatus } from "@/components/document-status";
 import { EmergencyContactCard } from "@/components/emergency-contact";
@@ -169,9 +170,12 @@ export function HostDashboard({
           </div>
         )}
 
-        <p className="font-body font-medium text-[11px] uppercase tracking-[0.2em] relative z-10 text-sky-soft">
-          Host studio
-        </p>
+        <div className="flex items-center gap-2 relative z-10">
+          <p className="font-body font-medium text-[11px] uppercase tracking-[0.2em] text-sky-soft">
+            Host studio
+          </p>
+          <AccountBadge accountType="host" tone="dark" />
+        </div>
         <div className="mt-1 relative z-10">
           <Headline pre={`${active.name} —`} accent={roomTypeFor(active.category)} size={23} light />
         </div>
@@ -711,6 +715,7 @@ export function HostProfile({
         onBack={onBack}
         avatarUrl={profile.avatarUrl}
         onPickAvatar={onPickAvatar}
+        accountType={profile.accountType}
         name={profile.displayName ?? ""}
         onName={(displayName) => onUpdate({ displayName })}
         sub={`${activeCount} active space${activeCount === 1 ? "" : "s"}${pendingCount > 0 ? ` · ${pendingCount} pending` : ""}`}

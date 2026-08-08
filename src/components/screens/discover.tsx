@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 
+import { AccountBadge } from "@/components/account-badge";
 import { LocationPrompt, type LocationChoice } from "@/components/location-prompt";
 import { RatingBadge } from "@/components/stars";
 import { summariseAggregate } from "@/lib/reviews";
@@ -179,11 +180,17 @@ export function Discover({
             <button type="button" onClick={onGoProfile} className="press" aria-label="Your profile">
               <LogoBadge size={34} />
             </button>
-            <div className="flex items-center gap-1.5">
-              <GreetIcon size={11} color="#8FC6F5" />
-              <p className="font-body font-normal text-[13.5px] tracking-wide text-white/70">
-                {greetingName ? `${greeting}, ${greetingName}` : greeting}
-              </p>
+            <div>
+              <div className="flex items-center gap-1.5">
+                <GreetIcon size={11} color="#8FC6F5" />
+                <p className="font-body font-normal text-[13.5px] tracking-wide text-white/70">
+                  {greetingName ? `${greeting}, ${greetingName}` : greeting}
+                </p>
+              </div>
+              {/* Which side they are on, on the screen they spend most time on. */}
+              <div className="mt-1">
+                <AccountBadge accountType="practitioner" tone="dark" />
+              </div>
             </div>
           </div>
           <div className="flex items-center gap-2">

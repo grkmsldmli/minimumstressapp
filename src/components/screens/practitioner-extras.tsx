@@ -13,6 +13,7 @@ import {
   Zap,
 } from "lucide-react";
 
+import { AccountBadge } from "@/components/account-badge";
 import { DeleteAccount } from "@/components/delete-account";
 import { EmergencyContactCard } from "@/components/emergency-contact";
 import { BadgeCard } from "@/components/badge-card";
@@ -20,7 +21,7 @@ import { Ambient, BreathingLogo, Headline } from "@/components/brand";
 import { ConfettiBurst, PrimaryButton, Toggle } from "@/components/primitives";
 import { StandingNotice } from "@/components/standing-notice";
 import { AvatarUpload, DocumentUpload } from "@/components/uploads";
-import type { Profile } from "@/lib/domain";
+import type { AccountType, Profile } from "@/lib/domain";
 import type { Standing } from "@/lib/reliability";
 import { INSTANT_FEE_CENTS, PRO_HORIZON_DAYS, PRO_PRICE_CENTS, formatCents } from "@/lib/money";
 
@@ -285,6 +286,7 @@ export function PractitionerProfile({
         onBack={onBack}
         avatarUrl={profile.avatarUrl}
         onPickAvatar={onPickAvatar}
+        accountType={profile.accountType}
         name={profile.displayName ?? ""}
         onName={(displayName) => onUpdate({ displayName })}
         sub={`${bookingsCount} booking${bookingsCount === 1 ? "" : "s"} so far${profile.email ? ` · ${profile.email}` : ""}`}
@@ -373,6 +375,7 @@ export function ProfileHeader({
   name,
   onName,
   sub,
+  accountType,
 }: {
   onBack: () => void;
   avatarUrl: string | null;
@@ -380,6 +383,8 @@ export function ProfileHeader({
   name: string;
   onName: (name: string) => void;
   sub: string;
+  /** Which half of the marketplace this account is. */
+  accountType?: AccountType | null;
 }) {
   /**
    * The name is typed locally and saved once, not on every keystroke.
@@ -448,6 +453,11 @@ export function ProfileHeader({
           }}
         />
         <p className="font-body font-normal text-[13.5px] text-white/55 mt-2">{sub}</p>
+        {accountType && (
+          <div className="mt-2.5">
+            <AccountBadge accountType={accountType} tone="dark" />
+          </div>
+        )}
       </div>
     </div>
   );

@@ -187,7 +187,7 @@ describe("what the person is told", () => {
     // recourse. Matched on substance, so rewording it does not fail here.
     const message = explainStanding("host", standingFor("host", lateRun("host", 3), NOW));
 
-    expect(message).toMatch(/contact us/i);
+    expect(message).toMatch(/@minimumstress\.com/i);
   });
 
   it("thanks someone with a clean record rather than saying nothing", () => {

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { ArrowLeft, ChevronDown, ScrollText } from "lucide-react";
 
 import { Ambient, Headline } from "@/components/brand";
+import { BRAND, LEGAL_ENTITY } from "@/lib/company";
 
 /**
  * The short, in-app version. The brief is explicit that a lawyer drafts the
@@ -20,7 +21,8 @@ const SECTIONS = [
     key: "terms",
     title: "Terms of Service",
     points: [
-      "Minimum Stress runs a marketplace. We are not a party to the room booking itself, nor to the session a practitioner runs with their own client.",
+      `These terms are between you and ${LEGAL_ENTITY}, which operates ${BRAND}.`,
+      `${BRAND} runs a marketplace. We are not a party to the room booking itself, nor to the session a practitioner runs with their own client.`,
       "Practitioners and hosts are independent businesses. A practitioner licenses a room by the hour — they are our customer, not our worker, and nothing in this arrangement makes them one.",
       "Hosts set their own rate and receive all of it. Our service fee is added on top for the practitioner; it is never deducted from what a host is owed.",
       "Hosts must hold the legal right to sublicense their space for paid sessions, and remain responsible for their own property and insurance.",
@@ -34,6 +36,16 @@ const SECTIONS = [
       "Users must not exchange phone numbers, email addresses or payment details. These are removed from messages automatically. Requesting or providing them may result in suspension.",
       "Minimum Stress is not a party to any session arranged or paid for outside the app. We hold no record of such arrangements and provide no payment protection, refund, access, verification, insurance or dispute resolution in respect of them. Liability rests with the parties who made them.",
       "Soliciting users to transact outside the app is a breach of these terms and may result in permanent suspension.",
+    ],
+  },
+  {
+    key: "wellness",
+    title: "Health and Wellness",
+    points: [
+      `${LEGAL_ENTITY} operates a booking platform. It does not own, let or control the spaces listed, and does not provide medical, therapeutic, psychological or health services. Nothing in the app is medical advice.`,
+      "Practitioners are solely responsible for the services they deliver, for holding the qualifications, registrations and insurance those services require, and for their own clients.",
+      `${BRAND} does not verify a practitioner's qualifications, training or fitness to practise. Hosts and clients should carry out their own checks.`,
+      "A room listing describes a space, not the suitability of that space for any particular practice. Practitioners must satisfy themselves that a room is appropriate before using it.",
     ],
   },
   {
@@ -117,7 +129,13 @@ export function Legal({ onBack }: { onBack: () => void }) {
           <Headline pre="The" accent="fine print." size={24} light />
         </div>
         <p className="font-body font-normal text-[14px] text-white/65 mt-1 relative z-10">
-          A plain-language summary. The binding text lives on minimumstress.app.
+          {/*
+            These are the terms, not a summary of terms kept elsewhere.
+            Acceptance is recorded against this text, with a version and a
+            timestamp — pointing at a different document as the binding one
+            would make that record worthless.
+          */}
+          The terms you accepted, in full.
         </p>
       </div>
 

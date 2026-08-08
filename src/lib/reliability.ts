@@ -1,3 +1,5 @@
+import { SUPPORT_EMAIL } from "./company";
+
 /**
  * Standing: what repeated last-minute cancellations cost someone.
  *
@@ -147,7 +149,7 @@ export function explainStanding(party: Party, standing: Standing): string {
 
   switch (standing.level) {
     case "suspended":
-      return `Paused until ${standing.suspendedUntil!.toLocaleDateString("en-US", { month: "long", day: "numeric" })} after ${standing.lateCancellations} last-minute cancellations in ${STANDING_WINDOW_DAYS} days. You can't take ${noun} until then. Sessions already booked go ahead. Contact us if this is wrong.`;
+      return `Paused until ${standing.suspendedUntil!.toLocaleDateString("en-US", { month: "long", day: "numeric" })} after ${standing.lateCancellations} last-minute cancellations in ${STANDING_WINDOW_DAYS} days. You can't take ${noun} until then. Sessions already booked go ahead. Email ${SUPPORT_EMAIL} if this is wrong.`;
 
     case "warned":
       return `${standing.lateCancellations} last-minute cancellations in the past ${STANDING_WINDOW_DAYS} days. ${standing.remainingBeforeSuspension === 1 ? "One more" : `${standing.remainingBeforeSuspension} more`} and you won't be able to take ${noun} for ${SUSPENSION_DAYS} days. Cancellations stop counting after ${STANDING_WINDOW_DAYS} days.`;

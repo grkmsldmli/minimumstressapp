@@ -834,17 +834,18 @@ export function HostProfile({
           <GroupLabel>Account</GroupLabel>
         </div>
         <div className="flex flex-col gap-2.5">
+          <ProfileRow icon={ScrollText} label="Terms & privacy" onClick={onGoLegal} />
+          <ProfileRow icon={LogOut} label="Log out" onClick={onSignOut} danger />
+        </div>
 
-        {/*
-          Asked of both sides. Someone alone in a stranger's building and
-          someone letting a stranger into theirs are in the same position.
-        */}
-
-        {/* Where they stand, and what the next step actually gets them. */}
         <div className="mt-6">
           <BadgeCard party="host" sessions={sessions} />
         </div>
 
+        {/*
+          Asked of both sides. Somebody alone in a stranger's building and
+          somebody letting a stranger into theirs are in the same position.
+        */}
         <div className="mt-6">
           <EmergencyContactCard
             contact={profile.emergencyContact}
@@ -852,12 +853,9 @@ export function HostProfile({
           />
         </div>
 
-          <ProfileRow icon={ScrollText} label="Terms & privacy" onClick={onGoLegal} />
-
-        <div className="mt-6">
+        {/* Last, and on its own. Nothing here is undoable except this. */}
+        <div className="mt-8">
           <DeleteAccount onDelete={onDeleteAccount} />
-        </div>
-          <ProfileRow icon={LogOut} label="Log out" onClick={onSignOut} danger />
         </div>
       </div>
     </div>

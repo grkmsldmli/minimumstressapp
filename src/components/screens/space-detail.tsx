@@ -3,13 +3,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { Accessibility, ArrowLeft, Bath, Check, Key, Lock, Sun, Users, Zap } from "lucide-react";
 
+import { BookingCalendar } from "@/components/booking-calendar";
 import { SpaceGallery } from "@/components/space-gallery";
 import { PrimaryButton } from "@/components/primitives";
 import { slotStartsForDate } from "@/lib/availability";
 import type { PublicSpace } from "@/lib/domain";
 import {
   INSTANT_FEE_CENTS,
-  BOOKING_HORIZON_DAYS,
   MAX_UPCOMING_BOOKINGS_FREE,
   formatCents,
   isInstantSlot,
@@ -70,40 +70,35 @@ export function SpaceDetail({
   const [showBreakdown, setShowBreakdown] = useState(false);
   const [booking, setBooking] = useState(false);
   const now = useNow();
-  const [dayOffset, setDayOffset] = useState(0);
+  /**
+   * The day being looked at, as a date rather than an index.
+   *
+   * It was an offset into an eight-item strip, which only means anything while
+   * the strip exists. A calendar can land on any day of any month.
+   */
+  const [day, setDay] = useState<Date>(
+    () => new Date(now.getFullYear(), now.getMonth(), now.getDate()),
+  );
   const [selected, setSelected] = useState<Date | null>(null);
 
   /*
-   * The same window for everybody, and the same one the booking rules use.
-   *
-   * This read `isPro ? PRO_HORIZON_DAYS : 0`, so a free account was rendered
-   * exactly one day tab — today — long after the rule underneath had stopped
-   * agreeing. The screen kept showing the empty afternoon it had always shown
-   * while the server would happily have taken a booking for Tuesday.
+   * The window is no longer computed here. The calendar owns which days are
+   * offered, and `isWithinBookingHorizon` below is what actually refuses one —
+   * so there is one rule rather than a screen-side copy that can drift from it,
+   * which is exactly how a free account ended up being shown a single day long
+   * after the rule had stopped agreeing.
    */
-  const horizonDays = BOOKING_HORIZON_DAYS;
-
-  // Midnight today, as a number. Only the calendar day matters for the day
-  // tabs, so keying off this rather than `now` stops the 30-second tick
-  // rebuilding the list and resetting the user's chosen day.
-  const dayStamp = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-
-  const days = useMemo(() => {
-    const base = new Date(dayStamp);
-    return Array.from(
-      { length: horizonDays + 1 },
-      (_, i) => new Date(base.getFullYear(), base.getMonth(), base.getDate() + i),
-    );
-  }, [horizonDays, dayStamp]);
-
   const slots = useMemo<Slot[]>(() => {
-    const day = days[Math.min(dayOffset, days.length - 1)];
-    if (!day) return [];
     return slotStartsForDate(space.availability, day, space.bufferMinutes)
       .filter((startsAt) => startsAt.getTime() > now.getTime())
       .filter((startsAt) => isWithinBookingHorizon(startsAt, now, isPro))
       .map((startsAt) => ({ startsAt, isInstant: isInstantSlot(startsAt, now) }));
-  }, [days, dayOffset, space.availability, space.bufferMinutes, now, isPro]);
+  }, [day, space.availability, space.bufferMinutes, now, isPro]);
+
+  const isToday =
+    day.getFullYear() === now.getFullYear() &&
+    day.getMonth() === now.getMonth() &&
+    day.getDate() === now.getDate();
 
   const selectedIsInstant = selected ? isInstantSlot(selected, now) : false;
 
@@ -248,36 +243,24 @@ export function SpaceDetail({
           </div>
         </div>
 
-        <Label>{isPro ? "Open hours" : "Today's open hours"}</Label>
+        <Label>Pick a day</Label>
 
-        {days.length > 1 && (
-          <div className="flex gap-2 mb-3 overflow-x-auto no-scrollbar">
-            {days.map((day, i) => (
-              <button
-                key={day.toISOString()}
-                type="button"
-                onClick={() => {
-                  setDayOffset(i);
-                  setSelected(null);
-                }}
-                className="px-3.5 py-2 rounded-full font-body text-[13.5px] whitespace-nowrap press"
-                style={{
-                  backgroundColor: dayOffset === i ? "#16304E" : "#fff",
-                  color: dayOffset === i ? "#fff" : "#16304E",
-                  border: `1px solid ${dayOffset === i ? "#16304E" : "#DCE7F2"}`,
-                }}
-              >
-                {i === 0
-                  ? "Today"
-                  : day.toLocaleDateString("en-US", { weekday: "short", day: "numeric" })}
-              </button>
-            ))}
-          </div>
-        )}
+        <div className="mb-4">
+          <BookingCalendar
+            availability={space.availability}
+            selected={day}
+            now={now}
+            onPick={(picked: Date) => {
+              setDay(picked);
+              setSelected(null);
+            }}
+          />
+        </div>
+
 
         {slots.length === 0 ? (
           <p className="font-body font-normal text-[14px] text-ink-faint">
-            Nothing open {dayOffset === 0 ? "for the rest of today" : "on this day"}.
+            Nothing open {isToday ? "for the rest of today" : "on this day"}.
           </p>
         ) : (
           <div className="grid grid-cols-3 gap-2">
@@ -446,7 +429,7 @@ export function SpaceDetail({
             : selected
               ? `Book ${selected.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })} · ${formatCents(priced.totalCents)}`
             : slots.length === 0
-              ? dayOffset === 0
+              ? isToday
                 ? "Nothing left today"
                 : "Nothing open this day"
               : "Choose a time"}

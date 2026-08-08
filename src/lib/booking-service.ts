@@ -78,8 +78,13 @@ export async function createBooking(
     .maybeSingle();
   if (spaceError) throw spaceError;
 
-  const [{ data: practitioner }, { data: hostRow }, { data: blocks }, { data: taken }] =
-    await Promise.all([
+  const [
+    { data: practitioner },
+    { data: hostRow },
+    { data: blocks },
+    { data: taken },
+    { count: upcomingCount },
+  ] = await Promise.all([
       admin.from("profiles").select("id, is_pro").eq("id", practitionerId).maybeSingle(),
       space
         ? admin
@@ -101,11 +106,26 @@ export async function createBooking(
             .eq("space_id", space.id)
             .in("status", ["upcoming", "completed"])
         : Promise.resolve({ data: [] }),
+
+      /*
+       * This practitioner's own sessions still ahead, across every space.
+       *
+       * Counted on the server from rows the client cannot write. A limit the
+       * browser reports on itself is a limit anybody can set to zero, and this
+       * one is what Pro sells.
+       */
+      admin
+        .from("bookings")
+        .select("id", { count: "exact", head: true })
+        .eq("practitioner_id", practitionerId)
+        .eq("status", "upcoming")
+        .gt("starts_at", new Date().toISOString()),
     ]);
 
   // Every rule about what may be booked and for how much lives in planBooking,
   // so this route and the pricing tests cannot drift apart.
   const plan = planBooking({
+    upcomingCount: upcomingCount ?? 0,
     space: space
       ? {
           id: space.id,

@@ -13,6 +13,7 @@
 
 import { slotStartsForDate, type AvailabilityBlock } from "./availability";
 import {
+  MAX_UPCOMING_BOOKINGS_FREE,
   bookingMoneyFromQuote,
   isInstantSlot,
   isWithinBookingHorizon,
@@ -46,7 +47,8 @@ export type PlanRejection =
   | "slot_in_past"
   | "beyond_booking_horizon"
   | "slot_not_open"
-  | "slot_taken";
+  | "slot_taken"
+  | "too_many_upcoming";
 
 export type BookingPlan =
   | { ok: false; reason: PlanRejection }
@@ -58,10 +60,12 @@ export function planBooking(input: {
   practitioner: PractitionerFacts;
   /** Start times already booked on this space. */
   takenStarts: readonly Date[];
+  /** This practitioner's own sessions still ahead, across every space. */
+  upcomingCount?: number;
   startsAt: Date;
   now: Date;
 }): BookingPlan {
-  const { space, host, practitioner, takenStarts, startsAt, now } = input;
+  const { space, host, practitioner, takenStarts, startsAt, now, upcomingCount = 0 } = input;
 
   if (!space) return { ok: false, reason: "space_not_found" };
   if (space.status !== "active") return { ok: false, reason: "space_not_active" };
@@ -74,6 +78,16 @@ export function planBooking(input: {
   }
 
   if (startsAt.getTime() <= now.getTime()) return { ok: false, reason: "slot_in_past" };
+
+  /*
+   * Checked before the slot is examined, so the answer does not depend on
+   * which room was tapped. Somebody at their limit is at their limit
+   * everywhere, and finding that out only after picking a time would be the
+   * app letting them get further in than it means to.
+   */
+  if (!practitioner.isPro && upcomingCount >= MAX_UPCOMING_BOOKINGS_FREE) {
+    return { ok: false, reason: "too_many_upcoming" };
+  }
 
   // The horizon is a paid Pro benefit, so it is checked against the stored
   // flag rather than anything the caller asserted.
@@ -124,5 +138,10 @@ export function explainRejection(reason: PlanRejection): { message: string; stat
       return { message: "That hour is not open", status: 409 };
     case "slot_taken":
       return { message: "Someone just took that hour", status: 409 };
+    case "too_many_upcoming":
+      return {
+        message: `You have ${MAX_UPCOMING_BOOKINGS_FREE} sessions booked. Finish one, or go Pro to book as many at a time as you like.`,
+        status: 409,
+      };
   }
 }

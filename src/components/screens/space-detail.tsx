@@ -403,10 +403,18 @@ export function SpaceDetail({
         {preview ? (
           <PrimaryButton onClick={onBack}>Back to your studio</PrimaryButton>
         ) : (
+        /*
+          A disabled button reading "Choose a time" when there is no time to
+          choose looks like the app is broken. It says which it is now.
+        */
         <PrimaryButton disabled={!selected} onClick={() => selected && onBook(selected)}>
           {selected
             ? `Book ${selected.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })} · ${formatCents(priced.totalCents)}`
-            : "Choose a time"}
+            : slots.length === 0
+              ? dayOffset === 0
+                ? "Nothing left today"
+                : "Nothing open this day"
+              : "Choose a time"}
         </PrimaryButton>
         )}
       </div>

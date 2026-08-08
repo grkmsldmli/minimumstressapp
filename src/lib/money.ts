@@ -28,9 +28,50 @@ export const INSTANT_WINDOW_MS = 2 * 60 * 60 * 1000;
 /** Cancel at least this far ahead and the authorization is voided, never charged. */
 export const FREE_CANCEL_WINDOW_MS = 24 * 60 * 60 * 1000;
 
-/** How far ahead each tier can book. Standard is same-day only. */
-export const STANDARD_HORIZON_DAYS = 0;
-export const PRO_HORIZON_DAYS = 3;
+/**
+ * How far ahead anyone can book. One number, and it is the whole schedule.
+ *
+ * This was a tier: same-day only unless you paid, and three days if you did.
+ * With real listings on the board it was plainly wrong. Availability repeats
+ * weekly, so a host open on Tuesdays and Fridays was invisible to a free
+ * account on five days out of seven — somebody opening the app on a Saturday
+ * saw an empty screen and left, never learning there was a Pro tier to buy.
+ * That is not a paywall, it is a product that does not work on most visits.
+ *
+ * Seven days is exactly the whole schedule, because a weekly cycle repeats
+ * inside any seven-day window: every slot a host offers appears, whichever day
+ * somebody happens to look. Nothing is withheld.
+ *
+ * It is also the ceiling the payment model allows. A card authorisation lives
+ * about seven days, and the money is held rather than charged until the
+ * session starts — so this is the furthest out a booking can be made without
+ * re-authorising, and the two limits happen to be the same number.
+ *
+ * Pro keeps what actually saves money: the instant fee waived, and 10% off
+ * every booking. Both are worth something on every session. Access to the
+ * product was never a thing worth selling.
+ */
+export const BOOKING_HORIZON_DAYS = 7;
+
+/**
+ * How many sessions a free account may have on the calendar at once.
+ *
+ * This is what Pro sells instead of the schedule. Hiding hours broke the app
+ * for somebody who had never booked at all; a limit on how many bookings run
+ * concurrently is invisible until somebody is already getting real use out of
+ * it, and is felt only by the practitioner running several rooms a week — who
+ * is exactly the person for whom the fee waiver and the 10% already pay for
+ * the subscription several times over.
+ *
+ * Counted as sessions still ahead, not sessions ever booked. Somebody who has
+ * run two hundred and has none coming up is at zero: this caps how much is
+ * held at once, not how much anybody may use the marketplace.
+ */
+export const MAX_UPCOMING_BOOKINGS_FREE = 3;
+
+/** @deprecated Both tiers see the same schedule. Kept so callers still read. */
+export const STANDARD_HORIZON_DAYS = BOOKING_HORIZON_DAYS;
+export const PRO_HORIZON_DAYS = BOOKING_HORIZON_DAYS;
 
 /** Stripe standard US card pricing, used to size the platform's floor. */
 export const STRIPE_PERCENT = 0.029;

@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  explainRejection,
   planBooking,
   type HostFacts,
   type PractitionerFacts,
   type SpaceFacts,
 } from "./booking-plan";
-import { INSTANT_FEE_CENTS } from "./money";
+import { INSTANT_FEE_CENTS, MAX_UPCOMING_BOOKINGS_FREE } from "./money";
 
 /** A Monday at 10:00, with the room open 09:00–17:00 every weekday. */
 const NOW = new Date(2026, 7, 3, 10, 0, 0);
@@ -103,8 +104,10 @@ describe("a slot has to be one the host actually opened", () => {
   });
 
   it("refuses a day the host is closed", () => {
+    // Saturday. Inside the horizon now that everyone sees the week, so the
+    // only thing left refusing it is the schedule — which is what this is for.
     const saturday = new Date(2026, 7, 8, 14, 0, 0);
-    expect(plan({ startsAt: saturday })).toMatchObject({ reason: "beyond_booking_horizon" });
+    expect(plan({ startsAt: saturday })).toMatchObject({ reason: "slot_not_open" });
   });
 
   it("refuses a half-hour start even inside an open block", () => {
@@ -134,25 +137,44 @@ describe("a slot has to be one the host actually opened", () => {
   });
 });
 
-describe("the booking horizon is a paid benefit", () => {
-  it("holds a standard practitioner to today", () => {
-    expect(plan({ startsAt: at(14, 1) })).toEqual({
+/**
+ * The horizon stopped being a tier.
+ *
+ * It was same-day unless you paid, which made a host open on Tuesdays and
+ * Fridays invisible to a free account five days out of seven. Availability
+ * repeats weekly, so seven days is the entire schedule — and it is also how
+ * long a card authorisation lives, which is what caps it.
+ */
+describe("the booking horizon", () => {
+  it("lets anybody reach the far end of the week", () => {
+    // Friday, four days out, and open. A free account used to stop at today.
+    expect(plan({ startsAt: at(14, 4) }).ok).toBe(true);
+  });
+
+  it("no longer holds a free account to today", () => {
+    expect(plan({ startsAt: at(14, 1) }).ok).toBe(true);
+  });
+
+  it("gives Pro no further reach, because there is nothing further to give", () => {
+    // The following Monday, seven days out and open.
+    const free = plan({ startsAt: at(14, 7) });
+    const pro = plan({ practitioner: { ...PRACTITIONER, isPro: true }, startsAt: at(14, 7) });
+    expect(free.ok).toBe(true);
+    expect(pro.ok).toBe(free.ok);
+  });
+
+  /**
+   * The authorisation is held rather than charged until the session starts,
+   * and it expires around here. Past this the money could not be collected.
+   */
+  it("stops at eight days for everyone", () => {
+    // Tuesday next week: open, so the only thing refusing it is the horizon.
+    expect(plan({ startsAt: at(14, 8) })).toEqual({
       ok: false,
       reason: "beyond_booking_horizon",
     });
-  });
-
-  it("lets Pro reach three days out", () => {
-    const result = plan({
-      practitioner: { ...PRACTITIONER, isPro: true },
-      startsAt: at(14, 3),
-    });
-    expect(result.ok).toBe(true);
-  });
-
-  it("still stops Pro at four days", () => {
     expect(
-      plan({ practitioner: { ...PRACTITIONER, isPro: true }, startsAt: at(14, 4) }),
+      plan({ practitioner: { ...PRACTITIONER, isPro: true }, startsAt: at(14, 8) }),
     ).toEqual({ ok: false, reason: "beyond_booking_horizon" });
   });
 });
@@ -190,5 +212,57 @@ describe("refusing to take money nobody can receive", () => {
 
   it("refuses a space that does not exist", () => {
     expect(plan({ space: null })).toEqual({ ok: false, reason: "space_not_found" });
+  });
+});
+
+/**
+ * What Pro sells now that it no longer sells the schedule.
+ *
+ * Hiding hours broke the app for somebody who had never booked at all. A cap
+ * on how many run at once is invisible until somebody is already getting real
+ * use out of the marketplace — and that person is the one for whom the fee
+ * waiver and the 10% already pay for the subscription several times over.
+ */
+describe("how many sessions can be held at once", () => {
+  it("lets a free account book while under the limit", () => {
+    expect(plan({ upcomingCount: MAX_UPCOMING_BOOKINGS_FREE - 1 }).ok).toBe(true);
+  });
+
+  it("refuses a free account at the limit", () => {
+    expect(plan({ upcomingCount: MAX_UPCOMING_BOOKINGS_FREE })).toEqual({
+      ok: false,
+      reason: "too_many_upcoming",
+    });
+  });
+
+  it("never refuses Pro for this", () => {
+    const result = plan({
+      practitioner: { ...PRACTITIONER, isPro: true },
+      upcomingCount: MAX_UPCOMING_BOOKINGS_FREE * 10,
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  /**
+   * Checked before the slot, so the answer does not depend on which room was
+   * tapped. Somebody at their limit is at their limit everywhere.
+   */
+  it("says so before complaining about the hour", () => {
+    const closed = new Date(2026, 7, 8, 14, 0, 0);
+    expect(plan({ upcomingCount: MAX_UPCOMING_BOOKINGS_FREE, startsAt: closed })).toEqual({
+      ok: false,
+      reason: "too_many_upcoming",
+    });
+  });
+
+  it("tells somebody what to do about it", () => {
+    const { message } = explainRejection("too_many_upcoming");
+    expect(message).toContain(String(MAX_UPCOMING_BOOKINGS_FREE));
+    expect(message).toMatch(/pro/i);
+  });
+
+  /** A cap on what is held at once, not on how much anybody may use this. */
+  it("counts sessions ahead rather than sessions ever booked", () => {
+    expect(plan({ upcomingCount: 0 }).ok).toBe(true);
   });
 });

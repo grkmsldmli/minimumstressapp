@@ -285,14 +285,32 @@ describe("booking horizon", () => {
   const daysFromNow = (days: number, hour = 9) =>
     new Date(2026, 7, 3 + days, hour, 0, 0);
 
-  it("limits a standard practitioner to today", () => {
-    expect(isWithinBookingHorizon(daysFromNow(0, 18), now, false)).toBe(true);
-    expect(isWithinBookingHorizon(daysFromNow(1), now, false)).toBe(false);
+  /**
+   * One window, and it is the whole schedule.
+   *
+   * Availability repeats weekly, so seven days shows every slot a host offers
+   * whichever day somebody looks. It was a tier — same-day free, three days
+   * paid — which made a host open on Tuesdays and Fridays invisible to a free
+   * account five days out of seven.
+   */
+  it("lets anybody reach the whole week", () => {
+    expect(isWithinBookingHorizon(daysFromNow(1), now, false)).toBe(true);
+    expect(isWithinBookingHorizon(daysFromNow(7, 20), now, false)).toBe(true);
   });
 
-  it("lets Pro reach three days out", () => {
-    expect(isWithinBookingHorizon(daysFromNow(3, 20), now, true)).toBe(true);
-    expect(isWithinBookingHorizon(daysFromNow(4), now, true)).toBe(false);
+  /** A card authorisation lives about this long, and is held not charged. */
+  it("stops at eight days, paid or not", () => {
+    expect(isWithinBookingHorizon(daysFromNow(8), now, false)).toBe(false);
+    expect(isWithinBookingHorizon(daysFromNow(8), now, true)).toBe(false);
+  });
+
+  it("gives Pro no further reach", () => {
+    for (const day of [0, 1, 4, 7, 8]) {
+      expect(
+        isWithinBookingHorizon(daysFromNow(day, 20), now, true),
+        `day ${day}`,
+      ).toBe(isWithinBookingHorizon(daysFromNow(day, 20), now, false));
+    }
   });
 
   it("rejects slots in the past for both tiers", () => {

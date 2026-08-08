@@ -48,11 +48,14 @@ export function SpaceDetail({
   onBook,
   onGoPro,
   preview = false,
+  error,
 }: {
   space: PublicSpace;
   isPro: boolean;
   onBack: () => void;
-  onBook: (startsAt: Date) => void;
+  onBook: (startsAt: Date) => void | Promise<void>;
+  /** Why the booking was refused. Silence here was the bug. */
+  error?: string | null;
   /**
    * True when the viewer is this listing's host.
    *
@@ -65,6 +68,7 @@ export function SpaceDetail({
 }) {
   /* Itemisation is available on request, not led with. */
   const [showBreakdown, setShowBreakdown] = useState(false);
+  const [booking, setBooking] = useState(false);
   const now = useNow();
   const [dayOffset, setDayOffset] = useState(0);
   const [selected, setSelected] = useState<Date | null>(null);
@@ -409,6 +413,19 @@ export function SpaceDetail({
         className="absolute bottom-0 inset-x-0 px-6 pt-4 pb-6"
         style={{ background: "linear-gradient(to top, #FFFFFF 75%, transparent)" }}
       >
+        {/*
+          Above the button, where somebody is already looking after pressing it.
+          A booking can be refused for reasons nobody could have known about
+          when they chose the hour — it was taken a second earlier, the host's
+          payouts are unfinished, the session expired — and every one of those
+          messages is written for the person reading it.
+        */}
+        {error && (
+          <p className="font-body font-normal text-[14px] leading-relaxed mb-2.5 text-coral-deep">
+            {error}
+          </p>
+        )}
+
         {preview ? (
           <PrimaryButton onClick={onBack}>Back to your studio</PrimaryButton>
         ) : (
@@ -416,9 +433,18 @@ export function SpaceDetail({
           A disabled button reading "Choose a time" when there is no time to
           choose looks like the app is broken. It says which it is now.
         */
-        <PrimaryButton disabled={!selected} onClick={() => selected && onBook(selected)}>
-          {selected
-            ? `Book ${selected.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })} · ${formatCents(priced.totalCents)}`
+        <PrimaryButton
+          disabled={!selected || booking}
+          onClick={() => {
+            if (!selected) return;
+            setBooking(true);
+            void Promise.resolve(onBook(selected)).finally(() => setBooking(false));
+          }}
+        >
+          {booking
+            ? "One moment…"
+            : selected
+              ? `Book ${selected.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })} · ${formatCents(priced.totalCents)}`
             : slots.length === 0
               ? dayOffset === 0
                 ? "Nothing left today"

@@ -84,6 +84,7 @@ export function App() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
   const [roleError, setRoleError] = useState<string | null>(null);
+  const [bookingError, setBookingError] = useState<string | null>(null);
 
   const [authBusy, setAuthBusy] = useState(false);
 
@@ -664,8 +665,20 @@ export function App() {
           preview={previewingOwnListing}
           onBack={back}
           onGoPro={() => go("pro")}
-          onBook={(startsAt) => {
-            void (async () => {
+          error={bookingError}
+          onBook={async (startsAt) => {
+            /*
+             * Awaited, and the refusal shown.
+             *
+             * This was a floating promise: a booking that failed — the hour
+             * taken a second earlier, the host's payouts not finished, the
+             * session expired — rejected into nothing. The button was pressed,
+             * the screen did not move, and there was no way to tell a slow
+             * network from a refusal. Every reason the server gives is written
+             * for the person reading it.
+             */
+            setBookingError(null);
+            try {
               const { booking, clientSecret } = await repo.createBooking({
                 spaceId: activeSpace.id,
                 startsAt,
@@ -677,7 +690,11 @@ export function App() {
               // still has to be confirmed against it; without one there is
               // nothing left to do and the payment screen would be a lie.
               go(clientSecret ? "payment" : "confirmed");
-            })();
+            } catch (cause) {
+              setBookingError(
+                errorMessage(cause, "That booking did not go through. Try again."),
+              );
+            }
           }}
         />
       );

@@ -180,6 +180,17 @@ export function HostDashboard({
             ? "Under review — usually same day"
             : `${formatCents(active.hourlyRateCents)} an hour, yours in full`}
         </p>
+        {/*
+          The address, on the host's own screen. It is withheld from
+          practitioners until they have booked, but this is the owner looking
+          at their own listing, and a host with several rooms needs to see
+          which one they are reading.
+        */}
+        {active.addressLine && (
+          <p className="font-body font-normal text-[13.5px] text-white/45 mt-1 relative z-10">
+            {active.addressLine}
+          </p>
+        )}
       </div>
 
       {pending ? (
@@ -263,11 +274,16 @@ export function HostDashboard({
           </div>
 
           <div className="flex-1 overflow-y-auto px-6 pt-6 pb-8">
-            <div className="flex items-center justify-between mb-3">
-              <p className="font-body font-medium text-[11px] uppercase tracking-[0.2em] text-sky-text">
+            <div className="mb-3">
+              <p className="font-body font-medium text-[11px] uppercase tracking-[0.2em] mb-2.5 text-sky-text">
                 Upcoming
               </p>
-              <div className="flex items-center gap-3">
+              {/*
+                Their own row, not squeezed beside the heading. Three actions
+                and a section title on one line left about forty pixels each,
+                which on a phone is three targets too close to hit apart.
+              */}
+              <div className="flex items-center gap-2 flex-wrap">
                 {/*
                   A host cannot otherwise see their own listing the way it is
                   actually presented — the photos they chose, in the order
@@ -277,21 +293,24 @@ export function HostDashboard({
                 <button
                   type="button"
                   onClick={() => onPreviewSpace(active.id)}
-                  className="font-body text-[13.5px] font-medium press text-sky-text"
+                  className="px-3 py-1.5 rounded-full font-body text-[13.5px] font-medium press text-sky-text"
+                  style={{ border: "1px solid #DCE7F2" }}
                 >
                   Preview
                 </button>
                 <button
                   type="button"
                   onClick={() => onEditSpace(active.id)}
-                  className="font-body text-[13.5px] font-medium press text-sky-text"
+                  className="px-3 py-1.5 rounded-full font-body text-[13.5px] font-medium press text-sky-text"
+                  style={{ border: "1px solid #DCE7F2" }}
                 >
                   Edit
                 </button>
                 <button
                   type="button"
                   onClick={() => onEditHours(active.id)}
-                  className="flex items-center gap-1 font-body text-[13.5px] font-medium press text-coral"
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-full font-body text-[13.5px] font-medium press text-coral"
+                  style={{ border: "1px solid #F5C4BC" }}
                 >
                   <Plus size={13} /> Open more hours
                 </button>

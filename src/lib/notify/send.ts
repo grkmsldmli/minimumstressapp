@@ -17,6 +17,13 @@ export interface Recipient {
   email: string | null;
   /** Only ever populated when the number has been verified and opted in. */
   phone?: string | null;
+  /*
+   * Preferences, carried with the recipient rather than fetched again at the
+   * point of sending. They gate alerts only — never a door code or a
+   * cancellation, which arrive whatever the switches say.
+   */
+  wantsBookingAlerts?: boolean;
+  wantsPayoutAlerts?: boolean;
 }
 
 export interface NotifyRequest {

@@ -26,7 +26,9 @@ export async function recipientFor(
   const [{ data: profile }, { data: auth }] = await Promise.all([
     admin
       .from("profiles")
-      .select("display_name, phone, phone_verified_at, notify_sms, notify_bookings")
+      .select(
+        "display_name, phone, phone_verified_at, notify_sms, notify_bookings, notify_payouts",
+      )
       .eq("id", userId)
       .maybeSingle(),
     admin.auth.admin.getUserById(userId),
@@ -42,7 +44,37 @@ export async function recipientFor(
     name: profile?.display_name?.split(" ")[0] ?? undefined,
     email,
     phone: smsAllowed ? profile!.phone : null,
+    // Default to on: a null column is an account that predates the setting,
+    // not somebody who turned it off.
+    wantsBookingAlerts: profile?.notify_bookings !== false,
+    wantsPayoutAlerts: profile?.notify_payouts !== false,
   };
+}
+
+/**
+ * Which notifications a switch is allowed to silence.
+ *
+ * The two toggles on the profile did nothing at all — the column was read and
+ * never consulted, so the app offered control it did not have.
+ *
+ * Making them work needs a line drawn, because not everything here is an
+ * alert. A booking confirmation carries the door code and the address; a
+ * cancellation is somebody's day changing. Those arrive whether or not
+ * anybody wants them, and no switch on this screen offers otherwise.
+ *
+ * What a host may turn off is the nudge that somebody booked, and the note
+ * that money moved. Both are things they can see for themselves on a screen
+ * they already have.
+ */
+const SILENCEABLE = {
+  host_new_booking: "wantsBookingAlerts",
+  host_payout_sent: "wantsPayoutAlerts",
+} as const;
+
+/** True when this recipient has asked not to receive this kind. */
+export function hasOptedOut(recipient: Recipient, kind: string): boolean {
+  const preference = SILENCEABLE[kind as keyof typeof SILENCEABLE];
+  return preference !== undefined && recipient[preference] === false;
 }
 
 /**
@@ -125,7 +157,7 @@ export async function notifyBookingCreated(
       });
     }
 
-    if (host) {
+    if (host && !hasOptedOut(host, "host_new_booking")) {
       await notify({
         kind: "host_new_booking",
         recipient: host,

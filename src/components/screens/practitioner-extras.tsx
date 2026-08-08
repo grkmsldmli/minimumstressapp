@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
   ChevronRight,
@@ -63,9 +63,16 @@ export function InsuranceUpload({
         <div className="mt-2">
           <Headline pre="Add your" accent="insurance?" size={27} light />
         </div>
+        {/*
+          The old line said "hosts approve you faster when a certificate is
+          already on file". There is no host approval of practitioners — a
+          booking is direct — and a host never sees this document. It described
+          a mechanism that does not exist.
+        */}
         <p className="font-body font-normal text-[14px] leading-relaxed text-white/65 mt-3">
-          Hosts approve you faster when a certificate is already on file. You can add this later
-          from your profile — it never blocks a booking.
+          Many venues require practitioners to carry their own cover. Keeping a certificate here
+          means you have it to hand. You can add it later from your profile, and it never blocks a
+          booking.
         </p>
 
         <div className="mt-6 rounded-2xl p-4 bg-white">
@@ -374,6 +381,34 @@ export function ProfileHeader({
   onName: (name: string) => void;
   sub: string;
 }) {
+  /**
+   * The name is typed locally and saved once, not on every keystroke.
+   *
+   * It used to be a controlled input bound straight to the profile, with
+   * onChange calling updateProfile — so every character was a database write
+   * plus a full refetch of every screen's data, and the value the field showed
+   * came back over the network. Typing eight letters meant eight round trips
+   * fighting each other, which on a phone is the keyboard freezing.
+   */
+  const [draft, setDraft] = useState(name);
+  const saved = useRef(name);
+
+  // Follows the profile when it changes from somewhere else, without
+  // overwriting what is being typed right now.
+  useEffect(() => {
+    if (name !== saved.current) {
+      saved.current = name;
+      setDraft(name);
+    }
+  }, [name]);
+
+  const commit = () => {
+    const value = draft.trim();
+    if (value === saved.current) return;
+    saved.current = value;
+    onName(value);
+  };
+
   return (
     <div
       className="px-6 pt-8 pb-8 relative rounded-b-[30px] overflow-hidden text-center shrink-0"
@@ -397,8 +432,12 @@ export function ProfileHeader({
       <div className="relative z-10 pt-2 flex flex-col items-center">
         <AvatarUpload photoUrl={avatarUrl} onPick={onPickAvatar} />
         <input
-          value={name}
-          onChange={(e) => onName(e.target.value)}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") e.currentTarget.blur();
+          }}
           placeholder="Add your name"
           aria-label="Your name"
           className="text-center font-body font-medium text-[15.5px] bg-transparent outline-none text-white mt-3 placeholder:text-white/40"

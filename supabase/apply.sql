@@ -2244,3 +2244,99 @@ create trigger profiles_terms_acceptance
 -- happened, which is worse than having none — it is the one field whose whole
 -- value is that it is true. They are asked next time they open the app.
 -- ------------------------------------------------------------------
+
+
+-- ===================================================================
+-- 0021_emergency_phone_free_text.sql
+-- ===================================================================
+
+-- An emergency contact number is whatever the person wrote down.
+--
+-- The column insisted on E.164: a leading plus, a country code, no spaces.
+-- The reasoning was that a number nobody can dial is no use in a hurry, which
+-- is true and led to the wrong rule. What it produced was a field that
+-- rejected "0533 395 5823", "(415) 555-0134" and "555 0134 ext. 2" — every
+-- one of which a person on our team could dial, and every one of which is how
+-- somebody actually writes their partner's number.
+--
+-- A validator that refuses the real answer does not get a better answer. It
+-- gets an empty field, and an empty field in an emergency is the outcome this
+-- was supposed to prevent.
+--
+-- So it is text. It is read by a person, not dialled by a machine. The only
+-- limit kept is a length, which stops the column being used as free storage.
+
+alter table profiles
+  drop constraint if exists profiles_emergency_phone_is_e164;
+
+do $$
+begin
+  alter table profiles add constraint profiles_emergency_phone_length
+    check (
+      emergency_contact_phone is null
+      or length(btrim(emergency_contact_phone)) between 4 and 40
+    );
+exception
+  when duplicate_object then null;
+end $$;
+
+
+-- ===================================================================
+-- 0022_public_area.sql
+-- ===================================================================
+
+-- Which part of town, without which door.
+--
+-- The public view carried no location at all: no address, no coordinates, no
+-- city. A practitioner browsing saw a room called "GamePlay", the word
+-- "nearby", and nothing else — and "nearby" is computed from a location they
+-- may not have shared, so often it said nothing whatsoever.
+--
+-- Withholding the street address is right and stays. It protects a host
+-- letting a stranger into their building, and it is what stops somebody
+-- looking the studio up and booking around us.
+--
+-- Withholding the town is a different thing, and it was not a decision so much
+-- as the same rule applied one level too far. Nobody books an hour in a room
+-- they cannot place. Asking somebody to commit their card, their afternoon and
+-- their own client to a location they will not be told until afterwards is not
+-- privacy, it is a room nobody books.
+--
+-- So: the first comma-separated segment is dropped and the rest kept.
+--
+--   stored   1840 Gateway Dr, San Mateo, CA 94404, USA
+--   shown    San Mateo, CA 94404, USA
+--
+-- Google's formatted addresses lead with the street line, which is what makes
+-- this reliable. When there is no comma there is no way to tell a street from
+-- a town, so nothing is shown rather than guessed — a wrong guess here leaks
+-- the address, and the whole point is that it cannot.
+--
+-- Computed in the view rather than in the client. A column the browser has to
+-- be trusted to trim is a column the browser has already been sent.
+
+create or replace function public_area(address text)
+returns text
+language sql
+immutable
+parallel safe
+as $$
+  select case
+    when address is null then null
+    when position(',' in address) = 0 then null
+    else btrim(substring(address from position(',' in address) + 1))
+  end;
+$$;
+
+create or replace view spaces_public as
+  select
+    id, host_id, name, category, hourly_rate_cents, capacity, access_type,
+    accessible, restroom, buffer_minutes, status, created_at,
+    description, amenities, requirements, house_rules,
+    map_x, map_y,
+    public_area(address_line) as area
+  from spaces
+  where status = 'active';
+
+grant select on spaces_public to anon, authenticated;
+grant select on spaces_public to service_role;

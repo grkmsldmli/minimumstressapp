@@ -62,6 +62,8 @@ export function SpaceDetail({
   preview?: boolean;
   onGoPro: () => void;
 }) {
+  /* Itemisation is available on request, not led with. */
+  const [showBreakdown, setShowBreakdown] = useState(false);
   const now = useNow();
   const [dayOffset, setDayOffset] = useState(0);
   const [selected, setSelected] = useState<Date | null>(null);
@@ -216,10 +218,21 @@ export function SpaceDetail({
           style={{ backgroundColor: "#F4F8FC", border: "1px solid #E7EEF6" }}
         >
           <Lock size={13} color="#8CA3BD" className="mt-0.5 shrink-0" />
-          <p className="font-body font-normal text-[13.5px] leading-relaxed text-ink-soft">
-            The address and entry instructions are shared once you&apos;ve booked, shortly before
-            your session.
-          </p>
+          <div>
+            {/*
+              The town, then the rule. Showing neither was the same rule
+              applied one level too far: nobody commits their card, their
+              afternoon and their own client to a place they will not be told
+              until afterwards.
+            */}
+            {space.area && (
+              <p className="font-body font-medium text-[14px] text-navy">{space.area}</p>
+            )}
+            <p className="font-body font-normal text-[13.5px] leading-relaxed mt-0.5 text-ink-soft">
+              The exact address and entry instructions are shared once you&apos;ve booked, shortly
+              before your session.
+            </p>
+          </div>
         </div>
 
         <Label>{isPro ? "Open hours" : "Today's open hours"}</Label>
@@ -309,32 +322,65 @@ export function SpaceDetail({
           </button>
         )}
 
-        {/* All In Price — shown before the choice is made, not only at checkout. */}
+        {/*
+          One price, and the breakdown a tap away.
+          A practitioner is choosing a room, not auditing a fee — leading with
+          "Session $35, Service fee $7" made the number they pay the third
+          thing on the card and invited them to price the two apart.
+          It is not hidden, though, and that is deliberate rather than
+          cautious: disclosing what a mandatory fee is and what it costs before
+          somebody pays is a legal requirement in several places we will
+          operate, and a price that cannot be itemised on request is the thing
+          those rules exist to stop.
+        */}
         <div
           className="mt-6 rounded-2xl p-4"
           style={{ backgroundColor: "#F4F8FC", border: "1px solid #E7EEF6" }}
         >
-          <div className="flex items-center gap-1.5 mb-3">
+          <div className="flex items-center gap-1.5">
             <Check size={11} color="#557255" />
             <p className="font-body font-medium text-[10.5px] uppercase tracking-[0.14em] text-positive">
               All In Price — nothing added later
             </p>
           </div>
 
-          <Row label="Session" value={formatCents(priced.hostCents)} />
-          <Row label="Service fee" value={formatCents(priced.serviceFeeCents)} />
-          {priced.instantFeeCents > 0 && (
-            <Row label="Instant booking" value={formatCents(priced.instantFeeCents)} />
-          )}
+          <div className="flex items-baseline justify-between mt-2.5">
+            <span className="font-display italic font-semibold text-[26px] text-navy">
+              {formatCents(priced.totalCents)}
+            </span>
+            <span className="font-body font-normal text-[13.5px] text-ink-faint">an hour</span>
+          </div>
+
           {priced.proDiscountCents > 0 && (
-            <Row label="Pro discount" value={`-${formatCents(priced.proDiscountCents)}`} positive />
+            <p className="font-body font-medium text-[13.5px] mt-1 text-positive">
+              Pro discount applied — {formatCents(priced.proDiscountCents)} off
+            </p>
           )}
 
-          <div className="h-px my-2" style={{ backgroundColor: "#E7EEF6" }} />
-          <div className="flex justify-between font-body font-semibold text-[15px] text-navy">
-            <span>Total</span>
-            <span>{formatCents(priced.totalCents)}</span>
-          </div>
+          <button
+            type="button"
+            onClick={() => setShowBreakdown((open) => !open)}
+            className="font-body text-[13.5px] font-medium mt-2 press text-sky-text"
+          >
+            {showBreakdown ? "Hide breakdown" : "What's included?"}
+          </button>
+
+          {showBreakdown && (
+            <div className="mt-2.5 pt-2.5" style={{ borderTop: "1px solid #E7EEF6" }}>
+              <Row label="Room" value={formatCents(priced.hostCents)} />
+              <Row label="Service fee" value={formatCents(priced.serviceFeeCents)} />
+              {priced.instantFeeCents > 0 && (
+                <Row label="Instant booking" value={formatCents(priced.instantFeeCents)} />
+              )}
+              {priced.proDiscountCents > 0 && (
+                <Row
+                  label="Pro discount"
+                  value={`-${formatCents(priced.proDiscountCents)}`}
+                  positive
+                />
+              )}
+            </div>
+          )}
         </div>
 
         <div

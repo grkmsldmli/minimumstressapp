@@ -78,6 +78,7 @@ interface SpaceRow {
   lat?: number | null;
   lng?: number | null;
   // numeric(4,1) arrives as a string from PostgREST, not a number.
+  area?: string | null;
   map_x?: number | string | null;
   map_y?: number | string | null;
 }
@@ -365,6 +366,7 @@ export class SupabaseRepository implements Repository {
       // absent from this view by design.
       mapX: Number(row.map_x ?? 50),
       mapY: Number(row.map_y ?? 50),
+      area: row.area ?? null,
       distanceLabel: "nearby",
       reviewCount: rating?.count ?? 0,
       averageRating: rating?.average ?? null,
@@ -675,6 +677,7 @@ export class SupabaseRepository implements Repository {
             : null,
         },
         reviewNote: (row.doc_review_note as string) ?? null,
+        area: null,
         distanceLabel: "your space",
         reviewCount: 0,
         averageRating: null,

@@ -91,6 +91,7 @@ interface SeedSpace {
   bufferMinutes: number;
   mapX: number;
   mapY: number;
+  area: string | null;
   distanceLabel: string;
   availability: AvailabilityBlock[];
 }
@@ -111,6 +112,7 @@ const SEED_SPACES: SeedSpace[] = [
     bufferMinutes: 15,
     mapX: 38,
     mapY: 28,
+    area: "San Mateo, CA",
     distanceLabel: "0.8 mi",
     availability: everyDay(7, 21),
   },
@@ -129,6 +131,7 @@ const SEED_SPACES: SeedSpace[] = [
     bufferMinutes: 0,
     mapX: 64,
     mapY: 20,
+    area: "San Mateo, CA",
     distanceLabel: "1.0 mi",
     availability: everyDay(9, 19),
   },
@@ -147,6 +150,7 @@ const SEED_SPACES: SeedSpace[] = [
     bufferMinutes: 15,
     mapX: 72,
     mapY: 52,
+    area: "San Mateo, CA",
     distanceLabel: "1.2 mi",
     availability: everyDay(6, 22),
   },
@@ -164,6 +168,7 @@ const SEED_SPACES: SeedSpace[] = [
     bufferMinutes: 30,
     mapX: 46,
     mapY: 64,
+    area: "San Mateo, CA",
     distanceLabel: "1.5 mi",
     availability: everyDay(8, 18),
   },
@@ -182,6 +187,7 @@ const SEED_SPACES: SeedSpace[] = [
     bufferMinutes: 30,
     mapX: 22,
     mapY: 56,
+    area: "San Mateo, CA",
     distanceLabel: "1.6 mi",
     availability: everyDay(6, 21),
   },
@@ -200,6 +206,7 @@ const SEED_SPACES: SeedSpace[] = [
     bufferMinutes: 15,
     mapX: 56,
     mapY: 80,
+    area: "San Mateo, CA",
     distanceLabel: "2.1 mi",
     availability: everyDay(10, 20),
   },
@@ -265,6 +272,7 @@ export class MockRepository implements Repository {
         availability: seed.availability,
         mapX: seed.mapX,
         mapY: seed.mapY,
+        area: seed.area,
         distanceLabel: seed.distanceLabel,
       reviewCount: 0,
       averageRating: null,
@@ -596,6 +604,7 @@ export class MockRepository implements Repository {
       availability: normalize(input.availability),
       mapX: input.mapX,
       mapY: input.mapY,
+      area: null,
       distanceLabel: "your space",
       reviewCount: 0,
       averageRating: null,

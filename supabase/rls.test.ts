@@ -821,3 +821,62 @@ describe("accepting the terms", () => {
     expect(row.terms_version).toBeNull();
   });
 });
+
+/**
+ * Which part of town, without which door.
+ *
+ * The trimming happens in the view, not the client. A column the browser has
+ * to be trusted to cut down is a column the browser has already been sent.
+ */
+describe("the public area", () => {
+  // Its own listing: earlier tests in this file deliberately push SPACE back
+  // to pending, and a pending listing is not in the public view at all.
+  const AREA_SPACE = "66666666-6666-6666-6666-666666666666";
+
+  beforeAll(async () => {
+    await db.exec(`
+      insert into spaces (
+        id, host_id, name, category, hourly_rate_cents, capacity, access_type,
+        entry_instructions, address_line, status, sublease_doc_path, legal_ack_at,
+        sublease_doc_state, sublease_doc_reviewed_at
+      ) values (
+        '${AREA_SPACE}', '${HOST}', 'Corner Room', 'physical', 5000, 2, 'keypad',
+        'Second door', '1840 Gateway Dr, San Mateo, CA 94404, USA', 'active',
+        'space/a/lease.pdf', now(), 'verified', now()
+      );
+    `);
+  });
+
+  it("drops the street and keeps the town", async () => {
+    const [row] = await asUser<{ area: string }>(
+      PRACTITIONER,
+      `select area from spaces_public where id = '${AREA_SPACE}'`,
+    );
+    expect(row.area).toBe("San Mateo, CA 94404, USA");
+  });
+
+  it("never carries the street number", async () => {
+    const [row] = await asUser<{ area: string }>(
+      PRACTITIONER,
+      `select area from spaces_public where id = '${AREA_SPACE}'`,
+    );
+    expect(row.area).not.toContain("1840");
+    expect(row.area).not.toContain("Gateway");
+  });
+
+  /**
+   * A one-part address cannot be split into street and town, and guessing
+   * wrong leaks the thing this exists to withhold.
+   */
+  it("shows nothing rather than guessing", async () => {
+    const [row] = await db.query<{ area: string | null }>(
+      `select public_area('Just one line') as area`,
+    ).then((r) => r.rows);
+    expect(row.area).toBeNull();
+  });
+
+  it("still refuses the full address to anyone who has not booked", async () => {
+    const found = await asUser(STRANGER, `select id from spaces where id = '${SPACE}'`);
+    expect(found).toHaveLength(0);
+  });
+});

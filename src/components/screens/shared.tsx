@@ -450,9 +450,12 @@ export function AuthVerify({
 export function RoleSelect({
   choosePractitioner,
   chooseHost,
+  error,
 }: {
   choosePractitioner: () => void;
   chooseHost: () => void;
+  /** Why the choice was refused. Silence here was the bug. */
+  error?: string | null;
 }) {
   const [pending, setPending] = useState<"practitioner" | "host" | null>(null);
 
@@ -500,6 +503,12 @@ export function RoleSelect({
             </p>
 
           </div>
+
+          {error && (
+            <p className="font-body font-normal text-[13.5px] leading-relaxed mt-4 text-coral-soft">
+              {error}
+            </p>
+          )}
 
           <div className="flex gap-2.5 mt-4">
             <button
@@ -571,9 +580,15 @@ export function RoleSelect({
         </button>
       </div>
 
+      {/*
+        No promise of switching. The account type is write-once, refused by a
+        trigger in the database — telling somebody they can add the other side
+        later was the app offering something it goes on to refuse, and the
+        person finds out at the moment they need it.
+      */}
       <p className="relative z-10 font-body font-normal text-[13.5px] text-white/45 pt-7 leading-relaxed">
-        Each side has its own account, with its own paperwork and payments. Pick the one you&apos;re
-        here for — you can always add the other later.
+        Each side has its own account, with its own paperwork and payments. This choice is
+        permanent.
       </p>
     </NavyScreen>
   );

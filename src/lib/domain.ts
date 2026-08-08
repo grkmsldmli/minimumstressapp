@@ -99,6 +99,15 @@ export interface PublicSpace {
   /** Illustrative map position, standing in for real coordinates. */
   mapX: number;
   mapY: number;
+  /**
+   * Town and postcode, never the street.
+   *
+   * Trimmed in the database rather than here — a column the browser has to be
+   * trusted to cut down is a column the browser has already been sent. Null
+   * when the stored address has no comma to split on, because guessing wrong
+   * would leak the thing this exists to withhold.
+   */
+  area: string | null;
   distanceLabel: string;
   /**
    * Counted from released reviews only, so a sealed one cannot be inferred by

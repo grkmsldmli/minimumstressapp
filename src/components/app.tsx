@@ -82,6 +82,7 @@ export function App() {
   const [data, setData] = useState<Snapshot | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [roleError, setRoleError] = useState<string | null>(null);
 
   const [authBusy, setAuthBusy] = useState(false);
 
@@ -376,7 +377,20 @@ export function App() {
                 // one. Upsert, so a repeat sign-in is harmless.
                 await ensureProfile();
                 refresh();
-                go("role");
+                /*
+                 * Not the role screen.
+                 *
+                 * Sending everybody there asked a returning host, whose side
+                 * was chosen months ago and cannot change, to choose again —
+                 * and the write that followed was refused by the database, so
+                 * the button did nothing and said nothing.
+                 *
+                 * The guards below already know where each account belongs: an
+                 * account with no type gets the role screen, a host lands on
+                 * their studio, a practitioner on discover. Routing here would
+                 * be a second, worse copy of that.
+                 */
+                go("discover");
               } catch (error) {
                 setAuthError(describeAuthError(error));
               } finally {
@@ -387,29 +401,41 @@ export function App() {
         />
   );
 
+  /**
+   * Choosing a side, with the refusal made visible.
+   *
+   * The write is final — a trigger in the database refuses any change from one
+   * value to another. When it refused, the rejection landed in a floating
+   * promise nobody was holding: the button did nothing, said nothing, and the
+   * person pressed it again.
+   *
+   * Awaited before navigating, too. Landing on a practitioner screen while the
+   * account is still typeless would show somebody a side they may not have
+   * chosen.
+   */
+  const chooseSide = async (accountType: "practitioner" | "host", next: Screen) => {
+    setRoleError(null);
+    try {
+      await repo.updateProfile({ accountType });
+      refresh();
+      go(next);
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : "";
+      setRoleError(
+        /account type|final|cannot be changed/i.test(message)
+          ? "This account is already set up on the other side, and that cannot be changed. Sign in with a different email to use this one."
+          : message || "That did not save. Try again.",
+      );
+    }
+  };
+
   // Shown from two places: the switch below, and the guard that catches an
   // account which signed in but never answered the question.
   const renderRoleSelect = () => (
         <RoleSelect
-          /*
-            Written before navigating, and awaited. Landing on a practitioner
-            screen while the account is still typeless would show someone a
-            side they may not have chosen.
-          */
-          choosePractitioner={() => {
-            void (async () => {
-              await repo.updateProfile({ accountType: "practitioner" });
-              refresh();
-              go("verify");
-            })();
-          }}
-          chooseHost={() => {
-            void (async () => {
-              await repo.updateProfile({ accountType: "host" });
-              refresh();
-              go("addspace");
-            })();
-          }}
+          error={roleError}
+          choosePractitioner={() => void chooseSide("practitioner", "verify")}
+          chooseHost={() => void chooseSide("host", "addspace")}
         />
   );
 

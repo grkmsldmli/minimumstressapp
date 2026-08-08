@@ -44,16 +44,18 @@ export function EmergencyContactCard({
   const save = async () => {
     const trimmedPhone = phone.trim();
 
-    /**
-     * E.164, because the column requires it and because a number without a
-     * country code is a number nobody can dial in a hurry. Checked here so the
-     * message is about the phone rather than about a constraint.
+    /*
+     * Stored exactly as written.
+     *
+     * This used to demand E.164 — a leading plus and a country code — on the
+     * reasoning that a number nobody can dial is no use in a hurry. That
+     * rejected "0533 395 5823" and "(415) 555-0134", which are how people
+     * actually write a number, and a field that refuses the real answer does
+     * not get a better one. It gets an empty field, which is the outcome the
+     * rule was meant to prevent.
+     *
+     * A person reads this, not a dialler.
      */
-    if (trimmedPhone && !/^\+[1-9]\d{6,14}$/.test(trimmedPhone.replace(/[\s()-]/g, ""))) {
-      setError("Include the country code, like +1 415 555 0134.");
-      return;
-    }
-
     setError(null);
     setState("saving");
 
@@ -68,7 +70,7 @@ export function EmergencyContactCard({
     try {
       await onSave({
         name: name.trim() || null,
-        phone: trimmedPhone ? trimmedPhone.replace(/[\s()-]/g, "") : null,
+        phone: trimmedPhone || null,
         relationship: relationship.trim() || null,
       });
       setState("saved");
@@ -100,7 +102,7 @@ export function EmergencyContactCard({
           label="Phone"
           value={phone}
           onChange={setPhone}
-          placeholder="+1 415 555 0134"
+          placeholder="Their number"
           icon={<Phone size={13} color="#8CA3BD" />}
           inputMode="tel"
         />

@@ -139,15 +139,17 @@ export function App() {
    */
   const [here, setHere] = useState<{ lat: number; lng: number } | null>(null);
 
-  const chooseLocation = useCallback(async (choice: LocationChoice) => {
-    setLocationError(null);
-    setHere(choice.kind === "coords" ? { lat: choice.lat, lng: choice.lng } : null);
+  /**
+   * Asks the server to rank the listings, and writes only what it answers.
+   *
+   * Split out from the choice itself because this is the part a saved
+   * postcode also needs. An effect that applied the saved one by calling the
+   * chooser would setState synchronously on every render it ran in, which is
+   * the cascade React warns about — here the only state written is written
+   * after the fetch resolves.
+   */
+  const sortByLocation = useCallback(async (query: string) => {
     try {
-      const query =
-        choice.kind === "coords"
-          ? `lat=${choice.lat}&lng=${choice.lng}`
-          : `postalCode=${encodeURIComponent(choice.postalCode)}`;
-
       const response = await fetch(`/api/spaces/nearby?${query}`);
       const body = (await response.json()) as {
         spaces?: { id: string; distanceLabel: string }[];
@@ -166,6 +168,68 @@ export function App() {
       setLocationError("We couldn't reach the server. Check your connection and try again.");
     }
   }, []);
+
+  const chooseLocation = useCallback(
+    async (choice: LocationChoice) => {
+      setLocationError(null);
+      setHere(choice.kind === "coords" ? { lat: choice.lat, lng: choice.lng } : null);
+
+      /*
+       * A postcode is kept; a coordinate is not.
+       *
+       * The difference is what each one is. A coordinate is where somebody
+       * physically is, wanted once to sort a list — storing it would be
+       * building a record of their movements to save a tap. A postcode they
+       * typed is a preference, and asking again every visit is friction with
+       * no privacy bought by it.
+       */
+      if (choice.kind === "postal") {
+        /*
+         * Refreshed, not just written.
+         *
+         * Writing it alone left the screen holding the profile it loaded with,
+         * so the saved postcode existed in the database and nowhere the app
+         * could see it — the row saying which postcode is in use never
+         * appeared, and the prompt was replaced by nothing.
+         */
+        void repo
+          .updateProfile({ searchPostcode: choice.postalCode })
+          .then(() => refresh())
+          .catch(() => {
+            // Sorting still works this visit; the next one will ask again.
+          });
+      }
+
+      await sortByLocation(
+        choice.kind === "coords"
+          ? `lat=${choice.lat}&lng=${choice.lng}`
+          : `postalCode=${encodeURIComponent(choice.postalCode)}`,
+      );
+    },
+    [repo, refresh, sortByLocation],
+  );
+
+  /**
+   * Sort by the saved postcode when the app opens.
+   *
+   * Keyed on the postcode, so changing it re-sorts and nothing else does. A
+   * saved postcode means the question has been answered, so the prompt does
+   * not appear at all.
+   */
+  const savedPostcode = data?.profile.searchPostcode ?? null;
+
+  /*
+   * The rule cannot see past the call, and there is no synchronous setState
+   * behind it: everything sortByLocation writes is written after `await
+   * fetch`, which is the "subscribe to an external system and setState in the
+   * callback" shape the rule exists to allow. Narrowed to this line so the
+   * check still applies everywhere else.
+   */
+  useEffect(() => {
+    if (!savedPostcode) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void sortByLocation(`postalCode=${encodeURIComponent(savedPostcode)}`);
+  }, [savedPostcode, sortByLocation]);
 
   // Read once per render rather than threaded through: it is a build-time
   // constant, and every caller wants the same answer.
@@ -553,6 +617,17 @@ export function App() {
           onGoProfile={() => go("practitioner-profile")}
           onGoLegal={() => go("legal")}
           you={here}
+          savedPostcode={savedPostcode}
+          /*
+            Clearing it puts the prompt back, which is the whole of "change".
+            One control, and the state it produces is the state somebody
+            already knows how to answer.
+          */
+          onChangePostcode={() => {
+            setNearbyOrder(null);
+            setDistanceLabels({});
+            void mutate(() => repo.updateProfile({ searchPostcode: null }));
+          }}
           nearbyOrder={nearbyOrder}
           onChooseLocation={(choice) => void chooseLocation(choice)}
           distanceLabels={distanceLabels}

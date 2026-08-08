@@ -161,6 +161,7 @@ export class SupabaseRepository implements Repository {
       notifyPayouts: data?.notify_payouts ?? true,
       notifyOffers: data?.notify_offers ?? false,
       accountType: data?.account_type ?? null,
+      searchPostcode: data?.search_postcode ?? null,
       termsVersion: data?.terms_version ?? null,
       termsAcceptedAt: data?.terms_accepted_at ? new Date(data.terms_accepted_at) : null,
       // Read back only for its owner — this query runs as the signed-in user,
@@ -194,6 +195,7 @@ export class SupabaseRepository implements Repository {
      * with the same value is harmless; sending a different one fails loudly
      * rather than quietly turning a practitioner into a host.
      */
+    if (patch.searchPostcode !== undefined) row.search_postcode = patch.searchPostcode;
     if (patch.accountType !== undefined) row.account_type = patch.accountType;
     /*
      * The version travels; the timestamp does not. A trigger sets it from the

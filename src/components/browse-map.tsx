@@ -86,7 +86,20 @@ export function BrowseMap({
   };
 
   return (
-    <div ref={box} className="relative flex-1 overflow-hidden" style={{ backgroundColor: "#EAF1F7" }}>
+    /*
+      Absolute, not flex-1.
+      This sat inside a `relative` box rather than a flex column, so `flex-1`
+      gave it no height at all: the tiles are positioned from a measured size,
+      and a measured size of zero draws nothing. The old drawing survived that
+      because an SVG with `inset-0` fills its parent whatever the parent's
+      layout is, which is exactly why the bug did not exist until the map was
+      real.
+    */
+    <div
+      ref={box}
+      className="absolute inset-0 overflow-hidden"
+      style={{ backgroundColor: "#EAF1F7" }}
+    >
       {layout?.tiles.map((tile) => (
         // eslint-disable-next-line @next/next/no-img-element
         <img

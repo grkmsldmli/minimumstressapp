@@ -65,6 +65,14 @@ export interface Profile {
    * Deliberately not backfilled — recording an acceptance that never happened
    * is worse than having none, since being true is the whole value of it.
    */
+  /**
+   * A postcode they typed, kept until they change it.
+   *
+   * Not the GPS path, which is still used once and forgotten. This is a
+   * preference somebody wrote down, and asking for it every visit is friction
+   * with no privacy gained.
+   */
+  searchPostcode: string | null;
   termsVersion: number | null;
   termsAcceptedAt: Date | null;
 }

@@ -61,6 +61,8 @@ export function Discover({
   onGoLegal,
   greetingName,
   you,
+  savedPostcode,
+  onChangePostcode,
   nearbyOrder,
   onChooseLocation,
   distanceLabels,
@@ -77,6 +79,9 @@ export function Discover({
   /** Ids nearest-first, or null while nobody has said where they are. */
   /** Where the practitioner is, when they have shared it. This visit only. */
   you: { lat: number; lng: number } | null;
+  /** A postcode they saved, if any. Replaces the prompt with the answer. */
+  savedPostcode: string | null;
+  onChangePostcode: () => void;
   nearbyOrder: string[] | null;
   onChooseLocation: (choice: LocationChoice) => void;
   /** Coarse label per space id — "0.8 mi". Never a coordinate. */
@@ -282,13 +287,35 @@ export function Discover({
             </>
           )}
 
-          {nearbyOrder === null && !askedAlready && (
-            <div className="px-6 mb-4">
-              <LocationPrompt
-                onChoose={onChooseLocation}
-                onDismiss={() => setAskedAlready(true)}
-              />
+          {savedPostcode ? (
+            /*
+              Already answered. What replaces the prompt is the answer itself,
+              because a setting somebody cannot see is one they cannot change —
+              and this one decides the order of everything below it.
+            */
+            <div className="px-6 mb-4 flex items-center gap-2">
+              <MapPin size={13} className="shrink-0 text-sky-text" />
+              <p className="font-body font-normal text-[14px] text-ink-soft">
+                Sorted by distance from {savedPostcode}
+              </p>
+              <button
+                type="button"
+                onClick={onChangePostcode}
+                className="font-body font-medium text-[14px] press text-sky-text"
+              >
+                Change
+              </button>
             </div>
+          ) : (
+            nearbyOrder === null &&
+            !askedAlready && (
+              <div className="px-6 mb-4">
+                <LocationPrompt
+                  onChoose={onChooseLocation}
+                  onDismiss={() => setAskedAlready(true)}
+                />
+              </div>
+            )
           )}
 
           {locationError && (

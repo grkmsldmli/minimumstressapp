@@ -85,7 +85,7 @@ export function WeekSchedule({
               style={{ backgroundColor: open ? "#F4F8FC" : "#fff" }}
             >
               <span
-                className={`font-body font-medium text-[14px] w-8 ${open ? "text-navy" : "text-ink-faint"}`}
+                className={`font-body font-medium text-[15px] w-8 ${open ? "text-navy" : "text-ink-faint"}`}
               >
                 {short}
               </span>
@@ -152,7 +152,7 @@ export function WeekSchedule({
                   className="flex items-center gap-1 mt-2 press"
                 >
                   <Plus size={11} color="#3B9BE8" />
-                  <span className="font-body text-[13.5px] font-medium text-sky-text">
+                  <span className="font-body text-[15px] font-medium text-sky-text">
                     Add another block
                   </span>
                 </button>

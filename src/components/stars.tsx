@@ -82,7 +82,7 @@ export function RatingBadge({
     return (
       <span className="inline-flex items-center gap-1.5">
         <span
-          className="px-2 py-0.5 rounded-full font-body font-medium text-[12px]"
+          className="px-2 py-0.5 rounded-full font-body font-medium text-[15px]"
           style={{ backgroundColor: "#EDF6FE", color: "#2670B0" }}
         >
           New
@@ -97,7 +97,7 @@ export function RatingBadge({
   return (
     <span className="inline-flex items-center gap-1">
       <Star size={size} fill={GOLD} color={GOLD} strokeWidth={0} />
-      <span className="font-body font-medium text-[13.5px] text-navy">
+      <span className="font-body font-medium text-[15px] text-navy">
         {summary.average!.toFixed(1)}
       </span>
       <span className="font-body font-normal text-[13.5px] text-ink-faint">({summary.count})</span>

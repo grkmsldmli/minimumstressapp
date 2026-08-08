@@ -180,7 +180,7 @@ export function SpaceDetail({
             >
               {requirementGroups.map((group, i) => (
                 <div key={group.kind} className={i > 0 ? "mt-3" : ""}>
-                  <p className="font-body font-medium text-[10.5px] uppercase tracking-[0.14em] text-warn mb-1.5">
+                  <p className="font-body font-semibold text-[12px] uppercase tracking-[0.14em] text-warn mb-1.5">
                     {group.heading}
                   </p>
                   <ul className="flex flex-col gap-1">
@@ -226,7 +226,7 @@ export function SpaceDetail({
               until afterwards.
             */}
             {space.area && (
-              <p className="font-body font-medium text-[14px] text-navy">{space.area}</p>
+              <p className="font-body font-medium text-[15px] text-navy">{space.area}</p>
             )}
             <p className="font-body font-normal text-[13.5px] leading-relaxed mt-0.5 text-ink-soft">
               The exact address and entry instructions are shared once you&apos;ve booked, shortly
@@ -285,7 +285,7 @@ export function SpaceDetail({
                 >
                   {isInstant && (
                     <span
-                      className="absolute -top-1.5 -right-1.5 px-1.5 py-0.5 rounded-full font-body text-[10.5px] font-medium"
+                      className="absolute -top-1.5 -right-1.5 px-1.5 py-0.5 rounded-full font-body text-[12px] font-medium"
                       style={{
                         backgroundColor: active ? "#8FC6F5" : chargesInstantFee ? "#FFF8F1" : "#EFF4EC",
                         color: active ? "#16304E" : chargesInstantFee ? "#8B6C37" : "#557255",
@@ -311,7 +311,7 @@ export function SpaceDetail({
             className="w-full mt-3 rounded-2xl p-3.5 text-left press"
             style={{ backgroundColor: "#FFF8F1", border: "1px solid #F5DFC4" }}
           >
-            <span className="flex items-center gap-1.5 font-body font-medium text-[13.5px] text-navy">
+            <span className="flex items-center gap-1.5 font-body font-medium text-[15px] text-navy">
               <Zap size={12} color="#E8A23D" />
               Pro books up to {PRO_HORIZON_DAYS} days ahead
             </span>
@@ -339,7 +339,7 @@ export function SpaceDetail({
         >
           <div className="flex items-center gap-1.5">
             <Check size={11} color="#557255" />
-            <p className="font-body font-medium text-[10.5px] uppercase tracking-[0.14em] text-positive">
+            <p className="font-body font-semibold text-[12px] uppercase tracking-[0.14em] text-positive">
               All In Price — nothing added later
             </p>
           </div>
@@ -352,7 +352,7 @@ export function SpaceDetail({
           </div>
 
           {priced.proDiscountCents > 0 && (
-            <p className="font-body font-medium text-[13.5px] mt-1 text-positive">
+            <p className="font-body font-medium text-[15px] mt-1 text-positive">
               Pro discount applied — {formatCents(priced.proDiscountCents)} off
             </p>
           )}
@@ -360,7 +360,7 @@ export function SpaceDetail({
           <button
             type="button"
             onClick={() => setShowBreakdown((open) => !open)}
-            className="font-body text-[13.5px] font-medium mt-2 press text-sky-text"
+            className="font-body text-[15px] font-medium mt-2 press text-sky-text"
           >
             {showBreakdown ? "Hide breakdown" : "What's included?"}
           </button>
@@ -437,8 +437,8 @@ function Fact({
       style={{ backgroundColor: "#F4F8FC", border: "1px solid #E7EEF6" }}
     >
       <Icon size={14} color="#3B9BE8" className="mx-auto" />
-      <p className="font-body font-medium text-[14px] mt-1.5 text-navy">{value}</p>
-      <p className="font-body text-[10.5px] uppercase tracking-wide mt-0.5 text-ink-faint">
+      <p className="font-body font-medium text-[15px] mt-1.5 text-navy">{value}</p>
+      <p className="font-body text-[12px] uppercase tracking-wide mt-0.5 text-ink-faint">
         {label}
       </p>
     </div>
@@ -447,7 +447,7 @@ function Fact({
 
 function Label({ children }: { children: React.ReactNode }) {
   return (
-    <p className="font-body font-medium text-[11px] uppercase tracking-[0.2em] mt-7 mb-3 text-sky-text">
+    <p className="font-body font-semibold text-[12px] uppercase tracking-[0.2em] mt-7 mb-3 text-sky-text">
       {children}
     </p>
   );

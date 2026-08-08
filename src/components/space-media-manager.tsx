@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { ImagePlus, Star, X } from "lucide-react";
 
+import { errorMessage } from "@/lib/error-message";
 import type { SpaceMedia } from "@/lib/domain";
 import { MAX_BYTES, rejectionReason } from "@/lib/uploads";
 
@@ -54,7 +55,7 @@ export function SpaceMediaManager({
     try {
       await onAdd(chosen);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Those did not upload.");
+      setError(errorMessage(cause, "Those did not upload."));
     } finally {
       setBusy(null);
       if (input.current) input.current.value = "";
@@ -67,7 +68,7 @@ export function SpaceMediaManager({
     try {
       await onRemove(mediaId);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "That did not delete.");
+      setError(errorMessage(cause, "That did not delete."));
     } finally {
       setBusy(null);
     }
@@ -91,7 +92,7 @@ export function SpaceMediaManager({
 
             {i === 0 && (
               <span
-                className="absolute left-1.5 bottom-1.5 flex items-center gap-1 px-1.5 py-0.5 rounded-full font-body text-[10.5px] text-white"
+                className="absolute left-1.5 bottom-1.5 flex items-center gap-1 px-1.5 py-0.5 rounded-full font-body text-[12px] text-white"
                 style={{ backgroundColor: "rgba(10,26,44,0.6)", backdropFilter: "blur(6px)" }}
               >
                 <Star size={9} fill="#fff" /> Cover

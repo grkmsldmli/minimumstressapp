@@ -50,7 +50,7 @@ export function DocumentUpload({
           {label}
           {required && <span className="text-coral"> *</span>}
         </p>
-        {!required && <span className="font-body text-[10.5px] text-ink-faint">Optional</span>}
+        {!required && <span className="font-body text-[12px] text-ink-faint">Optional</span>}
       </div>
 
       {file ? (
@@ -135,7 +135,7 @@ export function AddMediaTile({
         }}
       />
       <Plus size={18} color="#3B9BE8" />
-      <span className="font-body text-[10.5px] font-medium mt-1 text-navy">{label}</span>
+      <span className="font-body text-[12px] font-medium mt-1 text-navy">{label}</span>
     </label>
   );
 }

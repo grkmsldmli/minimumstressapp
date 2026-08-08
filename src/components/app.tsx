@@ -10,6 +10,7 @@ import type {
   PublicSpace,
   SpaceAccessDetails,
 } from "@/lib/domain";
+import { errorMessage } from "@/lib/error-message";
 import { type CancellationEvent, standingFor } from "@/lib/reliability";
 import type { LocationChoice } from "@/components/location-prompt";
 import { supabaseBackendEnabled } from "@/lib/repository-factory";
@@ -253,7 +254,7 @@ export function App() {
        * signed out. The person looking at it cannot tell those apart, and
        * neither could we.
        */
-      if (!cancelled) setLoadError(cause instanceof Error ? cause.message : String(cause));
+      if (!cancelled) setLoadError(errorMessage(cause, "Something went wrong loading your account."));
     });
 
     return () => {
@@ -420,7 +421,7 @@ export function App() {
       refresh();
       go(next);
     } catch (cause) {
-      const message = cause instanceof Error ? cause.message : "";
+      const message = errorMessage(cause, "");
       setRoleError(
         /account type|final|cannot be changed/i.test(message)
           ? "This account is already set up on the other side, and that cannot be changed. Sign in with a different email to use this one."

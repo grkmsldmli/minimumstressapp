@@ -175,7 +175,7 @@ export function LocationMap({
 
         {/* Required by the tile provider's licence, and it is their work. */}
         <span
-          className="absolute bottom-0 right-0 px-1.5 py-0.5 font-body text-[10.5px] text-ink-faint"
+          className="absolute bottom-0 right-0 px-1.5 py-0.5 font-body text-[12px] text-ink-faint"
           style={{ backgroundColor: "rgba(255,255,255,0.75)" }}
         >
           © OpenStreetMap

@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { errorMessage } from "@/lib/error-message";
 import type { AdminQueue, ListingRow, Person } from "@/lib/admin/queue";
 import { formatCents } from "@/lib/money";
 
@@ -63,7 +64,7 @@ export function AdminDashboard() {
         setError(null);
       } catch (failure) {
         if (cancelled) return;
-        setError(failure instanceof Error ? failure.message : "Could not load the queue");
+        setError(errorMessage(failure, "Could not load the queue"));
       }
     };
 
@@ -88,7 +89,7 @@ export function AdminDashboard() {
       if (!response.ok) throw new Error(body.error ?? "That did not work");
       reload();
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : "That did not work");
+      setError(errorMessage(failure, "That did not work"));
     } finally {
       setBusy(null);
     }

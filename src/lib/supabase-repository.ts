@@ -23,6 +23,20 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { errorMessage } from "./error-message";
+
+/**
+ * A real Error carrying what Supabase actually said.
+ *
+ * PostgrestError is a plain object, so `throw error` sent something no screen
+ * recognised — and every `instanceof Error` check downstream fell through to a
+ * generic message, discarding the sentence a constraint or trigger raised for
+ * exactly that moment.
+ */
+function asError(cause: unknown): Error {
+  return cause instanceof Error ? cause : new Error(errorMessage(cause, "Request failed"));
+}
+
 import type { AvailabilityBlock } from "./availability";
 import {
   rejectionReason,
@@ -128,7 +142,7 @@ export class SupabaseRepository implements Repository {
       .select("*")
       .eq("id", user.id)
       .maybeSingle();
-    if (error) throw error;
+    if (error) throw asError(error);
 
     // A profile row is created on first sign-in, but a session can outlive a
     // failed insert, so absence is treated as "defaults" rather than an error.
@@ -189,7 +203,7 @@ export class SupabaseRepository implements Repository {
     // after money or verification actually clears, never by the client asking.
 
     const { error } = await this.db.from("profiles").upsert(row);
-    if (error) throw error;
+    if (error) throw asError(error);
     return this.getProfile();
   }
 
@@ -214,10 +228,10 @@ export class SupabaseRepository implements Repository {
     const { error: uploadError } = await this.db.storage
       .from("avatars")
       .upload(path, file, { contentType: file.type, upsert: false });
-    if (uploadError) throw uploadError;
+    if (uploadError) throw asError(uploadError);
 
     const { error } = await this.db.from("profiles").upsert({ id, avatar_path: path });
-    if (error) throw error;
+    if (error) throw asError(error);
 
     return this.getProfile();
   }
@@ -272,7 +286,7 @@ export class SupabaseRepository implements Repository {
 
   async signOut(): Promise<void> {
     const { error } = await this.db.auth.signOut();
-    if (error) throw error;
+    if (error) throw asError(error);
   }
 
   /* ---------------- discovery ---------------- */
@@ -283,7 +297,7 @@ export class SupabaseRepository implements Repository {
 
   async listPublicSpaces(): Promise<PublicSpace[]> {
     const { data: spaces, error } = await this.db.from("spaces_public").select("*");
-    if (error) throw error;
+    if (error) throw asError(error);
     if (!spaces?.length) return [];
 
     const ids = spaces.map((s: SpaceRow) => s.id);
@@ -320,7 +334,7 @@ export class SupabaseRepository implements Repository {
       .select("*")
       .eq("id", id)
       .maybeSingle();
-    if (error) throw error;
+    if (error) throw asError(error);
     if (!data) return null;
 
     const [{ data: blocks }, { data: media }] = await Promise.all([
@@ -377,7 +391,7 @@ export class SupabaseRepository implements Repository {
     // The function performs its own booking check; an empty result means "you
     // are not entitled", not "this space has no address".
     const { data, error } = await this.db.rpc("space_access_details", { p_space_id: spaceId });
-    if (error) throw error;
+    if (error) throw asError(error);
 
     const row = Array.isArray(data) ? data[0] : data;
     if (!row) return null;
@@ -417,7 +431,7 @@ export class SupabaseRepository implements Repository {
       .select("*")
       .eq("practitioner_id", me)
       .order("starts_at", { ascending: false });
-    if (error) throw error;
+    if (error) throw asError(error);
     if (!data?.length) return [];
 
     // The view carries no space name, and a practitioner cannot read `spaces`
@@ -551,7 +565,7 @@ export class SupabaseRepository implements Repository {
       .eq("booking_id", bookingId)
       .order("created_at");
 
-    if (error) throw error;
+    if (error) throw asError(error);
 
     return (data ?? []).map((row: MessageRow) => ({
       id: row.id,
@@ -599,7 +613,7 @@ export class SupabaseRepository implements Repository {
    */
   async getSessionCount(): Promise<number> {
     const { data, error } = await this.db.from("session_counts").select("sessions").maybeSingle();
-    if (error) throw error;
+    if (error) throw asError(error);
     return data?.sessions ?? 0;
   }
 
@@ -617,7 +631,7 @@ export class SupabaseRepository implements Repository {
       .from("bookings")
       .select("starts_at, cancelled_at, cancelled_by")
       .not("cancelled_at", "is", null);
-    if (error) throw error;
+    if (error) throw asError(error);
 
     return (data ?? [])
       .filter((row) => row.cancelled_by === "host" || row.cancelled_by === "practitioner")
@@ -640,7 +654,7 @@ export class SupabaseRepository implements Repository {
       .select("*")
       .eq("host_id", hostId)
       .order("created_at");
-    if (error) throw error;
+    if (error) throw asError(error);
     if (!spaces?.length) return [];
 
     const ids = spaces.map((s: SpaceRow) => s.id);
@@ -757,14 +771,14 @@ export class SupabaseRepository implements Repository {
       const { error: uploadError } = await this.db.storage
         .from("space-media")
         .upload(path, item.file, { contentType: item.file.type, upsert: false });
-      if (uploadError) throw uploadError;
+      if (uploadError) throw asError(uploadError);
 
       // Uploaded first, recorded second, so a row always points at bytes that
       // are already there.
       const { error } = await this.db
         .from("space_media")
         .insert({ space_id: spaceId, storage_path: path, kind: item.kind, position });
-      if (error) throw error;
+      if (error) throw asError(error);
 
       position += 1;
     }
@@ -780,7 +794,7 @@ export class SupabaseRepository implements Repository {
       .eq("id", mediaId)
       .eq("space_id", spaceId)
       .maybeSingle();
-    if (readError) throw readError;
+    if (readError) throw asError(readError);
     if (!row) throw new Error("That photo is no longer on this listing.");
 
     const { error } = await this.db
@@ -788,7 +802,7 @@ export class SupabaseRepository implements Repository {
       .delete()
       .eq("id", mediaId)
       .eq("space_id", spaceId);
-    if (error) throw error;
+    if (error) throw asError(error);
 
     /*
      * The row goes first, the file second.
@@ -811,7 +825,7 @@ export class SupabaseRepository implements Repository {
       .update({ status: listed ? "pending" : "delisted" })
       .eq("id", spaceId)
       .eq("host_id", hostId);
-    if (error) throw error;
+    if (error) throw asError(error);
 
     const [updated] = (await this.listMySpaces()).filter((s) => s.id === spaceId);
     return updated;
@@ -851,7 +865,7 @@ export class SupabaseRepository implements Repository {
       })
       .select()
       .single();
-    if (error) throw error;
+    if (error) throw asError(error);
 
     /**
      * Files go up after the row exists, and the row is removed if they fail.
@@ -917,14 +931,14 @@ export class SupabaseRepository implements Repository {
         // somehow did, replacing another listing's photo is the wrong repair.
         upsert: false,
       });
-      if (error) throw error;
+      if (error) throw asError(error);
 
       mediaRows.push({ space_id: spaceId, storage_path: path, kind: item.kind, position: index });
     }
 
     if (mediaRows.length > 0) {
       const { error } = await this.db.from("space_media").insert(mediaRows);
-      if (error) throw error;
+      if (error) throw asError(error);
     }
 
     const subleaseReason = rejectionReason(input.subleaseDoc, "document");
@@ -951,7 +965,7 @@ export class SupabaseRepository implements Repository {
           contentType: input.insuranceDoc.type,
           upsert: false,
         });
-      if (error) throw error;
+      if (error) throw asError(error);
     }
 
     // Written last, so a path in the row always points at a file that is
@@ -985,7 +999,7 @@ export class SupabaseRepository implements Repository {
           end_minute: b.endMinute,
         })),
       );
-      if (error) throw error;
+      if (error) throw asError(error);
     }
 
     const spaces = await this.listMySpaces();
@@ -996,7 +1010,7 @@ export class SupabaseRepository implements Repository {
 
   async listHostBookings(): Promise<HostBooking[]> {
     const { data, error } = await this.db.rpc("host_bookings");
-    if (error) throw error;
+    if (error) throw asError(error);
 
     return (data ?? []).map(
       (row: {

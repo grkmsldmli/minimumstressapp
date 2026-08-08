@@ -35,7 +35,7 @@ export function BreathCoach() {
           border: "1px solid rgba(143,198,245,0.3)",
         }}
       >
-        <p className="font-body font-medium text-[14px] text-sky-soft">Calm state unlocked</p>
+        <p className="font-body font-medium text-[15px] text-sky-soft">Calm state unlocked</p>
         <p className="font-body font-normal text-[14px] text-white/60 mt-1">
           Walk in steady. Your client will feel it too.
         </p>

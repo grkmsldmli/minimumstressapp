@@ -111,7 +111,7 @@ export function SpaceDirections({
           }}
           target="_blank"
           rel="noopener noreferrer"
-          className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-full font-body font-medium text-[13.5px] press"
+          className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-full font-body font-medium text-[15px] press"
           style={
             dark
               ? { backgroundColor: "rgba(255,255,255,0.14)", color: "#fff" }
@@ -126,7 +126,7 @@ export function SpaceDirections({
           type="button"
           onClick={() => void copy()}
           aria-label="Copy address"
-          className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-full font-body font-medium text-[13.5px] press"
+          className="flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-full font-body font-medium text-[15px] press"
           style={
             dark
               ? { backgroundColor: "rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.75)" }

@@ -134,7 +134,7 @@ function SheetBody({
         >
           <div className="flex items-center gap-1.5 mb-3">
             <Check size={11} color="#557255" />
-            <p className="font-body font-medium text-[10.5px] uppercase tracking-[0.14em] text-positive">
+            <p className="font-body font-semibold text-[12px] uppercase tracking-[0.14em] text-positive">
               All In Price — nothing added later
             </p>
           </div>

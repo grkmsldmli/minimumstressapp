@@ -50,7 +50,7 @@ export function BadgeCard({ party, sessions }: { party: Party; sessions: number 
           {progress.earned.map((badge) => (
             <span
               key={badge.key}
-              className="px-2.5 py-1 rounded-full font-body font-medium text-[13.5px]"
+              className="px-2.5 py-1 rounded-full font-body font-medium text-[15px]"
               style={{ backgroundColor: "#FDF6EA", color: "#8A5F1B" }}
             >
               {badge.name}

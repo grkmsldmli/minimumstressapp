@@ -91,7 +91,7 @@ export function HowItWorks({ next }: { next: () => void }) {
   return (
     <NavyScreen className="items-center justify-between px-8 pt-14 pb-9">
       <div className="relative z-10 text-center">
-        <p className="font-body font-medium text-[11px] uppercase tracking-[0.2em] text-sky-soft">
+        <p className="font-body font-semibold text-[12px] uppercase tracking-[0.2em] text-sky-soft">
           How it works
         </p>
         <div className="mt-2">
@@ -172,7 +172,7 @@ function DiagramNode({
       >
         {children}
       </div>
-      <p className="font-body font-medium text-[14px] text-white mt-2">{label}</p>
+      <p className="font-body font-medium text-[15px] text-white mt-2">{label}</p>
     </div>
   );
 }
@@ -271,7 +271,7 @@ export function AuthEntry({
           style={{ display: providers.length > 0 ? undefined : "none" }}
         >
           <div className="flex-1 h-px" style={{ backgroundColor: "rgba(255,255,255,0.16)" }} />
-          <span className="font-body font-normal text-[11px] text-white/40 uppercase tracking-wide">
+          <span className="font-body font-normal text-[12px] text-white/40 uppercase tracking-wide">
             or with email
           </span>
           <div className="flex-1 h-px" style={{ backgroundColor: "rgba(255,255,255,0.16)" }} />
@@ -464,7 +464,7 @@ export function RoleSelect({
     return (
       <NavyScreen className="items-center justify-between text-center px-8 pt-16 pb-9">
         <div className="relative z-10">
-          <p className="font-body font-medium text-[11px] uppercase tracking-[0.2em] text-coral-soft">
+          <p className="font-body font-semibold text-[12px] uppercase tracking-[0.2em] text-coral-soft">
             Before you continue
           </p>
           <div className="mt-2">
@@ -538,7 +538,7 @@ export function RoleSelect({
   return (
     <NavyScreen className="items-center justify-between text-center px-8 pt-16 pb-9">
       <div className="relative z-10">
-        <p className="font-body font-medium text-[11px] uppercase tracking-[0.2em] text-sky-soft">
+        <p className="font-body font-semibold text-[12px] uppercase tracking-[0.2em] text-sky-soft">
           One quick thing
         </p>
         <div className="mt-2">
@@ -558,7 +558,7 @@ export function RoleSelect({
           <p className="font-body font-normal text-[13.5px] text-white/80 mt-1">
             Find a private room by the hour — no membership, one all-in price.
           </p>
-          <span className="inline-flex items-center gap-1 font-body text-[13.5px] font-medium text-white mt-3">
+          <span className="inline-flex items-center gap-1 font-body text-[15px] font-medium text-white mt-3">
             Browse spaces <ChevronRight size={14} />
           </span>
         </button>
@@ -574,7 +574,7 @@ export function RoleSelect({
           <p className="font-body font-normal text-[13.5px] text-white/80 mt-1">
             List your open hours and get paid when they&apos;re booked.
           </p>
-          <span className="inline-flex items-center gap-1 font-body text-[13.5px] font-medium text-white mt-3">
+          <span className="inline-flex items-center gap-1 font-body text-[15px] font-medium text-white mt-3">
             Set up hosting <ChevronRight size={14} />
           </span>
         </button>

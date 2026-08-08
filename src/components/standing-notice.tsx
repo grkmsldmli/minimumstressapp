@@ -37,7 +37,7 @@ export function StandingNotice({ party, standing }: { party: Party; standing: St
       <div className="flex items-center gap-2">
         <Icon size={14} color={palette.accent} />
         <p
-          className="font-body font-medium text-[11px] uppercase tracking-[0.14em]"
+          className="font-body font-semibold text-[12px] uppercase tracking-[0.14em]"
           style={{ color: palette.accent }}
         >
           {standing.level === "clear"

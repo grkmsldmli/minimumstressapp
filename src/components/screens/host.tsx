@@ -128,7 +128,7 @@ export function HostDashboard({
             <button
               type="button"
               onClick={onAddSpace}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-full font-body font-medium text-[14px] press text-white"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-full font-body font-medium text-[15px] press text-white"
               style={{ backgroundColor: "rgba(255,255,255,0.14)" }}
             >
               <Plus size={13} /> Add space
@@ -171,7 +171,7 @@ export function HostDashboard({
         )}
 
         <div className="flex items-center gap-2 relative z-10">
-          <p className="font-body font-medium text-[11px] uppercase tracking-[0.2em] text-sky-soft">
+          <p className="font-body font-semibold text-[12px] uppercase tracking-[0.2em] text-sky-soft">
             Host studio
           </p>
           <AccountBadge accountType="host" tone="dark" />
@@ -234,7 +234,7 @@ export function HostDashboard({
           <button
             type="button"
             onClick={() => onEditSpace(active.id)}
-            className="w-full mt-5 py-3 rounded-xl font-body font-medium text-[14px] press"
+            className="w-full mt-5 py-3 rounded-xl font-body font-medium text-[15px] press"
             style={{ border: "1px solid #DCE7F2", color: "#16304E" }}
           >
             Edit this listing
@@ -253,7 +253,7 @@ export function HostDashboard({
               }}
             >
               <div>
-                <p className="font-body text-[10.5px] uppercase tracking-wide text-ink-faint">
+                <p className="font-body text-[12px] uppercase tracking-wide text-ink-faint">
                   This month
                 </p>
                 <p className="font-display italic font-semibold text-[26px] mt-1 text-navy">
@@ -264,7 +264,7 @@ export function HostDashboard({
                 </p>
               </div>
               <div>
-                <p className="font-body text-[10.5px] uppercase tracking-wide text-ink-faint">
+                <p className="font-body text-[12px] uppercase tracking-wide text-ink-faint">
                   Hours booked
                 </p>
                 <p className="font-display italic font-semibold text-[26px] mt-1 text-navy">
@@ -279,7 +279,7 @@ export function HostDashboard({
 
           <div className="flex-1 overflow-y-auto px-6 pt-6 pb-8">
             <div className="mb-3">
-              <p className="font-body font-medium text-[11px] uppercase tracking-[0.2em] mb-2.5 text-sky-text">
+              <p className="font-body font-semibold text-[12px] uppercase tracking-[0.2em] mb-2.5 text-sky-text">
                 Upcoming
               </p>
               {/*
@@ -297,7 +297,7 @@ export function HostDashboard({
                 <button
                   type="button"
                   onClick={() => onPreviewSpace(active.id)}
-                  className="px-3 py-1.5 rounded-full font-body text-[13.5px] font-medium press text-sky-text"
+                  className="px-3 py-1.5 rounded-full font-body text-[15px] font-medium press text-sky-text"
                   style={{ border: "1px solid #DCE7F2" }}
                 >
                   Preview
@@ -305,7 +305,7 @@ export function HostDashboard({
                 <button
                   type="button"
                   onClick={() => onEditSpace(active.id)}
-                  className="px-3 py-1.5 rounded-full font-body text-[13.5px] font-medium press text-sky-text"
+                  className="px-3 py-1.5 rounded-full font-body text-[15px] font-medium press text-sky-text"
                   style={{ border: "1px solid #DCE7F2" }}
                 >
                   Edit
@@ -313,7 +313,7 @@ export function HostDashboard({
                 <button
                   type="button"
                   onClick={() => onEditHours(active.id)}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-full font-body text-[13.5px] font-medium press text-coral"
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-full font-body text-[15px] font-medium press text-coral"
                   style={{ border: "1px solid #F5C4BC" }}
                 >
                   <Plus size={13} /> Open more hours
@@ -345,7 +345,7 @@ export function HostDashboard({
 
             {past.length > 0 && (
               <>
-                <p className="font-body font-medium text-[11px] uppercase tracking-[0.2em] text-sky-text mt-7 mb-3">
+                <p className="font-body font-semibold text-[12px] uppercase tracking-[0.2em] text-sky-text mt-7 mb-3">
                   Past
                 </p>
                 <div className="flex flex-col gap-2.5">
@@ -403,7 +403,7 @@ function HostEmptyState({
             </button>
           </div>
         </div>
-        <p className="font-body font-medium text-[11px] uppercase tracking-[0.2em] mt-4 relative z-10 text-sky-soft">
+        <p className="font-body font-semibold text-[12px] uppercase tracking-[0.2em] mt-4 relative z-10 text-sky-soft">
           Host studio
         </p>
         <div className="mt-1 relative z-10">
@@ -471,7 +471,7 @@ export function EditAvailability({
         >
           <ArrowLeft size={16} color="#fff" />
         </button>
-        <p className="font-body font-medium text-[11px] uppercase tracking-[0.2em] mt-4 relative z-10 text-sky-soft">
+        <p className="font-body font-semibold text-[12px] uppercase tracking-[0.2em] mt-4 relative z-10 text-sky-soft">
           {space.name}
         </p>
         <div className="mt-1 relative z-10">
@@ -594,7 +594,7 @@ export function Earnings({
           <StatCard label="Year to date" value={formatCents(yearCents)} />
         </div>
 
-        <p className="font-body font-medium text-[11px] uppercase tracking-[0.2em] mt-7 mb-3 text-sky-text">
+        <p className="font-body font-semibold text-[12px] uppercase tracking-[0.2em] mt-7 mb-3 text-sky-text">
           Transaction history
         </p>
         {thisYear.length === 0 ? (
@@ -627,7 +627,7 @@ export function Earnings({
           </div>
         )}
 
-        <p className="font-body font-medium text-[11px] uppercase tracking-[0.2em] mt-7 mb-3 text-sky-text">
+        <p className="font-body font-semibold text-[12px] uppercase tracking-[0.2em] mt-7 mb-3 text-sky-text">
           Tax documents
         </p>
         <div
@@ -643,7 +643,7 @@ export function Earnings({
             type="button"
             onClick={exportCsv}
             disabled={thisYear.length === 0}
-            className="w-full mt-3 py-3 rounded-xl font-body font-medium text-[14px] press"
+            className="w-full mt-3 py-3 rounded-xl font-body font-medium text-[15px] press"
             style={{
               backgroundColor: thisYear.length === 0 ? "#E9F0F7" : "#3B9BE8",
               color: thisYear.length === 0 ? "#8CA3BD" : "#fff",
@@ -663,7 +663,7 @@ function StatCard({ label, value }: { label: string; value: string }) {
       className="rounded-2xl p-4"
       style={{ backgroundColor: "#F4F8FC", border: "1px solid #E7EEF6" }}
     >
-      <p className="font-body text-[10.5px] uppercase tracking-wide text-ink-faint">{label}</p>
+      <p className="font-body text-[12px] uppercase tracking-wide text-ink-faint">{label}</p>
       <p className="font-display italic font-semibold text-[22px] mt-1 text-navy">{value}</p>
     </div>
   );
@@ -772,7 +772,7 @@ export function HostProfile({
               <button
                 type="button"
                 onClick={onConnectPayouts}
-                className="w-full mt-3 py-3 rounded-xl font-body font-medium text-[14px] text-white press"
+                className="w-full mt-3 py-3 rounded-xl font-body font-medium text-[15px] text-white press"
                 style={{ backgroundColor: "#2578C2" }}
               >
                 Set up payouts
@@ -806,7 +806,7 @@ export function HostProfile({
                       border: `1px solid ${selected ? "#3B9BE8" : "#DCE7F2"}`,
                     }}
                   >
-                    <span className="block font-body font-medium text-[13.5px] text-navy">
+                    <span className="block font-body font-medium text-[15px] text-navy">
                       {option.label}
                     </span>
                     <span className="block font-body font-normal text-[12px] mt-0.5 text-ink-faint">
@@ -943,7 +943,7 @@ function HostBookingRow({
         <button
           type="button"
           onClick={onMessage}
-          className="w-full mt-3 py-2.5 rounded-xl font-body font-medium text-[14px] press flex items-center justify-center gap-1.5"
+          className="w-full mt-3 py-2.5 rounded-xl font-body font-medium text-[15px] press flex items-center justify-center gap-1.5"
           style={{ border: "1px solid #DCE7F2", color: "#16304E" }}
         >
           <MessageCircle size={13} /> Message
@@ -954,7 +954,7 @@ function HostBookingRow({
         <button
           type="button"
           onClick={onReview}
-          className="w-full mt-3 py-2.5 rounded-xl font-body font-medium text-[14px] press"
+          className="w-full mt-3 py-2.5 rounded-xl font-body font-medium text-[15px] press"
           style={{ border: "1px solid #DCE7F2", color: "#16304E" }}
         >
           Leave a review

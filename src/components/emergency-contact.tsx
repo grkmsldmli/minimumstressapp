@@ -128,7 +128,7 @@ export function EmergencyContactCard({
         type="button"
         onClick={() => void save()}
         disabled={!dirty || state === "saving"}
-        className="w-full mt-3 py-2.5 rounded-xl font-body font-medium text-[13.5px] press"
+        className="w-full mt-3 py-2.5 rounded-xl font-body font-medium text-[15px] press"
         style={
           dirty && state !== "saving"
             ? { backgroundColor: "#16304E", color: "#fff" }

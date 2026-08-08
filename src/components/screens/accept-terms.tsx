@@ -5,6 +5,7 @@ import { ShieldCheck } from "lucide-react";
 
 import { Headline } from "@/components/brand";
 import { PrimaryButton } from "@/components/primitives";
+import { errorMessage } from "@/lib/error-message";
 import { ACCEPTANCE_POINTS } from "@/lib/terms";
 
 import { NavyScreen } from "./shared";
@@ -42,7 +43,7 @@ export function AcceptTerms({
       await onAccept();
     } catch (cause) {
       setSaving(false);
-      setError(cause instanceof Error ? cause.message : "That did not save. Try again.");
+      setError(errorMessage(cause, "That did not save. Try again."));
     }
   };
 

@@ -210,7 +210,7 @@ export function ReviewScreen({
           <div className="flex items-start gap-2.5">
             <ShieldAlert size={15} color="#C4503F" className="mt-0.5 shrink-0" />
             <div className="flex-1">
-              <p className="font-body font-medium text-[14px] text-coral-deep">
+              <p className="font-body font-medium text-[15px] text-coral-deep">
                 Was there anything unsafe?
               </p>
               <p className="font-body font-normal text-[14px] mt-1 leading-relaxed text-ink-soft">

@@ -58,7 +58,7 @@ export function InsuranceUpload({
           </button>
         )}
 
-        <p className="font-body font-medium text-[11px] uppercase tracking-[0.2em] text-sky-soft">
+        <p className="font-body font-semibold text-[12px] uppercase tracking-[0.2em] text-sky-soft">
           Optional, takes 10 seconds
         </p>
         <div className="mt-2">
@@ -191,7 +191,7 @@ export function ProScreen({
           <ArrowLeft size={16} color="#fff" />
         </button>
         <div className="relative z-10 pt-1">
-          <p className="font-body font-medium text-[11px] uppercase tracking-[0.2em] text-sky-soft">
+          <p className="font-body font-semibold text-[12px] uppercase tracking-[0.2em] text-sky-soft">
             Minimum Stress
           </p>
           <div className="mt-2 flex justify-center">
@@ -465,7 +465,7 @@ export function ProfileHeader({
 
 export function GroupLabel({ children }: { children: React.ReactNode }) {
   return (
-    <p className="font-body font-medium text-[11px] uppercase tracking-[0.2em] mb-2.5 text-sky-text">
+    <p className="font-body font-semibold text-[12px] uppercase tracking-[0.2em] mb-2.5 text-sky-text">
       {children}
     </p>
   );

@@ -660,7 +660,7 @@ function SectionLabel({
 }) {
   return (
     <p
-      className={`font-body font-medium text-[11px] uppercase tracking-[0.2em] mb-2 text-sky-text ${className}`}
+      className={`font-body font-semibold text-[12px] uppercase tracking-[0.2em] mb-2 text-sky-text ${className}`}
     >
       {children}
     </p>

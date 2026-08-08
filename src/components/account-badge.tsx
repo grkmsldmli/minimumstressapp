@@ -55,7 +55,7 @@ export function AccountBadge({
 
   return (
     <span
-      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full font-body font-medium text-[11.5px]"
+      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full font-body font-medium text-[12px]"
       style={
         dark
           ? {

@@ -124,7 +124,7 @@ function Row({
     <div className="rounded-xl px-3.5 py-3 flex items-start gap-2.5" style={skin}>
       <span className="mt-0.5 shrink-0">{icon}</span>
       <div className="min-w-0">
-        <p className="font-body font-medium text-[14px] text-navy">{title}</p>
+        <p className="font-body font-medium text-[15px] text-navy">{title}</p>
         <p className="font-body font-normal text-[13.5px] mt-0.5 leading-relaxed text-ink-soft">
           {detail}
         </p>

@@ -6,6 +6,7 @@ import { AlertTriangle, ArrowLeft } from "lucide-react";
 import { DocumentStatus } from "@/components/document-status";
 import { PrimaryButton } from "@/components/primitives";
 import { SpaceMediaManager } from "@/components/space-media-manager";
+import { errorMessage } from "@/lib/error-message";
 import type { HostSpace, SpaceEdit } from "@/lib/domain";
 import { formatCents, quote } from "@/lib/money";
 import { CATEGORY_KEYS, roomTypeFor } from "@/lib/taxonomy";
@@ -73,7 +74,7 @@ export function EditSpace({
     try {
       await onSetListed(space.status === "delisted");
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "That did not change.");
+      setError(errorMessage(cause, "That did not change."));
     }
   };
 
@@ -99,7 +100,7 @@ export function EditSpace({
       onBack();
     } catch (cause) {
       setSaving(false);
-      setError(cause instanceof Error ? cause.message : "That did not save.");
+      setError(errorMessage(cause, "That did not save."));
     }
   };
 
@@ -183,7 +184,7 @@ export function EditSpace({
           >
             <AlertTriangle size={14} color="#8B6C37" className="mt-0.5 shrink-0" />
             <div>
-              <p className="font-body font-medium text-[14px] text-navy">
+              <p className="font-body font-medium text-[15px] text-navy">
                 Address and room type are locked
               </p>
               <p className="font-body font-normal text-[13.5px] mt-0.5 leading-relaxed text-ink-soft">
@@ -229,7 +230,7 @@ export function EditSpace({
 
         <div className="h-px my-7" style={{ backgroundColor: "#E7EEF6" }} />
 
-        <p className="font-body font-medium text-[11px] uppercase tracking-[0.2em] mb-3 text-sky-text">
+        <p className="font-body font-semibold text-[12px] uppercase tracking-[0.2em] mb-3 text-sky-text">
           Your documents
         </p>
         <div className="flex flex-col gap-2.5">
@@ -249,7 +250,7 @@ export function EditSpace({
 
         <div className="h-px my-7" style={{ backgroundColor: "#E7EEF6" }} />
 
-        <p className="font-body font-medium text-[11px] uppercase tracking-[0.2em] mb-3 text-sky-text">
+        <p className="font-body font-semibold text-[12px] uppercase tracking-[0.2em] mb-3 text-sky-text">
           This listing
         </p>
 
@@ -309,7 +310,7 @@ const FIELD = { border: "1px solid #DCE7F2", backgroundColor: "#fff" } as const;
 
 function Label({ children }: { children: React.ReactNode }) {
   return (
-    <p className="font-body font-medium text-[11px] uppercase tracking-[0.2em] mt-6 mb-2 text-sky-text">
+    <p className="font-body font-semibold text-[12px] uppercase tracking-[0.2em] mt-6 mb-2 text-sky-text">
       {children}
     </p>
   );
@@ -343,13 +344,13 @@ function Line({
       style={{ backgroundColor: "#F4F8FC", border: "1px solid #E7EEF6" }}
     >
       <div className="min-w-0 flex-1">
-        <p className="font-body font-medium text-[14px] text-navy">{label}</p>
+        <p className="font-body font-medium text-[15px] text-navy">{label}</p>
         <p className="font-body font-normal text-[13.5px] mt-0.5 text-ink-soft">{value}</p>
       </div>
       <button
         type="button"
         onClick={onAction}
-        className="font-body font-medium text-[13.5px] shrink-0 press text-sky-text"
+        className="font-body font-medium text-[15px] shrink-0 press text-sky-text"
       >
         {action}
       </button>

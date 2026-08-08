@@ -105,7 +105,7 @@ export function DeleteAccount({ onDelete }: { onDelete: () => Promise<void> }) {
             setTyped("");
             setError(null);
           }}
-          className="flex-1 py-2.5 rounded-full font-body font-medium text-[13.5px] press bg-white"
+          className="flex-1 py-2.5 rounded-full font-body font-medium text-[15px] press bg-white"
           style={{ border: "1px solid #DCE7F2", color: "#16304E" }}
         >
           Keep my account
@@ -114,7 +114,7 @@ export function DeleteAccount({ onDelete }: { onDelete: () => Promise<void> }) {
           type="button"
           onClick={() => void run()}
           disabled={!confirmed || busy}
-          className="flex-1 py-2.5 rounded-full font-body font-medium text-[13.5px] press"
+          className="flex-1 py-2.5 rounded-full font-body font-medium text-[15px] press"
           style={{
             backgroundColor: confirmed && !busy ? "#C4503F" : "#F0D8D4",
             color: "#fff",

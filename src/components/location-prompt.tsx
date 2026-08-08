@@ -90,7 +90,7 @@ export function LocationPrompt({
         type="button"
         onClick={askBrowser}
         disabled={asking}
-        className="w-full mt-3 flex items-center justify-center gap-1.5 py-2.5 rounded-full font-body font-medium text-[13.5px] text-white press"
+        className="w-full mt-3 flex items-center justify-center gap-1.5 py-2.5 rounded-full font-body font-medium text-[15px] text-white press"
         style={{ backgroundColor: "#2578C2", opacity: asking ? 0.6 : 1 }}
       >
         <Navigation size={13} />
@@ -99,7 +99,7 @@ export function LocationPrompt({
 
       <div className="flex items-center gap-3 my-3">
         <div className="flex-1 h-px" style={{ backgroundColor: "#DCE7F2" }} />
-        <span className="font-body font-normal text-[10.5px] uppercase tracking-wide text-ink-faint">
+        <span className="font-body font-normal text-[12px] uppercase tracking-wide text-ink-faint">
           or
         </span>
         <div className="flex-1 h-px" style={{ backgroundColor: "#DCE7F2" }} />
@@ -131,7 +131,7 @@ export function LocationPrompt({
         <button
           type="submit"
           disabled={!valid}
-          className="px-4 rounded-xl font-body font-medium text-[13.5px] press"
+          className="px-4 rounded-xl font-body font-medium text-[15px] press"
           style={
             valid
               ? { backgroundColor: "#16304E", color: "#fff" }

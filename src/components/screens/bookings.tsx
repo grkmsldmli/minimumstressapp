@@ -106,7 +106,7 @@ export function Confirmed({
             }}
           >
             <span className="text-left">
-              <span className="block font-body font-medium text-[13.5px] text-coral-soft">
+              <span className="block font-body font-medium text-[15px] text-coral-soft">
                 Skip this fee with Pro
               </span>
               <span className="block font-body font-normal text-[13.5px] text-white/50 mt-0.5">
@@ -338,7 +338,7 @@ export function MyBookings({
                       <button
                         type="button"
                         onClick={() => onReview(booking.id)}
-                        className="w-full mt-2.5 py-2.5 rounded-xl font-body font-medium text-[14px] press bg-white"
+                        className="w-full mt-2.5 py-2.5 rounded-xl font-body font-medium text-[15px] press bg-white"
                         style={{ border: "1px solid #DCE7F2", color: "#16304E" }}
                       >
                         How was it? Leave a review
@@ -408,7 +408,7 @@ function UpcomingBooking({
             {formatCents(booking.totalCents)}
           </p>
           {codeReady && (
-            <p className="font-body font-medium text-[13.5px] mt-0.5 text-sky-text">
+            <p className="font-body font-medium text-[15px] mt-0.5 text-sky-text">
               Code {booking.revealedAccessCode}
             </p>
           )}
@@ -429,7 +429,7 @@ function UpcomingBooking({
               border: `1px solid ${codeReady ? "#D4E8FA" : "#E7EEF6"}`,
             }}
           >
-            <p className="flex items-center gap-1.5 font-body font-medium text-[10.5px] uppercase tracking-[0.14em] text-sky-text mb-1.5">
+            <p className="flex items-center gap-1.5 font-body font-semibold text-[12px] uppercase tracking-[0.14em] text-sky-text mb-1.5">
               <KeyRound size={11} /> Getting in
             </p>
             {codeReady ? (
@@ -462,7 +462,7 @@ function UpcomingBooking({
               <button
                 type="button"
                 onClick={onMessage}
-                className="w-full mt-3 py-2.5 rounded-xl font-body font-medium text-[14px] press flex items-center justify-center gap-1.5"
+                className="w-full mt-3 py-2.5 rounded-xl font-body font-medium text-[15px] press flex items-center justify-center gap-1.5"
                 style={{ border: "1px solid #DCE7F2", color: "#16304E" }}
               >
                 <MessageCircle size={13} /> Message the studio
@@ -525,7 +525,7 @@ function StatusPill({ status }: { status: Booking["status"] }) {
 
   return (
     <span
-      className="px-2.5 py-1 rounded-full font-body text-[12px] font-medium shrink-0"
+      className="px-2.5 py-1 rounded-full font-body text-[15px] font-medium shrink-0"
       style={{ backgroundColor: style.bg, color: style.fg }}
     >
       {style.label}
@@ -535,7 +535,7 @@ function StatusPill({ status }: { status: Booking["status"] }) {
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <p className="font-body font-medium text-[11px] uppercase tracking-[0.2em] mb-3 text-sky-text">
+    <p className="font-body font-semibold text-[12px] uppercase tracking-[0.2em] mb-3 text-sky-text">
       {children}
     </p>
   );

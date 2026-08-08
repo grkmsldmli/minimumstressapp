@@ -164,7 +164,7 @@ export function Discover({
             Book instantly, no extra fee, with{" "}
             <span className="font-medium text-sky-soft">Pro</span>
           </span>
-          <span className="flex items-center gap-0.5 font-body text-[13.5px] font-medium text-white shrink-0">
+          <span className="flex items-center gap-0.5 font-body text-[15px] font-medium text-white shrink-0">
             Go Pro <ChevronRight size={12} />
           </span>
         </button>
@@ -391,7 +391,7 @@ function SectionLabel({
 }) {
   return (
     <p
-      className={`font-body font-medium text-[11px] uppercase tracking-[0.2em] mb-3 text-sky-text ${className}`}
+      className={`font-body font-semibold text-[12px] uppercase tracking-[0.2em] mb-3 text-sky-text ${className}`}
     >
       {children}
     </p>
@@ -450,14 +450,14 @@ function FeaturedCard({
           }}
         />
         <span
-          className="absolute right-4 bottom-4 px-2 py-1 rounded-full font-body text-[10.5px] text-white"
+          className="absolute right-4 bottom-4 px-2 py-1 rounded-full font-body text-[12px] text-white"
           style={{ backgroundColor: "rgba(255,255,255,0.18)", backdropFilter: "blur(6px)" }}
         >
           {roomTypeFor(space.category)}
         </span>
         {photoCount > 1 && (
           <span
-            className="absolute left-4 bottom-4 px-2 py-1 rounded-full font-body text-[10.5px] text-white"
+            className="absolute left-4 bottom-4 px-2 py-1 rounded-full font-body text-[12px] text-white"
             style={{ backgroundColor: "rgba(10,26,44,0.45)", backdropFilter: "blur(6px)" }}
           >
             {photoCount} photos
@@ -472,7 +472,7 @@ function FeaturedCard({
             <span className="text-ink-faint">/hr</span>
           </p>
         </div>
-        <p className="font-body font-normal text-[10.5px] mt-0.5 text-ink-faint">
+        <p className="font-body font-normal text-[12px] mt-0.5 text-ink-faint">
           All fees included
         </p>
         <p className="font-body font-normal text-[13.5px] mt-0.5 text-ink-soft">
@@ -549,7 +549,7 @@ function SpaceRow({
       </div>
       <div className="text-right shrink-0">
         <p className="font-body font-semibold text-[14.5px] text-navy">{formatCents(price)}</p>
-        <p className="font-body font-normal text-[10.5px] text-ink-faint">incl. fees</p>
+        <p className="font-body font-normal text-[12px] text-ink-faint">incl. fees</p>
         <ChevronRight size={14} color="#8BA3BD" className="ml-auto mt-0.5" />
       </div>
     </button>
@@ -614,7 +614,7 @@ function MapView({
             <button
               type="button"
               onClick={() => onOpen(active.id)}
-              className="px-3.5 py-2 rounded-full font-body font-medium text-[14px] text-white shrink-0 press"
+              className="px-3.5 py-2 rounded-full font-body font-medium text-[15px] text-white shrink-0 press"
               style={{ backgroundColor: "#2578C2" }}
             >
               View

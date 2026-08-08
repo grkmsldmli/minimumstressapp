@@ -92,6 +92,8 @@ interface SeedSpace {
   mapX: number;
   mapY: number;
   area: string | null;
+  approxLat: number | null;
+  approxLng: number | null;
   distanceLabel: string;
   availability: AvailabilityBlock[];
 }
@@ -113,6 +115,8 @@ const SEED_SPACES: SeedSpace[] = [
     mapX: 38,
     mapY: 28,
     area: "San Mateo, CA",
+    approxLat: 37.563,
+    approxLng: -122.3255,
     distanceLabel: "0.8 mi",
     availability: everyDay(7, 21),
   },
@@ -132,6 +136,8 @@ const SEED_SPACES: SeedSpace[] = [
     mapX: 64,
     mapY: 20,
     area: "San Mateo, CA",
+    approxLat: 37.5545,
+    approxLng: -122.312,
     distanceLabel: "1.0 mi",
     availability: everyDay(9, 19),
   },
@@ -151,6 +157,8 @@ const SEED_SPACES: SeedSpace[] = [
     mapX: 72,
     mapY: 52,
     area: "San Mateo, CA",
+    approxLat: 37.548,
+    approxLng: -122.339,
     distanceLabel: "1.2 mi",
     availability: everyDay(6, 22),
   },
@@ -169,6 +177,8 @@ const SEED_SPACES: SeedSpace[] = [
     mapX: 46,
     mapY: 64,
     area: "San Mateo, CA",
+    approxLat: 37.5702,
+    approxLng: -122.3011,
     distanceLabel: "1.5 mi",
     availability: everyDay(8, 18),
   },
@@ -188,6 +198,8 @@ const SEED_SPACES: SeedSpace[] = [
     mapX: 22,
     mapY: 56,
     area: "San Mateo, CA",
+    approxLat: 37.5391,
+    approxLng: -122.3204,
     distanceLabel: "1.6 mi",
     availability: everyDay(6, 21),
   },
@@ -207,6 +219,8 @@ const SEED_SPACES: SeedSpace[] = [
     mapX: 56,
     mapY: 80,
     area: "San Mateo, CA",
+    approxLat: 37.5588,
+    approxLng: -122.2938,
     distanceLabel: "2.1 mi",
     availability: everyDay(10, 20),
   },
@@ -273,6 +287,8 @@ export class MockRepository implements Repository {
         mapX: seed.mapX,
         mapY: seed.mapY,
         area: seed.area,
+        approxLat: seed.approxLat,
+        approxLng: seed.approxLng,
         distanceLabel: seed.distanceLabel,
       reviewCount: 0,
       averageRating: null,
@@ -605,6 +621,8 @@ export class MockRepository implements Repository {
       mapX: input.mapX,
       mapY: input.mapY,
       area: null,
+      approxLat: null,
+      approxLng: null,
       distanceLabel: "your space",
       reviewCount: 0,
       averageRating: null,

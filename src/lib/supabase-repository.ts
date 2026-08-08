@@ -93,6 +93,8 @@ interface SpaceRow {
   lng?: number | null;
   // numeric(4,1) arrives as a string from PostgREST, not a number.
   area?: string | null;
+  approx_lat?: number | null;
+  approx_lng?: number | null;
   map_x?: number | string | null;
   map_y?: number | string | null;
 }
@@ -381,6 +383,8 @@ export class SupabaseRepository implements Repository {
       mapX: Number(row.map_x ?? 50),
       mapY: Number(row.map_y ?? 50),
       area: row.area ?? null,
+      approxLat: row.approx_lat ?? null,
+      approxLng: row.approx_lng ?? null,
       distanceLabel: "nearby",
       reviewCount: rating?.count ?? 0,
       averageRating: rating?.average ?? null,
@@ -692,6 +696,9 @@ export class SupabaseRepository implements Repository {
         },
         reviewNote: (row.doc_review_note as string) ?? null,
         area: null,
+        // The host is looking at their own listing and already has the address.
+        approxLat: null,
+        approxLng: null,
         distanceLabel: "your space",
         reviewCount: 0,
         averageRating: null,

@@ -41,7 +41,18 @@ as $$
   end;
 $$;
 
-create or replace view spaces_public as
+-- Dropped rather than replaced.
+--
+-- `create or replace view` cannot remove a column, so once a later migration
+-- has widened this view, re-running this one fails: it tries to go back to
+-- fewer columns. Migrations are applied more than once in this project — the
+-- whole file is pasted into a SQL editor — so every one of them has to survive
+-- meeting a database that is already ahead of it.
+--
+-- Nothing selects from this view, so there is nothing to cascade to.
+drop view if exists spaces_public;
+
+create view spaces_public as
   select
     id, host_id, name, category, hourly_rate_cents, capacity, access_type,
     accessible, restroom, buffer_minutes, status, created_at,

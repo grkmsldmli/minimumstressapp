@@ -108,6 +108,15 @@ export interface PublicSpace {
    * would leak the thing this exists to withhold.
    */
   area: string | null;
+  /**
+   * Roughly where, for the browse map. Never the address.
+   *
+   * Offset 250–450m in a direction fixed per listing, computed in the database
+   * so the real coordinates never enter a response. Null until a listing has
+   * been geocoded.
+   */
+  approxLat: number | null;
+  approxLng: number | null;
   distanceLabel: string;
   /**
    * Counted from released reviews only, so a sealed one cannot be inferred by

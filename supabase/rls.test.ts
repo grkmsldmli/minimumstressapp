@@ -880,3 +880,121 @@ describe("the public area", () => {
     expect(found).toHaveLength(0);
   });
 });
+
+/**
+ * Roughly where, and never exactly.
+ *
+ * The browse map used to be a drawing with pins at decorative coordinates. A
+ * real map needs real points, and a real point is the address — so what is
+ * published is offset a few hundred metres, computed in the view so the true
+ * one never enters a response.
+ */
+describe("the approximate position", () => {
+  const AREA_SPACE = "66666666-6666-6666-6666-666666666666";
+
+  beforeAll(async () => {
+    await db.exec(
+      `update spaces set lat = 37.4987882, lng = -122.2715495 where id = '${AREA_SPACE}'`,
+    );
+  });
+
+  /** Metres between two points, near enough at this scale. */
+  const metresApart = (aLat: number, aLng: number, bLat: number, bLng: number) =>
+    Math.hypot(
+      (aLat - bLat) * 111320,
+      (aLng - bLng) * 111320 * Math.cos((aLat * Math.PI) / 180),
+    );
+
+  /**
+   * A band, not a square.
+   *
+   * Offsetting each axis independently was the first attempt, and measuring it
+   * over two hundred listings showed the displacement running from 42m to
+   * 547m — one in fourteen under 100m. A published point 42m from the door is
+   * not a neighbourhood, it is the building.
+   */
+  it("puts the point far enough away to not be the address", async () => {
+    const [row] = await asUser<{ approx_lat: number; approx_lng: number }>(
+      PRACTITIONER,
+      `select approx_lat, approx_lng from spaces_public where id = '${AREA_SPACE}'`,
+    );
+
+    const away = metresApart(37.4987882, -122.2715495, row.approx_lat, row.approx_lng);
+    expect(away).toBeGreaterThanOrEqual(240);
+  });
+
+  it("keeps it near enough to still mean something", async () => {
+    const [row] = await asUser<{ approx_lat: number; approx_lng: number }>(
+      PRACTITIONER,
+      `select approx_lat, approx_lng from spaces_public where id = '${AREA_SPACE}'`,
+    );
+
+    const away = metresApart(37.4987882, -122.2715495, row.approx_lat, row.approx_lng);
+    expect(away).toBeLessThanOrEqual(460);
+  });
+
+  /** Every listing, not only the one in the fixture. */
+  it("holds the band across many listings", async () => {
+    const rows = await db
+      .query<{ la: number; ln: number }>(
+        `select approx_lat(gen_random_uuid(), 37.5) as la,
+                approx_lng(gen_random_uuid(), 37.5, -122.3) as ln
+         from generate_series(1, 50)`,
+      )
+      .then((r) => r.rows);
+
+    for (const row of rows) {
+      const dLat = Math.abs(row.la - 37.5) * 111320;
+      expect(dLat).toBeLessThanOrEqual(460);
+    }
+  });
+
+  it("never publishes the exact one", async () => {
+    const [row] = await asUser<{ approx_lat: number; approx_lng: number }>(
+      PRACTITIONER,
+      `select approx_lat, approx_lng from spaces_public where id = '${AREA_SPACE}'`,
+    );
+
+    expect(row.approx_lat).not.toBe(37.4987882);
+    expect(row.approx_lng).not.toBe(-122.2715495);
+  });
+
+  /**
+   * The property that makes it safe. A point that moved between requests
+   * could be averaged back to the true position by asking repeatedly.
+   */
+  it("returns the same point every time", async () => {
+    const once = await asUser<{ approx_lat: number }>(
+      PRACTITIONER,
+      `select approx_lat from spaces_public where id = '${AREA_SPACE}'`,
+    );
+    const again = await asUser<{ approx_lat: number }>(
+      PRACTITIONER,
+      `select approx_lat from spaces_public where id = '${AREA_SPACE}'`,
+    );
+
+    expect(once[0].approx_lat).toBe(again[0].approx_lat);
+  });
+
+  it("moves two listings in different directions", async () => {
+    const [a] = await db
+      .query<{ v: number }>(`select approx_lat('11111111-1111-1111-1111-111111111111', 37.5) as v`)
+      .then((r) => r.rows);
+    const [b] = await db
+      .query<{ v: number }>(`select approx_lat('22222222-2222-2222-2222-222222222222', 37.5) as v`)
+      .then((r) => r.rows);
+
+    expect(a.v).not.toBe(b.v);
+  });
+
+  /** The exact column is still refused to anybody who has not booked. */
+  it("keeps the real coordinates out of the view entirely", async () => {
+    const [row] = await asUser<Record<string, unknown>>(
+      PRACTITIONER,
+      `select * from spaces_public where id = '${AREA_SPACE}'`,
+    );
+
+    expect(Object.keys(row)).not.toContain("lat");
+    expect(Object.keys(row)).not.toContain("lng");
+  });
+});

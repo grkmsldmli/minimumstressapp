@@ -26,7 +26,7 @@ import {
   LogoBadge,
   categoryGradient,
 } from "@/components/brand";
-import { MapBackdrop, PinMarker, YouDot } from "@/components/map";
+import { BrowseMap } from "@/components/browse-map";
 import { TiltCard } from "@/components/primitives";
 import type { PublicSpace } from "@/lib/domain";
 import { formatCents, quote } from "@/lib/money";
@@ -60,6 +60,7 @@ export function Discover({
   onGoProfile,
   onGoLegal,
   greetingName,
+  you,
   nearbyOrder,
   onChooseLocation,
   distanceLabels,
@@ -74,6 +75,8 @@ export function Discover({
   onGoLegal: () => void;
   greetingName: string | null;
   /** Ids nearest-first, or null while nobody has said where they are. */
+  /** Where the practitioner is, when they have shared it. This visit only. */
+  you: { lat: number; lng: number } | null;
   nearbyOrder: string[] | null;
   onChooseLocation: (choice: LocationChoice) => void;
   /** Coarse label per space id — "0.8 mi". Never a coordinate. */
@@ -256,7 +259,7 @@ export function Discover({
       </div>
 
       {view === "map" ? (
-        <MapView spaces={visible} isPro={isPro} onOpen={onOpenSpace} />
+        <MapView spaces={visible} isPro={isPro} onOpen={onOpenSpace} you={you} />
       ) : (
         <div className="flex-1 overflow-y-auto pb-8">
           {active === "all" && visible.length > 0 && (
@@ -560,30 +563,36 @@ function MapView({
   spaces,
   isPro,
   onOpen,
+  you,
 }: {
   spaces: PublicSpace[];
   isPro: boolean;
   onOpen: (id: string) => void;
+  /** Where the practitioner is, when they have shared it. */
+  you: { lat: number; lng: number } | null;
 }) {
   const [selected, setSelected] = useState<string | null>(null);
   const active = spaces.find((s) => s.id === selected) ?? null;
 
   return (
     <div className="relative flex-1 overflow-hidden">
-      <MapBackdrop />
-      <YouDot />
-      {spaces.map((space, i) => (
-        <PinMarker
-          key={space.id}
-          x={space.mapX}
-          y={space.mapY}
-          cat={space.category}
-          index={i}
-          active={selected === space.id}
-          label={space.name}
-          onClick={() => setSelected(selected === space.id ? null : space.id)}
-        />
-      ))}
+      {/*
+        A real map, and circles rather than pins. What was here drew painted
+        roads and placed markers at two decorative numbers from the prototype —
+        it looked like a map, so it was read as one.
+      */}
+      <BrowseMap
+        pins={spaces
+          .filter((space) => space.approxLat !== null && space.approxLng !== null)
+          .map((space) => ({
+            id: space.id,
+            name: space.name,
+            point: { lat: space.approxLat!, lng: space.approxLng! },
+            active: selected === space.id,
+          }))}
+        you={you}
+        onSelect={(id) => setSelected(selected === id ? null : id)}
+      />
 
       {active && (
         <div className="absolute bottom-4 left-4 right-4 z-30 card-in">

@@ -130,9 +130,18 @@ export function App() {
   const [nearbyOrder, setNearbyOrder] = useState<string[] | null>(null);
   const [distanceLabels, setDistanceLabels] = useState<Record<string, string>>({});
   const [locationError, setLocationError] = useState<string | null>(null);
+  /*
+   * Held for the map, and for this visit only.
+   *
+   * Never sent anywhere else and never stored: the server already ranked the
+   * listings, and this is only so the map can draw where "here" is. Closing
+   * the app forgets it, which is what the location disclosure promises.
+   */
+  const [here, setHere] = useState<{ lat: number; lng: number } | null>(null);
 
   const chooseLocation = useCallback(async (choice: LocationChoice) => {
     setLocationError(null);
+    setHere(choice.kind === "coords" ? { lat: choice.lat, lng: choice.lng } : null);
     try {
       const query =
         choice.kind === "coords"
@@ -543,6 +552,7 @@ export function App() {
           onGoBookings={() => go("bookings")}
           onGoProfile={() => go("practitioner-profile")}
           onGoLegal={() => go("legal")}
+          you={here}
           nearbyOrder={nearbyOrder}
           onChooseLocation={(choice) => void chooseLocation(choice)}
           distanceLabels={distanceLabels}

@@ -17,6 +17,9 @@ import { errorMessage } from "@/lib/error-message";
 import type { AdminQueue, ListingRow, Person } from "@/lib/admin/queue";
 import { formatCents } from "@/lib/money";
 
+import { Funnel } from "./funnel";
+import { MoneyChart } from "./money-chart";
+
 /**
  * The operations screen.
  *
@@ -225,7 +228,14 @@ export function AdminDashboard() {
           <Stat label="Still to come" value={String(counts.upcomingSessions)} icon={CalendarClock} />
         </section>
 
-        <Chart days={queue.bookingsByDay} />
+        <div
+          className="grid gap-3 mt-3"
+          style={{ gridTemplateColumns: "repeat(auto-fit,minmax(300px,1fr))" }}
+        >
+          <Chart days={queue.bookingsByDay} />
+          <MoneyChart days={queue.moneyByDay} />
+          <Funnel steps={queue.funnel} />
+        </div>
 
         <Directory people={queue.people} listings={queue.listings} />
 
@@ -314,6 +324,63 @@ export function AdminDashboard() {
           </div>
 
           <div className="flex flex-col gap-4">
+            <Panel title="Why each listing is waiting" count={queue.reviewReasons.length}>
+              {queue.reviewReasons.map((item) => (
+                <Card key={item.id} tone={item.subleaseState === "rejected" ? "bad" : "plain"}>
+                  <div className="flex items-baseline justify-between gap-2">
+                    <p className="font-body font-medium text-[12px]" style={{ color: "#fff" }}>
+                      {item.name}
+                    </p>
+                    {/*
+                      A listing that was live until its host moved it is not a
+                      new listing. Same status, different job — this one was
+                      approved once and the question is what changed.
+                    */}
+                    <span
+                      className="shrink-0 px-2 py-0.5 rounded-full font-body text-[10px]"
+                      style={
+                        item.returning
+                          ? { backgroundColor: "rgba(232,163,61,0.16)", color: "#E8A33D" }
+                          : { backgroundColor: "rgba(255,255,255,0.06)", color: MUTED }
+                      }
+                    >
+                      {item.returning ? "back for review" : "new"}
+                    </span>
+                  </div>
+                  <p className="font-body font-light text-[11px] mt-0.5" style={{ color: MUTED }}>
+                    {item.hostEmail ?? "unknown host"} · lease {item.subleaseState} · insurance{" "}
+                    {item.insuranceState}
+                  </p>
+                  {item.note && (
+                    <p className="font-body font-light text-[11px] mt-1" style={{ color: "#F2A79E" }}>
+                      {item.note}
+                    </p>
+                  )}
+                </Card>
+              ))}
+            </Panel>
+
+            <Panel title="Live listings missing something" count={queue.listingGaps.length}>
+              {queue.listingGaps.map((gap) => (
+                <Card key={gap.id} tone="warn">
+                  <p className="font-body font-medium text-[12px]" style={{ color: "#fff" }}>
+                    {gap.name}
+                  </p>
+                  {/*
+                    Named individually rather than scored. "Listing quality 60%"
+                    tells an operator nothing they can put in a message to a
+                    host; "no photos, no open hours" tells them exactly what.
+                  */}
+                  <p className="font-body font-light text-[11px] mt-0.5" style={{ color: MUTED }}>
+                    {gap.missing.join(" · ")}
+                  </p>
+                  <p className="font-body font-light text-[11px]" style={{ color: MUTED }}>
+                    {gap.hostEmail ?? "unknown host"}
+                  </p>
+                </Card>
+              ))}
+            </Panel>
+
             <Panel title="Listings waiting for review" count={queue.pendingListings.length}>
               {queue.pendingListings.map((listing) => (
                 <Card key={listing.id}>

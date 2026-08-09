@@ -128,6 +128,52 @@ export interface ListingRow {
   createdAt: string | null;
 }
 
+/**
+ * A listing whose paperwork was rejected, or that came back for review.
+ *
+ * A brand-new listing and one that was live until its host moved it are the
+ * same status and not the same job: the second was approved once, has a
+ * history, and may have somebody's booking behind it.
+ */
+export interface ReviewReason {
+  id: string;
+  name: string;
+  hostEmail: string | null;
+  /** New, or previously live and sent back by an edit. */
+  returning: boolean;
+  subleaseState: string;
+  insuranceState: string;
+  /** Staff's own words on a rejection. */
+  note: string | null;
+  since: string;
+}
+
+/**
+ * Why a listing is not getting booked, when nothing is wrong with it.
+ *
+ * Not a score. Each line is a specific thing missing that a practitioner would
+ * have wanted, so an operator can say what to fix rather than that engagement
+ * is low.
+ */
+export interface ListingGap {
+  id: string;
+  name: string;
+  hostEmail: string | null;
+  missing: string[];
+}
+
+/** Where people stop, on the way from signing up to a session happening. */
+export interface FunnelStep {
+  label: string;
+  count: number;
+}
+
+export interface DayMoney {
+  day: string;
+  platformCents: number;
+  grossCents: number;
+}
+
 export interface RecentBooking {
   id: string;
   spaceName: string;
@@ -177,6 +223,15 @@ export interface AdminQueue {
   /** Everyone, so a number on this page can always be turned into a name. */
   people: Person[];
   listings: ListingRow[];
+  /** Listings needing a decision, and why each one is here. */
+  reviewReasons: ReviewReason[];
+  /** Live listings with something obvious missing. */
+  listingGaps: ListingGap[];
+  /** Signup to session, and where it thins out. */
+  funnel: FunnelStep[];
+  moneyByDay: DayMoney[];
+  /** Accounts that have not accepted the current terms. */
+  termsOutstanding: number;
   /** Everything, newest first. The feed an operator actually watches. */
   activity: ActivityEntry[];
 }
@@ -190,12 +245,12 @@ export async function loadQueue(admin: SupabaseClient): Promise<AdminQueue> {
   const chartStart = new Date(now.getTime() - 13 * DAY_MS);
   chartStart.setHours(0, 0, 0, 0);
 
-  const [listings, escalations, changes, profiles, spaces, bookings, notifications, reviews, messages] =
+  const [listings, escalations, changes, profiles, spaces, bookings, notifications, media, availability, reviews, messages] =
     await Promise.all([
     admin
       .from("spaces")
       .select(
-        "id, name, category, hourly_rate_cents, address_line, sublease_doc_path, insurance_doc_path, created_at, host_id",
+        "id, name, category, hourly_rate_cents, address_line, sublease_doc_path, insurance_doc_path, created_at, host_id, sublease_doc_state, insurance_doc_state, doc_review_note, updated_at",
       )
       .eq("status", "pending")
       .order("created_at"),
@@ -216,12 +271,12 @@ export async function loadQueue(admin: SupabaseClient): Promise<AdminQueue> {
 
     admin
       .from("profiles")
-      .select("id, account_type, display_name, stripe_connect_charges_enabled, created_at"),
+      .select("id, account_type, display_name, stripe_connect_charges_enabled, created_at, terms_version"),
 
     admin
       .from("spaces")
       .select(
-        "id, host_id, name, status, created_at, category, hourly_rate_cents, address_line",
+        "id, host_id, name, status, created_at, category, hourly_rate_cents, address_line, description, entrance_access, restroom_access, sublease_doc_state, insurance_doc_state, doc_review_note, updated_at",
       ),
 
     /**
@@ -253,6 +308,10 @@ export async function loadQueue(admin: SupabaseClient): Promise<AdminQueue> {
       .not("last_error", "is", null)
       .order("created_at", { ascending: false })
       .limit(20),
+
+    admin.from("space_media").select("space_id"),
+
+    admin.from("availability").select("space_id"),
 
     admin
       .from("reviews")
@@ -389,6 +448,120 @@ export async function loadQueue(admin: SupabaseClient): Promise<AdminQueue> {
     listingCounts.set(hostId, (listingCounts.get(hostId) ?? 0) + 1);
   }
 
+  /**
+   * Why each listing is waiting, rather than only that it is.
+   *
+   * A brand-new listing and one that was live until its host changed the
+   * address are the same status and a different job — the second was approved
+   * once, so the question is what changed rather than whether to trust it at
+   * all. `updated_at` moving well after `created_at` is what separates them.
+   */
+  const reviewReasons: ReviewReason[] = (spaces.data ?? [])
+    .filter(
+      (space) =>
+        space.status === "pending" ||
+        space.sublease_doc_state === "rejected" ||
+        space.insurance_doc_state === "rejected",
+    )
+    .map((space) => {
+      const created = new Date(space.created_at as string).getTime();
+      const updated = new Date((space.updated_at as string) ?? space.created_at).getTime();
+
+      return {
+        id: space.id as string,
+        name: space.name as string,
+        hostEmail: emails.get(space.host_id as string) ?? null,
+        // An hour, so saving a typo minutes after listing does not read as a
+        // listing coming back from being live.
+        returning: updated - created > 60 * 60 * 1000,
+        subleaseState: (space.sublease_doc_state as string) ?? "pending",
+        insuranceState: (space.insurance_doc_state as string) ?? "pending",
+        note: (space.doc_review_note as string) ?? null,
+        since: (space.updated_at as string) ?? (space.created_at as string),
+      };
+    })
+    .sort((a, b) => a.since.localeCompare(b.since));
+
+  /**
+   * What a live listing is missing.
+   *
+   * Every one of these is a reason somebody scrolls past a room that is
+   * otherwise fine, and every one is fixable in a message to the host. Named
+   * individually rather than scored, because "listing quality 60%" tells an
+   * operator nothing they can act on.
+   */
+  const availabilityBySpace = new Map<string, number>();
+  for (const block of availability.data ?? []) {
+    const id = block.space_id as string;
+    availabilityBySpace.set(id, (availabilityBySpace.get(id) ?? 0) + 1);
+  }
+
+  const photoCount = new Map<string, number>();
+  for (const item of media.data ?? []) {
+    const id = item.space_id as string;
+    photoCount.set(id, (photoCount.get(id) ?? 0) + 1);
+  }
+
+  const listingGaps: ListingGap[] = (spaces.data ?? [])
+    .filter((space) => space.status === "active")
+    .map((space) => {
+      const missing: string[] = [];
+      if (!space.description) missing.push("no description");
+      if ((photoCount.get(space.id as string) ?? 0) === 0) missing.push("no photos");
+      if (!space.entrance_access && !space.restroom_access) missing.push("no access details");
+      if (!(availabilityBySpace.get(space.id as string) ?? 0)) missing.push("no open hours");
+
+      return {
+        id: space.id as string,
+        name: space.name as string,
+        hostEmail: emails.get(space.host_id as string) ?? null,
+        missing,
+      };
+    })
+    .filter((gap) => gap.missing.length > 0)
+    .sort((a, b) => b.missing.length - a.missing.length);
+
+  /**
+   * Where people stop.
+   *
+   * Each step is a subset of the one above it, so a drop between two is a
+   * place somebody gave up. Signups that never chose a side, hosts that never
+   * listed, listings that never went live, rooms that never got booked.
+   */
+  const hostIds = new Set(
+    (profiles.data ?? []).filter((p) => p.account_type === "host").map((p) => p.id as string),
+  );
+  const hostsWhoListed = new Set((spaces.data ?? []).map((s) => s.host_id as string));
+  const spacesBooked = new Set(rows.map((b) => b.space_id as string));
+
+  const funnel: FunnelStep[] = [
+    { label: "Signed up", count: (profiles.data ?? []).length },
+    {
+      label: "Chose a side",
+      count: (profiles.data ?? []).filter((p) => p.account_type !== null).length,
+    },
+    { label: "Hosts who listed", count: [...hostsWhoListed].filter((id) => hostIds.has(id)).length },
+    {
+      label: "Listings live",
+      count: (spaces.data ?? []).filter((s) => s.status === "active").length,
+    },
+    {
+      label: "Listings booked",
+      count: (spaces.data ?? []).filter((s) => spacesBooked.has(s.id as string)).length,
+    },
+  ];
+
+  /**
+   * Not accepted the terms.
+   *
+   * The most consequential number here at the moment: acceptance was added
+   * after everybody had already signed up, so it is deliberately not
+   * backfilled and every existing account shows until they next open the app.
+   */
+  const termsOutstanding = (profiles.data ?? []).filter(
+    (p) => (p.terms_version as number | null) === null,
+  ).length;
+
   // Fourteen buckets, pre-seeded so a quiet day is a gap in the chart rather
   // than a missing bar that shifts every other one along.
   const byDay = new Map<string, number>();
@@ -396,9 +569,23 @@ export async function loadQueue(admin: SupabaseClient): Promise<AdminQueue> {
     const day = new Date(chartStart.getTime() + i * DAY_MS);
     byDay.set(day.toISOString().slice(0, 10), 0);
   }
+  /*
+   * Money on the same fourteen days as the booking count, so the two charts
+   * line up and a busy day with no revenue — all cancelled, or none captured —
+   * is visible as a gap between them rather than invisible.
+   */
+  const moneyDay = new Map<string, { platformCents: number; grossCents: number }>();
+  for (const [day] of byDay) moneyDay.set(day, { platformCents: 0, grossCents: 0 });
+
   for (const booking of rows) {
     const key = new Date(booking.starts_at as string).toISOString().slice(0, 10);
     if (byDay.has(key)) byDay.set(key, (byDay.get(key) ?? 0) + 1);
+
+    if (booking.captured_at !== null && moneyDay.has(key)) {
+      const bucket = moneyDay.get(key)!;
+      bucket.platformCents += (booking.platform_cents as number) ?? 0;
+      bucket.grossCents += (booking.total_cents as number) ?? 0;
+    }
   }
 
   return {
@@ -483,6 +670,12 @@ export async function loadQueue(admin: SupabaseClient): Promise<AdminQueue> {
     })),
 
     atRisk,
+
+    reviewReasons,
+    listingGaps,
+    moneyByDay: [...moneyDay.entries()].map(([day, m]) => ({ day, ...m })),
+    funnel,
+    termsOutstanding,
 
     people: (profiles.data ?? [])
       .map((row) => {

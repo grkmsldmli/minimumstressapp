@@ -97,9 +97,21 @@ export function InsuranceUpload({
         </div>
 
         {/*
-          The brief flags the current Thimble link as an untracked placeholder
-          and asks for the real referral code, so this stays a plain outbound
-          link rather than pretending to be an affiliate one.
+          Deliberately not an affiliate link, and this is the decision rather
+          than an unfinished task.
+          Earning a commission on the policy would give us a financial interest
+          in which insurer somebody picks, on the same screen where we ask them
+          to trust us about safety — and if a claim were ever refused, "you
+          recommended them and were paid for it" is the exact position the rest
+          of this app is built to stay out of. It would also have to be
+          disclosed, which weakens the recommendation at the moment it is made.
+          The arithmetic does not argue otherwise: at five hundred practitioners
+          an affiliate programme is a few hundred dollars once, against tens of
+          thousands a year from the sessions those same people book.
+          The link stays because somebody without cover genuinely needs
+          somewhere to go. If this is ever worth revisiting it is as a
+          negotiated group rate — better for them and more defensible than a
+          referral code.
         */}
         <a
           href="https://www.thimble.com"

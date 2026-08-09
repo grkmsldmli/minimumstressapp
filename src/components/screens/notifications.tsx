@@ -2,7 +2,6 @@
 
 import { AlertTriangle, ArrowLeft, Check, Clock } from "lucide-react";
 
-import { Headline } from "@/components/brand";
 import { type NotificationEntry, describeNotification, explainState } from "@/lib/notify/history";
 
 /**
@@ -44,9 +43,15 @@ export function Notifications({
         >
           <ArrowLeft size={16} color="#fff" />
         </button>
-        <div className="mt-3 relative z-10">
-          <Headline pre="What we've" accent="sent you." size={24} light />
-        </div>
+        {/*
+          A label, not a sentence. This is a utility list somebody opens to
+          check one thing, and "what we've sent you" is the app narrating
+          itself where a name belongs. "Notifications" rather than "Messages"
+          because Messages is already the booking thread.
+        */}
+        <p className="font-display italic font-semibold text-[24px] mt-3 relative z-10 text-white">
+          Notifications
+        </p>
         {failed > 0 && (
           /*
             Said at the top rather than left to be discovered by scrolling. A
@@ -64,7 +69,7 @@ export function Notifications({
       <div className="flex-1 overflow-y-auto px-6 pt-5 pb-8">
         {entries.length === 0 ? (
           <p className="font-body font-normal text-[14px] leading-relaxed text-ink-soft">
-            Nothing yet. Messages about your bookings appear here.
+            Nothing yet. Alerts about your bookings appear here.
           </p>
         ) : (
           <div className="flex flex-col gap-2.5">

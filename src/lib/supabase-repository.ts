@@ -762,6 +762,7 @@ export class SupabaseRepository implements Repository {
     if (edit.capacity !== undefined) patch.capacity = edit.capacity;
     if (edit.accessType !== undefined) patch.access_type = edit.accessType;
     if (edit.entryInstructions !== undefined) patch.entry_instructions = edit.entryInstructions;
+    if (edit.description !== undefined) patch.description = edit.description;
     if (edit.bufferMinutes !== undefined) patch.buffer_minutes = edit.bufferMinutes;
     if (edit.accessible !== undefined) patch.accessible = edit.accessible;
     if (edit.restroom !== undefined) patch.restroom = edit.restroom;
@@ -912,6 +913,7 @@ export class SupabaseRepository implements Repository {
         accessible: input.accessible,
         restroom: input.restroom?.toLowerCase() ?? null,
         buffer_minutes: input.bufferMinutes,
+        description: input.description,
         amenities: input.amenities,
         requirements: input.requirements,
         house_rules: input.houseRules,

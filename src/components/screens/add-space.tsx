@@ -80,6 +80,7 @@ export function AddSpace({
   const [amenities, setAmenities] = useState<string[]>([]);
   const [requirements, setRequirements] = useState<string[]>([]);
   const [houseRules, setHouseRules] = useState("");
+  const [description, setDescription] = useState("");
   const [accessible, setAccessible] = useState<boolean | null>(null);
   const [restroom, setRestroom] = useState<RestroomOption | null>(null);
   const [blocks, setBlocks] = useState<AvailabilityBlock[]>([]);
@@ -155,6 +156,7 @@ export function AddSpace({
         ...toBrowsePosition(point),
         accessible,
         restroom,
+        description: description.trim(),
         amenities,
         requirements,
         houseRules: houseRules.trim(),
@@ -408,6 +410,26 @@ export function AddSpace({
             </div>
             <p className="font-body font-normal text-[13.5px] mt-2 text-ink-faint">
               At least one photo or video to continue — up to {MAX_MEDIA}, mixed freely.
+            </p>
+
+            <SectionLabel className="mt-6">
+              About this room <OptionalTag />
+            </SectionLabel>
+            <textarea
+              value={description}
+              onChange={(event) => setDescription(event.target.value.slice(0, 1200))}
+              rows={4}
+              placeholder="What it's like to work in. Light, floor, quiet, anything a practitioner would want to picture."
+              className="font-body text-[15px] outline-none w-full rounded-xl px-3.5 py-3 resize-none text-navy"
+              style={{ border: "1px solid #DCE7F2" }}
+            />
+            {/*
+              Asked here rather than left as an empty paragraph on the listing.
+              The column and the screen have both existed from the start and
+              nothing ever collected it, so every real listing rendered a gap.
+            */}
+            <p className="font-body font-normal text-[13.5px] mt-1.5 text-ink-faint">
+              {description.length}/1200
             </p>
 
             <SectionLabel className="mt-6">

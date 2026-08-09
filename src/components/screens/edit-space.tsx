@@ -52,6 +52,7 @@ export function EditSpace({
   const [category, setCategory] = useState(space.category);
   const [address, setAddress] = useState(space.addressLine);
   const [access, setAccess] = useState(space.access);
+  const [description, setDescription] = useState(space.description);
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -73,7 +74,8 @@ export function EditSpace({
     access.entrance !== space.access.entrance ||
     access.floor !== space.access.floor ||
     access.doorwayInches !== space.access.doorwayInches ||
-    access.restroom !== space.access.restroom;
+    access.restroom !== space.access.restroom ||
+    description !== space.description;
 
   const toggleListed = async () => {
     setError(null);
@@ -98,6 +100,7 @@ export function EditSpace({
         hourlyRateCents: rateCents,
         capacity: Number(capacity),
         entryInstructions: entry.trim(),
+        description: description.trim(),
         bufferMinutes: Number(buffer),
         entranceAccess: access.entrance,
         floorAccess: access.floor,
@@ -142,6 +145,13 @@ export function EditSpace({
 
         <Label>Space name</Label>
         <Text value={name} onChange={setName} />
+
+        {/*
+          The paragraph the listing has always rendered and nothing ever
+          collected, so every real listing showed a gap where this belongs.
+        */}
+        <Label>About this room</Label>
+        <Text value={description} onChange={(v) => setDescription(v.slice(0, 1200))} multiline />
 
         <Label>Hourly rate (you keep this)</Label>
         <div className="flex items-center gap-1 rounded-xl px-3.5 py-3" style={FIELD}>

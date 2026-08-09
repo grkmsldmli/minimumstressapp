@@ -656,7 +656,7 @@ export class MockRepository implements Repository {
       amenities: input.amenities,
       requirements: input.requirements,
       houseRules: input.houseRules,
-      description: "",
+      description: input.description,
       // The mock has no storage, so a preview URL is the only thing it can
       // show — and it is enough, because the tab that made it is the tab that
       // reads it. Callers release these with releasePickedMedia.

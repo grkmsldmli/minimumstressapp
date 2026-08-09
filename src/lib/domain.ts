@@ -214,6 +214,7 @@ export interface SpaceEdit {
   capacity?: number;
   accessType?: AccessTypeKey;
   entryInstructions?: string;
+  description?: string;
   bufferMinutes?: number;
   accessible?: boolean | null;
   restroom?: RestroomOption | null;
@@ -307,6 +308,14 @@ export interface NewSpaceInput {
   amenities: string[];
   requirements: string[];
   houseRules: string;
+  /**
+   * What the room is like, in the host's words.
+   *
+   * The column and the screen have both existed since the beginning; nothing
+   * ever collected it, so every real listing showed an empty space where a
+   * paragraph belonged.
+   */
+  description: string;
   bufferMinutes: number;
   availability: AvailabilityBlock[];
   /**

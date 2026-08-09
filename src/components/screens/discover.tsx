@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 
 import { AccountBadge } from "@/components/account-badge";
 import { LocationPrompt, type LocationChoice } from "@/components/location-prompt";
+import type { Rebookable } from "@/lib/rebook";
 import { RatingBadge } from "@/components/stars";
 import { summariseAggregate } from "@/lib/reviews";
 import {
@@ -26,6 +27,7 @@ import {
   LogoBadge,
   categoryGradient,
 } from "@/components/brand";
+import { BookAgain } from "@/components/book-again";
 import { BrowseMap } from "@/components/browse-map";
 import { TiltCard } from "@/components/primitives";
 import type { PublicSpace } from "@/lib/domain";
@@ -61,6 +63,8 @@ export function Discover({
   onGoLegal,
   greetingName,
   you,
+  rebookable,
+  onRebook,
   savedPostcode,
   onChangePostcode,
   nearbyOrder,
@@ -79,6 +83,9 @@ export function Discover({
   /** Ids nearest-first, or null while nobody has said where they are. */
   /** Where the practitioner is, when they have shared it. This visit only. */
   you: { lat: number; lng: number } | null;
+  /** Rooms they have used, at the hour they used them. */
+  rebookable: Rebookable[];
+  onRebook: (entry: Rebookable) => void;
   /** A postcode they saved, if any. Replaces the prompt with the answer. */
   savedPostcode: string | null;
   onChangePostcode: () => void;
@@ -286,6 +293,13 @@ export function Discover({
               </div>
             </>
           )}
+
+          {/*
+            Above the location prompt on purpose. Somebody returning to a room
+            they use weekly has already answered "where", and asking again
+            before offering the shortcut puts a question in front of an answer.
+          */}
+          <BookAgain rooms={rebookable} onPick={onRebook} />
 
           {savedPostcode ? (
             /*

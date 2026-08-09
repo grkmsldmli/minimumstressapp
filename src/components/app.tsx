@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type {
   Booking,
@@ -22,6 +22,8 @@ import {
 } from "@/lib/supabase/auth";
 
 import { type Provider, enabledProviders } from "@/lib/auth-providers";
+import { BOOKING_HORIZON_DAYS } from "@/lib/money";
+import { rebookable } from "@/lib/rebook";
 import { TERMS_VERSION, hasAcceptedTerms } from "@/lib/terms";
 
 import { type Screen, useApp } from "./app-state";
@@ -130,6 +132,20 @@ export function App() {
   const [nearbyOrder, setNearbyOrder] = useState<string[] | null>(null);
   const [distanceLabels, setDistanceLabels] = useState<Record<string, string>>({});
   const [locationError, setLocationError] = useState<string | null>(null);
+  /** Set only by "book again", so the listing opens on the hour being repeated. */
+  const [openAtSlot, setOpenAtSlot] = useState<Date | null>(null);
+
+  /**
+   * Rooms they have used, at the hour they used them.
+   *
+   * Derived rather than stored: the bookings are already loaded, and a second
+   * copy of "which rooms does this person use" is a second thing that can be
+   * wrong.
+   */
+  const rebookableRooms = useMemo(
+    () => rebookable(data?.bookings ?? [], new Date(), BOOKING_HORIZON_DAYS),
+    [data?.bookings],
+  );
   /*
    * Held for the map, and for this visit only.
    *
@@ -608,7 +624,14 @@ export function App() {
           spaces={spaces}
           isPro={profile.isPro}
           greetingName={profile.displayName}
+          rebookable={rebookableRooms}
+          onRebook={(entry) => {
+            setActiveSpaceId(entry.spaceId);
+            setOpenAtSlot(entry.nextStart);
+            go("detail");
+          }}
           onOpenSpace={(spaceId) => {
+            setOpenAtSlot(null);
             setActiveSpaceId(spaceId);
             go("detail");
           }}
@@ -748,6 +771,7 @@ export function App() {
           space={activeSpace}
           isPro={profile.isPro}
           preview={previewingOwnListing}
+          startAt={openAtSlot}
           onBack={back}
           onGoPro={() => go("pro")}
           error={bookingError}

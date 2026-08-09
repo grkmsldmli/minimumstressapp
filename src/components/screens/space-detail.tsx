@@ -49,6 +49,7 @@ export function SpaceDetail({
   onGoPro,
   preview = false,
   error,
+  startAt,
 }: {
   space: PublicSpace;
   isPro: boolean;
@@ -56,6 +57,14 @@ export function SpaceDetail({
   onBook: (startsAt: Date) => void | Promise<void>;
   /** Why the booking was refused. Silence here was the bug. */
   error?: string | null;
+  /**
+   * A slot to open on, from "book again".
+   *
+   * The shortcut is the hour, not the room: opening the listing and leaving
+   * somebody to find Tuesday 2pm themselves is most of the work they were
+   * trying to skip.
+   */
+  startAt?: Date | null;
   /**
    * True when the viewer is this listing's host.
    *
@@ -76,10 +85,12 @@ export function SpaceDetail({
    * It was an offset into an eight-item strip, which only means anything while
    * the strip exists. A calendar can land on any day of any month.
    */
-  const [day, setDay] = useState<Date>(
-    () => new Date(now.getFullYear(), now.getMonth(), now.getDate()),
+  const [day, setDay] = useState<Date>(() =>
+    startAt
+      ? new Date(startAt.getFullYear(), startAt.getMonth(), startAt.getDate())
+      : new Date(now.getFullYear(), now.getMonth(), now.getDate()),
   );
-  const [selected, setSelected] = useState<Date | null>(null);
+  const [selected, setSelected] = useState<Date | null>(startAt ?? null);
 
   /*
    * The window is no longer computed here. The calendar owns which days are

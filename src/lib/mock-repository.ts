@@ -42,6 +42,7 @@ import {
 import { explainRedaction, redact } from "./message-redaction";
 import type { CancellationEvent } from "./reliability";
 import type { CreateBookingInput, Repository } from "./repository";
+import type { AccessDetails } from "./access-details";
 import type { MediaKind, SpaceEdit } from "./domain";
 import type { NotificationEntry } from "./notify/history";
 import { type CategoryKey, roomTypeFor } from "./taxonomy";
@@ -95,6 +96,7 @@ interface SeedSpace {
   area: string | null;
   approxLat: number | null;
   approxLng: number | null;
+  access: AccessDetails;
   distanceLabel: string;
   availability: AvailabilityBlock[];
 }
@@ -117,6 +119,7 @@ const SEED_SPACES: SeedSpace[] = [
     mapY: 28,
     area: "San Mateo, CA",
     approxLat: 37.563,
+    access: { entrance: "step_free", floor: "ground_floor", doorwayInches: 36, restroom: "accessible" },
     approxLng: -122.3255,
     distanceLabel: "0.8 mi",
     availability: everyDay(7, 21),
@@ -138,6 +141,7 @@ const SEED_SPACES: SeedSpace[] = [
     mapY: 20,
     area: "San Mateo, CA",
     approxLat: 37.5545,
+    access: { entrance: "one_step", floor: "lift", doorwayInches: 30, restroom: "standard" },
     approxLng: -122.312,
     distanceLabel: "1.0 mi",
     availability: everyDay(9, 19),
@@ -159,6 +163,7 @@ const SEED_SPACES: SeedSpace[] = [
     mapY: 52,
     area: "San Mateo, CA",
     approxLat: 37.548,
+    access: { entrance: "step_free", floor: "lift", doorwayInches: 34, restroom: "standard" },
     approxLng: -122.339,
     distanceLabel: "1.2 mi",
     availability: everyDay(6, 22),
@@ -179,6 +184,7 @@ const SEED_SPACES: SeedSpace[] = [
     mapY: 64,
     area: "San Mateo, CA",
     approxLat: 37.5702,
+    access: { entrance: "steps", floor: "stairs_only", doorwayInches: null, restroom: "none" },
     approxLng: -122.3011,
     distanceLabel: "1.5 mi",
     availability: everyDay(8, 18),
@@ -200,6 +206,7 @@ const SEED_SPACES: SeedSpace[] = [
     mapY: 56,
     area: "San Mateo, CA",
     approxLat: 37.5391,
+    access: { entrance: null, floor: null, doorwayInches: null, restroom: null },
     approxLng: -122.3204,
     distanceLabel: "1.6 mi",
     availability: everyDay(6, 21),
@@ -221,6 +228,7 @@ const SEED_SPACES: SeedSpace[] = [
     mapY: 80,
     area: "San Mateo, CA",
     approxLat: 37.5588,
+    access: { entrance: "step_free", floor: "ground_floor", doorwayInches: null, restroom: "standard" },
     approxLng: -122.2938,
     distanceLabel: "2.1 mi",
     availability: everyDay(10, 20),
@@ -298,6 +306,7 @@ export class MockRepository implements Repository {
         area: seed.area,
         approxLat: seed.approxLat,
         approxLng: seed.approxLng,
+        access: seed.access,
         distanceLabel: seed.distanceLabel,
       reviewCount: 0,
       averageRating: null,
@@ -662,6 +671,7 @@ export class MockRepository implements Repository {
       area: null,
       approxLat: null,
       approxLng: null,
+      access: { entrance: null, floor: null, doorwayInches: null, restroom: null },
       distanceLabel: "your space",
       reviewCount: 0,
       averageRating: null,

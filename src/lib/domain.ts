@@ -6,6 +6,7 @@
  * frozen breakdown so a host raising their rate cannot rewrite history.
  */
 
+import type { AccessDetails } from "./access-details";
 import type { AvailabilityBlock } from "./availability";
 import type { AccessTypeKey, CategoryKey, RestroomOption } from "./taxonomy";
 
@@ -123,6 +124,14 @@ export interface PublicSpace {
    * so the real coordinates never enter a response. Null until a listing has
    * been geocoded.
    */
+  /**
+   * What "accessible" means for this room, as four answered facts.
+   *
+   * Replaces a boolean that rendered as "Wheelchair accessible" and told
+   * somebody nothing they could act on. Null throughout means unanswered,
+   * which is shown as unanswered.
+   */
+  access: AccessDetails;
   approxLat: number | null;
   approxLng: number | null;
   distanceLabel: string;
@@ -208,6 +217,15 @@ export interface SpaceEdit {
   bufferMinutes?: number;
   accessible?: boolean | null;
   restroom?: RestroomOption | null;
+  /*
+   * The four access answers. Free to change and live immediately — correcting
+   * "one step" to "step-free" after a ramp goes in is the app working, and
+   * none of it is something a booking was agreed on.
+   */
+  entranceAccess?: AccessDetails["entrance"];
+  floorAccess?: AccessDetails["floor"];
+  doorwayInches?: number | null;
+  restroomAccess?: AccessDetails["restroom"];
   category?: CategoryKey;
   addressLine?: string;
   lat?: number;

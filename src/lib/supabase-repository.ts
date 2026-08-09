@@ -37,6 +37,7 @@ function asError(cause: unknown): Error {
   return cause instanceof Error ? cause : new Error(errorMessage(cause, "Request failed"));
 }
 
+import type { AccessDetails } from "./access-details";
 import type { AvailabilityBlock } from "./availability";
 import type { NotificationEntry } from "./notify/history";
 import {
@@ -94,6 +95,10 @@ interface SpaceRow {
   lng?: number | null;
   // numeric(4,1) arrives as a string from PostgREST, not a number.
   area?: string | null;
+  entrance_access?: string | null;
+  floor_access?: string | null;
+  doorway_inches?: number | null;
+  restroom_access?: string | null;
   approx_lat?: number | null;
   approx_lng?: number | null;
   map_x?: number | string | null;
@@ -386,6 +391,12 @@ export class SupabaseRepository implements Repository {
       mapX: Number(row.map_x ?? 50),
       mapY: Number(row.map_y ?? 50),
       area: row.area ?? null,
+      access: {
+        entrance: (row.entrance_access as AccessDetails["entrance"]) ?? null,
+        floor: (row.floor_access as AccessDetails["floor"]) ?? null,
+        doorwayInches: row.doorway_inches ?? null,
+        restroom: (row.restroom_access as AccessDetails["restroom"]) ?? null,
+      },
       approxLat: row.approx_lat ?? null,
       approxLng: row.approx_lng ?? null,
       distanceLabel: "nearby",
@@ -726,6 +737,12 @@ export class SupabaseRepository implements Repository {
         },
         reviewNote: (row.doc_review_note as string) ?? null,
         area: null,
+        access: {
+          entrance: (row.entrance_access as AccessDetails["entrance"]) ?? null,
+          floor: (row.floor_access as AccessDetails["floor"]) ?? null,
+          doorwayInches: row.doorway_inches ?? null,
+          restroom: (row.restroom_access as AccessDetails["restroom"]) ?? null,
+        },
         // The host is looking at their own listing and already has the address.
         approxLat: null,
         approxLng: null,
@@ -748,6 +765,10 @@ export class SupabaseRepository implements Repository {
     if (edit.bufferMinutes !== undefined) patch.buffer_minutes = edit.bufferMinutes;
     if (edit.accessible !== undefined) patch.accessible = edit.accessible;
     if (edit.restroom !== undefined) patch.restroom = edit.restroom;
+    if (edit.entranceAccess !== undefined) patch.entrance_access = edit.entranceAccess;
+    if (edit.floorAccess !== undefined) patch.floor_access = edit.floorAccess;
+    if (edit.doorwayInches !== undefined) patch.doorway_inches = edit.doorwayInches;
+    if (edit.restroomAccess !== undefined) patch.restroom_access = edit.restroomAccess;
     if (edit.category !== undefined) patch.category = edit.category;
     if (edit.addressLine !== undefined) patch.address_line = edit.addressLine;
     if (edit.lat !== undefined) patch.lat = edit.lat;

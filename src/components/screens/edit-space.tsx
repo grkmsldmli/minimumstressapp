@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { AlertTriangle, ArrowLeft } from "lucide-react";
 
+import { AccessEditor } from "@/components/access-editor";
 import { DocumentStatus } from "@/components/document-status";
 import { PrimaryButton } from "@/components/primitives";
 import { SpaceMediaManager } from "@/components/space-media-manager";
@@ -50,6 +51,7 @@ export function EditSpace({
   const [buffer, setBuffer] = useState(String(space.bufferMinutes));
   const [category, setCategory] = useState(space.category);
   const [address, setAddress] = useState(space.addressLine);
+  const [access, setAccess] = useState(space.access);
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -67,7 +69,11 @@ export function EditSpace({
     entry !== space.entryInstructions ||
     Number(buffer) !== space.bufferMinutes ||
     category !== space.category ||
-    address !== space.addressLine;
+    address !== space.addressLine ||
+    access.entrance !== space.access.entrance ||
+    access.floor !== space.access.floor ||
+    access.doorwayInches !== space.access.doorwayInches ||
+    access.restroom !== space.access.restroom;
 
   const toggleListed = async () => {
     setError(null);
@@ -93,6 +99,10 @@ export function EditSpace({
         capacity: Number(capacity),
         entryInstructions: entry.trim(),
         bufferMinutes: Number(buffer),
+        entranceAccess: access.entrance,
+        floorAccess: access.floor,
+        doorwayInches: access.doorwayInches,
+        restroomAccess: access.restroom,
         // Only sent when they are actually free to change, so a locked
         // listing cannot be moved by a stale value sitting in a field.
         ...(locked ? {} : { category, addressLine: address.trim() }),
@@ -167,6 +177,15 @@ export function EditSpace({
 
         <Label>Turnover buffer (minutes)</Label>
         <Text value={buffer} onChange={(v) => setBuffer(v.replace(/[^\d]/g, ""))} />
+
+        {/*
+          Four questions where there used to be one box marked "accessible".
+          That box asked something most hosts could not answer honestly — a
+          shallow step at the entrance is neither yes nor no — so it got
+          ticked in good faith and somebody was stranded outside.
+        */}
+        <Label>Getting in</Label>
+        <AccessEditor details={access} onChange={setAccess} />
 
         <div className="h-px my-7" style={{ backgroundColor: "#E7EEF6" }} />
 

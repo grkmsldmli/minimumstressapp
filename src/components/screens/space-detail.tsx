@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Accessibility, ArrowLeft, Bath, Check, Key, Lock, Sun, Users, Zap } from "lucide-react";
+import { ArrowLeft, Check, Key, Lock, Sun, Users, Zap } from "lucide-react";
 
+import { AccessPanel } from "@/components/access-panel";
 import { BookingCalendar } from "@/components/booking-calendar";
 import { SpaceGallery } from "@/components/space-gallery";
 import { PrimaryButton } from "@/components/primitives";
@@ -165,24 +166,26 @@ export function SpaceDetail({
           <Fact icon={Key} label="Entry" value={accessLabel} />
         </div>
 
-        <Label>Good to know</Label>
-        <div className="flex flex-wrap gap-1.5">
-          {space.accessible !== null && (
-            <Tag>
-              <Accessibility size={11} color={space.accessible ? "#557255" : "#8B6C37"} />
-              {space.accessible ? "Wheelchair accessible" : "Not wheelchair accessible"}
-            </Tag>
-          )}
-          {space.restroom && (
-            <Tag>
-              <Bath size={11} color="#3B9BE8" />
-              {space.restroom === "None" ? "No restroom on site" : `${space.restroom} restroom`}
-            </Tag>
-          )}
-          {space.amenities.map((amenity) => (
-            <Tag key={amenity}>{amenity}</Tag>
-          ))}
-        </div>
+        {/*
+          Four answered facts, where a single chip used to read "Wheelchair
+          accessible". Somebody who uses a wheelchair could not act on that —
+          a step at the door, a lift too narrow to turn in and an unusable
+          restroom are all compatible with a ticked box — so they booked,
+          travelled, paid, and could not get in.
+        */}
+        <Label>Getting in</Label>
+        <AccessPanel details={space.access} />
+
+        {space.amenities.length > 0 && (
+          <>
+            <Label>Good to know</Label>
+            <div className="flex flex-wrap gap-1.5">
+              {space.amenities.map((amenity) => (
+                <Tag key={amenity}>{amenity}</Tag>
+              ))}
+            </div>
+          </>
+        )}
 
         {/*
           Above the slot grid on purpose. These are the things that would make

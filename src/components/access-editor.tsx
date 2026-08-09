@@ -1,0 +1,136 @@
+"use client";
+
+import type { AccessDetails } from "@/lib/access-details";
+
+/**
+ * The four access questions, asked of the host.
+ *
+ * Specific answers rather than a box marked "accessible", because that box was
+ * a question most hosts could not answer honestly. A studio with one shallow
+ * step is neither accessible nor inaccessible, and the room itself may be
+ * perfect — so the box got ticked in good faith and somebody was stranded on a
+ * pavement.
+ *
+ * Every question can be left unanswered, and unanswered is shown to
+ * practitioners as unanswered. Forcing a choice is how a guess becomes a
+ * claim, and a wrong claim here costs somebody a session they paid for.
+ */
+
+const ENTRANCE = [
+  { value: "step_free", label: "Step-free" },
+  { value: "one_step", label: "One step" },
+  { value: "steps", label: "Steps" },
+] as const;
+
+const FLOOR = [
+  { value: "ground_floor", label: "Ground floor" },
+  { value: "lift", label: "Lift" },
+  { value: "stairs_only", label: "Stairs only" },
+] as const;
+
+const RESTROOM = [
+  { value: "accessible", label: "Accessible" },
+  { value: "standard", label: "Standard" },
+  { value: "none", label: "None on site" },
+] as const;
+
+export function AccessEditor({
+  details,
+  onChange,
+}: {
+  details: AccessDetails;
+  onChange: (next: AccessDetails) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-4">
+      <Question
+        label="From the street to the front door"
+        options={ENTRANCE}
+        value={details.entrance}
+        onPick={(entrance) => onChange({ ...details, entrance })}
+      />
+
+      <Question
+        label="From the door to the room"
+        options={FLOOR}
+        value={details.floor}
+        onPick={(floor) => onChange({ ...details, floor })}
+      />
+
+      <div>
+        <p className="font-body font-normal text-[13.5px] mb-1.5 text-ink-soft">
+          Narrowest doorway on the way in
+        </p>
+        <div className="flex items-center gap-2">
+          <input
+            value={details.doorwayInches === null ? "" : String(details.doorwayInches)}
+            onChange={(event) => {
+              const digits = event.target.value.replace(/[^\d]/g, "");
+              onChange({ ...details, doorwayInches: digits === "" ? null : Number(digits) });
+            }}
+            inputMode="numeric"
+            placeholder="Not measured"
+            aria-label="Narrowest doorway in inches"
+            className="font-body text-[15px] outline-none rounded-xl px-3.5 py-3 w-full text-navy"
+            style={{ border: "1px solid #DCE7F2" }}
+          />
+          <span className="font-body font-normal text-[15px] shrink-0 text-ink-soft">inches</span>
+        </div>
+        {/*
+          The number rather than a judgement. "Wide enough" is a claim about a
+          body we know nothing about; a measurement lets the person decide.
+        */}
+        <p className="font-body font-normal text-[13.5px] mt-1.5 text-ink-faint">
+          A tape measure across the frame. Leave blank if you have not measured it.
+        </p>
+      </div>
+
+      <Question
+        label="Restroom"
+        options={RESTROOM}
+        value={details.restroom}
+        onPick={(restroom) => onChange({ ...details, restroom })}
+      />
+    </div>
+  );
+}
+
+function Question<T extends string>({
+  label,
+  options,
+  value,
+  onPick,
+}: {
+  label: string;
+  options: readonly { value: T; label: string }[];
+  value: T | null;
+  onPick: (value: T | null) => void;
+}) {
+  return (
+    <div>
+      <p className="font-body font-normal text-[13.5px] mb-1.5 text-ink-soft">{label}</p>
+      <div className="flex flex-wrap gap-2">
+        {options.map((option) => {
+          const chosen = value === option.value;
+          return (
+            <button
+              key={option.value}
+              type="button"
+              // Tapping the chosen one clears it, so an answer given by
+              // accident can be taken back rather than only replaced.
+              onClick={() => onPick(chosen ? null : option.value)}
+              className="px-3.5 py-2 rounded-full font-body text-[14px] press"
+              style={
+                chosen
+                  ? { backgroundColor: "#2578C2", color: "#fff" }
+                  : { border: "1px solid #DCE7F2", color: "#4D6480" }
+              }
+            >
+              {option.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}

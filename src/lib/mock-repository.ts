@@ -43,6 +43,7 @@ import { explainRedaction, redact } from "./message-redaction";
 import type { CancellationEvent } from "./reliability";
 import type { CreateBookingInput, Repository } from "./repository";
 import type { MediaKind, SpaceEdit } from "./domain";
+import type { NotificationEntry } from "./notify/history";
 import { type CategoryKey, roomTypeFor } from "./taxonomy";
 import { rejectionReason } from "./uploads";
 
@@ -252,6 +253,13 @@ export class MockRepository implements Repository {
   private publicSpaces: PublicSpace[] = [];
   private mySpaces: HostSpace[] = [];
   private bookings: Booking[] = [];
+
+  /*
+   * Written as bookings are made, so the fake behaves like the real one: a
+   * history that only ever appears empty would hide every fault in the screen
+   * that reads it.
+   */
+  private notifications: NotificationEntry[] = [];
   private hostBookings: HostBooking[] = [];
 
   constructor() {
@@ -431,6 +439,32 @@ export class MockRepository implements Repository {
     };
 
     this.bookings.unshift(booking);
+
+    /*
+     * The same two messages the real app sends on a booking. One delivered and
+     * one still queued, so the screen that reads this is exercised in more
+     * than its happy state.
+     */
+    this.notifications.unshift(
+      {
+        id: id("notif"),
+        kind: "booking_confirmed",
+        channel: "email",
+        state: "sent",
+        sentAt: new Date(),
+        createdAt: new Date(),
+        bookingId: booking.id,
+      },
+      {
+        id: id("notif"),
+        kind: "access_code_ready",
+        channel: "email",
+        state: "queued",
+        sentAt: null,
+        createdAt: new Date(),
+        bookingId: booking.id,
+      },
+    );
     // No card, so nothing to confirm — the caller goes straight to the
     // confirmation screen and the payment step never appears.
     return { booking: this.withRevealedCode(booking), clientSecret: null };
@@ -475,6 +509,10 @@ export class MockRepository implements Repository {
    * that let a phone number through would show a working feature that is not,
    * and the screen being reviewed would be the wrong one.
    */
+  async listNotifications(): Promise<NotificationEntry[]> {
+    return this.notifications.map((entry) => ({ ...entry }));
+  }
+
   async sendMessage(bookingId: string, body: string): Promise<{ notice: string | null }> {
     const redaction = redact(body);
 

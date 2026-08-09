@@ -8,6 +8,7 @@ import type { Rebookable } from "@/lib/rebook";
 import { RatingBadge } from "@/components/stars";
 import { summariseAggregate } from "@/lib/reviews";
 import {
+  Bell,
   Calendar,
   ChevronRight,
   List,
@@ -59,6 +60,8 @@ export function Discover({
   onOpenSpace,
   onGoPro,
   onGoBookings,
+  onGoNotifications,
+  undeliveredCount,
   onGoProfile,
   onGoLegal,
   greetingName,
@@ -77,6 +80,9 @@ export function Discover({
   onOpenSpace: (id: string) => void;
   onGoPro: () => void;
   onGoBookings: () => void;
+  onGoNotifications: () => void;
+  /** Messages that never arrived. The only reason to interrupt somebody. */
+  undeliveredCount: number;
   onGoProfile: () => void;
   onGoLegal: () => void;
   greetingName: string | null;
@@ -211,6 +217,27 @@ export function Discover({
           <div className="flex items-center gap-2">
             <RoundButton label="Your bookings" onClick={onGoBookings}>
               <Calendar size={15} color="#fff" />
+            </RoundButton>
+            <RoundButton label="What we've sent you" onClick={onGoNotifications}>
+              <Bell size={15} color="#fff" />
+              {/*
+                A dot only when something failed to arrive. An unread badge
+                would nag about messages somebody has already had by email;
+                the one thing worth interrupting for is one they never got.
+              */}
+              {undeliveredCount > 0 && (
+                <span
+                  className="absolute rounded-full"
+                  style={{
+                    top: 1,
+                    right: 1,
+                    width: 8,
+                    height: 8,
+                    backgroundColor: "#F2695C",
+                    border: "1.5px solid #16304E",
+                  }}
+                />
+              )}
             </RoundButton>
             <RoundButton
               label={view === "list" ? "Show map" : "Show list"}

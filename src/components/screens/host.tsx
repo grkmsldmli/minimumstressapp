@@ -3,6 +3,7 @@
 import { useState } from "react";
 import {
   ArrowLeft,
+  Bell,
   MessageCircle,
   Building2,
   ChevronRight,
@@ -46,6 +47,8 @@ export function HostDashboard({
   onPreviewSpace,
   onOpenEarnings,
   onOpenProfile,
+  onGoNotifications,
+  undeliveredCount,
   onReviewBooking,
   onMessageBooking,
 }: {
@@ -58,6 +61,9 @@ export function HostDashboard({
   onPreviewSpace: (spaceId: string) => void;
   onOpenEarnings: () => void;
   onOpenProfile: () => void;
+  onGoNotifications: () => void;
+  /** Messages that never arrived. */
+  undeliveredCount: number;
   /** Absent until the review window opens for a session. */
   onReviewBooking?: (bookingId: string) => void;
   /** Opens the thread for a booking. */
@@ -132,6 +138,32 @@ export function HostDashboard({
               style={{ backgroundColor: "rgba(255,255,255,0.14)" }}
             >
               <Plus size={13} /> Add space
+            </button>
+            <button
+              type="button"
+              onClick={onGoNotifications}
+              aria-label="What we've sent you"
+              className="w-9 h-9 rounded-full flex items-center justify-center press relative"
+              style={{ backgroundColor: "rgba(255,255,255,0.14)" }}
+            >
+              <Bell size={15} color="#fff" />
+              {/*
+                A dot only for a message that never arrived. A host who missed
+                the alert about a booking is the whole reason this exists.
+              */}
+              {undeliveredCount > 0 && (
+                <span
+                  className="absolute rounded-full"
+                  style={{
+                    top: 1,
+                    right: 1,
+                    width: 8,
+                    height: 8,
+                    backgroundColor: "#F2695C",
+                    border: "1.5px solid #16304E",
+                  }}
+                />
+              )}
             </button>
             <button
               type="button"

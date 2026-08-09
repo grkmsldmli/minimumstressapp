@@ -22,6 +22,7 @@ import type {
   SpaceAccessDetails,
   SpaceEdit,
 } from "./domain";
+import type { NotificationEntry } from "./notify/history";
 import type { CancellationEvent } from "./reliability";
 
 export interface Repository {
@@ -62,6 +63,15 @@ export interface Repository {
    * the other party.
    */
   submitReview(input: ReviewInput): Promise<void>;
+
+  /**
+   * What the app has sent this account, newest first.
+   *
+   * The rows existed from the first booking and only staff could read them,
+   * so somebody who missed an email had nowhere in the product to look — not
+   * even to find out whether it had been sent.
+   */
+  listNotifications(): Promise<NotificationEntry[]>;
 
   /* ---------------- messages ---------------- */
 

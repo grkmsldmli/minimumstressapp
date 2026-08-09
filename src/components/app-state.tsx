@@ -29,6 +29,7 @@ export type Screen =
   | "bookings"
   | "review"
   | "thread"
+  | "notifications"
   | "practitioner-profile"
   | "pro"
   | "legal"

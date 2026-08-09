@@ -23,6 +23,7 @@ import {
 
 import { type Provider, enabledProviders } from "@/lib/auth-providers";
 import { BOOKING_HORIZON_DAYS } from "@/lib/money";
+import type { NotificationEntry } from "@/lib/notify/history";
 import { rebookable } from "@/lib/rebook";
 import { TERMS_VERSION, hasAcceptedTerms } from "@/lib/terms";
 
@@ -34,6 +35,7 @@ import { Discover } from "./screens/discover";
 import { EditSpace } from "./screens/edit-space";
 import { EditAvailability, Earnings, HostDashboard, HostProfile } from "./screens/host";
 import { Legal } from "./screens/legal";
+import { Notifications } from "./screens/notifications";
 import { PaymentSheet } from "./screens/payment-sheet";
 import { ReviewScreen } from "./screens/review";
 import { Thread, type ThreadMessage } from "./screens/thread";
@@ -55,6 +57,7 @@ interface Snapshot {
   access: Record<string, SpaceAccessDetails>;
   cancellations: CancellationEvent[];
   sessions: number;
+  notifications: NotificationEntry[];
 }
 
 export function App() {
@@ -303,8 +306,16 @@ export function App() {
     let cancelled = false;
 
     (async () => {
-      const [profile, spaces, bookings, mySpaces, hostBookings, cancellations, sessions] =
-        await Promise.all([
+      const [
+        profile,
+        spaces,
+        bookings,
+        mySpaces,
+        hostBookings,
+        cancellations,
+        sessions,
+        notifications,
+      ] = await Promise.all([
           repo.getProfile(),
           repo.listPublicSpaces(),
           repo.listMyBookings(),
@@ -312,6 +323,7 @@ export function App() {
           repo.listHostBookings(),
           repo.listCancellationHistory(),
           repo.getSessionCount(),
+          repo.listNotifications(),
         ]);
 
       // Address details are per-space and authorization-gated, so they are
@@ -332,6 +344,7 @@ export function App() {
           access,
           cancellations,
           sessions,
+          notifications,
         });
       }
     })().catch((cause) => {
@@ -637,6 +650,8 @@ export function App() {
           }}
           onGoPro={() => go("pro")}
           onGoBookings={() => go("bookings")}
+          onGoNotifications={() => go("notifications")}
+          undeliveredCount={data.notifications.filter((n) => n.state === "failed").length}
           onGoProfile={() => go("practitioner-profile")}
           onGoLegal={() => go("legal")}
           you={here}
@@ -677,6 +692,8 @@ export function App() {
           }}
           onOpenEarnings={() => go("earnings")}
           onOpenProfile={() => go("host-profile")}
+          onGoNotifications={() => go("notifications")}
+          undeliveredCount={data.notifications.filter((n) => n.state === "failed").length}
           onReviewBooking={(bookingId) => {
             setReviewing({ bookingId, role: "host" });
             go("review");
@@ -965,6 +982,9 @@ export function App() {
           onSubscribe={() => void mutate(() => repo.startProSubscription())}
         />
       );
+
+    case "notifications":
+      return <Notifications entries={data.notifications} onBack={back} />;
 
     case "legal":
       return <Legal onBack={back} />;

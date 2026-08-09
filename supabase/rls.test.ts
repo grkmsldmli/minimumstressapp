@@ -998,3 +998,86 @@ describe("the approximate position", () => {
     expect(Object.keys(row)).not.toContain("lng");
   });
 });
+
+/**
+ * What we sent you, and nothing about how we sent it.
+ *
+ * The app has been emailing since the first booking and keeping no record
+ * anybody could read: a host who missed the message about a session starting
+ * in an hour had nowhere in the product to look. The row existed the whole
+ * time and only staff could see it.
+ */
+describe("notification history", () => {
+  beforeAll(async () => {
+    await db.exec(`
+      insert into notifications (user_id, kind, channel, dedupe_key, sent_at)
+      values ('${PRACTITIONER}', 'booking_confirmed', 'email', 'k1', now());
+
+      insert into notifications (user_id, kind, channel, dedupe_key, dropped_at, last_error, attempts)
+      values ('${PRACTITIONER}', 'access_code_ready', 'email', 'k2', now(), 'mailbox full', 5);
+
+      insert into notifications (user_id, kind, channel, dedupe_key)
+      values ('${HOST}', 'host_new_booking', 'email', 'k3');
+    `);
+  });
+
+  it("shows somebody their own messages", async () => {
+    const mine = await asUser(PRACTITIONER, `select kind from my_notifications`);
+    expect(mine).toHaveLength(2);
+  });
+
+  it("shows nobody else's", async () => {
+    const theirs = await asUser<{ kind: string }>(HOST, `select kind from my_notifications`);
+    expect(theirs.map((r) => r.kind)).toEqual(["host_new_booking"]);
+  });
+
+  /** The answer somebody is looking for when they are stood outside a door. */
+  it("says which ones failed", async () => {
+    const rows = await asUser<{ kind: string; state: string }>(
+      PRACTITIONER,
+      `select kind, state from my_notifications order by kind`,
+    );
+
+    expect(rows.find((r) => r.kind === "access_code_ready")?.state).toBe("failed");
+    expect(rows.find((r) => r.kind === "booking_confirmed")?.state).toBe("sent");
+  });
+
+  it("calls one that has not been tried yet queued", async () => {
+    const [row] = await asUser<{ state: string }>(HOST, `select state from my_notifications`);
+    expect(row.state).toBe("queued");
+  });
+
+  /**
+   * The grant is the boundary, not the view.
+   *
+   * A blanket select on the table would have made the view decorative: the
+   * policy lets somebody read their own rows, so they could query the table
+   * directly and get everything the view was written to hold back.
+   */
+  it.each(["last_error", "attempts", "dedupe_key"])(
+    "refuses %s even on your own row",
+    async (column) => {
+      await expect(
+        asUser(PRACTITIONER, `select ${column} from notifications`),
+      ).rejects.toThrow(/permission denied/i);
+    },
+  );
+
+  it("refuses somebody else's notification rows outright", async () => {
+    const found = await asUser(
+      HOST,
+      `select id from notifications where user_id = '${PRACTITIONER}'`,
+    );
+    expect(found).toEqual([]);
+  });
+
+  it("does not let anybody write their own history", async () => {
+    await expect(
+      asUser(
+        PRACTITIONER,
+        `insert into notifications (user_id, kind, channel, dedupe_key)
+         values (auth.uid(), 'booking_confirmed', 'email', 'forged')`,
+      ),
+    ).rejects.toThrow(/permission denied|row-level security/i);
+  });
+});

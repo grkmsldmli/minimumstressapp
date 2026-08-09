@@ -191,7 +191,19 @@ describe("private columns stay out of the public views", () => {
     // RLS and hands every practitioner's balance to whoever asks. A public
     // subset view *with* it errors instead, because anon holds no grant on
     // the base table — safety there comes from the column list, not from RLS.
-    const PER_USER = ["credit_balances", "bookings_with_access_code", "messages_visible"];
+    const PER_USER = [
+      "credit_balances",
+      "bookings_with_access_code",
+      "messages_visible",
+      /*
+       * Notification history. Invoker, so the row policy scopes it to the
+       * recipient — and the grant behind it is column-level, because a
+       * blanket select would have let somebody skip the view and read
+       * last_error, attempts and dedupe_key straight off the table. The view
+       * is the presentation; the grant is the boundary.
+       */
+      "my_notifications",
+    ];
     const PUBLIC = [
       "spaces_public",
       "public_host_profiles",

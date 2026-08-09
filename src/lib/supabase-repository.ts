@@ -38,6 +38,7 @@ function asError(cause: unknown): Error {
 }
 
 import type { AvailabilityBlock } from "./availability";
+import type { NotificationEntry } from "./notify/history";
 import {
   rejectionReason,
   spaceDocPath,
@@ -589,6 +590,33 @@ export class SupabaseRepository implements Repository {
    * unmasked one, and the whole point is that a phone number never reaches the
    * other side.
    */
+  async listNotifications(): Promise<NotificationEntry[]> {
+    /*
+     * The view, not the table.
+     *
+     * `notifications` carries the queue's own working — attempts, the last
+     * provider error, the dedupe key — and none of it is the recipient's
+     * business. The grant behind the view is column-level for the same
+     * reason: a policy alone would let a client skip the view and read them.
+     */
+    const { data, error } = await this.db
+      .from("my_notifications")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(50);
+    if (error) throw asError(error);
+
+    return (data ?? []).map((row) => ({
+      id: row.id as string,
+      kind: row.kind as string,
+      channel: row.channel as string,
+      state: row.state as NotificationEntry["state"],
+      sentAt: row.sent_at ? new Date(row.sent_at as string) : null,
+      createdAt: new Date(row.created_at as string),
+      bookingId: (row.booking_id as string) ?? null,
+    }));
+  }
+
   async sendMessage(bookingId: string, body: string): Promise<{ notice: string | null }> {
     const response = await fetch("/api/messages", {
       method: "POST",

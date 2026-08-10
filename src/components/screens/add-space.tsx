@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import {
   AlertTriangle,
-  Accessibility,
   ArrowLeft,
   Bath,
   Check,
@@ -26,6 +25,8 @@ import {
 } from "@/components/uploads";
 import { DocumentUpload } from "@/components/uploads";
 import { WeekSchedule } from "@/components/week-schedule";
+import { AccessEditor } from "@/components/access-editor";
+import type { AccessDetails } from "@/lib/access-details";
 import { usePointZone } from "@/lib/use-point-zone";
 import { MIN_DESCRIPTION_CHARS, describesTheRoom } from "@/lib/listing-quality";
 import { PARKING_LIMIT_OPTIONS, PARKING_OPTIONS } from "@/lib/parking";
@@ -95,7 +96,12 @@ export function AddSpace({
   const [requirements, setRequirements] = useState<string[]>([]);
   const [houseRules, setHouseRules] = useState("");
   const [description, setDescription] = useState("");
-  const [accessible, setAccessible] = useState<boolean | null>(null);
+  const [access, setAccess] = useState<AccessDetails>({
+    entrance: null,
+    floor: null,
+    doorwayInches: null,
+    restroom: null,
+  });
   const [restroom, setRestroom] = useState<RestroomOption | null>(null);
   const [blocks, setBlocks] = useState<AvailabilityBlock[]>([]);
   const [bufferMinutes, setBufferMinutes] = useState<number>(0);
@@ -176,7 +182,7 @@ export function AddSpace({
         // Where the pin sits on the illustrated browse map, which is a separate
         // question from where the studio is — see toBrowsePosition.
         ...toBrowsePosition(point),
-        accessible,
+        access,
         restroom,
         description: description.trim(),
         amenities,
@@ -538,18 +544,21 @@ export function AddSpace({
               </>
             )}
 
-            <FieldLabel className="mt-5">
-              Wheelchair accessible <OptionalTag />
-            </FieldLabel>
-            <div className="flex gap-2">
-              <Chip active={accessible === true} onClick={() => setAccessible(true)}>
-                <Accessibility size={12} />
-                Yes
-              </Chip>
-              <Chip active={accessible === false} onClick={() => setAccessible(false)}>
-                No
-              </Chip>
-            </div>
+            {/*
+              The four questions the listing actually shows.
+              
+              This asked "Wheelchair accessible: yes / no", which is the box the
+              four facts were built to replace — and the replacement was only
+              ever wired into the edit screen. Hosts answered honestly, into a
+              column nothing reads, and every listing created here showed
+              "access details not given" while its owner believed they had said.
+            */}
+            <SectionLabel className="mt-6">Getting in</SectionLabel>
+            <p className="font-body font-normal text-[13.5px] mb-3 text-ink-faint">
+              Each one is a tap. Somebody who needs a step-free way in cannot act on
+              &ldquo;accessible&rdquo;, and a shallow step at the door is neither yes nor no.
+            </p>
+            <AccessEditor details={access} onChange={setAccess} />
 
             <FieldLabel className="mt-4">
               Restroom <OptionalTag />

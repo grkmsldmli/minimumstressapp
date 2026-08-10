@@ -57,33 +57,19 @@ export function AccessEditor({
         onPick={(floor) => onChange({ ...details, floor })}
       />
 
-      <div>
-        <p className="font-body font-normal text-[13.5px] mb-1.5 text-ink-soft">
-          Narrowest doorway on the way in
-        </p>
-        <div className="flex items-center gap-2">
-          <input
-            value={details.doorwayInches === null ? "" : String(details.doorwayInches)}
-            onChange={(event) => {
-              const digits = event.target.value.replace(/[^\d]/g, "");
-              onChange({ ...details, doorwayInches: digits === "" ? null : Number(digits) });
-            }}
-            inputMode="numeric"
-            placeholder="Not measured"
-            aria-label="Narrowest doorway in inches"
-            className="font-body text-[15px] outline-none rounded-xl px-3.5 py-3 w-full text-navy"
-            style={{ border: "1px solid #DCE7F2" }}
-          />
-          <span className="font-body font-normal text-[15px] shrink-0 text-ink-soft">inches</span>
-        </div>
-        {/*
-          The number rather than a judgement. "Wide enough" is a claim about a
-          body we know nothing about; a measurement lets the person decide.
-        */}
-        <p className="font-body font-normal text-[13.5px] mt-1.5 text-ink-faint">
-          A tape measure across the frame. Leave blank if you have not measured it.
-        </p>
-      </div>
+      {/*
+        The doorway measurement used to be asked here, and it was the only
+        question on this form that sent somebody looking for a tape measure.
+        Three live listings, none of them answered it — and a field nobody
+        fills is worse than no field, because the form still looks as though
+        we asked.
+
+        The three questions left are each one tap, from memory, standing
+        anywhere. Somebody who genuinely needs the width is told to message the
+        host, which a host can answer in a sentence far more easily than by
+        pre-measuring every door in the building. Stored widths still render on
+        the listing, for any host who did measure.
+      */}
 
       <Question
         label="Restroom"

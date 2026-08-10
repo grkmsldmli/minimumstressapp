@@ -664,7 +664,7 @@ export class MockRepository implements Repository {
       hourlyRateCents: input.hourlyRateCents,
       capacity: input.capacity,
       accessType: input.accessType,
-      accessible: input.accessible,
+      access: input.access,
       restroom: input.restroom,
       timeZone: input.timeZone,
       parking: input.parking,
@@ -685,7 +685,9 @@ export class MockRepository implements Repository {
       mapX: input.mapX,
       mapY: input.mapY,
       area: null,
-      access: { entrance: null, floor: null, doorwayInches: null, restroom: null },
+      // The old boolean, still on the type and still written by nothing. See
+      // the note on NewSpaceInput.access.
+      accessible: null,
       distanceLabel: "your space",
       reviewCount: 0,
       averageRating: null,

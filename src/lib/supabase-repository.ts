@@ -926,7 +926,13 @@ export class SupabaseRepository implements Repository {
         // The coarse, public derivation of the two above — see 0008.
         map_x: input.mapX,
         map_y: input.mapY,
-        accessible: input.accessible,
+        // The four the listing reads. `accessible` is deliberately left null:
+        // 0026 kept the old boolean and stopped writing it, and guessing one
+        // from the other in either direction invents an accessibility claim.
+        entrance_access: input.access.entrance,
+        floor_access: input.access.floor,
+        doorway_inches: input.access.doorwayInches,
+        restroom_access: input.access.restroom,
         restroom: input.restroom?.toLowerCase() ?? null,
         buffer_minutes: input.bufferMinutes,
         timezone: input.timeZone,

@@ -338,7 +338,15 @@ export interface NewSpaceInput {
   /** Resolved from the coordinates above, server-side. See zone-for-point.ts. */
   timeZone: string;
   parking: Parking;
-  accessible: boolean | null;
+  /**
+   * The four answered facts, which is what the listing shows.
+   *
+   * Not the old `accessible` boolean. That column is still there and still
+   * written by nothing — see 0026 — because backfilling it into these would
+   * mean inventing answers, and a fabricated accessibility claim is worse than
+   * a missing one.
+   */
+  access: AccessDetails;
   restroom: RestroomOption | null;
   amenities: string[];
   requirements: string[];

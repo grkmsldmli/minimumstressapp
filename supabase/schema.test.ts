@@ -171,6 +171,14 @@ describe("private columns stay out of the public views", () => {
     // that appears at checkout.
     expect(names).toContain("requirements");
     expect(names).toContain("house_rules");
+
+    /*
+     * Without this the hours are meaningless and nothing says so. The client
+     * reads this view with `select *`, so a missing column arrives as
+     * undefined and falls back to Pacific — every room on one clock, no error
+     * anywhere, and bookings refused for rooms that are genuinely open.
+     */
+    expect(names).toContain("timezone");
   });
 
   it("omits Stripe identifiers and document paths from public_host_profiles", async () => {

@@ -25,6 +25,8 @@ import { type Provider, enabledProviders } from "@/lib/auth-providers";
 import { BOOKING_HORIZON_DAYS } from "@/lib/money";
 import type { NotificationEntry } from "@/lib/notify/history";
 import { rebookable } from "@/lib/rebook";
+import { FALLBACK_ZONE } from "@/lib/timezone";
+import { sessionDayShort } from "@/lib/when";
 import { TERMS_VERSION, hasAcceptedTerms } from "@/lib/terms";
 
 import { type Screen, useApp } from "./app-state";
@@ -833,6 +835,7 @@ export function App() {
           money={activeBooking}
           spaceName={activeBooking.spaceName}
           startsAt={activeBooking.startsAt}
+          timeZone={activeBooking.timeZone}
           /**
            * Back leaves the booking in place, holding the slot, unpaid.
            *
@@ -907,11 +910,12 @@ export function App() {
           meId={profile.id}
           otherName={mine ? "the studio" : (theirs as HostBooking).practitionerName}
           spaceName={mine ? mine.spaceName : "your space"}
-          when={subject.startsAt.toLocaleDateString("en-US", {
-            weekday: "short",
-            month: "short",
-            day: "numeric",
-          })}
+          when={sessionDayShort(
+            subject.startsAt,
+            mine?.timeZone ??
+              spaces.find((s) => s.id === theirs?.spaceId)?.timeZone ??
+              FALLBACK_ZONE,
+          )}
           onBack={() => {
             setThreadBookingId(null);
             back();

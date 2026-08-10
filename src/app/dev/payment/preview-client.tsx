@@ -51,6 +51,7 @@ export function PaymentPreviewClient({
       clientSecret={clientSecret}
       money={money}
       spaceName="Willow"
+      timeZone="America/Los_Angeles"
       startsAt={new Date(startsAt)}
       onBack={() => setState("left")}
       onPaid={() => setState("held")}

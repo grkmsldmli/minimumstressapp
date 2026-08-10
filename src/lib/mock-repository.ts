@@ -46,6 +46,7 @@ import type { AccessDetails } from "./access-details";
 import type { MediaKind, SpaceEdit } from "./domain";
 import type { NotificationEntry } from "./notify/history";
 import { type CategoryKey, roomTypeFor } from "./taxonomy";
+import { FALLBACK_ZONE, addDays, civilIn } from "./timezone";
 import { rejectionReason } from "./uploads";
 
 const ME = "me";
@@ -295,6 +296,9 @@ export class MockRepository implements Repository {
         accessible: seed.accessible,
         restroom: seed.restroom,
         bufferMinutes: seed.bufferMinutes,
+        // Matches the peninsula coordinates above; seed data with a zone from
+        // somewhere else would make every demo slot an hour it is not.
+        timeZone: FALLBACK_ZONE,
         amenities: seed.amenities,
         requirements: seed.requirements,
         houseRules: seed.houseRules,
@@ -439,6 +443,7 @@ export class MockRepository implements Repository {
       practitionerId: ME,
       startsAt,
       endsAt,
+      timeZone: space.timeZone,
       status: "upcoming",
       isInstant,
       wasPro: this.profile.isPro,
@@ -652,6 +657,7 @@ export class MockRepository implements Repository {
       accessType: input.accessType,
       accessible: input.accessible,
       restroom: input.restroom,
+      timeZone: input.timeZone,
       bufferMinutes: input.bufferMinutes,
       amenities: input.amenities,
       requirements: input.requirements,
@@ -754,14 +760,20 @@ export class MockRepository implements Repository {
   /** The soonest slot the host has actually opened, within the next week. */
   private nextOpenSlot(space: HostSpace): Date | null {
     const now = new Date();
+    const today = civilIn(now, space.timeZone);
     for (let dayOffset = 0; dayOffset < 7; dayOffset += 1) {
-      const day = new Date(now.getFullYear(), now.getMonth(), now.getDate() + dayOffset);
+      const day = addDays(today, dayOffset);
       const taken = new Set(
         this.hostBookings
           .filter((b) => b.spaceId === space.id)
           .map((b) => b.startsAt.getTime()),
       );
-      for (const slot of slotStartsForDate(space.availability, day, space.bufferMinutes)) {
+      for (const slot of slotStartsForDate(
+        space.availability,
+        day,
+        space.timeZone,
+        space.bufferMinutes,
+      )) {
         if (slot.getTime() > now.getTime() && !taken.has(slot.getTime())) return slot;
       }
     }

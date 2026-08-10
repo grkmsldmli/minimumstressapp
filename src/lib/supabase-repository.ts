@@ -64,6 +64,7 @@ import type {
 import type { CancellationEvent } from "./reliability";
 import type { CreateBookingInput, Repository, ReviewInput } from "./repository";
 import { type CategoryKey, roomTypeFor } from "./taxonomy";
+import { FALLBACK_ZONE } from "./timezone";
 
 /** Rows as PostgREST returns them, before mapping into domain shapes. */
 interface SpaceRow {
@@ -77,6 +78,7 @@ interface SpaceRow {
   accessible: boolean | null;
   restroom: string | null;
   buffer_minutes: number;
+  timezone: string;
   status?: "pending" | "active" | "delisted";
   description?: string;
   amenities?: string[];
@@ -372,6 +374,9 @@ export class SupabaseRepository implements Repository {
       accessible: row.accessible,
       restroom: (row.restroom as PublicSpace["restroom"]) ?? null,
       bufferMinutes: row.buffer_minutes,
+      // Older rows predate the column; the fallback is the same one the
+      // migration used to seed them, not a guess made here.
+      timeZone: row.timezone || FALLBACK_ZONE,
       amenities: row.amenities ?? [],
       requirements: row.requirements ?? [],
       houseRules: row.house_rules ?? "",
@@ -469,6 +474,7 @@ export class SupabaseRepository implements Repository {
         practitionerId: row.practitioner_id,
         startsAt: new Date(row.starts_at),
         endsAt: new Date(row.ends_at),
+        timeZone: space?.timeZone ?? FALLBACK_ZONE,
         status: row.status as BookingStatus,
         isInstant: row.is_instant,
         wasPro: row.was_pro,
@@ -773,6 +779,9 @@ export class SupabaseRepository implements Repository {
     if (edit.category !== undefined) patch.category = edit.category;
     if (edit.addressLine !== undefined) patch.address_line = edit.addressLine;
     if (edit.lat !== undefined) patch.lat = edit.lat;
+    // Moves with the address. A room that crossed a zone boundary and kept its
+    // old zone would quietly shift every future booking by an hour.
+    if (edit.timeZone !== undefined) patch.timezone = edit.timeZone;
     if (edit.lng !== undefined) patch.lng = edit.lng;
 
     if (Object.keys(patch).length === 0) {
@@ -913,6 +922,7 @@ export class SupabaseRepository implements Repository {
         accessible: input.accessible,
         restroom: input.restroom?.toLowerCase() ?? null,
         buffer_minutes: input.bufferMinutes,
+        timezone: input.timeZone,
         description: input.description,
         amenities: input.amenities,
         requirements: input.requirements,

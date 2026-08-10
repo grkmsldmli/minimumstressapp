@@ -30,6 +30,8 @@ import type { HostBooking, HostSpace, Profile } from "@/lib/domain";
 import { formatCents } from "@/lib/money";
 import { PAYOUT_DELAY_DAYS, describeSpeed } from "@/lib/payouts";
 import type { Standing } from "@/lib/reliability";
+import { FALLBACK_ZONE, zoneAbbreviation } from "@/lib/timezone";
+import { sessionDate, sessionTime } from "@/lib/when";
 import { roomTypeFor } from "@/lib/taxonomy";
 
 import { GroupLabel, ProfileHeader, ProfileRow, SettingToggle } from "./practitioner-extras";
@@ -69,6 +71,14 @@ export function HostDashboard({
   /** Opens the thread for a booking. */
   onMessageBooking?: (bookingId: string) => void;
 }) {
+  /*
+   * A host's bookings are for their own rooms, so the hour belongs on the
+   * room's clock. It costs nothing while a host lives where their studio is,
+   * and is the whole answer the day one of them does not.
+   */
+  const zoneOf = (spaceId: string) =>
+    spaces.find((s) => s.id === spaceId)?.timeZone ?? FALLBACK_ZONE;
+
   const [activeId, setActiveId] = useState<string | null>(spaces[0]?.id ?? null);
   const active = spaces.find((s) => s.id === activeId) ?? spaces[0] ?? null;
 
@@ -368,6 +378,7 @@ export function HostDashboard({
                   <HostBookingRow
                     key={booking.id}
                     booking={booking}
+                    timeZone={zoneOf(booking.spaceId)}
                     index={i}
                     onMessage={onMessageBooking ? () => onMessageBooking(booking.id) : undefined}
                   />
@@ -385,6 +396,7 @@ export function HostDashboard({
                     <HostBookingRow
                       key={booking.id}
                       booking={booking}
+                      timeZone={zoneOf(booking.spaceId)}
                       index={i}
                       past
                       onReview={onReviewBooking ? () => onReviewBooking(booking.id) : undefined}
@@ -514,6 +526,8 @@ export function EditAvailability({
       <div className="flex-1 overflow-y-auto px-6 pt-5 pb-8">
         <p className="font-body font-normal text-[13.5px] mb-3 text-ink-faint">
           Turn on the days you&apos;re open. This repeats every week until you change it again.
+          Times are {zoneAbbreviation(new Date(), space.timeZone)}, taken from the listing&apos;s
+          address — a practitioner elsewhere sees them converted to theirs.
         </p>
         <WeekSchedule blocks={blocks} onChange={setBlocks} />
       </div>
@@ -570,6 +584,13 @@ export function Earnings({
     yearCents >= FORM_1099K_DOLLARS * 100 && thisYear.length >= FORM_1099K_TRANSACTIONS;
 
   const nameFor = (spaceId: string) => spaces.find((s) => s.id === spaceId)?.name ?? "Space";
+  /*
+   * A host's bookings are for their own rooms, so the hour is written on the
+   * room's clock — which matters the moment a host lists a space in a city they
+   * do not live in, and costs nothing while they do.
+   */
+  const zoneFor = (spaceId: string) =>
+    spaces.find((s) => s.id === spaceId)?.timeZone ?? FALLBACK_ZONE;
 
   const exportCsv = () => {
     const rows: string[][] = [["Date", "Space", "Practitioner", "Type", "Net payout"]];
@@ -645,10 +666,7 @@ export function Earnings({
                   </p>
                   <p className="font-body font-normal text-[13.5px] text-ink-faint truncate">
                     {nameFor(booking.spaceId)} ·{" "}
-                    {booking.startsAt.toLocaleDateString("en-US", {
-                      month: "short",
-                      day: "numeric",
-                    })}
+                    {sessionDate(booking.startsAt, zoneFor(booking.spaceId))}
                   </p>
                 </div>
                 <p className="font-body font-semibold text-[14.5px] text-navy shrink-0">
@@ -903,12 +921,15 @@ export function HostProfile({
  */
 function HostBookingRow({
   booking,
+  timeZone,
   index,
   past = false,
   onReview,
   onMessage,
 }: {
   booking: HostBooking;
+  /** The room's zone — the clock this session's hour is written on. */
+  timeZone: string;
   index: number;
   past?: boolean;
   onReview?: () => void;
@@ -942,11 +963,8 @@ function HostBookingRow({
             </p>
             <p className="font-body font-normal text-[13.5px] text-ink-soft truncate">
               {booking.practitionerCraft} ·{" "}
-              {booking.startsAt.toLocaleDateString("en-US", { month: "short", day: "numeric" })}{" "}
-              {booking.startsAt.toLocaleTimeString("en-US", {
-                hour: "numeric",
-                minute: "2-digit",
-              })}
+              {sessionDate(booking.startsAt, timeZone)}{" "}
+              {sessionTime(booking.startsAt, timeZone)}
             </p>
           </div>
         </div>

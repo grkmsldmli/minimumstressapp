@@ -26,6 +26,8 @@ import {
 } from "@/components/uploads";
 import { DocumentUpload } from "@/components/uploads";
 import { WeekSchedule } from "@/components/week-schedule";
+import { usePointZone } from "@/lib/use-point-zone";
+import { zoneAbbreviation } from "@/lib/timezone";
 import type { AvailabilityBlock } from "@/lib/availability";
 import { isValidSchedule } from "@/lib/availability";
 import type { NewSpaceInput } from "@/lib/domain";
@@ -68,6 +70,14 @@ export function AddSpace({
    * nobody can find is a practitioner standing on the wrong street.
    */
   const [point, setPoint] = useState<LatLng | null>(null);
+  /**
+   * Which clock the hours below are on.
+   *
+   * Derived from the pin rather than asked for. The host is describing a room,
+   * and the room's timezone is a fact about where it stands — one more question
+   * on this form would only add a way to answer it wrongly.
+   */
+  const timeZone = usePointZone(point);
   const [address, setAddress] = useState("");
   const [category, setCategory] = useState<CategoryKey | null>(null);
   const [rate, setRate] = useState("");
@@ -151,6 +161,7 @@ export function AddSpace({
         addressLine: address.trim(),
         lat: point.lat,
         lng: point.lng,
+        timeZone,
         // Where the pin sits on the illustrated browse map, which is a separate
         // question from where the studio is — see toBrowsePosition.
         ...toBrowsePosition(point),
@@ -535,7 +546,9 @@ export function AddSpace({
             </SectionLabel>
             <p className="font-body font-normal text-[13.5px] mb-3 text-ink-faint">
               Turn on the days you&apos;re open. Each day can hold several separate blocks, so you
-              can keep the gaps for your own use.
+              can keep the gaps for your own use. Times are{" "}
+              {zoneAbbreviation(new Date(), timeZone)}, taken from your address — a practitioner
+              somewhere else sees these hours converted to theirs.
             </p>
             <WeekSchedule blocks={blocks} onChange={setBlocks} />
 

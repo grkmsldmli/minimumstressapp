@@ -13,6 +13,7 @@ import {
   quote,
   resolveCancellation,
 } from "./money";
+import { addDays, instantFrom } from "./timezone";
 
 /**
  * Rates chosen to exercise rounding edges: a half-cent service fee (2250 -> 450),
@@ -281,9 +282,23 @@ describe("instant window, measured against wall-clock time", () => {
 });
 
 describe("booking horizon", () => {
-  const now = new Date(2026, 7, 3, 12, 0, 0);
-  const daysFromNow = (days: number, hour = 9) =>
-    new Date(2026, 7, 3 + days, hour, 0, 0);
+  /*
+   * Built in a named zone rather than with `new Date(y, m, d)`, which reads
+   * whichever zone the test runner happens to be in. That is the exact habit
+   * that let the horizon and the slot grid disagree in production, and a test
+   * written the same way would agree with a bug instead of catching it.
+   */
+  const ZONE = "America/Los_Angeles";
+  const BASE = { year: 2026, month: 8, day: 3 };
+
+  const at = (day: typeof BASE, hour: number): Date => {
+    const instant = instantFrom(day, hour * 60, ZONE);
+    if (!instant) throw new Error(`${hour}:00 does not exist on this day`);
+    return instant;
+  };
+
+  const now = at(BASE, 12);
+  const daysFromNow = (days: number, hour = 9) => at(addDays(BASE, days), hour);
 
   /**
    * One window, and it is the whole schedule.
@@ -294,29 +309,29 @@ describe("booking horizon", () => {
    * account five days out of seven.
    */
   it("lets anybody reach the whole week", () => {
-    expect(isWithinBookingHorizon(daysFromNow(1), now, false)).toBe(true);
-    expect(isWithinBookingHorizon(daysFromNow(7, 20), now, false)).toBe(true);
+    expect(isWithinBookingHorizon(daysFromNow(1), now, false, ZONE)).toBe(true);
+    expect(isWithinBookingHorizon(daysFromNow(7, 20), now, false, ZONE)).toBe(true);
   });
 
   /** A card authorisation lives about this long, and is held not charged. */
   it("stops at eight days, paid or not", () => {
-    expect(isWithinBookingHorizon(daysFromNow(8), now, false)).toBe(false);
-    expect(isWithinBookingHorizon(daysFromNow(8), now, true)).toBe(false);
+    expect(isWithinBookingHorizon(daysFromNow(8), now, false, ZONE)).toBe(false);
+    expect(isWithinBookingHorizon(daysFromNow(8), now, true, ZONE)).toBe(false);
   });
 
   it("gives Pro no further reach", () => {
     for (const day of [0, 1, 4, 7, 8]) {
       expect(
-        isWithinBookingHorizon(daysFromNow(day, 20), now, true),
+        isWithinBookingHorizon(daysFromNow(day, 20), now, true, ZONE),
         `day ${day}`,
-      ).toBe(isWithinBookingHorizon(daysFromNow(day, 20), now, false));
+      ).toBe(isWithinBookingHorizon(daysFromNow(day, 20), now, false, ZONE));
     }
   });
 
   it("rejects slots in the past for both tiers", () => {
     const past = new Date(now.getTime() - 60_000);
-    expect(isWithinBookingHorizon(past, now, false)).toBe(false);
-    expect(isWithinBookingHorizon(past, now, true)).toBe(false);
+    expect(isWithinBookingHorizon(past, now, false, ZONE)).toBe(false);
+    expect(isWithinBookingHorizon(past, now, true, ZONE)).toBe(false);
   });
 });
 

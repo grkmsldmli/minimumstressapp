@@ -12,6 +12,7 @@
  */
 
 import { slotStartsForDate, type AvailabilityBlock } from "./availability";
+import { civilIn } from "./timezone";
 import {
   MAX_UPCOMING_BOOKINGS_FREE,
   bookingMoneyFromQuote,
@@ -27,6 +28,8 @@ export interface SpaceFacts {
   hourlyRateCents: number;
   bufferMinutes: number;
   status: "pending" | "active" | "delisted";
+  /** The room's own zone. Availability minutes are wall-clock times in it. */
+  timeZone: string;
   availability: AvailabilityBlock[];
 }
 
@@ -91,13 +94,25 @@ export function planBooking(input: {
 
   // The horizon is a paid Pro benefit, so it is checked against the stored
   // flag rather than anything the caller asserted.
-  if (!isWithinBookingHorizon(startsAt, now, practitioner.isPro)) {
+  if (!isWithinBookingHorizon(startsAt, now, practitioner.isPro, space.timeZone)) {
     return { ok: false, reason: "beyond_booking_horizon" };
   }
 
   // The slot grid is a convenience, not a control. Without this check a
   // crafted request books 3am on a day the host never opened.
-  const offered = slotStartsForDate(space.availability, startsAt, space.bufferMinutes);
+  /*
+   * Which of the room's days this instant falls on, asked of the room's own
+   * calendar. Reading the fields off `startsAt` directly is what broke this:
+   * the server's calendar is UTC, so a Tuesday evening in California arrived
+   * as Wednesday and was checked against the wrong day's hours.
+   */
+  const day = civilIn(startsAt, space.timeZone);
+  const offered = slotStartsForDate(
+    space.availability,
+    day,
+    space.timeZone,
+    space.bufferMinutes,
+  );
   if (!offered.some((slot) => slot.getTime() === startsAt.getTime())) {
     return { ok: false, reason: "slot_not_open" };
   }

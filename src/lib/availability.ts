@@ -8,6 +8,7 @@
  */
 
 import type { AvailabilityBlock } from "./taxonomy";
+import { type CivilDate, instantFrom, weekdayOf } from "./timezone";
 
 export type { AvailabilityBlock };
 
@@ -87,19 +88,33 @@ export function normalize(blocks: readonly AvailabilityBlock[]): AvailabilityBlo
  * A slot is offered only if the whole hour, plus the host's turnover buffer,
  * fits inside one availability block — so a 7-8am block yields exactly one 7am
  * slot rather than a 7:30 start that would overrun.
+ *
+ * The date is a `CivilDate` and the zone is the room's, and both are required
+ * for the same reason. This used to take a `Date` and read its local fields,
+ * which meant the answer depended on where the code was running: the browser
+ * built the grid in the practitioner's zone and the server rebuilt it in UTC,
+ * so the two never agreed on what a 9am block meant and every booking was
+ * refused as an hour the host had not opened. A day on a wall calendar has no
+ * timezone to get wrong, and naming the room's zone once is what turns it into
+ * the same list of instants everywhere.
  */
 export function slotStartsForDate(
   blocks: readonly AvailabilityBlock[],
-  date: Date,
+  date: CivilDate,
+  timeZone: string,
   bufferMinutes = 0,
 ): Date[] {
   const needed = 60 + bufferMinutes;
   const starts: Date[] = [];
 
-  for (const block of blocksForDay(blocks, date.getDay())) {
+  for (const block of blocksForDay(blocks, weekdayOf(date))) {
     if (block.endMinute <= block.startMinute) continue;
     for (let m = block.startMinute; m + needed <= block.endMinute; m += 60) {
-      starts.push(new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, m, 0, 0));
+      // Null on the spring-forward morning, when the clock skips the hour the
+      // host opened. Dropped rather than shifted: an hour that never happens
+      // cannot be sat in, and moving it would book a different one silently.
+      const start = instantFrom(date, m, timeZone);
+      if (start) starts.push(start);
     }
   }
 

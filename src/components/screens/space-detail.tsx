@@ -18,6 +18,14 @@ import {
   quote,
 } from "@/lib/money";
 import { ACCESS_TYPES, requirementsByKind, roomTypeFor } from "@/lib/taxonomy";
+import {
+  type CivilDate,
+  civilIn,
+  sameCivil,
+  viewerZone,
+  zoneAbbreviation,
+  zonesDiffer,
+} from "@/lib/timezone";
 
 /** How often the clock is re-read, so "Instant" reflects real time. */
 const TICK_MS = 30_000;
@@ -81,15 +89,15 @@ export function SpaceDetail({
   const [booking, setBooking] = useState(false);
   const now = useNow();
   /**
-   * The day being looked at, as a date rather than an index.
+   * The day being looked at, on the studio's calendar.
    *
-   * It was an offset into an eight-item strip, which only means anything while
-   * the strip exists. A calendar can land on any day of any month.
+   * It was an offset into an eight-item strip, then a `Date`, and a `Date` was
+   * still wrong: reading its day fields asks the reader's timezone what day it
+   * is, and the room is the one with opening hours. A room's Tuesday is the
+   * same Tuesday from anywhere, so the day carries no zone at all.
    */
-  const [day, setDay] = useState<Date>(() =>
-    startAt
-      ? new Date(startAt.getFullYear(), startAt.getMonth(), startAt.getDate())
-      : new Date(now.getFullYear(), now.getMonth(), now.getDate()),
+  const [day, setDay] = useState<CivilDate>(() =>
+    civilIn(startAt ?? now, space.timeZone),
   );
   const [selected, setSelected] = useState<Date | null>(startAt ?? null);
 
@@ -101,16 +109,30 @@ export function SpaceDetail({
    * after the rule had stopped agreeing.
    */
   const slots = useMemo<Slot[]>(() => {
-    return slotStartsForDate(space.availability, day, space.bufferMinutes)
+    return slotStartsForDate(space.availability, day, space.timeZone, space.bufferMinutes)
       .filter((startsAt) => startsAt.getTime() > now.getTime())
-      .filter((startsAt) => isWithinBookingHorizon(startsAt, now, isPro))
+      .filter((startsAt) => isWithinBookingHorizon(startsAt, now, isPro, space.timeZone))
       .map((startsAt) => ({ startsAt, isInstant: isInstantSlot(startsAt, now) }));
-  }, [day, space.availability, space.bufferMinutes, now, isPro]);
+  }, [day, space.availability, space.timeZone, space.bufferMinutes, now, isPro]);
 
-  const isToday =
-    day.getFullYear() === now.getFullYear() &&
-    day.getMonth() === now.getMonth() &&
-    day.getDate() === now.getDate();
+  const isToday = sameCivil(day, civilIn(now, space.timeZone));
+
+  /*
+   * Times are the room's times. Said out loud only when the reader is somewhere
+   * else, because for everybody in the same city it is noise — but for anyone
+   * who is not, a bare "9:00 AM" is the difference between arriving on time and
+   * arriving three hours early.
+   */
+  const zoneNote = zonesDiffer(space.timeZone, viewerZone(), now)
+    ? zoneAbbreviation(now, space.timeZone)
+    : null;
+
+  const clock = (at: Date) =>
+    at.toLocaleTimeString("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+      timeZone: space.timeZone,
+    });
 
   const selectedIsInstant = selected ? isInstantSlot(selected, now) : false;
 
@@ -261,15 +283,22 @@ export function SpaceDetail({
         <div className="mb-4">
           <BookingCalendar
             availability={space.availability}
+            timeZone={space.timeZone}
             selected={day}
             now={now}
-            onPick={(picked: Date) => {
+            onPick={(picked) => {
               setDay(picked);
               setSelected(null);
             }}
           />
         </div>
 
+
+        {zoneNote && slots.length > 0 && (
+          <p className="font-body font-normal text-[13px] text-ink-faint mb-2">
+            Times shown in {zoneNote}, where the room is.
+          </p>
+        )}
 
         {slots.length === 0 ? (
           <p className="font-body font-normal text-[14px] text-ink-faint">
@@ -306,7 +335,7 @@ export function SpaceDetail({
                       {chargesInstantFee ? "Instant" : "Free"}
                     </span>
                   )}
-                  {startsAt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
+                  {clock(startsAt)}
                 </button>
               );
             })}
@@ -440,7 +469,7 @@ export function SpaceDetail({
           {booking
             ? "One moment…"
             : selected
-              ? `Book ${selected.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })} · ${formatCents(priced.totalCents)}`
+              ? `Book ${clock(selected)}${zoneNote ? ` ${zoneNote}` : ""} · ${formatCents(priced.totalCents)}`
             : slots.length === 0
               ? isToday
                 ? "Nothing left today"

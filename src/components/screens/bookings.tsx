@@ -20,6 +20,7 @@ import { CancellationConsequence } from "@/components/standing-notice";
 import type { Booking, SpaceAccessDetails } from "@/lib/domain";
 import { PRO_PRICE_CENTS, formatCents, isFreeCancellation } from "@/lib/money";
 import type { Standing } from "@/lib/reliability";
+import { sessionDate, sessionTime, sessionWeekday } from "@/lib/when";
 
 /* ------------------------------------------------------------------ */
 /*  Confirmed                                                          */
@@ -38,13 +39,10 @@ export function Confirmed({
   onGoPro: () => void;
   showProUpsell: boolean;
 }) {
-  const startLabel = booking.startsAt.toLocaleTimeString("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-  });
+  const startLabel = sessionTime(booking.startsAt, booking.timeZone);
   const dayLabel = isToday(booking.startsAt)
     ? "today"
-    : booking.startsAt.toLocaleDateString("en-US", { weekday: "long" });
+    : sessionWeekday(booking.startsAt, booking.timeZone);
 
   return (
     <div
@@ -334,10 +332,7 @@ export function MyBookings({
                           {booking.spaceName} · {booking.roomType}
                         </p>
                         <p className="font-body font-normal text-[13.5px] text-ink-faint">
-                          {booking.startsAt.toLocaleDateString("en-US", {
-                            month: "short",
-                            day: "numeric",
-                          })}
+                          {sessionDate(booking.startsAt, booking.timeZone)}
                           {booking.status === "cancelled_by_host" && " · refunded and credited"}
                         </p>
                       </div>
@@ -413,8 +408,8 @@ function UpcomingBooking({
             {booking.spaceName} · {booking.roomType}
           </p>
           <p className="font-body font-normal text-[14px] mt-0.5 text-ink-soft">
-            {booking.startsAt.toLocaleDateString("en-US", { month: "short", day: "numeric" })} ·{" "}
-            {booking.startsAt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })} ·{" "}
+            {sessionDate(booking.startsAt, booking.timeZone)} ·{" "}
+            {sessionTime(booking.startsAt, booking.timeZone)} ·{" "}
             {formatCents(booking.totalCents)}
           </p>
           {codeReady && (

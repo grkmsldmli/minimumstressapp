@@ -3,6 +3,7 @@
 import { RotateCcw } from "lucide-react";
 
 import type { Rebookable } from "@/lib/rebook";
+import { sessionDate, sessionHour, sessionWeekday } from "@/lib/when";
 
 /**
  * Rooms somebody has used, at the hour they used them.
@@ -44,11 +45,8 @@ export function BookAgain({
           >
             <p className="font-body font-medium text-[15px] truncate text-navy">{room.spaceName}</p>
             <p className="font-body font-normal text-[13.5px] mt-0.5 text-sky-text">
-              {room.nextStart.toLocaleDateString("en-US", { weekday: "long" })}{" "}
-              {room.nextStart.toLocaleTimeString("en-US", {
-                hour: "numeric",
-                minute: room.nextStart.getMinutes() === 0 ? undefined : "2-digit",
-              })}
+              {sessionWeekday(room.nextStart, room.timeZone)}{" "}
+              {sessionHour(room.nextStart, room.timeZone)}
             </p>
             {/*
               What they are repeating, so the suggestion is checkable rather
@@ -56,7 +54,7 @@ export function BookAgain({
             */}
             <p className="font-body font-normal text-[12px] mt-0.5 text-ink-faint">
               Last used{" "}
-              {room.lastStart.toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+              {sessionDate(room.lastStart, room.timeZone)}
             </p>
           </button>
         ))}

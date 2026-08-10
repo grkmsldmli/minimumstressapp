@@ -80,19 +80,25 @@ export function hasOptedOut(recipient: Recipient, kind: string): boolean {
 /**
  * How a time is written to a person.
  *
- * Note for later, and it is a real gap rather than a detail: the app has no
- * timezone model. Availability, slots and this formatter all work in whatever
- * zone the process happens to be in, which is fine while every studio and
- * every practitioner is in one region and wrong the day they are not. Fixing
- * it belongs with the space's coordinates — which now exist — not here.
+ * In the room's zone, always. This used to take whatever zone the process was
+ * running in, which for email means the server — so a confirmation for a 9am
+ * session in California went out reading 4pm, and the one thing an email about
+ * a booking has to get right is when it is.
+ *
+ * The zone comes from the space rather than the recipient on purpose. Both
+ * sides need to meet at the same door at the same moment, and the door is on
+ * the room's clock; a practitioner reading their own zone would have to do the
+ * conversion themselves to know when to leave.
  */
-export function formatWhen(date: Date): string {
+export function formatWhen(date: Date, timeZone: string): string {
   return date.toLocaleString("en-US", {
     weekday: "long",
     month: "short",
     day: "numeric",
     hour: "numeric",
     minute: "2-digit",
+    timeZone,
+    timeZoneName: "short",
   });
 }
 
@@ -107,6 +113,7 @@ interface BookingRow {
   spaces: {
     name: string;
     host_id: string;
+    timezone: string;
     address_line: string | null;
     entry_instructions: string | null;
   };
@@ -116,7 +123,7 @@ async function loadBooking(admin: SupabaseClient, bookingId: string): Promise<Bo
   const { data } = await admin
     .from("bookings")
     .select(
-      "id, practitioner_id, starts_at, total_cents, host_rate_cents, access_code, spaces!inner(name, host_id, address_line, entry_instructions)",
+      "id, practitioner_id, starts_at, total_cents, host_rate_cents, access_code, spaces!inner(name, host_id, timezone, address_line, entry_instructions)",
     )
     .eq("id", bookingId)
     .maybeSingle();
@@ -140,7 +147,7 @@ export async function notifyBookingCreated(
     const booking = await loadBooking(admin, bookingId);
     if (!booking) return;
 
-    const when = formatWhen(new Date(booking.starts_at));
+    const when = formatWhen(new Date(booking.starts_at), booking.spaces.timezone);
 
     const [practitioner, host] = await Promise.all([
       recipientFor(admin, booking.practitioner_id),
@@ -183,7 +190,7 @@ export async function notifyCancellation(
     const booking = await loadBooking(admin, bookingId);
     if (!booking) return;
 
-    const when = formatWhen(new Date(booking.starts_at));
+    const when = formatWhen(new Date(booking.starts_at), booking.spaces.timezone);
 
     // A practitioner cancelling tells the host; a host cancelling tells the
     // practitioner. Each side hears about the thing done to them.
@@ -284,7 +291,7 @@ export async function notifyAccessCodesReady(
       bookingId: booking.id,
       context: {
         spaceName: booking.spaces.name,
-        when: formatWhen(new Date(booking.starts_at)),
+        when: formatWhen(new Date(booking.starts_at), booking.spaces.timezone),
         address: booking.spaces.address_line ?? undefined,
         accessCode: booking.access_code ?? undefined,
         entryInstructions: booking.spaces.entry_instructions ?? undefined,
@@ -326,7 +333,7 @@ export async function rebuildPending(admin: SupabaseClient) {
       message: render(row.kind as NotificationKind, {
         name: recipient.name,
         spaceName: booking.spaces.name,
-        when: formatWhen(new Date(booking.starts_at)),
+        when: formatWhen(new Date(booking.starts_at), booking.spaces.timezone),
         address: booking.spaces.address_line ?? undefined,
         accessCode: booking.access_code ?? undefined,
         entryInstructions: booking.spaces.entry_instructions ?? undefined,

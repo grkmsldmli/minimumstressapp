@@ -73,7 +73,7 @@ export async function createBooking(
 ): Promise<CreateBookingResult> {
   const { data: space, error: spaceError } = await admin
     .from("spaces")
-    .select("id, host_id, hourly_rate_cents, buffer_minutes, status")
+    .select("id, host_id, hourly_rate_cents, buffer_minutes, timezone, status")
     .eq("id", request.spaceId)
     .maybeSingle();
   if (spaceError) throw spaceError;
@@ -132,6 +132,7 @@ export async function createBooking(
           hostId: space.host_id,
           hourlyRateCents: space.hourly_rate_cents,
           bufferMinutes: space.buffer_minutes,
+          timeZone: space.timezone,
           status: space.status,
           availability: (blocks ?? []).map((b) => ({
             weekday: b.weekday,

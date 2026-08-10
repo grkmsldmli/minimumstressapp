@@ -5,6 +5,15 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 
 import type { AvailabilityBlock } from "@/lib/availability";
 import { BOOKING_HORIZON_DAYS } from "@/lib/money";
+import {
+  type CivilDate,
+  addDays,
+  civilIn,
+  compareCivil,
+  civilToNoon,
+  sameCivil,
+  weekdayOf,
+} from "@/lib/timezone";
 
 /**
  * A month, so somebody can see the shape of a room's week.
@@ -20,27 +29,32 @@ import { BOOKING_HORIZON_DAYS } from "@/lib/money";
  * authorisation window are shown rather than hidden, greyed and unclickable,
  * with one line saying when they open. That is more information than the strip
  * gave, not less, and it still promises nothing the payment model cannot keep.
+ *
+ * Every date here is the room's date, not the reader's. A practitioner in New
+ * York looking at a studio in California is choosing among the studio's days,
+ * and "today" is today where the room is — otherwise the grid and the server
+ * would disagree by a day for anyone who is not standing in the same city.
  */
 
 const WEEKDAY_INITIALS = ["S", "M", "T", "W", "T", "F", "S"];
 
-const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
-const sameDay = (a: Date, b: Date) => startOfDay(a).getTime() === startOfDay(b).getTime();
-
 export function BookingCalendar({
   availability,
+  timeZone,
   selected,
   now,
   onPick,
 }: {
   availability: readonly AvailabilityBlock[];
+  /** The room's zone, which is the calendar this grid is drawn in. */
+  timeZone: string;
   /** The day being shown below. Null before anything is chosen. */
-  selected: Date | null;
+  selected: CivilDate | null;
   now: Date;
-  onPick: (day: Date) => void;
+  onPick: (day: CivilDate) => void;
 }) {
-  const today = startOfDay(now);
-  const [month, setMonth] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1));
+  const today = useMemo(() => civilIn(now, timeZone), [now, timeZone]);
+  const [month, setMonth] = useState(() => ({ year: today.year, month: today.month }));
 
   /** Weekdays this room ever opens. The pattern repeats every week. */
   const openWeekdays = useMemo(
@@ -49,33 +63,35 @@ export function BookingCalendar({
   );
 
   const lastBookable = useMemo(
-    () =>
-      new Date(today.getFullYear(), today.getMonth(), today.getDate() + BOOKING_HORIZON_DAYS),
+    () => addDays(today, BOOKING_HORIZON_DAYS),
     [today],
   );
 
   /** Whole weeks, so the grid never jumps as months change length. */
   const cells = useMemo(() => {
-    const first = new Date(month.getFullYear(), month.getMonth(), 1);
-    const start = new Date(first);
-    start.setDate(1 - first.getDay());
+    const first: CivilDate = { year: month.year, month: month.month, day: 1 };
+    const start = addDays(first, -weekdayOf(first));
 
     return Array.from({ length: 42 }, (_, i) => {
-      const day = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i);
-      const inMonth = day.getMonth() === month.getMonth();
-      const open = openWeekdays.has(day.getDay());
-      const past = day < today;
-      const beyond = day > lastBookable;
+      const day = addDays(start, i);
+      const inMonth = day.month === month.month && day.year === month.year;
+      const open = openWeekdays.has(weekdayOf(day));
+      const past = compareCivil(day, today) < 0;
+      const beyond = compareCivil(day, lastBookable) > 0;
 
       return { day, inMonth, open, past, beyond, bookable: open && !past && !beyond };
     });
   }, [month, openWeekdays, today, lastBookable]);
 
-  const atFirstMonth =
-    month.getFullYear() === today.getFullYear() && month.getMonth() === today.getMonth();
+  const atFirstMonth = month.year === today.year && month.month === today.month;
 
-  const step = (by: number) =>
-    setMonth(new Date(month.getFullYear(), month.getMonth() + by, 1));
+  const step = (by: number) => {
+    const moved = addDays({ year: month.year, month: month.month, day: 15 }, by * 30);
+    setMonth({ year: moved.year, month: moved.month });
+  };
+
+  /** Only for month names and day labels, where a real Date is what Intl wants. */
+  const noon = (day: CivilDate) => civilToNoon(day, timeZone);
 
   return (
     <div>
@@ -96,7 +112,11 @@ export function BookingCalendar({
         </button>
 
         <p className="font-body font-medium text-[15px] text-navy">
-          {month.toLocaleDateString("en-US", { month: "long", year: "numeric" })}
+          {noon({ ...month, day: 1 }).toLocaleDateString("en-US", {
+            month: "long",
+            year: "numeric",
+            timeZone,
+          })}
         </p>
 
         <button
@@ -124,19 +144,20 @@ export function BookingCalendar({
 
       <div className="grid grid-cols-7 gap-1">
         {cells.map(({ day, inMonth, open, past, beyond, bookable }) => {
-          const isSelected = selected !== null && sameDay(day, selected);
-          const isToday = sameDay(day, today);
+          const isSelected = selected !== null && sameCivil(day, selected);
+          const isToday = sameCivil(day, today);
 
           return (
             <button
-              key={day.toISOString()}
+              key={`${day.year}-${day.month}-${day.day}`}
               type="button"
               disabled={!bookable}
               onClick={() => onPick(day)}
-              aria-label={day.toLocaleDateString("en-US", {
+              aria-label={noon(day).toLocaleDateString("en-US", {
                 weekday: "long",
                 month: "long",
                 day: "numeric",
+                timeZone,
               })}
               className="aspect-square rounded-lg flex flex-col items-center justify-center font-body text-[14px] press"
               style={{
@@ -159,7 +180,7 @@ export function BookingCalendar({
                 opacity: past || !inMonth ? 0.45 : 1,
               }}
             >
-              {day.getDate()}
+              {day.day}
               {/* A dot only where the room actually opens. */}
               <span
                 className="mt-0.5 rounded-full"

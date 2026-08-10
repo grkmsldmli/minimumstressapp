@@ -1,4 +1,5 @@
 import type { Booking } from "./domain";
+import { addDays, civilIn, compareCivil, instantFrom, minuteOfDayIn, weekdayOf } from "./timezone";
 
 /**
  * Rooms somebody has used before, and the hour they used them at.
@@ -21,6 +22,8 @@ export interface Rebookable {
   nextStart: Date;
   /** When they were last there, for the label. */
   lastStart: Date;
+  /** The room's zone, so the suggested hour is written the way it was booked. */
+  timeZone: string;
 }
 
 /**
@@ -48,8 +51,16 @@ export function rebookable(
 
   return [...bySpace.values()]
     .map((booking) => {
-      const nextStart = nextOccurrence(booking.startsAt, now, horizonDays);
-      return nextStart ? { spaceId: booking.spaceId, spaceName: booking.spaceName, nextStart, lastStart: booking.startsAt } : null;
+      const nextStart = nextOccurrence(booking.startsAt, now, horizonDays, booking.timeZone);
+      return nextStart
+        ? {
+            spaceId: booking.spaceId,
+            spaceName: booking.spaceName,
+            nextStart,
+            lastStart: booking.startsAt,
+            timeZone: booking.timeZone,
+          }
+        : null;
     })
     .filter((entry): entry is Rebookable => entry !== null)
     .slice(0, limit);
@@ -61,19 +72,35 @@ export function rebookable(
  * Returns null when that lands outside the window — offering a slot the
  * booking rules would refuse is the fault this app keeps finding, and there is
  * no honest version of a shortcut that leads to a refusal.
+ *
+ * Counted on the room's calendar, which is the same rule the slot grid and the
+ * horizon check follow. Read in the practitioner's zone instead, "Tuesday 5pm"
+ * for a studio three hours west becomes Tuesday 2pm there, or Monday
+ * altogether — and the shortcut would lead to exactly the refusal above.
  */
-export function nextOccurrence(previous: Date, now: Date, horizonDays: number): Date | null {
-  const candidate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  candidate.setHours(previous.getHours(), previous.getMinutes(), 0, 0);
+export function nextOccurrence(
+  previous: Date,
+  now: Date,
+  horizonDays: number,
+  timeZone: string,
+): Date | null {
+  const wanted = minuteOfDayIn(previous, timeZone);
+  const wantedWeekday = weekdayOf(civilIn(previous, timeZone));
+  const today = civilIn(now, timeZone);
 
   // Step forward to the same weekday. Today counts only if the hour is still
   // ahead of us — a 10am slot suggested at 3pm is not a suggestion.
-  const daysAhead = (previous.getDay() - candidate.getDay() + 7) % 7;
-  candidate.setDate(candidate.getDate() + daysAhead);
-  if (candidate.getTime() <= now.getTime()) candidate.setDate(candidate.getDate() + 7);
+  let day = addDays(today, (wantedWeekday - weekdayOf(today) + 7) % 7);
 
-  const limit = new Date(now.getFullYear(), now.getMonth(), now.getDate() + horizonDays);
-  limit.setHours(23, 59, 59, 999);
+  let candidate = instantFrom(day, wanted, timeZone);
+  if (!candidate || candidate.getTime() <= now.getTime()) {
+    day = addDays(day, 7);
+    candidate = instantFrom(day, wanted, timeZone);
+  }
 
-  return candidate <= limit ? candidate : null;
+  // Null only if that hour does not exist on the day it landed on, which is
+  // the daylight-saving gap. There is no honest hour to offer instead.
+  if (!candidate) return null;
+
+  return compareCivil(day, addDays(today, horizonDays)) <= 0 ? candidate : null;
 }

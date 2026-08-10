@@ -97,6 +97,14 @@ export interface PublicSpace {
   accessible: boolean | null;
   restroom: RestroomOption | null;
   bufferMinutes: number;
+  /**
+   * IANA zone of the room, e.g. "America/Los_Angeles".
+   *
+   * Public because it has to be: availability is stored as wall-clock minutes,
+   * and without knowing whose wall, a 9am block cannot be turned into a moment
+   * in time. It is also not a secret — a rough location is already shown.
+   */
+  timeZone: string;
   amenities: string[];
   /** Keys from REQUIREMENTS in taxonomy.ts, shown before booking. */
   requirements: string[];
@@ -231,6 +239,8 @@ export interface SpaceEdit {
   addressLine?: string;
   lat?: number;
   lng?: number;
+  /** Re-resolved whenever the coordinates above change, never typed. */
+  timeZone?: string;
 }
 
 /** The money frozen onto the booking at creation. Mirrors bookings' columns. */
@@ -252,6 +262,15 @@ export interface Booking extends BookingMoneyRecord {
   practitionerId: string;
   startsAt: Date;
   endsAt: Date;
+  /**
+   * The room's zone, carried so times can be written the way the host meant.
+   *
+   * `startsAt` is an absolute instant and always correct; what it is *called*
+   * is not. "2:00 PM" formatted in the reader's zone is a different afternoon
+   * from the one the host opened, and somebody who moves, travels or books
+   * across a state line would be told the wrong hour by their own phone.
+   */
+  timeZone: string;
   status: BookingStatus;
   isInstant: boolean;
   wasPro: boolean;
@@ -303,6 +322,8 @@ export interface NewSpaceInput {
   lng: number;
   mapX: number;
   mapY: number;
+  /** Resolved from the coordinates above, server-side. See zone-for-point.ts. */
+  timeZone: string;
   accessible: boolean | null;
   restroom: RestroomOption | null;
   amenities: string[];

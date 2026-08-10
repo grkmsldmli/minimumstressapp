@@ -8,11 +8,27 @@ import {
   type SpaceFacts,
 } from "./booking-plan";
 import { INSTANT_FEE_CENTS, MAX_UPCOMING_BOOKINGS_FREE } from "./money";
+import { addDays, instantFrom } from "./timezone";
 
-/** A Monday at 10:00, with the room open 09:00–17:00 every weekday. */
-const NOW = new Date(2026, 7, 3, 10, 0, 0);
-const at = (hour: number, dayOffset = 0) =>
-  new Date(2026, 7, 3 + dayOffset, hour, 0, 0);
+/**
+ * A Monday at 10:00 in the room's own city, with the room open 09:00-17:00
+ * every weekday.
+ *
+ * The zone is named rather than inherited from the test runner. `planBooking`
+ * runs on a server in UTC while the times it judges were chosen on a phone
+ * somewhere else, so a fixture built from the ambient zone would only ever
+ * prove that the runner agrees with itself.
+ */
+const ZONE = "America/Los_Angeles";
+const MONDAY = { year: 2026, month: 8, day: 3 };
+
+const at = (hour: number, dayOffset = 0): Date => {
+  const instant = instantFrom(addDays(MONDAY, dayOffset), hour * 60, ZONE);
+  if (!instant) throw new Error(`${hour}:00 does not exist on that day`);
+  return instant;
+};
+
+const NOW = at(10);
 
 const SPACE: SpaceFacts = {
   id: "sp_1",
@@ -20,6 +36,7 @@ const SPACE: SpaceFacts = {
   hourlyRateCents: 4500,
   bufferMinutes: 0,
   status: "active",
+  timeZone: ZONE,
   availability: [1, 2, 3, 4, 5].map((weekday) => ({
     weekday,
     startMinute: 9 * 60,

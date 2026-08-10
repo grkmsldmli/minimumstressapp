@@ -10,6 +10,8 @@
  *      payment, so a heavily credited booking costs us $0 rather than real cash.
  */
 
+import { addDays, civilIn, compareCivil } from "./timezone";
+
 /** Service fee added on top of the host's rate. Never taken out of it. */
 export const SERVICE_FEE_RATE = 0.2;
 
@@ -328,20 +330,25 @@ export function isFreeCancellation(sessionStart: Date, now: Date): boolean {
  * about money and nothing about tiers, and the caller takes whichever of the
  * two horizons is longer so paying never leaves somebody worse off than not
  * paying.
+ *
+ * Counted in the room's timezone, which is the only one both sides of the
+ * request can agree on. Counting in the reader's zone would put the client and
+ * the server a day apart for anyone east or west of the studio, and the seventh
+ * day would be offered on the phone and refused on the way in.
  */
 export function isWithinBookingHorizon(
   slotStart: Date,
   now: Date,
   isPro: boolean,
+  timeZone: string,
   extraDays = 0,
 ): boolean {
   if (slotStart.getTime() < now.getTime()) return false;
 
   const horizonDays = Math.max(isPro ? PRO_HORIZON_DAYS : STANDARD_HORIZON_DAYS, extraDays);
-  const lastBookableDay = new Date(now.getFullYear(), now.getMonth(), now.getDate() + horizonDays);
-  const slotDay = new Date(slotStart.getFullYear(), slotStart.getMonth(), slotStart.getDate());
+  const lastBookableDay = addDays(civilIn(now, timeZone), horizonDays);
 
-  return slotDay.getTime() <= lastBookableDay.getTime();
+  return compareCivil(civilIn(slotStart, timeZone), lastBookableDay) <= 0;
 }
 
 /** Ledger entries are append-only deltas; the balance is always their sum. */

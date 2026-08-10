@@ -9,6 +9,7 @@ import { PrimaryButton } from "@/components/primitives";
 import type { BookingMoneyRecord } from "@/lib/domain";
 import { formatCents } from "@/lib/money";
 import { STRIPE_APPEARANCE, stripeBrowser } from "@/lib/stripe/browser";
+import { sessionWhen } from "@/lib/when";
 
 /**
  * Paying, without leaving the app.
@@ -26,6 +27,7 @@ export function PaymentSheet({
   money,
   spaceName,
   startsAt,
+  timeZone,
   onBack,
   onPaid,
 }: {
@@ -33,6 +35,8 @@ export function PaymentSheet({
   money: BookingMoneyRecord;
   spaceName: string;
   startsAt: Date;
+  /** The room's zone. This screen names the hour being paid for. */
+  timeZone: string;
   onBack: () => void;
   onPaid: () => void;
 }) {
@@ -45,6 +49,7 @@ export function PaymentSheet({
         money={money}
         spaceName={spaceName}
         startsAt={startsAt}
+        timeZone={timeZone}
         onBack={onBack}
         onPaid={onPaid}
       />
@@ -56,12 +61,14 @@ function SheetBody({
   money,
   spaceName,
   startsAt,
+  timeZone,
   onBack,
   onPaid,
 }: {
   money: BookingMoneyRecord;
   spaceName: string;
   startsAt: Date;
+  timeZone: string;
   onBack: () => void;
   onPaid: () => void;
 }) {
@@ -116,13 +123,7 @@ function SheetBody({
         </div>
         <p className="font-body font-normal text-[14px] text-white/65 mt-1 relative z-10">
           {spaceName} ·{" "}
-          {startsAt.toLocaleString("en-US", {
-            weekday: "short",
-            month: "short",
-            day: "numeric",
-            hour: "numeric",
-            minute: "2-digit",
-          })}
+          {sessionWhen(startsAt, timeZone)}
         </p>
       </div>
 

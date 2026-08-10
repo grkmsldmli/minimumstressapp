@@ -373,19 +373,31 @@ export function EditSpace({
             action="Change"
             onAction={onEditHours}
           />
+          {/*
+            "Take it down" said nothing about what it took down, or where to.
+            The word people reach for is hiding, and the thing they are afraid
+            of is losing the listing — so both are answered on the row itself.
+          */}
           <Line
             label="Status"
             value={
               space.status === "active"
-                ? "Live and bookable"
+                ? "Live — practitioners can book it"
                 : space.status === "pending"
                   ? "Waiting on review"
-                  : "Not listed"
+                  : "Hidden — nobody can book it"
             }
-            action={space.status === "delisted" ? "List again" : "Take it down"}
+            action={space.status === "delisted" ? "Show it again" : "Hide it"}
             onAction={() => void toggleListed()}
           />
         </div>
+
+        {space.status !== "delisted" && (
+          <Note>
+            Hiding a listing takes it out of search and stops new bookings. Nothing is deleted, and
+            you can show it again whenever you like.
+          </Note>
+        )}
 
         {/*
           Delisting is not deletion, and it never touches a booking that
@@ -405,10 +417,17 @@ export function EditSpace({
         )}
 
         <div className="mt-6">
-          <PrimaryButton
-            onClick={() => void save()}
-            disabled={!changed || saving || !describesTheRoom(description)}
-          >
+          {/*
+            Not blocked on the description.
+            
+            It was, and that was wrong twice over: the button went dead with no
+            reason given anywhere near it, and it held every unrelated edit
+            hostage — a host adding parking had to write a paragraph first. The
+            requirement belongs on creating a listing, where there is nothing to
+            hold up. Here it is a prompt, and the host's own dashboard keeps
+            asking.
+          */}
+          <PrimaryButton onClick={() => void save()} disabled={!changed || saving}>
             {saving ? "Saving…" : changed ? "Save changes" : "Nothing changed"}
           </PrimaryButton>
         </div>

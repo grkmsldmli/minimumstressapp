@@ -202,9 +202,9 @@ export function BookingCalendar({
       </div>
 
       <p className="font-body font-normal text-[13.5px] mt-2.5 leading-relaxed text-ink-faint">
-        Open days are marked. Your card is held rather than charged, and a hold lasts about a week —
-        so booking opens {BOOKING_HORIZON_DAYS} days ahead, and later dates become available as they
-        come closer.
+        Open days are marked. Your card is held rather than charged until after your session, and a
+        hold only lasts so long — so booking opens {BOOKING_HORIZON_DAYS} days ahead, and later
+        dates become available as they come closer.
       </p>
     </div>
   );

@@ -7,7 +7,7 @@ import {
   type PractitionerFacts,
   type SpaceFacts,
 } from "./booking-plan";
-import { INSTANT_FEE_CENTS, MAX_UPCOMING_BOOKINGS_FREE } from "./money";
+import { BOOKING_HORIZON_DAYS, INSTANT_FEE_CENTS, MAX_UPCOMING_BOOKINGS_FREE } from "./money";
 import { addDays, instantFrom } from "./timezone";
 
 /**
@@ -158,14 +158,39 @@ describe("a slot has to be one the host actually opened", () => {
  * The horizon stopped being a tier.
  *
  * It was same-day unless you paid, which made a host open on Tuesdays and
- * Fridays invisible to a free account five days out of seven. Availability
- * repeats weekly, so seven days is the entire schedule — and it is also how
- * long a card authorisation lives, which is what caps it.
+ * Fridays invisible to a free account five days out of seven.
+ *
+ * How far it reaches is set by the card hold, not chosen — see
+ * BOOKING_HORIZON_DAYS. Written against the constant here for the same reason
+ * it is derived there: the previous version of these tests named seven days,
+ * which was the figure the money could not actually collect.
  */
 describe("the booking horizon", () => {
-  it("lets anybody reach the far end of the week", () => {
-    // Friday, four days out, and open. A free account used to stop at today.
-    expect(plan({ startsAt: at(14, 4) }).ok).toBe(true);
+  /*
+   * The room here opens weekdays only, so the furthest day inside the window is
+   * not necessarily a day it is open. Walking to the nearest open one keeps
+   * these tests measuring the horizon rather than the calendar — otherwise a
+   * horizon landing on a Saturday would "fail" for the wrong reason.
+   */
+  const isOpen = (dayOffset: number) => {
+    const weekday = (1 + dayOffset) % 7; // BASE is a Monday.
+    return weekday >= 1 && weekday <= 5;
+  };
+
+  const lastOpenInside = (() => {
+    for (let day = BOOKING_HORIZON_DAYS; day > 0; day -= 1) if (isOpen(day)) return day;
+    throw new Error("no open day inside the horizon");
+  })();
+
+  const firstOpenOutside = (() => {
+    for (let day = BOOKING_HORIZON_DAYS + 1; day < BOOKING_HORIZON_DAYS + 8; day += 1) {
+      if (isOpen(day)) return day;
+    }
+    throw new Error("no open day beyond the horizon");
+  })();
+
+  it("lets anybody reach the far end of it", () => {
+    expect(plan({ startsAt: at(14, lastOpenInside) }).ok).toBe(true);
   });
 
   it("no longer holds a free account to today", () => {
@@ -173,9 +198,11 @@ describe("the booking horizon", () => {
   });
 
   it("gives Pro no further reach, because there is nothing further to give", () => {
-    // The following Monday, seven days out and open.
-    const free = plan({ startsAt: at(14, 7) });
-    const pro = plan({ practitioner: { ...PRACTITIONER, isPro: true }, startsAt: at(14, 7) });
+    const free = plan({ startsAt: at(14, lastOpenInside) });
+    const pro = plan({
+      practitioner: { ...PRACTITIONER, isPro: true },
+      startsAt: at(14, lastOpenInside),
+    });
     expect(free.ok).toBe(true);
     expect(pro.ok).toBe(free.ok);
   });
@@ -184,9 +211,9 @@ describe("the booking horizon", () => {
    * The authorisation is held rather than charged until the session starts,
    * and it expires around here. Past this the money could not be collected.
    */
-  it("stops at eight days for everyone", () => {
-    // Tuesday next week: open, so the only thing refusing it is the horizon.
-    expect(plan({ startsAt: at(14, 8) })).toEqual({
+  it("stops the day after, for everyone", () => {
+    // Open, so the only thing refusing it is the horizon.
+    expect(plan({ startsAt: at(14, firstOpenOutside) })).toEqual({
       ok: false,
       reason: "beyond_booking_horizon",
     });

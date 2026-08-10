@@ -12,6 +12,10 @@ import {
   minViableHostRateCents,
   quote,
   resolveCancellation,
+  BOOKING_HORIZON_DAYS,
+  CAPTURE_SWEEP_HOURS,
+  CARD_HOLD_HOURS,
+  HOLD_SAFETY_HOURS,
 } from "./money";
 import { addDays, instantFrom } from "./timezone";
 
@@ -281,6 +285,40 @@ describe("instant window, measured against wall-clock time", () => {
   });
 });
 
+describe("the horizon fits inside a card hold", () => {
+  /**
+   * The arithmetic the horizon is derived from, asserted rather than assumed.
+   *
+   * It was seven days beside a comment claiming seven days of slots and a
+   * seven-day hold were the same number. They differ by 23 hours, and the gap
+   * never showed up as a failure — the session happens, the capture is refused,
+   * and the host is simply never paid.
+   */
+  it("captures every booking before the authorisation dies", () => {
+    // Worst case: booked at midnight, for the last hour of the furthest day,
+    // then waiting a full sweep after the session ends.
+    const worstCase = BOOKING_HORIZON_DAYS * 24 + 23 + CAPTURE_SWEEP_HOURS;
+
+    expect(worstCase).toBeLessThanOrEqual(CARD_HOLD_HOURS - HOLD_SAFETY_HOURS);
+  });
+
+  /** A horizon that quietly became zero would "pass" the check above. */
+  it("still reaches far enough to be a product", () => {
+    expect(BOOKING_HORIZON_DAYS).toBeGreaterThanOrEqual(3);
+  });
+
+  it("matches the sweep the deployment actually schedules", async () => {
+    const { readFileSync } = await import("node:fs");
+    const vercel = JSON.parse(readFileSync("vercel.json", "utf8"));
+    const captureRuns = vercel.crons.filter(
+      (c: { path: string }) => c.path === "/api/cron",
+    ).length;
+
+    // Runs spread across the day, so the longest wait is a day divided by them.
+    expect(24 / captureRuns).toBeLessThanOrEqual(CAPTURE_SWEEP_HOURS);
+  });
+});
+
 describe("booking horizon", () => {
   /*
    * Built in a named zone rather than with `new Date(y, m, d)`, which reads
@@ -301,26 +339,31 @@ describe("booking horizon", () => {
   const daysFromNow = (days: number, hour = 9) => at(addDays(BASE, days), hour);
 
   /**
-   * One window, and it is the whole schedule.
+   * One window, the same for everybody.
    *
-   * Availability repeats weekly, so seven days shows every slot a host offers
-   * whichever day somebody looks. It was a tier — same-day free, three days
-   * paid — which made a host open on Tuesdays and Fridays invisible to a free
-   * account five days out of seven.
+   * It was a tier — same-day free, three days paid — which made a host open on
+   * Tuesdays and Fridays invisible to a free account five days out of seven.
+   *
+   * Written against the constant rather than a number. The last version of this
+   * test asserted day seven was reachable, which was true of the old hardcoded
+   * horizon and false of what the card hold actually allows; a test that names
+   * a figure the code derives will eventually assert the bug.
    */
-  it("lets anybody reach the whole week", () => {
+  it("reaches the last hour of the furthest day", () => {
     expect(isWithinBookingHorizon(daysFromNow(1), now, false, ZONE)).toBe(true);
-    expect(isWithinBookingHorizon(daysFromNow(7, 20), now, false, ZONE)).toBe(true);
+    expect(
+      isWithinBookingHorizon(daysFromNow(BOOKING_HORIZON_DAYS, 23), now, false, ZONE),
+    ).toBe(true);
   });
 
-  /** A card authorisation lives about this long, and is held not charged. */
-  it("stops at eight days, paid or not", () => {
-    expect(isWithinBookingHorizon(daysFromNow(8), now, false, ZONE)).toBe(false);
-    expect(isWithinBookingHorizon(daysFromNow(8), now, true, ZONE)).toBe(false);
+  it("stops the day after, paid or not", () => {
+    const past = BOOKING_HORIZON_DAYS + 1;
+    expect(isWithinBookingHorizon(daysFromNow(past), now, false, ZONE)).toBe(false);
+    expect(isWithinBookingHorizon(daysFromNow(past), now, true, ZONE)).toBe(false);
   });
 
   it("gives Pro no further reach", () => {
-    for (const day of [0, 1, 4, 7, 8]) {
+    for (const day of [0, 1, BOOKING_HORIZON_DAYS, BOOKING_HORIZON_DAYS + 1]) {
       expect(
         isWithinBookingHorizon(daysFromNow(day, 20), now, true, ZONE),
         `day ${day}`,

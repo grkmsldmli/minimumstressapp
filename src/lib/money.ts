@@ -44,16 +44,55 @@ export const FREE_CANCEL_WINDOW_MS = 24 * 60 * 60 * 1000;
  * inside any seven-day window: every slot a host offers appears, whichever day
  * somebody happens to look. Nothing is withheld.
  *
- * It is also the ceiling the payment model allows. A card authorisation lives
- * about seven days, and the money is held rather than charged until the
- * session starts — so this is the furthest out a booking can be made without
- * re-authorising, and the two limits happen to be the same number.
- *
  * Pro keeps what actually saves money: the instant fee waived, and 10% off
  * every booking. Both are worth something on every session. Access to the
  * product was never a thing worth selling.
+ *
+ * How far that window reaches is not a product decision. It is derived below,
+ * because the payment model sets it and the two had already drifted apart.
  */
-export const BOOKING_HORIZON_DAYS = 7;
+
+/**
+ * Stripe releases an uncaptured card authorisation after this long.
+ *
+ * The number that actually governs how far ahead anybody can book, and it is
+ * not ours to choose.
+ */
+export const CARD_HOLD_HOURS = 168;
+
+/** Longest a captured-due session can wait for a sweep. Two runs a day. */
+export const CAPTURE_SWEEP_HOURS = 12;
+
+/**
+ * Slack, because the numbers above are not promises.
+ *
+ * Stripe's seven days is "about"; a cron can be late; a session can overrun.
+ * None of those individually matters, and all of them landing together on the
+ * same booking is how a host discovers they were never paid.
+ */
+export const HOLD_SAFETY_HOURS = 12;
+
+/**
+ * How far ahead a booking may be made.
+ *
+ * Derived rather than chosen, and this is the whole reason: it was seven,
+ * beside a comment saying seven days of slots and a seven-day card hold "happen
+ * to be the same number". They are not. A day of slots runs to 23:00, and
+ * somebody booking at midnight for the last hour of the seventh day is 191
+ * hours ahead — then the capture sweep adds up to another 12. That is 203
+ * hours against an authorisation that dies at 168.
+ *
+ * Nothing would have failed loudly. The session happens, the sweep runs, the
+ * capture is refused, and a host who let somebody into their studio is simply
+ * never paid. It survived this long only because no booking had ever been
+ * made through the app.
+ *
+ * So the ceiling is computed from the hold: whatever is left after the sweep
+ * and the safety margin, minus the 23 hours a last slot of the day can add.
+ */
+export const BOOKING_HORIZON_DAYS = Math.floor(
+  (CARD_HOLD_HOURS - CAPTURE_SWEEP_HOURS - HOLD_SAFETY_HOURS - 23) / 24,
+);
 
 /**
  * How many sessions a free account may have on the calendar at once.

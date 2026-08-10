@@ -19,7 +19,8 @@ const HOST_ACCOUNT = "acct_test_host";
 const META = { bookingId: "bk_1", spaceId: "sp_1", practitionerId: "pr_1" };
 
 const plan = (money: BookingMoney) => planPaymentIntent(money, META);
-const payout = (money: BookingMoney) => planHostTransfer(money, HOST_ACCOUNT, META);
+const CHARGE = "ch_test_1";
+const payout = (money: BookingMoney) => planHostTransfer(money, HOST_ACCOUNT, CHARGE, META);
 
 const priced = (opts: { hostRateCents: number; isInstant?: boolean; isPro?: boolean }) =>
   bookingMoneyFromQuote(
@@ -78,6 +79,16 @@ describe("the host is paid their rate, whatever Stripe is told", () => {
 
   it("routes the payout to the host's own connected account", () => {
     expect(payout(priced({ hostRateCents: 4500 })).destination).toBe(HOST_ACCOUNT);
+  });
+
+  /**
+   * Funded by the charge rather than by whatever happens to be sitting in our
+   * balance. A card charge takes a couple of working days to become available,
+   * so a session booked the same morning would otherwise find its own money
+   * still settling at the moment the host was due to be paid.
+   */
+  it("draws the payout from the charge that paid for it", () => {
+    expect(payout(priced({ hostRateCents: 4500 })).source_transaction).toBe(CHARGE);
   });
 
   /** So a payout can be traced back to the charge that funded it, in Stripe. */

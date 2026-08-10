@@ -58,6 +58,21 @@ export interface HostTransferPlan {
   currency: "usd";
   destination: string;
   transfer_group: string;
+  /**
+   * The charge this payout comes out of.
+   *
+   * Without it a transfer is drawn from the platform's *available* balance, and
+   * a card charge does not become available for a couple of working days. A
+   * session booked the same morning would then find its own money still
+   * settling at the moment the host was due to be paid, and the payout would
+   * fail with `balance_insufficient` until it cleared.
+   *
+   * Naming the charge funds the transfer from that charge specifically, so it
+   * goes through whether or not the balance has settled — and it ties the two
+   * together in Stripe's records, which is the honest description of what is
+   * happening anyway.
+   */
+  source_transaction: string;
   metadata: Record<string, string>;
 }
 
@@ -114,6 +129,7 @@ export function planPaymentIntent(
 export function planHostTransfer(
   money: BookingMoney,
   hostStripeAccountId: string,
+  chargeId: string,
   metadata: { bookingId: string; spaceId: string; practitionerId: string },
 ): HostTransferPlan {
   return {
@@ -121,6 +137,7 @@ export function planHostTransfer(
     currency: "usd",
     destination: hostStripeAccountId,
     transfer_group: transferGroupFor(metadata.bookingId),
+    source_transaction: chargeId,
     metadata: moneyMetadata(money, metadata),
   };
 }

@@ -190,9 +190,23 @@ export async function settle(
 export async function payHost(
   money: BookingMoney,
   hostStripeAccountId: string,
+  paymentIntentId: string,
   meta: { bookingId: string; spaceId: string; practitionerId: string },
 ): Promise<{ transferId: string }> {
-  const plan = planHostTransfer(money, hostStripeAccountId, meta);
+  /*
+   * The charge, not the intent. A transfer can only be funded by a charge, and
+   * asking Stripe for it here rather than storing it keeps one source of truth
+   * — the intent already knows, and a column of ours could disagree with it.
+   */
+  const intent = await stripe().paymentIntents.retrieve(paymentIntentId);
+  const chargeId =
+    typeof intent.latest_charge === "string" ? intent.latest_charge : intent.latest_charge?.id;
+
+  if (!chargeId) {
+    throw new Error(`PaymentIntent ${paymentIntentId} has no charge to pay the host from`);
+  }
+
+  const plan = planHostTransfer(money, hostStripeAccountId, chargeId, meta);
 
   const transfer = await stripe().transfers.create(
     {
@@ -200,6 +214,7 @@ export async function payHost(
       currency: plan.currency,
       destination: plan.destination,
       transfer_group: plan.transfer_group,
+      source_transaction: plan.source_transaction,
       metadata: plan.metadata,
     },
     { idempotencyKey: `booking_payout_${meta.bookingId}` },

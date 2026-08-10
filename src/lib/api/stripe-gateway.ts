@@ -19,7 +19,8 @@ export const stripeGateway: StripeGateway = {
       ? { refundedCents: 0 }
       : settleAndReport(paymentIntentId, paidCents, outcome),
 
-  payHost: (money, hostAccountId, meta) => payHost(money, hostAccountId, meta),
+  payHost: (money, hostAccountId, paymentIntentId, meta) =>
+    payHost(money, hostAccountId, paymentIntentId, meta),
 };
 
 /**

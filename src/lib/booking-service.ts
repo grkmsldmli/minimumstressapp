@@ -62,10 +62,11 @@ export interface StripeGateway {
     action: "void" | "capture_full";
     chargedCents: number;
   }): Promise<{ refundedCents: number }>;
-  /** Sends the host their rate, once the session has happened. */
+  /** Sends the host their rate, out of the charge that funded it. */
   payHost(
     money: BookingMoney,
     hostAccountId: string,
+    paymentIntentId: string,
     meta: { bookingId: string; spaceId: string; practitionerId: string },
   ): Promise<{ transferId: string }>;
 }

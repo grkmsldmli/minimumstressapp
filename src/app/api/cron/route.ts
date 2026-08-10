@@ -103,7 +103,7 @@ async function payHostsForFinishedSessions(
   const { data: due, error } = await admin
     .from("bookings")
     .select(
-      "id, space_id, practitioner_id, host_rate_cents, service_fee_cents, instant_fee_cents, pro_discount_cents, total_cents, platform_cents, status, spaces!inner(host_id)",
+      "id, space_id, practitioner_id, stripe_payment_intent_id, host_rate_cents, service_fee_cents, instant_fee_cents, pro_discount_cents, total_cents, platform_cents, status, spaces!inner(host_id)",
     )
     .lte("starts_at", now.toISOString())
     .not("captured_at", "is", null)
@@ -146,6 +146,7 @@ async function payHostsForFinishedSessions(
           platformCents: booking.platform_cents,
         },
         host.stripe_connect_account_id,
+        booking.stripe_payment_intent_id,
         {
           bookingId: booking.id,
           spaceId: booking.space_id,

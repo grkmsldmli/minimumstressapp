@@ -27,6 +27,7 @@ import {
 import { DocumentUpload } from "@/components/uploads";
 import { WeekSchedule } from "@/components/week-schedule";
 import { usePointZone } from "@/lib/use-point-zone";
+import { MIN_DESCRIPTION_CHARS, describesTheRoom } from "@/lib/listing-quality";
 import { zoneAbbreviation } from "@/lib/timezone";
 import type { AvailabilityBlock } from "@/lib/availability";
 import { isValidSchedule } from "@/lib/availability";
@@ -125,7 +126,14 @@ export function AddSpace({
     Number(capacity) > 0 &&
     accessType !== null &&
     entryInstructions.trim() !== "";
-  const canStep2 = media.length >= 1 && isValidSchedule(blocks);
+  /*
+   * The description is required here rather than left optional, because
+   * optional is what it was: three listings went live without one, and the
+   * listing screen hides an empty paragraph so nobody ever saw the gap except
+   * the practitioner deciding not to book.
+   */
+  const canStep2 =
+    media.length >= 1 && isValidSchedule(blocks) && describesTheRoom(description);
   const canSubmit = subleaseDoc !== null && agreed;
   const canAdvance = step === 1 ? canStep1 : step === 2 ? canStep2 : canSubmit;
 
@@ -423,9 +431,7 @@ export function AddSpace({
               At least one photo or video to continue — up to {MAX_MEDIA}, mixed freely.
             </p>
 
-            <SectionLabel className="mt-6">
-              About this room <OptionalTag />
-            </SectionLabel>
+            <SectionLabel className="mt-6">About this room</SectionLabel>
             <textarea
               value={description}
               onChange={(event) => setDescription(event.target.value.slice(0, 1200))}
@@ -435,12 +441,14 @@ export function AddSpace({
               style={{ border: "1px solid #DCE7F2" }}
             />
             {/*
-              Asked here rather than left as an empty paragraph on the listing.
-              The column and the screen have both existed from the start and
-              nothing ever collected it, so every real listing rendered a gap.
+              The count counts up to the floor rather than down from the cap.
+              What stops somebody advancing is the minimum, so that is the
+              number worth showing; 1200 is a limit nobody reaches.
             */}
             <p className="font-body font-normal text-[13.5px] mt-1.5 text-ink-faint">
-              {description.length}/1200
+              {describesTheRoom(description)
+                ? `${description.length}/1200`
+                : `${description.trim().length} of ${MIN_DESCRIPTION_CHARS} characters — a sentence is enough`}
             </p>
 
             <SectionLabel className="mt-6">

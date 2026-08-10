@@ -30,6 +30,7 @@ import type { HostBooking, HostSpace, Profile } from "@/lib/domain";
 import { formatCents } from "@/lib/money";
 import { PAYOUT_DELAY_DAYS, describeSpeed } from "@/lib/payouts";
 import type { Standing } from "@/lib/reliability";
+import { listingGaps } from "@/lib/listing-quality";
 import { FALLBACK_ZONE, zoneAbbreviation } from "@/lib/timezone";
 import { sessionDate, sessionTime } from "@/lib/when";
 import { roomTypeFor } from "@/lib/taxonomy";
@@ -320,6 +321,8 @@ export function HostDashboard({
           </div>
 
           <div className="flex-1 overflow-y-auto px-6 pt-6 pb-8">
+            <Unfinished space={active} onEdit={() => onEditSpace(active.id)} />
+
             <div className="mb-3">
               <p className="font-body font-semibold text-[12px] uppercase tracking-[0.2em] mb-2.5 text-sky-text">
                 Upcoming
@@ -919,6 +922,60 @@ export function HostProfile({
  * platform's cut is not deducted from this number, so showing it here would
  * only invite the wrong question.
  */
+/**
+ * What this listing is still missing, to the only person who can fix it.
+ *
+ * The listing screen hides every section it has nothing to put in, so a thin
+ * listing does not look broken to anybody — it looks short. The host sees a
+ * page that seems finished, the practitioner sees a photo and a calendar with
+ * nothing in between, and the booking that does not happen leaves no trace.
+ *
+ * Said as what a practitioner is looking for rather than as a checklist, and
+ * gone entirely once the listing is complete. A permanent scold on somebody's
+ * own screen gets ignored by the second week.
+ */
+function Unfinished({ space, onEdit }: { space: HostSpace; onEdit: () => void }) {
+  const gaps = listingGaps({
+    description: space.description,
+    amenities: space.amenities,
+    access: space.access,
+    mediaCount: space.media.length,
+  });
+
+  if (gaps.length === 0) return null;
+
+  return (
+    <div
+      className="rounded-2xl p-4 mb-5"
+      style={{ backgroundColor: "#FFF8F1", border: "1px solid #F5DFC4" }}
+    >
+      <p className="font-body font-medium text-[14.5px]" style={{ color: "#8B6C37" }}>
+        Practitioners look for {gaps.length === 1 ? "one more thing" : `${gaps.length} more things`}
+      </p>
+
+      <div className="flex flex-col gap-2.5 mt-3">
+        {gaps.map((gap) => (
+          <div key={gap.label}>
+            <p className="font-body font-medium text-[13.5px] text-navy">{gap.label}</p>
+            <p className="font-body font-normal text-[13px] mt-0.5 leading-relaxed text-ink-soft">
+              {gap.because}
+            </p>
+          </div>
+        ))}
+      </div>
+
+      <button
+        type="button"
+        onClick={onEdit}
+        className="w-full mt-3.5 py-2.5 rounded-xl font-body font-medium text-[14.5px] press"
+        style={{ backgroundColor: "#fff", border: "1px solid #F5DFC4", color: "#8B6C37" }}
+      >
+        Add them
+      </button>
+    </div>
+  );
+}
+
 function HostBookingRow({
   booking,
   timeZone,

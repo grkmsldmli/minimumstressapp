@@ -9,6 +9,7 @@ import { PrimaryButton } from "@/components/primitives";
 import { SpaceMediaManager } from "@/components/space-media-manager";
 import { errorMessage } from "@/lib/error-message";
 import type { HostSpace, SpaceEdit } from "@/lib/domain";
+import { MIN_DESCRIPTION_CHARS, describesTheRoom } from "@/lib/listing-quality";
 import { formatCents, quote } from "@/lib/money";
 import { CATEGORY_KEYS, roomTypeFor } from "@/lib/taxonomy";
 
@@ -152,6 +153,16 @@ export function EditSpace({
         */}
         <Label>About this room</Label>
         <Text value={description} onChange={(v) => setDescription(v.slice(0, 1200))} multiline />
+        {/*
+          Shown only while it is short. A listing that already reads well does
+          not need a character count following it around.
+        */}
+        {!describesTheRoom(description) && (
+          <p className="font-body font-normal text-[13px] mt-1.5 text-ink-faint">
+            {description.trim().length} of {MIN_DESCRIPTION_CHARS} characters — this is the first
+            thing a practitioner reads.
+          </p>
+        )}
 
         <Label>Hourly rate (you keep this)</Label>
         <div className="flex items-center gap-1 rounded-xl px-3.5 py-3" style={FIELD}>
@@ -326,7 +337,10 @@ export function EditSpace({
         )}
 
         <div className="mt-6">
-          <PrimaryButton onClick={() => void save()} disabled={!changed || saving}>
+          <PrimaryButton
+            onClick={() => void save()}
+            disabled={!changed || saving || !describesTheRoom(description)}
+          >
             {saving ? "Saving…" : changed ? "Save changes" : "Nothing changed"}
           </PrimaryButton>
         </div>

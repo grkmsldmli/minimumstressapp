@@ -1,14 +1,26 @@
 import { describe, expect, it } from "vitest";
 
+import { FREE_CANCEL_WINDOW_MS, isFreeCancellation, resolveCancellation } from "./money";
 import {
   type CancellationEvent,
   type Party,
+  LATE_CANCELLATION_HOURS,
   STANDING_WINDOW_DAYS,
   SUSPENSION_DAYS,
   explainStanding,
   isLate,
   standingFor,
 } from "./reliability";
+
+/** A $40 room at the standard fee, for the cancellation checks. */
+const MONEY = {
+  hostRateCents: 4000,
+  serviceFeeCents: 800,
+  instantFeeCents: 0,
+  proDiscountCents: 0,
+  totalCents: 4800,
+  platformCents: 800,
+};
 
 const NOW = new Date(2026, 7, 3, 12, 0, 0);
 const daysAgo = (days: number) => new Date(NOW.getTime() - days * 86_400_000);
@@ -194,5 +206,38 @@ describe("what the person is told", () => {
     const message = explainStanding("host", standingFor("host", [], NOW));
 
     expect(message).toMatch(/no last-minute cancellations/i);
+  });
+});
+
+/**
+ * One line, not two numbers that happen to match.
+ *
+ * The refund window and the standing window were separate constants, both 24,
+ * with a comment saying they were the same boundary. Changing either would
+ * have left the app charging for a cancellation it did not count against
+ * anybody, or counting one it did not charge for — and nothing would have
+ * failed.
+ */
+describe("the 24-hour line", () => {
+  it("is the same line for money and for standing", () => {
+    expect(LATE_CANCELLATION_HOURS * 60 * 60 * 1000).toBe(FREE_CANCEL_WINDOW_MS);
+  });
+
+  it("charges and counts on the same side of it", () => {
+    const sessionStart = new Date("2026-08-10T12:00:00Z");
+    const justInside = new Date(sessionStart.getTime() - FREE_CANCEL_WINDOW_MS + 60_000);
+    const justOutside = new Date(sessionStart.getTime() - FREE_CANCEL_WINDOW_MS - 60_000);
+
+    // Inside: money is taken, and it counts.
+    expect(isFreeCancellation(sessionStart, justInside)).toBe(false);
+    expect(
+      resolveCancellation(MONEY, "practitioner", sessionStart, justInside).action,
+    ).toBe("capture_full");
+
+    // Outside: nothing is taken, and nothing counts.
+    expect(isFreeCancellation(sessionStart, justOutside)).toBe(true);
+    expect(
+      resolveCancellation(MONEY, "practitioner", sessionStart, justOutside).action,
+    ).toBe("void");
   });
 });

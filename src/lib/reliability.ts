@@ -1,4 +1,5 @@
 import { SUPPORT_EMAIL } from "./company";
+import { FREE_CANCEL_WINDOW_MS } from "./money";
 
 /**
  * Standing: what repeated last-minute cancellations cost someone.
@@ -34,10 +35,16 @@ export const SUSPENSION_DAYS = 14;
 
 /**
  * A cancellation counts as late when it lands inside the free-cancellation
- * window — the same 24-hour line the refund policy uses, so there is one
- * boundary to explain rather than two.
+ * window — the same line the refund policy uses, so there is one boundary to
+ * explain rather than two.
+ *
+ * Derived rather than restated. It used to be its own `24`, sitting beside
+ * money.ts's own `24`, with a comment claiming they were the same line. They
+ * were only the same number: changing one would have left the app charging
+ * for a cancellation it did not count, or counting one it did not charge for,
+ * and nothing would have failed.
  */
-export const LATE_CANCELLATION_HOURS = 24;
+export const LATE_CANCELLATION_HOURS = FREE_CANCEL_WINDOW_MS / (60 * 60 * 1000);
 
 export type Party = "host" | "practitioner";
 

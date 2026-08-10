@@ -112,6 +112,20 @@ export interface Person {
   payoutsReady: boolean | null;
   earnedCents: number;
   spentCents: number;
+  /**
+   * Who to call if a session goes wrong while it is happening.
+   *
+   * Staff are the only people allowed to read this and the only people who
+   * would ever need to — the counterpart in a booking never sees it, in either
+   * direction. Collecting it and then having no way to reach it made the whole
+   * field decorative: the one moment it exists for is the one moment nobody
+   * could open a database console.
+   *
+   * Null throughout means the account never filled it in, which is worth
+   * seeing on its own. That is the fact somebody discovers at the worst
+   * possible time, and it should be visible long before then.
+   */
+  emergency: { name: string | null; phone: string | null; relationship: string | null };
 }
 
 /** Every listing, not only the ones waiting for review. */
@@ -183,8 +197,77 @@ export interface RecentBooking {
   hostRateCents: number;
 }
 
+/**
+ * A session in the window where somebody is actually in a room.
+ *
+ * Everything else on this page is a record of what happened. This is the one
+ * part that is happening — and the only moment an emergency contact is worth
+ * having collected. Both sides are carried, because an incident can start from
+ * either: a practitioner alone in a stranger's building, and a host who let a
+ * stranger into theirs, have the same need.
+ *
+ * The address is here for the same reason and no other. It is withheld from
+ * practitioners until the 24-hour line and never shown to anyone else, but the
+ * one call where it matters is the one where somebody has to say where to go.
+ */
+export interface LiveSession {
+  bookingId: string;
+  spaceName: string;
+  addressLine: string | null;
+  startsAt: string;
+  endsAt: string;
+  /** "now", or how long until it starts. */
+  state: "in progress" | "starting soon" | "just finished";
+  practitioner: SessionParty;
+  host: SessionParty;
+}
+
+export interface SessionParty {
+  id: string;
+  name: string | null;
+  email: string | null;
+  emergency: { name: string | null; phone: string | null; relationship: string | null };
+}
+
+/**
+ * Whether a booking is close enough to now to be worth a phone number, and
+ * which side of the hour it is on.
+ *
+ * The window reaches a little either side of the session itself. Two hours
+ * ahead, because somebody travelling to a room they cannot get into is already
+ * a problem and calling once the hour has started is late. Two hours behind,
+ * because an incident is usually reported after the person is out of the
+ * building rather than while they are in it.
+ *
+ * Cancellations return null. Nobody is in that room, and a list that suggests
+ * otherwise is worse than no list — it would send somebody looking for a
+ * person who never came.
+ *
+ * Pure, and exported for that reason: a window whose edges are only exercised
+ * against live data is a window whose edges are never exercised.
+ */
+export const LIVE_LEAD_MS = 2 * 60 * 60 * 1000;
+export const LIVE_TRAIL_MS = 2 * 60 * 60 * 1000;
+
+export function sessionState(
+  status: string,
+  startsAt: Date,
+  endsAt: Date,
+  now: Date,
+): LiveSession["state"] | null {
+  if (status !== "upcoming" && status !== "completed") return null;
+
+  if (startsAt.getTime() - now.getTime() > LIVE_LEAD_MS) return null;
+  if (now.getTime() - endsAt.getTime() > LIVE_TRAIL_MS) return null;
+
+  if (now < startsAt) return "starting soon";
+  return now < endsAt ? "in progress" : "just finished";
+}
+
 export interface AdminQueue {
   /* --- work --- */
+  /** Sessions in the room right now, or within a few hours either side. */
+  liveSessions: LiveSession[];
   escalations: OpenEscalation[];
   pendingListings: PendingListing[];
   accountChangeRequests: AccountChangeRequest[];
@@ -271,7 +354,9 @@ export async function loadQueue(admin: SupabaseClient): Promise<AdminQueue> {
 
     admin
       .from("profiles")
-      .select("id, account_type, display_name, stripe_connect_charges_enabled, created_at, terms_version"),
+      .select(
+        "id, account_type, display_name, stripe_connect_charges_enabled, created_at, terms_version, emergency_contact_name, emergency_contact_phone, emergency_contact_relationship",
+      ),
 
     admin
       .from("spaces")
@@ -289,7 +374,7 @@ export async function loadQueue(admin: SupabaseClient): Promise<AdminQueue> {
     admin
       .from("bookings")
       .select(
-        "id, space_id, practitioner_id, starts_at, status, captured_at, cancelled_at, total_cents, host_rate_cents, platform_cents",
+        "id, space_id, practitioner_id, starts_at, ends_at, status, captured_at, cancelled_at, total_cents, host_rate_cents, platform_cents",
       )
       .order("starts_at", { ascending: false }),
 
@@ -334,6 +419,12 @@ export async function loadQueue(admin: SupabaseClient): Promise<AdminQueue> {
   );
   const spaceHost = new Map<string, string>(
     (spaces.data ?? []).map((s) => [s.id as string, s.host_id as string]),
+  );
+  const spaceAddress = new Map<string, string | null>(
+    (spaces.data ?? []).map((s) => [s.id as string, (s.address_line as string) ?? null]),
+  );
+  const profileById = new Map<string, Record<string, unknown>>(
+    (profiles.data ?? []).map((row) => [row.id as string, row]),
   );
 
   const userIds = new Set<string>([
@@ -447,6 +538,50 @@ export async function loadQueue(admin: SupabaseClient): Promise<AdminQueue> {
     const hostId = space.host_id as string;
     listingCounts.set(hostId, (listingCounts.get(hostId) ?? 0) + 1);
   }
+
+  const partyFor = (id: string): SessionParty => {
+    const row = profileById.get(id);
+    return {
+      id,
+      name: (row?.display_name as string) ?? null,
+      email: emails.get(id) ?? null,
+      emergency: {
+        name: (row?.emergency_contact_name as string) ?? null,
+        phone: (row?.emergency_contact_phone as string) ?? null,
+        relationship: (row?.emergency_contact_relationship as string) ?? null,
+      },
+    };
+  };
+
+  const liveSessions: LiveSession[] = (bookings.data ?? [])
+    .flatMap((booking) => {
+      const state = sessionState(
+        booking.status as string,
+        // The stored end, not an assumed hour — if the session length ever
+        // changes, this list should not be the thing that quietly disagrees.
+        new Date(booking.starts_at as string),
+        new Date(booking.ends_at as string),
+        now,
+      );
+      if (!state) return [];
+
+      const spaceId = booking.space_id as string;
+      const startsAt = new Date(booking.starts_at as string);
+      const endsAt = new Date(booking.ends_at as string);
+
+      return [{
+        bookingId: booking.id as string,
+        spaceName: spaceName.get(spaceId) ?? "A room",
+        addressLine: spaceAddress.get(spaceId) ?? null,
+        startsAt: startsAt.toISOString(),
+        endsAt: endsAt.toISOString(),
+        state,
+        practitioner: partyFor(booking.practitioner_id as string),
+        host: partyFor(spaceHost.get(spaceId) ?? ""),
+      }];
+    })
+    // The one in the room now before the one arriving later.
+    .sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime());
 
   /**
    * Why each listing is waiting, rather than only that it is.
@@ -677,6 +812,8 @@ export async function loadQueue(admin: SupabaseClient): Promise<AdminQueue> {
     funnel,
     termsOutstanding,
 
+    liveSessions,
+
     people: (profiles.data ?? [])
       .map((row) => {
         const id = row.id as string;
@@ -697,6 +834,11 @@ export async function loadQueue(admin: SupabaseClient): Promise<AdminQueue> {
           payoutsReady: isHost ? Boolean(payable.get(id)) : null,
           earnedCents: totals.earned,
           spentCents: totals.spent,
+          emergency: {
+            name: (row.emergency_contact_name as string) ?? null,
+            phone: (row.emergency_contact_phone as string) ?? null,
+            relationship: (row.emergency_contact_relationship as string) ?? null,
+          },
         };
       })
       // Busiest first, then whoever arrived most recently among the quiet ones.

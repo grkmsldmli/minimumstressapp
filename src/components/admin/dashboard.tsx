@@ -7,6 +7,7 @@ import {
   Check,
   ChevronRight,
   FileText,
+  Phone,
   Search,
   Users,
   X,
@@ -14,7 +15,7 @@ import {
 import { useEffect, useState } from "react";
 
 import { errorMessage } from "@/lib/error-message";
-import type { AdminQueue, ListingRow, Person } from "@/lib/admin/queue";
+import type { AdminQueue, ListingRow, LiveSession, Person, SessionParty } from "@/lib/admin/queue";
 import { formatCents } from "@/lib/money";
 
 import { Funnel } from "./funnel";
@@ -236,6 +237,8 @@ export function AdminDashboard() {
           <MoneyChart days={queue.moneyByDay} />
           <Funnel steps={queue.funnel} />
         </div>
+
+        <InTheRoom sessions={queue.liveSessions} />
 
         <Directory people={queue.people} listings={queue.listings} />
 
@@ -518,6 +521,121 @@ export function AdminDashboard() {
  * moment as the row above it, from the same fetch, so the two can never
  * disagree about what is true — which a separate detail page could.
  */
+/**
+ * Sessions happening right now, and who to call about them.
+ *
+ * Everything else on this page is history. This is the only part where
+ * somebody is currently in a building, and it is the only reason the app asks
+ * for an emergency contact at all — a field collected and then unreachable is
+ * a field that does nothing.
+ *
+ * Both sides are shown, not only the practitioner. A host who let a stranger
+ * into their studio is in the same position as a practitioner alone in one.
+ *
+ * Silent when nothing is running. An empty panel here every day is the point:
+ * it means nobody needs anything.
+ */
+function InTheRoom({ sessions }: { sessions: LiveSession[] }) {
+  if (sessions.length === 0) return null;
+
+  const clock = (iso: string) =>
+    new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+
+  return (
+    <div
+      className="rounded-xl p-4 mt-6"
+      style={{ backgroundColor: PANEL, border: `1px solid ${LINE}` }}
+    >
+      <div className="flex items-center gap-2">
+        <span
+          className="rounded-full"
+          style={{ width: 7, height: 7, backgroundColor: "#E8613D" }}
+        />
+        <p className="font-body font-medium text-[12.5px]" style={{ color: "#fff" }}>
+          In a room now
+        </p>
+        <span className="font-body font-light text-[11px]" style={{ color: MUTED }}>
+          {sessions.length}
+        </span>
+      </div>
+
+      <div className="flex flex-col gap-2.5 mt-3">
+        {sessions.map((session) => (
+          <div
+            key={session.bookingId}
+            className="rounded-lg p-3"
+            style={{ backgroundColor: BG, border: `1px solid ${LINE}` }}
+          >
+            <div className="flex items-baseline gap-2 flex-wrap">
+              <p className="font-body font-medium text-[12.5px]" style={{ color: "#fff" }}>
+                {session.spaceName}
+              </p>
+              <span
+                className="px-2 py-0.5 rounded-full font-body text-[10px]"
+                style={{
+                  backgroundColor:
+                    session.state === "in progress"
+                      ? "rgba(232,97,61,0.16)"
+                      : "rgba(255,255,255,0.06)",
+                  color: session.state === "in progress" ? "#E8613D" : MUTED,
+                }}
+              >
+                {session.state}
+              </span>
+              <span className="font-body font-light text-[11px]" style={{ color: MUTED }}>
+                {clock(session.startsAt)}-{clock(session.endsAt)}
+              </span>
+            </div>
+
+            {session.addressLine && (
+              <p className="font-body font-light text-[11px] mt-0.5" style={{ color: MUTED }}>
+                {session.addressLine}
+              </p>
+            )}
+
+            <div
+              className="grid gap-3 mt-2.5"
+              style={{ gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))" }}
+            >
+              <Party role="Practitioner" party={session.practitioner} />
+              <Party role="Studio" party={session.host} />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** One side of a session, with the number to ring if it goes wrong. */
+function Party({ role, party }: { role: string; party: SessionParty }) {
+  const reachable = Boolean(party.emergency.phone?.trim() || party.emergency.name?.trim());
+
+  return (
+    <div>
+      <p
+        className="font-body font-light text-[9.5px] uppercase tracking-[0.1em]"
+        style={{ color: MUTED }}
+      >
+        {role}
+      </p>
+      <p className="font-body text-[11.5px]" style={{ color: "#fff" }}>
+        {party.name ?? party.email ?? "No name"}
+      </p>
+
+      <div className="flex items-center gap-1.5 mt-1">
+        <Phone size={10} color={reachable ? "#E8A33D" : MUTED} className="shrink-0" />
+        <p
+          className="font-body text-[11px]"
+          style={{ color: reachable ? "#E8A33D" : MUTED }}
+        >
+          {emergencyLine(party.emergency)}
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function Directory({ people, listings }: { people: Person[]; listings: ListingRow[] }) {
   const [tab, setTab] = useState<"people" | "listings">("people");
   const [query, setQuery] = useState("");
@@ -619,6 +737,13 @@ function Directory({ people, listings }: { people: Person[]; listings: ListingRo
                     person.payoutsReady === null
                       ? ["Payouts", "not applicable"]
                       : ["Payouts", person.payoutsReady ? "ready" : "not set up"],
+                    /*
+                     * The one thing on this screen that is read in a hurry.
+                     * Written out rather than reduced to "on file", because
+                     * the moment it is needed is not the moment to go looking
+                     * for a second screen.
+                     */
+                    ["Emergency contact", emergencyLine(person.emergency)],
                     ["Account id", person.id],
                   ]}
                 />
@@ -685,6 +810,24 @@ function Tab({
 }
 
 /** One line, and everything about it one click away. */
+/**
+ * An emergency contact as one readable line.
+ *
+ * "Not filled in" is said plainly rather than left blank. A blank cell reads as
+ * a rendering fault; the absence is real information, and it is the kind that
+ * is otherwise discovered at the worst possible moment.
+ *
+ * A partial answer is shown as far as it goes — a phone number with no name is
+ * still a phone number, and dropping it for being incomplete helps nobody.
+ */
+function emergencyLine(contact: Person["emergency"]): string {
+  const parts = [contact.name, contact.phone].filter((v): v is string => Boolean(v?.trim()));
+  if (parts.length === 0) return "not filled in";
+
+  const line = parts.join(" · ");
+  return contact.relationship?.trim() ? `${line} (${contact.relationship.trim()})` : line;
+}
+
 function Row({
   open,
   onToggle,

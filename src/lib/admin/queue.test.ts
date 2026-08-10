@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { type PaidBooking, rollUp } from "./queue";
+import { LIVE_LEAD_MS, LIVE_TRAIL_MS, type PaidBooking, rollUp, sessionState } from "./queue";
 
 /**
  * The operator screen turns numbers back into names, and this is the part that
@@ -120,5 +120,46 @@ describe("rollUp", () => {
     const expected = bookings.reduce((sum, b) => sum + (b.totalCents - b.hostRateCents), 0);
 
     expect(spent - earned).toBe(expected);
+  });
+});
+
+describe("sessionState", () => {
+  const NOW = new Date("2026-08-11T18:00:00Z");
+  const hours = (n: number) => new Date(NOW.getTime() + n * 60 * 60 * 1000);
+
+  /** Session 17:00-18:00, so `now` is the moment it ends. */
+  const at = (startHoursFromNow: number, status = "upcoming") =>
+    sessionState(status, hours(startHoursFromNow), hours(startHoursFromNow + 1), NOW);
+
+  it("names which side of the hour a session is on", () => {
+    expect(at(-0.5)).toBe("in progress");
+    expect(at(1)).toBe("starting soon");
+    expect(at(-2)).toBe("just finished");
+  });
+
+  it("reaches two hours ahead and no further", () => {
+    expect(at(LIVE_LEAD_MS / 3_600_000)).toBe("starting soon");
+    expect(at(LIVE_LEAD_MS / 3_600_000 + 0.01)).toBeNull();
+  });
+
+  it("keeps a finished session reachable for two hours", () => {
+    // Ends three hours ago: exactly the trailing edge, since the session runs
+    // an hour and the window is measured from its end.
+    expect(at(-1 - LIVE_TRAIL_MS / 3_600_000)).toBe("just finished");
+    expect(at(-1.01 - LIVE_TRAIL_MS / 3_600_000)).toBeNull();
+  });
+
+  /**
+   * Nobody is in that room. Listing it would send somebody looking for a person
+   * who never came, which is worse than an empty panel.
+   */
+  it("leaves out sessions nobody is attending", () => {
+    expect(at(-0.5, "cancelled_by_practitioner")).toBeNull();
+    expect(at(-0.5, "cancelled_by_host")).toBeNull();
+    expect(at(-0.5, "no_show")).toBeNull();
+  });
+
+  it("keeps a completed session, which is how a past hour is recorded", () => {
+    expect(at(-1.5, "completed")).toBe("just finished");
   });
 });

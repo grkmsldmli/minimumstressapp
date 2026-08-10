@@ -166,7 +166,7 @@ export function BrowseMap({
         className="absolute left-3 bottom-3 px-2 py-1 rounded-md font-body text-[12px] text-ink-soft"
         style={{ backgroundColor: "rgba(255,255,255,0.9)" }}
       >
-        Approximate areas · exact address after booking
+        Tap a studio to see it
       </p>
 
       <span

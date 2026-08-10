@@ -182,14 +182,12 @@ function AccessPanel({
         <SpaceDirections access={access} tone="dark" />
       ) : (
         /*
-          Said, rather than left as an absence.
-          The address arrives on the same line the money does: inside 24 hours
-          a cancellation is charged in full, so that is the point the booking
-          is committed. Silence here would read as something missing.
+          Said, rather than left as an absence. The address is on the listing
+          from the start; what appears here is the way in, and it appears when
+          it is useful rather than when it is booked.
         */
         <p className="font-body font-normal text-[14px] leading-relaxed text-white/65">
-          The exact address and entry instructions appear here a day before your session, once the
-          booking is confirmed. You already know the area.
+          Entry instructions and your door code appear here 30 minutes before you start.
         </p>
       )}
     </div>

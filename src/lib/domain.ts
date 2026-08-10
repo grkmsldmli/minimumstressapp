@@ -127,11 +127,14 @@ export interface PublicSpace {
    */
   area: string | null;
   /**
-   * Roughly where, for the browse map. Never the address.
+   * The street, and where it is on a map.
    *
-   * Offset 250–450m in a direction fixed per listing, computed in the database
-   * so the real coordinates never enter a response. Null until a listing has
-   * been geocoded.
+   * Public because every listing here is a retail studio whose address is
+   * already on Google Maps and its own website — withholding it protected
+   * nothing and cost a practitioner the fact they judge a room by. The entry
+   * instructions and the access code are what stay behind the booking.
+   *
+   * Null on a listing that predates geocoding.
    */
   /**
    * What "accessible" means for this room, as four answered facts.
@@ -148,8 +151,9 @@ export interface PublicSpace {
    * exists — and because "street parking" locates nothing.
    */
   parking: Parking;
-  approxLat: number | null;
-  approxLng: number | null;
+  addressLine: string | null;
+  lat: number | null;
+  lng: number | null;
   distanceLabel: string;
   /**
    * Counted from released reviews only, so a sealed one cannot be inferred by

@@ -142,12 +142,29 @@ describe("the harness itself", () => {
   });
 });
 
-describe("the address stays private until you have booked", () => {
-  it("hides it from an anonymous browser", async () => {
+describe("the address is public, the door is not", () => {
+  /**
+   * This block asserted the opposite, and the opposite was wrong.
+   *
+   * Every listing here is a retail studio whose address is already on Google
+   * Maps and its own website, so withholding the street number protected
+   * nothing and cost a practitioner the fact they judge a room by. What is
+   * still worth withholding is the way inside, which belongs to whoever paid
+   * for the hour.
+   */
+  it("shows the address to an anonymous browser", async () => {
+    const [space] = await asAnon<{ address_line: string }>(
+      `select address_line from spaces_public where id = '${SPACE}'`,
+    );
+
+    expect(space.address_line).toBe("12 Alder Lane");
+  });
+
+  it("never publishes the entry instructions", async () => {
     const columns = await asAnon(`select * from spaces_public where id = '${SPACE}'`);
 
     expect(columns).toHaveLength(1);
-    expect(Object.keys(columns[0])).not.toContain("address_line");
+    expect(Object.keys(columns[0])).not.toContain("entry_instructions");
   });
 
   it("refuses anonymous access to the spaces table entirely", async () => {
@@ -156,10 +173,10 @@ describe("the address stays private until you have booked", () => {
     );
   });
 
-  it("hides it from a signed-in practitioner who has not booked", async () => {
+  it("withholds the entry instructions from somebody who has not booked", async () => {
     const found = await asUser(
       STRANGER,
-      `select address_line from space_access_details('${SPACE}')`,
+      `select entry_instructions from space_access_details('${SPACE}')`,
     );
 
     expect(found).toEqual([]);
@@ -882,120 +899,48 @@ describe("the public area", () => {
 });
 
 /**
- * Roughly where, and never exactly.
+ * The map draws the room where the room is.
  *
- * The browse map used to be a drawing with pins at decorative coordinates. A
- * real map needs real points, and a real point is the address — so what is
- * published is offset a few hundred metres, computed in the view so the true
- * one never enters a response.
+ * This published a point offset a few hundred metres, so a real map could be
+ * drawn without naming a room we would not name. With the address published
+ * that only produced a worse map, and the offset went with it.
  */
-describe("the approximate position", () => {
-  const AREA_SPACE = "66666666-6666-6666-6666-666666666666";
+describe("the map point", () => {
+  // Its own listing, because earlier tests push SPACE back to pending and a
+  // pending listing is not in the public view at all.
+  const MAP_SPACE = "88888888-8888-8888-8888-888888888888";
+  const LAT = 37.5485;
+  const LNG = -122.3122;
 
   beforeAll(async () => {
-    await db.exec(
-      `update spaces set lat = 37.4987882, lng = -122.2715495 where id = '${AREA_SPACE}'`,
-    );
+    await db.exec(`
+      insert into spaces (
+        id, host_id, name, category, hourly_rate_cents, capacity, access_type,
+        entry_instructions, address_line, lat, lng, status, sublease_doc_path,
+        legal_ack_at, sublease_doc_state, sublease_doc_reviewed_at
+      ) values (
+        '${MAP_SPACE}', '${HOST}', 'Bay Room', 'physical', 5200, 4, 'keypad',
+        'Ring the bell', '2 Bay Street', ${LAT}, ${LNG}, 'active',
+        'space/m/lease.pdf', now(), 'verified', now()
+      );
+    `);
   });
 
-  /** Metres between two points, near enough at this scale. */
-  const metresApart = (aLat: number, aLng: number, bLat: number, bLng: number) =>
-    Math.hypot(
-      (aLat - bLat) * 111320,
-      (aLng - bLng) * 111320 * Math.cos((aLat * Math.PI) / 180),
+  it("is the studio's own position, not a point near it", async () => {
+    const [shown] = await asAnon<{ lat: number; lng: number }>(
+      `select lat, lng from spaces_public where id = '${MAP_SPACE}'`,
     );
 
-  /**
-   * A band, not a square.
-   *
-   * Offsetting each axis independently was the first attempt, and measuring it
-   * over two hundred listings showed the displacement running from 42m to
-   * 547m — one in fourteen under 100m. A published point 42m from the door is
-   * not a neighbourhood, it is the building.
-   */
-  it("puts the point far enough away to not be the address", async () => {
-    const [row] = await asUser<{ approx_lat: number; approx_lng: number }>(
-      PRACTITIONER,
-      `select approx_lat, approx_lng from spaces_public where id = '${AREA_SPACE}'`,
-    );
-
-    const away = metresApart(37.4987882, -122.2715495, row.approx_lat, row.approx_lng);
-    expect(away).toBeGreaterThanOrEqual(240);
+    expect(Number(shown.lat)).toBeCloseTo(LAT, 6);
+    expect(Number(shown.lng)).toBeCloseTo(LNG, 6);
   });
 
-  it("keeps it near enough to still mean something", async () => {
-    const [row] = await asUser<{ approx_lat: number; approx_lng: number }>(
-      PRACTITIONER,
-      `select approx_lat, approx_lng from spaces_public where id = '${AREA_SPACE}'`,
+  it("comes with the street it belongs to", async () => {
+    const [shown] = await asAnon<{ address_line: string }>(
+      `select address_line from spaces_public where id = '${MAP_SPACE}'`,
     );
 
-    const away = metresApart(37.4987882, -122.2715495, row.approx_lat, row.approx_lng);
-    expect(away).toBeLessThanOrEqual(460);
-  });
-
-  /** Every listing, not only the one in the fixture. */
-  it("holds the band across many listings", async () => {
-    const rows = await db
-      .query<{ la: number; ln: number }>(
-        `select approx_lat(gen_random_uuid(), 37.5) as la,
-                approx_lng(gen_random_uuid(), 37.5, -122.3) as ln
-         from generate_series(1, 50)`,
-      )
-      .then((r) => r.rows);
-
-    for (const row of rows) {
-      const dLat = Math.abs(row.la - 37.5) * 111320;
-      expect(dLat).toBeLessThanOrEqual(460);
-    }
-  });
-
-  it("never publishes the exact one", async () => {
-    const [row] = await asUser<{ approx_lat: number; approx_lng: number }>(
-      PRACTITIONER,
-      `select approx_lat, approx_lng from spaces_public where id = '${AREA_SPACE}'`,
-    );
-
-    expect(row.approx_lat).not.toBe(37.4987882);
-    expect(row.approx_lng).not.toBe(-122.2715495);
-  });
-
-  /**
-   * The property that makes it safe. A point that moved between requests
-   * could be averaged back to the true position by asking repeatedly.
-   */
-  it("returns the same point every time", async () => {
-    const once = await asUser<{ approx_lat: number }>(
-      PRACTITIONER,
-      `select approx_lat from spaces_public where id = '${AREA_SPACE}'`,
-    );
-    const again = await asUser<{ approx_lat: number }>(
-      PRACTITIONER,
-      `select approx_lat from spaces_public where id = '${AREA_SPACE}'`,
-    );
-
-    expect(once[0].approx_lat).toBe(again[0].approx_lat);
-  });
-
-  it("moves two listings in different directions", async () => {
-    const [a] = await db
-      .query<{ v: number }>(`select approx_lat('11111111-1111-1111-1111-111111111111', 37.5) as v`)
-      .then((r) => r.rows);
-    const [b] = await db
-      .query<{ v: number }>(`select approx_lat('22222222-2222-2222-2222-222222222222', 37.5) as v`)
-      .then((r) => r.rows);
-
-    expect(a.v).not.toBe(b.v);
-  });
-
-  /** The exact column is still refused to anybody who has not booked. */
-  it("keeps the real coordinates out of the view entirely", async () => {
-    const [row] = await asUser<Record<string, unknown>>(
-      PRACTITIONER,
-      `select * from spaces_public where id = '${AREA_SPACE}'`,
-    );
-
-    expect(Object.keys(row)).not.toContain("lat");
-    expect(Object.keys(row)).not.toContain("lng");
+    expect(shown.address_line).toBe("2 Bay Street");
   });
 });
 

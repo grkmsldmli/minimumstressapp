@@ -138,7 +138,7 @@ export function render(kind: NotificationKind, context: MessageContext): Message
           context.amountCents !== undefined
             ? `Total ${formatCents(context.amountCents)}, including our service fee, charged to your card now. Cancel more than 24 hours ahead and all of it is refunded.`
             : null,
-          `The address and your door code unlock in this app 30 minutes before you start. We will message you when they do.`,
+          `Your door code and the way in unlock in this app 30 minutes before you start. We will message you when they do.`,
           SIGN_OFF,
         ),
         sms: null,

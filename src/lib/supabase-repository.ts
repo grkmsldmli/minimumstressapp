@@ -8,7 +8,7 @@
  *   spaces_public / availability_public / space_media_public
  *       browsing, no address, no documents
  *   space_access_details(space_id)
- *       address and entry instructions, released only once a booking exists
+ *       entry instructions and door code, released only once a booking exists
  *   bookings_with_access_code
  *       the code appears only after its reveal time, decided server-side
  *   host_bookings()
@@ -103,8 +103,7 @@ interface SpaceRow {
   floor_access?: string | null;
   doorway_inches?: number | null;
   restroom_access?: string | null;
-  approx_lat?: number | null;
-  approx_lng?: number | null;
+  address_line_public?: string | null;
   map_x?: number | string | null;
   map_y?: number | string | null;
 }
@@ -383,6 +382,9 @@ export class SupabaseRepository implements Repository {
         options: row.parking ?? [],
         limitMinutes: row.parking_limit_minutes ?? null,
       },
+      addressLine: row.address_line ?? null,
+      lat: row.lat ?? null,
+      lng: row.lng ?? null,
       amenities: row.amenities ?? [],
       requirements: row.requirements ?? [],
       houseRules: row.house_rules ?? "",
@@ -408,8 +410,6 @@ export class SupabaseRepository implements Repository {
         doorwayInches: row.doorway_inches ?? null,
         restroom: (row.restroom_access as AccessDetails["restroom"]) ?? null,
       },
-      approxLat: row.approx_lat ?? null,
-      approxLng: row.approx_lng ?? null,
       distanceLabel: "nearby",
       reviewCount: rating?.count ?? 0,
       averageRating: rating?.average ?? null,
@@ -755,9 +755,6 @@ export class SupabaseRepository implements Repository {
           doorwayInches: row.doorway_inches ?? null,
           restroom: (row.restroom_access as AccessDetails["restroom"]) ?? null,
         },
-        // The host is looking at their own listing and already has the address.
-        approxLat: null,
-        approxLng: null,
         distanceLabel: "your space",
         reviewCount: 0,
         averageRating: null,

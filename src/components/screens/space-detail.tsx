@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Check, Key, Lock, Sun, Users, Zap } from "lucide-react";
+import { ArrowLeft, Check, Key, MapPin, Sun, Users, Zap } from "lucide-react";
 
 import { AccessPanel } from "@/components/access-panel";
 import { ParkingPanel } from "@/components/parking-panel";
@@ -271,19 +271,19 @@ export function SpaceDetail({
           className="mt-5 rounded-2xl p-3.5 flex items-start gap-2.5"
           style={{ backgroundColor: "#F4F8FC", border: "1px solid #E7EEF6" }}
         >
-          <Lock size={13} color="#8CA3BD" className="mt-0.5 shrink-0" />
+          <MapPin size={13} color="#3B9BE8" className="mt-0.5 shrink-0" />
           <div>
             {/*
-              The town, then the rule. Showing neither was the same rule
-              applied one level too far: nobody commits their card, their
-              afternoon and their own client to a place they will not be told
-              until afterwards.
+              The address, plainly. It was withheld until a day before the
+              session, which protected nothing — every listing here is a retail
+              studio whose address is on Google Maps and its own website — and
+              cost somebody the one fact they judge a room by.
             */}
-            {space.area && (
-              <p className="font-body font-medium text-[15px] text-navy">{space.area}</p>
-            )}
+            <p className="font-body font-medium text-[15px] text-navy">
+              {space.addressLine ?? space.area ?? "Address on request"}
+            </p>
             <p className="font-body font-normal text-[13.5px] leading-relaxed mt-0.5 text-ink-soft">
-              The exact address and entry instructions arrive a day before your session.
+              Entry instructions and your door code arrive 30 minutes before you start.
             </p>
           </div>
         </div>

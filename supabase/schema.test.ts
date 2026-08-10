@@ -187,20 +187,29 @@ describe("a booking row can actually be written", () => {
 });
 
 describe("private columns stay out of the public views", () => {
-  /** The whole address-privacy rule rests on these columns being absent. */
-  it("omits address and entry instructions from spaces_public", async () => {
+  /**
+   * The line moved, and it moved on purpose.
+   *
+   * The address used to be here, on the grounds that a room should not be
+   * findable before it is booked. Every listing is a retail studio whose
+   * address is on Google Maps already, so that withheld nothing and cost the
+   * practitioner the fact they decide on. What is still private is the way in.
+   */
+  it("omits the way in from spaces_public", async () => {
     const columns = await rows<{ column_name: string }>(
       `select column_name from information_schema.columns
        where table_schema = 'public' and table_name = 'spaces_public'`,
     );
     const names = columns.map((c) => c.column_name);
 
-    expect(names).not.toContain("address_line");
-    expect(names).not.toContain("lat");
-    expect(names).not.toContain("lng");
     expect(names).not.toContain("entry_instructions");
     expect(names).not.toContain("sublease_doc_path");
     expect(names).not.toContain("insurance_doc_path");
+
+    // Published now, and the reason is in the migration rather than here.
+    expect(names).toContain("address_line");
+    expect(names).toContain("lat");
+    expect(names).toContain("lng");
 
     // Still has to be useful for Discover.
     expect(names).toContain("hourly_rate_cents");

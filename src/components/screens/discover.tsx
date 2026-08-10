@@ -651,11 +651,11 @@ function MapView({
       */}
       <BrowseMap
         pins={spaces
-          .filter((space) => space.approxLat !== null && space.approxLng !== null)
+          .filter((space) => space.lat !== null && space.lng !== null)
           .map((space) => ({
             id: space.id,
             name: space.name,
-            point: { lat: space.approxLat!, lng: space.approxLng! },
+            point: { lat: space.lat!, lng: space.lng! },
             active: selected === space.id,
           }))}
         you={you}

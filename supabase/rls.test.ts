@@ -1081,3 +1081,86 @@ describe("notification history", () => {
     ).rejects.toThrow(/permission denied|row-level security/i);
   });
 });
+
+/**
+ * The address arrives when the booking becomes committed.
+ *
+ * It used to arrive the moment a booking existed, which left a hole with no
+ * cost: book, read the address, cancel more than 24 hours out, pay nothing,
+ * and keep the address. Repeat for every listing on the board.
+ */
+describe("when the address is released", () => {
+  const FAR_SPACE = "77777777-7777-7777-7777-777777777777";
+
+  beforeAll(async () => {
+    await db.exec(`
+      insert into spaces (
+        id, host_id, name, category, hourly_rate_cents, capacity, access_type,
+        entry_instructions, address_line, status, sublease_doc_path, legal_ack_at,
+        sublease_doc_state, sublease_doc_reviewed_at
+      ) values (
+        '${FAR_SPACE}', '${HOST}', 'Far Room', 'physical', 4000, 2, 'keypad',
+        'Side door', '99 Far Lane', 'active', 'space/x/lease.pdf', now(),
+        'verified', now()
+      );
+
+      insert into bookings (
+        space_id, practitioner_id, starts_at, ends_at, is_instant, was_pro,
+        host_rate_cents, service_fee_cents, instant_fee_cents, pro_discount_cents,
+        credit_applied_cents, total_cents, platform_cents, access_code
+      ) values (
+        '${FAR_SPACE}', '${PRACTITIONER}',
+        now() + interval '5 days', now() + interval '5 days 1 hour',
+        false, false, 4000, 800, 0, 0, 0, 4800, 800, '9911'
+      );
+    `);
+  });
+
+  /** Five days out: still free to cancel, so still nothing to collect. */
+  it("withholds it while the booking is free to cancel", async () => {
+    const found = await asUser(
+      PRACTITIONER,
+      `select address_line from space_access_details('${FAR_SPACE}')`,
+    );
+    expect(found).toHaveLength(0);
+  });
+
+  it("releases it once inside the 24-hour window", async () => {
+    await db.exec(
+      `update bookings set starts_at = now() + interval '3 hours',
+              ends_at = now() + interval '4 hours'
+       where space_id = '${FAR_SPACE}'`,
+    );
+
+    const [details] = await asUser<{ address_line: string; entry_instructions: string }>(
+      PRACTITIONER,
+      `select address_line, entry_instructions from space_access_details('${FAR_SPACE}')`,
+    );
+    expect(details.address_line).toBe("99 Far Lane");
+    expect(details.entry_instructions).toBe("Side door");
+  });
+
+  /** Somebody has to be able to find the place again afterwards. */
+  it("keeps it after the session has happened", async () => {
+    await db.exec(
+      `update bookings set starts_at = now() - interval '3 days',
+              ends_at = now() - interval '3 days' + interval '1 hour',
+              status = 'completed'
+       where space_id = '${FAR_SPACE}'`,
+    );
+
+    const found = await asUser(
+      PRACTITIONER,
+      `select address_line from space_access_details('${FAR_SPACE}')`,
+    );
+    expect(found).toHaveLength(1);
+  });
+
+  it("still refuses somebody with no booking at all", async () => {
+    const found = await asUser(
+      STRANGER,
+      `select address_line from space_access_details('${FAR_SPACE}')`,
+    );
+    expect(found).toHaveLength(0);
+  });
+});

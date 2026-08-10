@@ -178,11 +178,21 @@ function AccessPanel({
         </p>
       )}
 
-      {access && (
-        <>
-          <div className="h-px my-3" style={{ backgroundColor: "rgba(255,255,255,0.12)" }} />
-          <SpaceDirections access={access} tone="dark" />
-        </>
+      <div className="h-px my-3" style={{ backgroundColor: "rgba(255,255,255,0.12)" }} />
+
+      {access ? (
+        <SpaceDirections access={access} tone="dark" />
+      ) : (
+        /*
+          Said, rather than left as an absence.
+          The address arrives on the same line the money does: inside 24 hours
+          a cancellation is charged in full, so that is the point the booking
+          is committed. Silence here would read as something missing.
+        */
+        <p className="font-body font-normal text-[14px] leading-relaxed text-white/65">
+          The exact address and entry instructions appear here a day before your session, once the
+          booking is confirmed. You already know the area.
+        </p>
       )}
     </div>
   );
@@ -446,10 +456,14 @@ function UpcomingBooking({
                 , half an hour before you start.
               </p>
             )}
-            {access && (
+            {access ? (
               <div className="mt-3">
                 <SpaceDirections access={access} showMap />
               </div>
+            ) : (
+              <p className="font-body font-normal text-[14px] leading-relaxed mt-3 text-ink-soft">
+                The address appears a day before your session.
+              </p>
             )}
 
             {/*

@@ -2514,3 +2514,270 @@ alter table profiles
 -- profiles grant was never narrowed that way, so this needs nothing beyond the
 -- policy that already restricts a profile to its owner.
 -- ------------------------------------------------------------------
+
+
+-- ===================================================================
+-- 0025_notification_history.sql
+-- ===================================================================
+
+-- What we sent you, where you can find it.
+--
+-- The app has been sending email since the first booking and keeping no
+-- record anybody could read. A host who missed the message about a session
+-- starting in an hour had nowhere to look — not a stale inbox, not a spam
+-- folder, nothing inside the product that could tell them it had been sent at
+-- all. The row existed the whole time; only staff could see it.
+--
+-- Exposed through a view rather than a policy on the table, because most of
+-- what the table holds is an operator's business and not the recipient's:
+--
+--   dedupe_key   an internal claim token
+--   attempts     how hard the queue tried
+--   last_error   a provider's words, written for us
+--   dropped_at   that we gave up
+--
+-- None of that helps somebody asking "did the door code come through". What
+-- does help is what it was about, when it was sent, and — plainly — when it
+-- was not.
+
+create or replace view my_notifications
+with (security_invoker = true) as
+  select
+    id,
+    booking_id,
+    kind,
+    channel,
+    sent_at,
+    created_at,
+    /*
+     * Three states, and the third is the one this exists for.
+     *
+     * "Sent" and "queued" are both fine. "Failed" is the answer somebody is
+     * actually looking for when they are standing outside a door, and the app
+     * has never been able to give it.
+     */
+    case
+      when sent_at is not null then 'sent'
+      when dropped_at is not null then 'failed'
+      else 'queued'
+    end as state
+  from notifications
+  where user_id = auth.uid();
+
+grant select on my_notifications to authenticated;
+
+-- ------------------------------------------------------------------
+-- The row policy the view leans on.
+--
+-- security_invoker means this runs with the caller's rights, so `notifications`
+-- needs a policy of its own or the view returns nothing. Select only: nobody
+-- may write their own notification history, and it is scoped to the recipient
+-- rather than to a booking — a host and a practitioner on the same booking get
+-- different messages, and each sees theirs.
+-- ------------------------------------------------------------------
+drop policy if exists "notifications: read your own" on notifications;
+
+create policy "notifications: read your own"
+  on notifications for select
+  using (user_id = auth.uid());
+
+/*
+ * Column by column, not the whole row.
+ *
+ * A blanket `grant select on notifications` would have made the view
+ * decorative: the policy lets somebody read their own rows, so they could
+ * simply query the table and get last_error, attempts and dedupe_key —
+ * every field the view was written to keep back. The grant is the boundary;
+ * the view is the presentation.
+ *
+ * dropped_at is here because the view derives 'failed' from it, and a
+ * security_invoker view can only read what the caller may read.
+ */
+grant select (id, user_id, booking_id, kind, channel, sent_at, dropped_at, created_at)
+  on notifications to authenticated;
+
+
+-- ===================================================================
+-- 0026_access_details.sql
+-- ===================================================================
+
+-- What "accessible" actually means for this room.
+--
+-- The column was a boolean, and the screen rendered it as a chip reading
+-- "Wheelchair accessible". A wheelchair user cannot act on that. Is there a
+-- step at the front door? Is the lift wide enough to turn in? Is the restroom
+-- one they can use? The chip answers none of it while looking like an answer,
+-- so somebody books, travels, pays, arrives with their own client waiting, and
+-- cannot get in.
+--
+-- A boolean also invites the wrong answer honestly given. A host with one
+-- shallow step at the entrance genuinely does not know which box to tick, and
+-- most will tick yes because the room itself is fine.
+--
+-- So: four facts, each one an obstacle somebody is actually stopped by.
+-- Structured rather than free text, because free text produces "yes, fully
+-- accessible!" — the same claim with more words.
+--
+-- Null throughout means not answered, which is shown as not answered. An
+-- unanswered question is more use than a guess, since a practitioner can ask.
+
+do $$ begin
+  create type entrance_access as enum ('step_free', 'one_step', 'steps');
+exception when duplicate_object then null;
+end $$;
+
+do $$ begin
+  create type lift_access as enum ('ground_floor', 'lift', 'stairs_only');
+exception when duplicate_object then null;
+end $$;
+
+do $$ begin
+  create type restroom_access as enum ('accessible', 'standard', 'none');
+exception when duplicate_object then null;
+end $$;
+
+alter table spaces
+  -- Getting from the pavement to the door.
+  add column if not exists entrance_access entrance_access,
+  -- Getting from the door to the room.
+  add column if not exists floor_access lift_access,
+  -- The measurement that decides it, in inches. Null when not measured.
+  add column if not exists doorway_inches integer,
+  add column if not exists restroom_access restroom_access;
+
+alter table spaces
+  drop constraint if exists spaces_doorway_plausible;
+alter table spaces
+  add constraint spaces_doorway_plausible check (
+    doorway_inches is null or doorway_inches between 18 and 96
+  );
+
+-- ------------------------------------------------------------------
+-- Published, because this is what somebody decides on.
+--
+-- None of it locates the room — a doorway width is not an address — so it
+-- belongs in the public view alongside capacity and the room type rather than
+-- behind the booking.
+-- ------------------------------------------------------------------
+drop view if exists spaces_public;
+
+create view spaces_public as
+  select
+    id, host_id, name, category, hourly_rate_cents, capacity, access_type,
+    accessible, restroom, buffer_minutes, status, created_at,
+    description, amenities, requirements, house_rules,
+    map_x, map_y,
+    entrance_access, floor_access, doorway_inches, restroom_access,
+    public_area(address_line) as area,
+    approx_lat(id, lat) as approx_lat,
+    approx_lng(id, lat, lng) as approx_lng
+  from spaces
+  where status = 'active';
+
+grant select on spaces_public to anon, authenticated;
+grant select on spaces_public to service_role;
+
+-- The host may answer them, like the rest of their listing. 0019 revoked the
+-- blanket update and grants per column, so these need adding to that list.
+grant update (entrance_access, floor_access, doorway_inches, restroom_access)
+  on spaces to authenticated;
+
+-- ------------------------------------------------------------------
+-- The old boolean.
+--
+-- Left in place and left alone. Migrating it would mean inventing answers —
+-- "accessible = true" says nothing about which of the four is true — and a
+-- fabricated accessibility claim is worse than a missing one. Existing
+-- listings show as unanswered until a host answers.
+-- ------------------------------------------------------------------
+
+
+-- ===================================================================
+-- 0027_address_at_commitment.sql
+-- ===================================================================
+
+-- The address arrives when the booking becomes committed.
+--
+-- It used to arrive the moment a booking existed. That left a hole with no
+-- cost attached to it: book a room, read the address, cancel more than 24
+-- hours out, and the authorisation is voided in full. Nothing charged, nothing
+-- counted against standing, and the exact address of somebody's studio
+-- collected for free. Repeat for every listing on the board.
+--
+-- The 24-hour line already marks the moment a booking stops being free to walk
+-- away from — cancel inside it and the full amount is captured. So that is the
+-- moment the address is worth its cost, and it is the same boundary the refund
+-- policy and the standing rules use. One line, three consequences, nothing new
+-- to explain.
+--
+-- A booking made inside the window is committed from the start, so it reveals
+-- immediately. Nobody waits for a line they are already past.
+--
+-- What does not change: the area was always public, so a practitioner has
+-- known roughly where the room is since before they booked. This withholds the
+-- doorway, not the neighbourhood.
+
+create or replace function space_access_details(p_space_id uuid)
+returns table (
+  address_line text,
+  lat double precision,
+  lng double precision,
+  entry_instructions text,
+  access_type access_type
+)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select s.address_line, s.lat, s.lng, s.entry_instructions, s.access_type
+  from spaces s
+  where s.id = p_space_id
+    and exists (
+      select 1 from bookings b
+      where b.space_id = s.id
+        and b.practitioner_id = auth.uid()
+        and b.status in ('upcoming', 'completed')
+        /*
+         * Inside the free-cancellation window, or already past.
+         *
+         * `starts_at - now() < 24h` covers both: a session tomorrow morning,
+         * and one that happened last week. A completed booking keeps its
+         * address — somebody needs to find the place again, and by then they
+         * have paid for it.
+         */
+        and b.starts_at - now() < interval '24 hours'
+    );
+$$;
+
+revoke all on function space_access_details(uuid) from public;
+grant execute on function space_access_details(uuid) to authenticated;
+
+
+-- ===================================================================
+-- 0027_description_editable.sql
+-- ===================================================================
+
+-- Let a host write the paragraph their listing already shows.
+--
+-- `spaces.description` has existed since the first migration and the listing
+-- screen has always rendered it. Nothing ever collected it: not the listing
+-- form, not the edit screen, and `createSpace` did not write the column. Every
+-- real listing has an empty one, which is why the app looked like it had
+-- descriptions — the seeded fake data did, and the fakes were what got looked
+-- at.
+--
+-- The column needs nothing. The grant does: 0019 revoked the blanket update on
+-- `spaces` and re-granted per column, so anything added after it is read-only
+-- until named here.
+
+grant update (description) on spaces to authenticated;
+
+-- A paragraph, not an essay. Long enough for what a room is like and short
+-- enough that a practitioner reads it before choosing.
+alter table spaces
+  drop constraint if exists spaces_description_length;
+alter table spaces
+  add constraint spaces_description_length check (
+    description is null or length(description) <= 1200
+  );

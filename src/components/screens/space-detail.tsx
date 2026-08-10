@@ -251,8 +251,7 @@ export function SpaceDetail({
               <p className="font-body font-medium text-[15px] text-navy">{space.area}</p>
             )}
             <p className="font-body font-normal text-[13.5px] leading-relaxed mt-0.5 text-ink-soft">
-              The exact address and entry instructions are shared once you&apos;ve booked, shortly
-              before your session.
+              The exact address and entry instructions arrive a day before your session.
             </p>
           </div>
         </div>

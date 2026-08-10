@@ -54,7 +54,7 @@ const SECTIONS = [
     points: [
       "We collect what is needed to match and pay you: identity, contact details, listing information, and any documents you upload.",
       "Card details are handled by Stripe. We never see or store a card number.",
-      "A space's address and entry instructions are released to a practitioner only after they have booked it, and to nobody else.",
+      "A space's address and entry instructions are released to the practitioner who booked it, 24 hours before the session, and to nobody else. Before that only the general area is shown.",
       "Verification documents are visible only to us, for review. They are never shown publicly or to the other side of a booking.",
       "You can ask us to delete your data at any time.",
     ],

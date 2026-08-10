@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 
 import { notifyAccessCodesReady, rebuildPending } from "@/lib/notify/for-booking";
 import { retryPending } from "@/lib/notify/send";
-import { stripe } from "@/lib/stripe/client";
+import { payHost } from "@/lib/stripe/client";
 import { supabaseAdmin } from "@/lib/supabase/server";
 
 /**
@@ -47,21 +47,22 @@ export async function GET(request: NextRequest): Promise<Response> {
 
   try {
     /**
-     * Sequential, and capture goes first.
+     * Sequential, and the payouts go first.
      *
      * If the run is cut short — a function timeout, a deploy mid-run — the
-     * thing that must already have happened is taking the money for sessions
-     * that started. A door-code email is recoverable on the next pass; a
-     * capture that never happens is a host who is not paid.
+     * thing that must already have happened is paying the hosts whose rooms
+     * were used. A door-code email is recoverable on the next pass; a payout
+     * that never happens is somebody who let a stranger into their studio and
+     * was not paid for it.
      */
-    const captured = await captureDue(now);
+    const paid = await payHostsForFinishedSessions(now);
     const announced = await announceAccessCodes(now);
     const retried = await retryFailedNotifications();
 
-    return Response.json({ ranAt: now.toISOString(), ...captured, ...announced, ...retried });
+    return Response.json({ ranAt: now.toISOString(), ...paid, ...announced, ...retried });
   } catch (error) {
     // Supabase rejects with a plain object rather than an Error, so the default
-    // logging renders it as `{}` — useless at 3am when a capture run has
+    // logging renders it as `{}` — useless at 3am when a payout run has
     // stopped. Pull the fields out by hand.
     console.error("Cron run failed:", describe(error));
     return Response.json({ error: describe(error) }, { status: 500 });
@@ -78,53 +79,104 @@ function describe(error: unknown): string {
 }
 
 /**
- * Capture payment for sessions that have started.
+ * Pay hosts for sessions that have happened.
  *
- * This is the moment the brief's whole cancellation model turns on: until now
- * the card was only authorised, which is what made a 24-hour release cost the
- * practitioner nothing.
+ * The practitioner's money was taken when they booked and has been sitting in
+ * our balance since. This is the moment it stops being ours to give back and
+ * becomes the host's — which is exactly why it waits until the session has
+ * started rather than happening at the point of sale.
  *
- * Failures are collected rather than thrown. One expired authorization must not
- * stop the other twenty bookings in the batch from being captured.
+ * A late cancellation is included on purpose. Cancelling inside 24 hours
+ * charges in full precisely because the host kept the hour free, so they are
+ * paid the same as if the practitioner had turned up. A host cancellation is
+ * not: that money went back to the practitioner, and `refunded_at` is how this
+ * query knows.
+ *
+ * Failures are collected rather than thrown. One host with a closed account
+ * must not stop the other twenty from being paid.
  */
-async function captureDue(now: Date): Promise<{ captured: number; failed: number }> {
+async function payHostsForFinishedSessions(
+  now: Date,
+): Promise<{ paid: number; failed: number }> {
   const admin = supabaseAdmin();
 
   const { data: due, error } = await admin
     .from("bookings")
-    .select("id, stripe_payment_intent_id, total_cents")
-    .eq("status", "upcoming")
+    .select(
+      "id, space_id, practitioner_id, host_rate_cents, service_fee_cents, instant_fee_cents, pro_discount_cents, total_cents, platform_cents, status, spaces!inner(host_id)",
+    )
     .lte("starts_at", now.toISOString())
-    .is("captured_at", null)
-    .not("stripe_payment_intent_id", "is", null);
+    .not("captured_at", "is", null)
+    .is("refunded_at", null)
+    .is("host_paid_at", null)
+    .in("status", ["upcoming", "completed", "cancelled_by_practitioner", "no_show"]);
 
   if (error) throw error;
-  if (!due?.length) return { captured: 0, failed: 0 };
+  if (!due?.length) return { paid: 0, failed: 0 };
 
-  let captured = 0;
+  let paid = 0;
   let failed = 0;
 
   for (const booking of due) {
     try {
-      await stripe().paymentIntents.capture(booking.stripe_payment_intent_id!, {
-        amount_to_capture: booking.total_cents,
-      });
+      const hostId = (booking.spaces as unknown as { host_id: string }).host_id;
 
-      // Written after Stripe confirms, so a failure leaves the row untouched
-      // and the next run tries again rather than marking it done.
+      const { data: host } = await admin
+        .from("profiles")
+        .select("stripe_connect_account_id")
+        .eq("id", hostId)
+        .maybeSingle();
+
+      if (!host?.stripe_connect_account_id) {
+        // Not an error to retry blindly: the host has not finished onboarding.
+        // Left unpaid and visible, because the operations page lists hosts who
+        // cannot be paid and this is one of them.
+        failed += 1;
+        console.error(`No connected account for host ${hostId} — booking ${booking.id}`);
+        continue;
+      }
+
+      const { transferId } = await payHost(
+        {
+          hostRateCents: booking.host_rate_cents,
+          serviceFeeCents: booking.service_fee_cents,
+          instantFeeCents: booking.instant_fee_cents,
+          proDiscountCents: booking.pro_discount_cents,
+          totalCents: booking.total_cents,
+          platformCents: booking.platform_cents,
+        },
+        host.stripe_connect_account_id,
+        {
+          bookingId: booking.id,
+          spaceId: booking.space_id,
+          practitionerId: booking.practitioner_id,
+        },
+      );
+
+      /*
+       * Written after Stripe confirms, so a failure leaves the row untouched
+       * and the next sweep tries again. The transfer itself is idempotent on
+       * the booking id, so a crash between the two cannot pay twice.
+       */
       await admin
         .from("bookings")
-        .update({ captured_at: new Date().toISOString(), status: "completed" })
+        .update({
+          host_paid_at: new Date().toISOString(),
+          stripe_transfer_id: transferId,
+          // A session that ran and was not cancelled is now done. A cancelled
+          // one keeps the status that says who cancelled it.
+          ...(booking.status === "upcoming" ? { status: "completed" } : {}),
+        })
         .eq("id", booking.id);
 
-      captured += 1;
+      paid += 1;
     } catch (failure) {
       failed += 1;
-      console.error(`Capture failed for booking ${booking.id}:`, failure);
+      console.error(`Payout failed for booking ${booking.id}:`, failure);
     }
   }
 
-  return { captured, failed };
+  return { paid, failed };
 }
 
 /**

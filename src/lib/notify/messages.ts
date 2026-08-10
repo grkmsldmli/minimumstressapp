@@ -53,11 +53,11 @@ export interface MessageContext {
   amountCents?: number;
   /**
    * What the practitioner ends up paying, and what actually goes back to their
-   * card. Two fields rather than one "refund", because the usual cancellation
-   * refunds nothing and that is *good news*: the card was authorised and never
-   * charged, so there is a hold to release rather than money to return.
-   * Calling that a refund would have people watching their statement for a
-   * credit that is never coming.
+   * card. Two fields rather than one, because they answer different questions
+   * and a cancellation can move both: cancel early and the charge falls to zero
+   * while the whole amount is refunded; cancel late and nothing is refunded
+   * because the studio kept the hour free. A message built from one number
+   * would get one of those two cases wrong.
    */
   chargedCents?: number;
   refundedCents?: number;
@@ -107,7 +107,7 @@ function settlement(context: MessageContext): string | null {
   }
 
   if (context.chargedCents === 0) {
-    return `You are not charged. Your card was authorised when you booked and never charged, and that hold is now released.`;
+    return `You are refunded in full. It usually reaches your card within a few working days.`;
   }
 
   return null;
@@ -136,7 +136,7 @@ export function render(kind: NotificationKind, context: MessageContext): Message
           greeting(name),
           `Your session at ${spaceName} is confirmed for ${when}.`,
           context.amountCents !== undefined
-            ? `Total ${formatCents(context.amountCents)}, including our service fee. Your card is authorised now and charged when the session starts — cancel more than 24 hours ahead and you are not charged at all.`
+            ? `Total ${formatCents(context.amountCents)}, including our service fee, charged to your card now. Cancel more than 24 hours ahead and all of it is refunded.`
             : null,
           `The address and your door code unlock in this app 30 minutes before you start. We will message you when they do.`,
           SIGN_OFF,
@@ -204,8 +204,8 @@ export function render(kind: NotificationKind, context: MessageContext): Message
           greeting(name),
           `The studio has cancelled your session at ${spaceName} on ${when}.`,
           context.refundedCents
-            ? `${formatCents(context.refundedCents)} is refunded in full. You are never charged when a studio cancels.`
-            : `You are not charged. Your card was only ever authorised for this session, and that hold is now released — there is nothing to refund because nothing was taken.`,
+            ? `${formatCents(context.refundedCents)} is refunded in full — you are never left out of pocket when a studio cancels. It usually reaches your card within a few working days.`
+            : `You are not charged. Your payment had not gone through for this booking, so there is nothing to refund.`,
             null,
           `This counts against the studio's record with us. Repeated late cancellations suspend a studio from taking new bookings.`,
           SIGN_OFF,
@@ -215,6 +215,7 @@ export function render(kind: NotificationKind, context: MessageContext): Message
         // to agree with the email above — "full refund" in a text while the
         // email says nothing was taken is the app contradicting itself to the
         // same person twice in one minute.
+        // Both branches read the same field for exactly that reason.
         sms: [
           `${spaceName} cancelled your ${when} session.`,
           context.refundedCents ? `Refunded in full.` : `You are not charged.`,

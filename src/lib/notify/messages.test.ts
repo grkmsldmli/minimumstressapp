@@ -123,21 +123,26 @@ describe("money", () => {
   });
 
   /**
-   * Three outcomes, and only one is a refund. Payment is authorised at booking
-   * and captured at session start, so the ordinary cancellation returns
-   * nothing because nothing was ever taken — and calling that a refund would
-   * have people watching a statement for a credit that is not coming.
+   * The money is taken at booking, so cancelling early is a real refund and has
+   * to be described as one — with the wait attached.
+   *
+   * This test used to assert the opposite, and correctly so: the card was
+   * authorised rather than charged, and calling a released hold a "refund"
+   * would have had people watching a statement for a credit that was never
+   * coming. Now the credit is coming, and saying "you were never charged"
+   * would be the lie instead.
    */
-  it("calls a released hold a release, not a refund", () => {
+  it("calls a refund a refund, and says when it lands", () => {
     const body = render("cancelled_by_practitioner", {
       ...FULL,
       chargedCents: 0,
       refundedCents: 0,
     }).body;
 
-    expect(body).toMatch(/never charged|not charged/i);
-    expect(body).toMatch(/hold is now released/i);
-    expect(body).not.toMatch(/refund/i);
+    expect(body).toMatch(/refunded in full/i);
+    expect(body).toMatch(/working days/i);
+    // The old promise. Nothing may still claim the card was left alone.
+    expect(body).not.toMatch(/hold|authoris|never charged/i);
   });
 
   it("says charged in full when the 24-hour window was missed", () => {

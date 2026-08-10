@@ -159,13 +159,13 @@ export function AdminDashboard() {
           },
         ]
       : []),
-    ...(counts.uncaptured > 0
+    ...(counts.hostsUnpaid > 0
       ? [
           {
-            key: "uncaptured",
-            text: `${counts.uncaptured} session${
-              counts.uncaptured === 1 ? "" : "s"
-            } started and never charged`,
+            key: "hostsUnpaid",
+            text: `${counts.hostsUnpaid} finished session${
+              counts.hostsUnpaid === 1 ? "" : "s"
+            } the studio has not been paid for`,
           },
         ]
       : []),

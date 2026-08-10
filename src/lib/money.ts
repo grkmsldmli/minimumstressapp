@@ -48,51 +48,37 @@ export const FREE_CANCEL_WINDOW_MS = 24 * 60 * 60 * 1000;
  * every booking. Both are worth something on every session. Access to the
  * product was never a thing worth selling.
  *
- * How far that window reaches is not a product decision. It is derived below,
- * because the payment model sets it and the two had already drifted apart.
+ * How far it reaches is set below, and it is now a product decision rather
+ * than a payment one — see BOOKING_HORIZON_DAYS.
  */
 
 /**
- * Stripe releases an uncaptured card authorisation after this long.
+ * Longest a finished session can wait to be paid out. Two sweeps a day.
  *
- * The number that actually governs how far ahead anybody can book, and it is
- * not ours to choose.
+ * No longer a constraint on how far ahead anybody can book — the money is
+ * already ours by then — but still the delay a host feels between using their
+ * room and seeing the transfer.
  */
-export const CARD_HOLD_HOURS = 168;
-
-/** Longest a captured-due session can wait for a sweep. Two runs a day. */
 export const CAPTURE_SWEEP_HOURS = 12;
-
-/**
- * Slack, because the numbers above are not promises.
- *
- * Stripe's seven days is "about"; a cron can be late; a session can overrun.
- * None of those individually matters, and all of them landing together on the
- * same booking is how a host discovers they were never paid.
- */
-export const HOLD_SAFETY_HOURS = 12;
 
 /**
  * How far ahead a booking may be made.
  *
- * Derived rather than chosen, and this is the whole reason: it was seven,
- * beside a comment saying seven days of slots and a seven-day card hold "happen
- * to be the same number". They are not. A day of slots runs to 23:00, and
- * somebody booking at midnight for the last hour of the seventh day is 191
- * hours ahead — then the capture sweep adds up to another 12. That is 203
- * hours against an authorisation that dies at 168.
+ * This was seven days, and it was seven because a card authorisation dies at
+ * about seven — the app held the money rather than taking it, so the schedule
+ * could not outlive the hold. It did not even manage that: a day of slots runs
+ * to 23:00, so the furthest booking was 191 hours out against a 168-hour hold,
+ * and the capture would simply have been refused. The host would have let
+ * somebody into their studio and never been paid, quietly.
  *
- * Nothing would have failed loudly. The session happens, the sweep runs, the
- * capture is refused, and a host who let somebody into their studio is simply
- * never paid. It survived this long only because no booking had ever been
- * made through the app.
- *
- * So the ceiling is computed from the hold: whatever is left after the sweep
- * and the safety margin, minus the 23 hours a last slot of the day can add.
+ * The money is taken at booking now and held by us, not by the card network,
+ * so that ceiling is gone. What is left is a real question about how far ahead
+ * a room can honestly be promised, and fourteen days is the answer: two full
+ * turns of a weekly schedule, far enough to plan a fortnight of classes, and
+ * near enough that a host changing their hours does not invalidate bookings
+ * they made a season ago.
  */
-export const BOOKING_HORIZON_DAYS = Math.floor(
-  (CARD_HOLD_HOURS - CAPTURE_SWEEP_HOURS - HOLD_SAFETY_HOURS - 23) / 24,
-);
+export const BOOKING_HORIZON_DAYS = 14;
 
 /**
  * How many sessions a free account may have on the calendar at once.
@@ -305,7 +291,12 @@ export function bookingMoneyFromQuote(q: Quote): BookingMoney {
 export type CancellationActor = "practitioner" | "host";
 
 export interface CancellationOutcome {
-  /** `void` releases the authorization; `capture_full` charges the held amount. */
+  /**
+   * `void` means the practitioner owes nothing, `capture_full` that they owe
+   * the lot. The names predate the money being taken up front, and they still
+   * describe the decision rather than the Stripe call — settlementFor turns
+   * them into a refund, or into leaving what was paid alone.
+   */
   action: "void" | "capture_full";
   chargedCents: number;
   reason: string;
@@ -331,7 +322,7 @@ export function resolveCancellation(
     return {
       action: "void",
       chargedCents: 0,
-      reason: "Host cancelled — authorization released in full, nothing charged",
+      reason: "Host cancelled — refunded in full, nothing charged",
     };
   }
 
@@ -339,14 +330,14 @@ export function resolveCancellation(
     return {
       action: "void",
       chargedCents: 0,
-      reason: "Cancelled 24 or more hours ahead — authorization voided, never charged",
+      reason: "Cancelled 24 or more hours ahead — refunded in full",
     };
   }
 
   return {
     action: "capture_full",
     chargedCents: booking.totalCents,
-    reason: "Cancelled inside 24 hours — captured in full",
+    reason: "Cancelled inside 24 hours — charged in full, not refunded",
   };
 }
 

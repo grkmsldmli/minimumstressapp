@@ -85,11 +85,11 @@ export function Confirmed({
           )}
           <div className="h-px my-2.5" style={{ backgroundColor: "rgba(255,255,255,0.12)" }} />
           <div className="flex justify-between font-body font-semibold text-[14.5px] text-white">
-            <span>Held on your card</span>
+            <span>Paid</span>
             <span>{formatCents(booking.totalCents)}</span>
           </div>
           <p className="font-body font-normal text-[13.5px] text-white/50 mt-2 leading-relaxed">
-            Not charged yet. We capture it when the session starts.
+            Cancel 24 hours or more before your session and this is refunded in full.
           </p>
         </div>
 
@@ -496,8 +496,8 @@ function UpcomingBooking({
               style={{ color: freeToCancel ? "#2E5578" : "#7A4A42" }}
             >
               {freeToCancel
-                ? "More than 24 hours away — cancel now for a full release. Your card was only ever held."
-                : `Less than 24 hours away. Cancelling now still charges ${formatCents(booking.totalCents)}.`}
+                ? `More than 24 hours away — cancel now and ${formatCents(booking.totalCents)} is refunded in full. It usually reaches your card in a few working days.`
+                : `Less than 24 hours away. Cancelling now, ${formatCents(booking.totalCents)} is not refunded — the studio kept the hour free for you.`}
             </p>
           </div>
 

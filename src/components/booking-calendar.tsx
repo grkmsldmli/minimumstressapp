@@ -18,17 +18,15 @@ import {
 /**
  * A month, so somebody can see the shape of a room's week.
  *
- * This was a horizontal strip of eight days. Eight is not an arbitrary number
- * — a card authorisation is held rather than charged and lives about a week,
- * so it is the furthest a booking can be made without re-authorising — but a
- * strip is the wrong way to show it. Nobody can tell from a row of chips that
- * a studio opens every Tuesday and Friday, which is the single most useful
- * thing to know about a room you might use every week.
+ * This was a horizontal strip of eight days, which is the wrong way to show a
+ * repeating weekly schedule: nobody can tell from a row of chips that a studio
+ * opens every Tuesday and Friday, and that is the single most useful thing to
+ * know about a room you might use every week.
  *
- * So: the whole month, with the host's open days marked. Days past the
- * authorisation window are shown rather than hidden, greyed and unclickable,
- * with one line saying when they open. That is more information than the strip
- * gave, not less, and it still promises nothing the payment model cannot keep.
+ * So: the whole month, with the host's open days marked. Days past the booking
+ * window are shown rather than hidden, greyed and unclickable, with one line
+ * saying when they open. That is more information than the strip gave, not
+ * less, and it promises nothing the app cannot keep.
  *
  * Every date here is the room's date, not the reader's. A practitioner in New
  * York looking at a studio in California is choosing among the studio's days,
@@ -202,9 +200,8 @@ export function BookingCalendar({
       </div>
 
       <p className="font-body font-normal text-[13.5px] mt-2.5 leading-relaxed text-ink-faint">
-        Open days are marked. Your card is held rather than charged until after your session, and a
-        hold only lasts so long — so booking opens {BOOKING_HORIZON_DAYS} days ahead, and later
-        dates become available as they come closer.
+        Open days are marked. Booking opens {BOOKING_HORIZON_DAYS} days ahead, and later dates
+        become available as they come closer.
       </p>
     </div>
   );

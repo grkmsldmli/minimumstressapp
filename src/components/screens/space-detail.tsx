@@ -427,9 +427,9 @@ export function SpaceDetail({
         >
           <Check size={14} color="#3B9BE8" className="mt-0.5 shrink-0" />
           <p className="font-body font-normal text-[14px] leading-relaxed text-[#2E5578]">
-            Your card is held, never charged, until the session starts — cancel 24 hours ahead for a
-            full release. If the host ever cancels on you, you&apos;re refunded automatically, plus
-            a credit for next time.
+            You pay when you book. Cancel 24 hours or more ahead and you get all of it back. If
+            the studio ever cancels on you, you&apos;re refunded automatically whenever it happens,
+            plus a credit for next time.
           </p>
         </div>
       </div>

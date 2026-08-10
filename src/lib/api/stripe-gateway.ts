@@ -1,7 +1,7 @@
 import "server-only";
 
 import type { StripeGateway } from "../booking-service";
-import { authorizeBooking, settle } from "../stripe/client";
+import { chargeBooking, payHost, settle } from "../stripe/client";
 import { settlementFor } from "../stripe/payments";
 
 /**
@@ -12,9 +12,28 @@ import { settlementFor } from "../stripe/payments";
  * a second processor slot in without touching the money logic.
  */
 export const stripeGateway: StripeGateway = {
-  authorize: (money, hostAccountId, meta) => authorizeBooking(money, hostAccountId, meta),
+  charge: (money, meta) => chargeBooking(money, meta),
 
-  settle: async (paymentIntentId, capturedCents, outcome) => {
-    await settle(paymentIntentId, settlementFor(outcome, capturedCents));
-  },
+  settle: async (paymentIntentId, paidCents, outcome) =>
+    settlementFor(outcome, paidCents).kind === "none"
+      ? { refundedCents: 0 }
+      : settleAndReport(paymentIntentId, paidCents, outcome),
+
+  payHost: (money, hostAccountId, meta) => payHost(money, hostAccountId, meta),
 };
+
+/**
+ * Runs the settlement and reports what came back, because the caller has to
+ * write that number down. Splitting it out keeps the "nothing happened" case
+ * from having to pretend it made a call.
+ */
+async function settleAndReport(
+  paymentIntentId: string,
+  paidCents: number,
+  outcome: { action: "void" | "capture_full"; chargedCents: number },
+): Promise<{ refundedCents: number }> {
+  const action = settlementFor(outcome, paidCents);
+  await settle(paymentIntentId, action);
+
+  return { refundedCents: action.kind === "refund" ? action.amountCents : 0 };
+}

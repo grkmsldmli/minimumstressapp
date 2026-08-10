@@ -14,8 +14,6 @@ import {
   resolveCancellation,
   BOOKING_HORIZON_DAYS,
   CAPTURE_SWEEP_HOURS,
-  CARD_HOLD_HOURS,
-  HOLD_SAFETY_HOURS,
 } from "./money";
 import { addDays, instantFrom } from "./timezone";
 
@@ -285,37 +283,31 @@ describe("instant window, measured against wall-clock time", () => {
   });
 });
 
-describe("the horizon fits inside a card hold", () => {
+describe("the horizon no longer answers to a card hold", () => {
   /**
-   * The arithmetic the horizon is derived from, asserted rather than assumed.
+   * It used to. The window was seven days because an authorisation dies at
+   * about seven, and it did not even fit that — the furthest bookable hour was
+   * 191 hours out against a 168-hour hold, so the capture would have been
+   * refused and the host never paid.
    *
-   * It was seven days beside a comment claiming seven days of slots and a
-   * seven-day hold were the same number. They differ by 23 hours, and the gap
-   * never showed up as a failure — the session happens, the capture is refused,
-   * and the host is simply never paid.
+   * The money is taken at booking now, so nothing expires while a booking
+   * waits. What is asserted here is only that the window is a real one.
    */
-  it("captures every booking before the authorisation dies", () => {
-    // Worst case: booked at midnight, for the last hour of the furthest day,
-    // then waiting a full sweep after the session ends.
-    const worstCase = BOOKING_HORIZON_DAYS * 24 + 23 + CAPTURE_SWEEP_HOURS;
-
-    expect(worstCase).toBeLessThanOrEqual(CARD_HOLD_HOURS - HOLD_SAFETY_HOURS);
+  it("reaches far enough to be worth having", () => {
+    expect(BOOKING_HORIZON_DAYS).toBeGreaterThanOrEqual(7);
   });
 
-  /** A horizon that quietly became zero would "pass" the check above. */
-  it("still reaches far enough to be a product", () => {
-    expect(BOOKING_HORIZON_DAYS).toBeGreaterThanOrEqual(3);
+  it("still sweeps often enough to pay hosts promptly", () => {
+    expect(CAPTURE_SWEEP_HOURS).toBeLessThanOrEqual(24);
   });
 
   it("matches the sweep the deployment actually schedules", async () => {
     const { readFileSync } = await import("node:fs");
     const vercel = JSON.parse(readFileSync("vercel.json", "utf8"));
-    const captureRuns = vercel.crons.filter(
-      (c: { path: string }) => c.path === "/api/cron",
-    ).length;
+    const sweeps = vercel.crons.filter((c: { path: string }) => c.path === "/api/cron").length;
 
     // Runs spread across the day, so the longest wait is a day divided by them.
-    expect(24 / captureRuns).toBeLessThanOrEqual(CAPTURE_SWEEP_HOURS);
+    expect(24 / sweeps).toBeLessThanOrEqual(CAPTURE_SWEEP_HOURS);
   });
 });
 

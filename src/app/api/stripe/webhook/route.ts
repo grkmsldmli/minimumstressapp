@@ -114,22 +114,29 @@ async function handle(event: Stripe.Event): Promise<void> {
       return;
     }
 
-    /** Money actually moved. */
+    /**
+     * The practitioner's card went through.
+     *
+     * The status is deliberately left alone. This now fires the moment the
+     * payment sheet is completed, which is the start of the booking rather than
+     * the end of it — marking it "completed" here would report a session as
+     * having happened days before it does, and the payout sweep reads that
+     * status to decide who to pay.
+     */
     case "payment_intent.succeeded": {
       const intent = event.data.object;
       await admin
         .from("bookings")
-        .update({ captured_at: new Date().toISOString(), status: "completed" })
+        .update({ captured_at: new Date().toISOString() })
         .eq("stripe_payment_intent_id", intent.id)
-        // Guarded so a replayed event cannot reopen a booking that was since
-        // cancelled, or overwrite a capture time already recorded.
+        // Guarded so a replayed event cannot overwrite a time already recorded.
         .is("captured_at", null);
       return;
     }
 
     /**
-     * The hold was released — by our own cancellation route, or by Stripe
-     * letting an uncaptured authorization expire after about a week.
+     * The payment was abandoned — by our own cancellation route, or by Stripe
+     * expiring an intent nobody ever put a card into.
      */
     case "payment_intent.canceled": {
       const intent = event.data.object;

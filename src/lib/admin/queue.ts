@@ -292,8 +292,15 @@ export interface AdminQueue {
     hosts: number;
     sessionsThisMonth: number;
     upcomingSessions: number;
-    /** Sessions that started and were never captured — money sitting still. */
-    uncaptured: number;
+    /**
+     * Sessions that happened but whose host has not been paid.
+     *
+     * This counted uncaptured payments, which no longer exist — the money is
+     * taken at booking. What can still go wrong is the other end: the sweep
+     * cannot transfer to a host who has not finished onboarding, so the money
+     * sits with us and somebody who let a stranger into their studio is waiting.
+     */
+    hostsUnpaid: number;
   };
 
   /** Fourteen days, oldest first, for a bar chart. */
@@ -374,7 +381,7 @@ export async function loadQueue(admin: SupabaseClient): Promise<AdminQueue> {
     admin
       .from("bookings")
       .select(
-        "id, space_id, practitioner_id, starts_at, ends_at, status, captured_at, cancelled_at, total_cents, host_rate_cents, platform_cents",
+        "id, space_id, practitioner_id, starts_at, ends_at, status, captured_at, refunded_at, host_paid_at, cancelled_at, total_cents, host_rate_cents, platform_cents",
       )
       .order("starts_at", { ascending: false }),
 
@@ -783,10 +790,11 @@ export async function loadQueue(admin: SupabaseClient): Promise<AdminQueue> {
       upcomingSessions: rows.filter(
         (b) => b.status === "upcoming" && new Date(b.starts_at as string) > now,
       ).length,
-      uncaptured: rows.filter(
+      hostsUnpaid: rows.filter(
         (b) =>
-          b.status === "upcoming" &&
-          b.captured_at === null &&
+          b.captured_at !== null &&
+          b.refunded_at === null &&
+          b.host_paid_at === null &&
           new Date(b.starts_at as string) < now,
       ).length,
     },

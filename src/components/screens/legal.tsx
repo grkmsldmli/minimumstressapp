@@ -32,7 +32,7 @@ const SECTIONS = [
     key: "off-platform",
     title: "Booking outside the app",
     points: [
-      "All bookings and payments must be made through Minimum Stress. Payment authorisation, capture, refunds, cancellation cover, access codes, reviews, emergency contacts and support apply only to bookings recorded in the app.",
+      "All bookings and payments must be made through Minimum Stress. Payment, refunds, cancellation cover, access codes, reviews, emergency contacts and support apply only to bookings recorded in the app.",
       "Users must not exchange phone numbers, email addresses or payment details. These are removed from messages automatically. Requesting or providing them may result in suspension.",
       "Minimum Stress is not a party to any session arranged or paid for outside the app. We hold no record of such arrangements and provide no payment protection, refund, access, verification, insurance or dispute resolution in respect of them. Liability rests with the parties who made them.",
       "Soliciting users to transact outside the app is a breach of these terms and may result in permanent suspension.",
@@ -85,8 +85,8 @@ const SECTIONS = [
     key: "cancel",
     title: "Cancellation Policy",
     points: [
-      "Your card is authorised at booking, not charged. The money moves when the session starts.",
-      "Cancel 24 or more hours ahead and the authorisation is released in full. Nothing was ever taken.",
+      "You pay when you book. We hold the money until the session has happened, then pay the studio.",
+      "Cancel 24 or more hours ahead and you are refunded in full, back to the card you paid with.",
       "Cancel inside 24 hours, or fail to attend, and the full amount is captured.",
       "If a host cancels on you, you are refunded automatically. That refund is never replaced by credit or made optional.",
       "A host cancellation also earns you goodwill credit worth our own fee on that booking. It applies to a future booking and never reduces what that future host is paid.",

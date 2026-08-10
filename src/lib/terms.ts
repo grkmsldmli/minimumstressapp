@@ -33,7 +33,7 @@ export function hasAcceptedTerms(accepted: { version: number | null }): boolean 
 export const ACCEPTANCE_POINTS = [
   {
     title: "Book and pay in the app",
-    body: "Payment authorisation, refunds, cancellation cover, access codes, reviews and support are provided only for bookings made through Minimum Stress.",
+    body: "Payment, refunds, cancellation cover, access codes, reviews and support are provided only for bookings made through Minimum Stress.",
   },
   {
     title: "Do not exchange contact or payment details",

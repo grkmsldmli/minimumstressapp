@@ -2,10 +2,10 @@
  * The money, end to end, in Stripe test mode.
  *
  * Unit tests prove the arithmetic and RLS tests prove the boundaries. Neither
- * proves that a card is authorised rather than charged, that the capture job
- * moves it at session start, or that the host's transfer equals their rate to
- * the cent — those live in Stripe, and the only way to know is to make one
- * happen and read it back.
+ * proves that the card is actually charged, that a cancellation actually
+ * refunds, or that the host's transfer equals their rate to the cent — those
+ * live in Stripe, and the only way to know is to make one happen and read it
+ * back.
  *
  * Nothing here touches real money. It refuses to run against a live key.
  *
@@ -211,27 +211,28 @@ try {
   fact("our share", money(priced.platformCents));
 
   // ---------------------------------------------------------------- 4
-  step(4, "The card is held, not charged");
+  step(4, "The card is charged");
 
+  /*
+   * No transfer_data and no application fee. This is a plain charge onto our
+   * own balance: the host is paid separately, after the session, which is what
+   * lets a refund before it touch nothing that was ever theirs.
+   */
   const intent = await stripe("/payment_intents", {
     amount: priced.totalCents,
     currency: "usd",
-    capture_method: "manual",
     payment_method: "pm_card_visa",
     confirm: "true",
     "automatic_payment_methods[enabled]": "true",
     "automatic_payment_methods[allow_redirects]": "never",
-    application_fee_amount: priced.totalCents - priced.hostCents,
-    "transfer_data[destination]": account.id,
+    transfer_group: `walkthrough_${Date.now()}`,
   });
 
   fact("status", intent.status);
-  fact("authorised", money(intent.amount));
-  fact("captured so far", money(intent.amount_received));
-  fact("our fee on it", money(intent.application_fee_amount));
+  fact("charged", money(intent.amount_received));
 
-  if (intent.status !== "requires_capture") {
-    throw new Error(`Expected requires_capture, got ${intent.status}`);
+  if (intent.status !== "succeeded") {
+    throw new Error(`Expected succeeded, got ${intent.status}`);
   }
 
   // ---------------------------------------------------------------- 5
@@ -263,49 +264,55 @@ try {
     fact("because", outcome.reason);
   }
 
-  const shouldCapture = SCENARIO === "completed" || outcome?.action === "capture_full";
+  /*
+   * The money is already ours. A cancellation that owes the practitioner
+   * nothing is a refund out of our balance; one that charges them in full
+   * leaves it where it is.
+   */
+  const keepsTheMoney = SCENARIO === "completed" || outcome?.action === "capture_full";
 
-  if (shouldCapture) {
-    await stripe(`/payment_intents/${intent.id}/capture`, {}, "POST");
-  } else {
-    /*
-     * Cancelled, not refunded. The money was only ever held, so releasing the
-     * authorisation means nothing was taken — no refund appears on a
-     * statement, because no charge did.
-     */
-    await stripe(`/payment_intents/${intent.id}/cancel`, {}, "POST");
+  let refunded = 0;
+  if (!keepsTheMoney) {
+    const refund = await stripe("/refunds", {
+      payment_intent: intent.id,
+      amount: priced.totalCents,
+    });
+    refunded = refund.amount ?? 0;
   }
 
   const settled = await stripe(`/payment_intents/${intent.id}`);
-  fact("status", settled.status);
   fact("practitioner charged", money(settled.amount_received));
+  fact("refunded", money(refunded));
 
+  /*
+   * The host is paid only if the session is one they are owed for: it happened,
+   * or it was cancelled so late that the hour was theirs anyway. The sweep in
+   * the cron applies exactly this rule.
+   */
   let hostGot = 0;
-  let weGot = 0;
-  let platformEntry = null;
+  let transfer = null;
 
-  if (settled.latest_charge && settled.amount_received > 0) {
-    const charge = await stripe(`/charges/${settled.latest_charge}`);
+  if (keepsTheMoney) {
+    transfer = await stripe("/transfers", {
+      amount: priced.hostCents,
+      currency: "usd",
+      destination: account.id,
+      transfer_group: intent.transfer_group,
+    });
 
-    /*
-     * Asked of the host's own account, not inferred from the transfer.
-     *
-     * A destination charge's transfer object reports the gross movement — the
-     * whole $48 — while the connected account is credited the net. Subtracting
-     * one from the other reads as "the host got everything and we got
-     * nothing", which is what the first version of this script reported,
-     * wrongly. The only answer to "what did the host receive" is the host's
-     * own balance.
-     */
+    // Asked of the host's own account rather than inferred from the transfer,
+    // because the connected account's ledger is the only honest answer to
+    // "what did they actually receive".
     const ledger = await stripe("/balance_transactions?limit=1", undefined, "GET", account.id);
     hostGot = ledger.data[0]?.net ?? 0;
-
-    const fee = charge.application_fee
-      ? await stripe(`/application_fees/${charge.application_fee}`)
-      : null;
-    weGot = fee?.amount ?? 0;
-    platformEntry = await stripe(`/balance_transactions/${charge.balance_transaction}`);
   }
+
+  const weGot = settled.amount_received - refunded - hostGot;
+  const platformEntry = settled.latest_charge
+    ? await stripe(
+        `/balance_transactions/${(await stripe(`/charges/${settled.latest_charge}`)).balance_transaction}`,
+      )
+    : null;
 
   fact("host receives", money(hostGot));
   fact("we keep", money(weGot));
@@ -323,8 +330,8 @@ try {
       : outcome.action === "void"
         ? [
             // The promise on the booking screen, in one assertion.
-            ["nothing was taken", settled.amount_received === 0, money(settled.amount_received)],
-            ["the hold is released", settled.status === "canceled", settled.status],
+            ["all of it comes back", refunded === priced.totalCents, money(refunded)],
+            ["the practitioner is left even", settled.amount_received - refunded === 0, money(settled.amount_received - refunded)],
             ["the host is paid nothing", hostGot === 0, money(hostGot)],
           ]
         : [
@@ -346,9 +353,10 @@ try {
 
   if (platformEntry) {
     /*
-     * Stripe's processing fee comes out of our share, never the host's. That
-     * is the whole reason application_fee_amount is total minus the host's
-     * rate: whatever Stripe takes, it takes from what is left to us.
+     * Stripe's processing fee comes out of our share, never the host's. The
+     * charge lands whole in our balance and the host's rate is transferred out
+     * of it untouched, so whatever Stripe takes, it takes from what is left
+     * to us.
      */
     console.log("");
     fact("Stripe's cut", money(platformEntry.fee));

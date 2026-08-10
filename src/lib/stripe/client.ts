@@ -5,7 +5,7 @@ import Stripe from "stripe";
 import type { BookingMoney } from "../money";
 import { PAYOUT_DELAY_DAYS, payoutStatus, type PayoutStatus } from "../payouts";
 import { BOOKING_PAYMENT_METHODS } from "./payment-methods";
-import { planPaymentIntent, type SettlementAction } from "./payments";
+import { planHostTransfer, planPaymentIntent, type SettlementAction } from "./payments";
 
 /**
  * Server-side Stripe. `server-only` at the top makes importing this from a
@@ -110,33 +110,35 @@ export interface AuthorizeResult {
 }
 
 /**
- * Authorise, do not charge.
+ * Charge the practitioner for the booking.
+ *
+ * The host is not paid here and is not even named: the money lands in our
+ * balance and is transferred to them once the session has happened. See
+ * `payments.ts` for why the two are separate.
  *
  * The idempotency key is the booking id, so a retried request — a flaky
  * network, an impatient second tap — reuses the existing intent instead of
- * placing a second hold on the same card for the same hour.
+ * charging the same card twice for the same hour.
  */
-export async function authorizeBooking(
+export async function chargeBooking(
   money: BookingMoney,
-  hostStripeAccountId: string,
   meta: { bookingId: string; spaceId: string; practitionerId: string },
   customerId?: string,
 ): Promise<AuthorizeResult> {
-  const plan = planPaymentIntent(money, hostStripeAccountId, meta);
+  const plan = planPaymentIntent(money, meta);
 
   const intent = await stripe().paymentIntents.create(
     {
       amount: plan.amount,
       currency: plan.currency,
       capture_method: plan.capture_method,
-      transfer_data: plan.transfer_data,
-      application_fee_amount: plan.application_fee_amount,
+      transfer_group: plan.transfer_group,
       metadata: plan.metadata,
       customer: customerId,
       // Not automatic_payment_methods — see payment-methods.ts for why.
       payment_method_types: [...BOOKING_PAYMENT_METHODS],
     },
-    { idempotencyKey: `booking_authorize_${meta.bookingId}` },
+    { idempotencyKey: `booking_charge_${meta.bookingId}` },
   );
 
   if (!intent.client_secret) {
@@ -145,35 +147,63 @@ export async function authorizeBooking(
   return { paymentIntentId: intent.id, clientSecret: intent.client_secret };
 }
 
-/** Run whatever a cancellation or a session start decided should happen. */
+/** Run whatever a cancellation decided should happen. */
 export async function settle(
   paymentIntentId: string,
   action: SettlementAction,
 ): Promise<void> {
   switch (action.kind) {
-    case "capture":
-      await stripe().paymentIntents.capture(paymentIntentId, {
-        amount_to_capture: action.amountCents,
-      });
-      return;
-
-    case "void":
-      await stripe().paymentIntents.cancel(paymentIntentId);
-      return;
-
     case "refund":
-      // reverse_transfer pulls the host's share back out of their balance too.
-      // Without it a host cancellation refunds the practitioner from our
-      // account while the host keeps the money.
+      /*
+       * No reverse_transfer, and that is the point of holding the money
+       * ourselves. Cancellation is only possible before the session, the
+       * transfer only happens after it, so there is never a host balance to
+       * claw back — the refund comes entirely out of what we are holding.
+       */
       await stripe().refunds.create({
         payment_intent: paymentIntentId,
         amount: action.amountCents,
-        reverse_transfer: true,
-        refund_application_fee: true,
       });
+      return;
+
+    case "abandon":
+      /*
+       * Never paid, so nothing comes back — this only closes an intent that is
+       * still waiting for a card. Cancelling an intent that has since been
+       * paid would throw, which is the right failure: it would mean the state
+       * we cancelled against was already stale.
+       */
+      await stripe().paymentIntents.cancel(paymentIntentId);
       return;
 
     case "none":
       return;
   }
+}
+
+/**
+ * Pay a host for a session that has happened.
+ *
+ * Idempotent on the booking, because the sweep that calls this runs twice a day
+ * and a transfer written twice is a host paid twice out of our balance.
+ */
+export async function payHost(
+  money: BookingMoney,
+  hostStripeAccountId: string,
+  meta: { bookingId: string; spaceId: string; practitionerId: string },
+): Promise<{ transferId: string }> {
+  const plan = planHostTransfer(money, hostStripeAccountId, meta);
+
+  const transfer = await stripe().transfers.create(
+    {
+      amount: plan.amount,
+      currency: plan.currency,
+      destination: plan.destination,
+      transfer_group: plan.transfer_group,
+      metadata: plan.metadata,
+    },
+    { idempotencyKey: `booking_payout_${meta.bookingId}` },
+  );
+
+  return { transferId: transfer.id };
 }

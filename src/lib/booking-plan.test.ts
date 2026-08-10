@@ -208,18 +208,18 @@ describe("the booking horizon", () => {
   });
 
   /**
-   * The authorisation is held rather than charged until the session starts,
-   * and it expires around here. Past this the money could not be collected.
+   * How far a room can honestly be promised, and nothing to do with payment any
+   * more — the money is taken at booking, so nothing expires while a booking
+   * waits. See BOOKING_HORIZON_DAYS.
    */
-  it("stops the day after, for everyone", () => {
+  it("stops past the end of it, for everyone", () => {
     // Open, so the only thing refusing it is the horizon.
-    expect(plan({ startsAt: at(14, firstOpenOutside) })).toEqual({
-      ok: false,
-      reason: "beyond_booking_horizon",
-    });
-    expect(
-      plan({ practitioner: { ...PRACTITIONER, isPro: true }, startsAt: at(14, 8) }),
-    ).toEqual({ ok: false, reason: "beyond_booking_horizon" });
+    for (const practitioner of [PRACTITIONER, { ...PRACTITIONER, isPro: true }]) {
+      expect(plan({ practitioner, startsAt: at(14, firstOpenOutside) })).toEqual({
+        ok: false,
+        reason: "beyond_booking_horizon",
+      });
+    }
   });
 });
 

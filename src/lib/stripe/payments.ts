@@ -1,137 +1,167 @@
 /**
  * How a booking becomes money.
  *
- * Destination charges: the practitioner pays us, Stripe transfers the host's
- * share to their connected account, and we keep an application fee. The whole
- * arrangement rests on one line — `application_fee_amount` — so that is derived
- * from the quote rather than typed by hand anywhere.
+ * Separate charges and transfers. The practitioner pays us when they book, the
+ * money sits in our balance, and the host's rate is transferred to their
+ * connected account once the session has happened.
+ *
+ * It used to be a destination charge with a manual capture: the card was held
+ * rather than taken, and Stripe split the payment the moment we captured. That
+ * arrangement could not survive taking the money up front. Stripe releases an
+ * uncaptured hold after about seven days, which capped how far ahead anyone
+ * could book — and paying the host at the moment of charge would mean every
+ * refund clawing money back out of their account, days or weeks after they had
+ * seen it arrive and quite possibly spent it.
+ *
+ * Holding the money ourselves until the session fixes both. There is no hold to
+ * expire, so the calendar can reach as far as the product wants; and a refund
+ * before the session touches nothing that was ever the host's.
  *
  * Pure functions here, no network. The Stripe calls live in `client.ts`; this
- * file is the part worth testing, because getting the fee wrong silently
+ * file is the part worth testing, because getting the split wrong silently
  * underpays a host on every booking.
  */
 
 import type { BookingMoney } from "../money";
 
+/**
+ * Ties the charge and the later transfer together in Stripe's own records.
+ *
+ * Without it the two are unrelated objects and reconciling a host's payout back
+ * to the practitioner who paid for it means trusting our database. With it,
+ * Stripe can answer the question on its own.
+ */
+export function transferGroupFor(bookingId: string): string {
+  return `booking_${bookingId}`;
+}
+
 /** What Stripe is told to do at booking time. */
 export interface PaymentIntentPlan {
-  /** Total authorised on the practitioner's card, in cents. */
+  /** Total charged to the practitioner's card, in cents. */
   amount: number;
   currency: "usd";
   /**
-   * Held, not taken. This is what makes 24-hour free cancellation possible:
-   * until capture, no money has moved and voiding costs the practitioner
-   * nothing.
+   * Taken, not held.
+   *
+   * Free cancellation is a refund now rather than a released hold. It is slower
+   * and it shows on a statement, and in exchange a booking can be made as far
+   * ahead as somebody wants to plan.
    */
-  capture_method: "manual";
-  /** The host's connected account. */
-  transfer_data: { destination: string };
-  /**
-   * Our cut. Stripe pays the destination `amount - application_fee_amount`, so
-   * this is the only number standing between a host and their rate.
-   */
-  application_fee_amount: number;
+  capture_method: "automatic";
+  transfer_group: string;
   metadata: Record<string, string>;
 }
 
-/**
- * Turn a frozen booking quote into Stripe's shape.
- *
- * `application_fee_amount` is computed as total minus the host's rate rather
- * than as "the platform's cut", even though the two are equal. Written this
- * way the host's take is the subject of the arithmetic: whatever else changes —
- * an instant fee, a Pro discount, redeemed credit — the destination still
- * receives exactly `hostRateCents`, because that is what the expression says.
- */
+/** What the host is later paid, and the only thing they are ever paid. */
+export interface HostTransferPlan {
+  amount: number;
+  currency: "usd";
+  destination: string;
+  transfer_group: string;
+  metadata: Record<string, string>;
+}
+
+function moneyMetadata(
+  money: BookingMoney,
+  metadata: { bookingId: string; spaceId: string; practitionerId: string },
+): Record<string, string> {
+  return {
+    booking_id: metadata.bookingId,
+    space_id: metadata.spaceId,
+    practitioner_id: metadata.practitionerId,
+    // Recorded so a payout dispute can be settled from Stripe alone, without
+    // trusting our own database to have remembered correctly.
+    host_rate_cents: String(money.hostRateCents),
+    service_fee_cents: String(money.serviceFeeCents),
+    instant_fee_cents: String(money.instantFeeCents),
+    pro_discount_cents: String(money.proDiscountCents),
+  };
+}
+
+/** Turn a frozen booking quote into the charge Stripe should take. */
 export function planPaymentIntent(
   money: BookingMoney,
-  hostStripeAccountId: string,
   metadata: { bookingId: string; spaceId: string; practitionerId: string },
 ): PaymentIntentPlan {
-  const applicationFee = money.totalCents - money.hostRateCents;
-
-  if (applicationFee < 0) {
+  if (money.totalCents < money.hostRateCents) {
     // Unreachable through quote(), which floors the platform's cut above
-    // Stripe's own fee — but a negative application fee would mean charging
-    // the practitioner less than the host is owed and topping up the
-    // difference from our own balance, silently, on every booking.
+    // Stripe's own fee — but charging the practitioner less than the host is
+    // owed would mean topping up the difference from our own balance, silently,
+    // on every booking.
     throw new RangeError(
-      `application fee would be negative (total ${money.totalCents}, host ${money.hostRateCents})`,
+      `total is below the host's rate (total ${money.totalCents}, host ${money.hostRateCents})`,
     );
   }
 
   return {
     amount: money.totalCents,
     currency: "usd",
-    capture_method: "manual",
-    transfer_data: { destination: hostStripeAccountId },
-    application_fee_amount: applicationFee,
-    metadata: {
-      booking_id: metadata.bookingId,
-      space_id: metadata.spaceId,
-      practitioner_id: metadata.practitionerId,
-      // Recorded so a payout dispute can be settled from Stripe alone, without
-      // trusting our own database to have remembered correctly.
-      host_rate_cents: String(money.hostRateCents),
-      service_fee_cents: String(money.serviceFeeCents),
-      instant_fee_cents: String(money.instantFeeCents),
-      pro_discount_cents: String(money.proDiscountCents),
-    },
+    capture_method: "automatic",
+    transfer_group: transferGroupFor(metadata.bookingId),
+    metadata: moneyMetadata(money, metadata),
   };
 }
 
 /**
- * What the host actually receives.
+ * What the host is owed once the session has happened.
  *
- * Verified against the sandbox rather than inferred, because the obvious field
- * lies: on the platform's copy of the charge, `transfer.amount` reads as the
- * full 5900, which looks alarmingly like the host being handed our fee too. It
- * is not. The application fee is deducted on the connected account's side, and
- * that account's own ledger is the honest view:
- *
- *     payment   amount 5900   fee 1400   net 4500
- *
- * For a $45.00 rate on an instant slot: the practitioner pays $59.00, the host
- * receives exactly $45.00, Stripe takes $2.01, and $11.99 reaches us. Anyone
- * checking this in the dashboard should look at the connected account's
- * balance, not the platform's transfer record.
+ * `hostRateCents` and nothing else. The whole fee structure — the service fee,
+ * an instant fee, a Pro discount, redeemed credit — lives on the practitioner's
+ * side of the transaction and never reaches this number. That is the guarantee
+ * the marketplace is built on, and here it is a single field rather than an
+ * arithmetic expression that could be got wrong.
  */
-export function hostReceivesCents(plan: PaymentIntentPlan): number {
-  return plan.amount - plan.application_fee_amount;
+export function planHostTransfer(
+  money: BookingMoney,
+  hostStripeAccountId: string,
+  metadata: { bookingId: string; spaceId: string; practitionerId: string },
+): HostTransferPlan {
+  return {
+    amount: money.hostRateCents,
+    currency: "usd",
+    destination: hostStripeAccountId,
+    transfer_group: transferGroupFor(metadata.bookingId),
+    metadata: moneyMetadata(money, metadata),
+  };
+}
+
+/**
+ * What we keep, before Stripe's own processing fee comes out of it.
+ *
+ * Stripe charges us on the full amount because the full amount lands in our
+ * balance now. The host is unaffected by that, which is the point: their rate
+ * is transferred whole, and processing is paid out of what is left to us.
+ */
+export function platformGrossCents(money: BookingMoney): number {
+  return money.totalCents - money.hostRateCents;
 }
 
 export type SettlementAction =
-  | { kind: "capture"; amountCents: number }
-  | { kind: "void" }
   | { kind: "refund"; amountCents: number }
+  | { kind: "abandon" }
   | { kind: "none" };
 
 /**
  * Map a cancellation outcome onto the Stripe call that realises it.
  *
- * The distinction between void and refund is not cosmetic. Before capture
- * there is no charge, so cancelling releases the hold and the practitioner
- * never sees a line on their statement. After capture the money has moved and
- * only a refund brings it back — visible, slower, and reversing a transfer the
- * host may already have been paid.
+ * There is no "void" any more. The money is taken when the booking is made, so
+ * a cancellation that owes the practitioner nothing is a refund, and one that
+ * charges them in full is no action at all.
  *
- * `capturedCents` is a separate argument rather than read off the outcome
- * because a cancellation that releases the money reports `chargedCents: 0` —
- * correct as a statement of what the practitioner owes, useless as a refund
- * amount. Refunding zero would leave a host cancellation quietly keeping the
- * practitioner's money.
+ * `abandon` is the third case and it is not a refund: a booking cancelled
+ * before the payment sheet was ever completed. Nothing was taken, so there is
+ * nothing to give back — but the intent is still sitting there waiting for a
+ * card, and leaving it would let somebody pay for an hour that no longer
+ * exists.
  */
 export function settlementFor(
   outcome: { action: "void" | "capture_full"; chargedCents: number },
-  capturedCents: number,
+  paidCents: number,
 ): SettlementAction {
-  const alreadyCaptured = capturedCents > 0;
+  if (paidCents === 0) return { kind: "abandon" };
 
-  if (outcome.action === "capture_full") {
-    // Capturing something already captured would double-charge.
-    return alreadyCaptured ? { kind: "none" } : { kind: "capture", amountCents: outcome.chargedCents };
-  }
+  const owed = outcome.action === "void" ? 0 : outcome.chargedCents;
+  const refund = paidCents - owed;
 
-  if (!alreadyCaptured) return { kind: "void" };
-  return { kind: "refund", amountCents: capturedCents };
+  return refund > 0 ? { kind: "refund", amountCents: refund } : { kind: "none" };
 }

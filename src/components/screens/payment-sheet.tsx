@@ -16,8 +16,8 @@ import { sessionWhen } from "@/lib/when";
  *
  * The brief asks for Embedded Components rather than a Checkout redirect, and
  * the reason shows up here: the All In Price breakdown sits beside the card
- * fields, so the number being authorised is visible at the moment of
- * authorising it. A redirect would hand that off to a page we do not control.
+ * fields, so the number being charged is visible at the moment of paying it.
+ * A redirect would hand that off to a page we do not control.
  *
  * Nothing on this screen decides an amount. The PaymentIntent was created and
  * priced server-side; this collects a card and confirms it.
@@ -93,7 +93,7 @@ function SheetBody({
     if (stripeError) {
       // Stripe's messages are written for cardholders and are better than
       // anything generic we would put here.
-      setError(stripeError.message ?? "That card could not be authorised.");
+      setError(stripeError.message ?? "That card was declined.");
       setBusy(false);
       return;
     }

@@ -5,7 +5,6 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { explainRejection, planBooking } from "./booking-plan";
 import { resolveCancellation, type BookingMoney } from "./money";
 import { notifyBookingCreated, notifyCancellation } from "./notify/for-booking";
-import { settlementFor } from "./stripe/payments";
 
 /**
  * Creating and cancelling a booking, server-side.
@@ -53,15 +52,22 @@ function generateAccessCode(): string {
 }
 
 export interface StripeGateway {
-  authorize(
+  /** Takes the practitioner's money. The host is not named, and is not paid. */
+  charge(
+    money: BookingMoney,
+    meta: { bookingId: string; spaceId: string; practitionerId: string },
+  ): Promise<{ paymentIntentId: string; clientSecret: string }>;
+  /** Returns what went back, so the booking can record it. */
+  settle(paymentIntentId: string, paidCents: number, outcome: {
+    action: "void" | "capture_full";
+    chargedCents: number;
+  }): Promise<{ refundedCents: number }>;
+  /** Sends the host their rate, once the session has happened. */
+  payHost(
     money: BookingMoney,
     hostAccountId: string,
     meta: { bookingId: string; spaceId: string; practitionerId: string },
-  ): Promise<{ paymentIntentId: string; clientSecret: string }>;
-  settle(paymentIntentId: string, capturedCents: number, outcome: {
-    action: "void" | "capture_full";
-    chargedCents: number;
-  }): Promise<void>;
+  ): Promise<{ transferId: string }>;
 }
 
 export async function createBooking(
@@ -164,14 +170,13 @@ export async function createBooking(
   }
 
   const { money, isInstant } = plan;
-  const hostAccountId = hostRow!.stripe_connect_account_id as string;
   const isPro = practitioner?.is_pro ?? false;
   const endsAt = new Date(request.startsAt.getTime() + SESSION_MINUTES * 60_000);
 
   // The booking row goes in first, with no payment intent attached. If the
-  // Stripe call then fails, what survives is a booking that was never
-  // authorised — visible, unpaid, and safe to reap. The reverse order would
-  // leave a hold on someone's card with no record explaining it.
+  // Stripe call then fails, what survives is a booking that was never charged
+  // — visible, unpaid, and safe to reap. The reverse order would leave a
+  // charge on someone's card with no record explaining it.
   const { data: booking, error: insertError } = await admin
     .from("bookings")
     .insert({
@@ -210,7 +215,14 @@ export async function createBooking(
   if (insertError) throw insertError;
 
   try {
-    const authorized = await stripeGateway.authorize(money, hostAccountId, {
+    /*
+     * The host's account is not passed and not needed. They are paid after the
+     * session, by the sweep, out of the balance this charge lands in — see
+     * stripe/payments.ts. It is still checked before we get here: planBooking
+     * refuses a host who cannot be paid, because taking somebody's money for a
+     * session we could not settle would be the worse failure.
+     */
+    const charged = await stripeGateway.charge(money, {
       bookingId: booking.id,
       spaceId: request.spaceId,
       practitionerId,
@@ -219,18 +231,18 @@ export async function createBooking(
     await admin
       .from("bookings")
       .update({
-        stripe_payment_intent_id: authorized.paymentIntentId,
+        stripe_payment_intent_id: charged.paymentIntentId,
         authorized_at: new Date().toISOString(),
       })
       .eq("id", booking.id);
 
     // After the money, and deliberately not awaited into the failure path: the
     // booking is real whether or not an email goes out, so a provider outage
-    // must not roll back an authorised hold. notifyBookingCreated swallows its
-    // own errors for the same reason.
+    // must not roll back a payment. notifyBookingCreated swallows its own
+    // errors for the same reason.
     await notifyBookingCreated(admin, booking.id);
 
-    return { bookingId: booking.id, money, clientSecret: authorized.clientSecret };
+    return { bookingId: booking.id, money, clientSecret: charged.clientSecret };
   } catch (error) {
     // Undo the row rather than leave an unpayable booking occupying an hour
     // that other practitioners could have had.
@@ -283,10 +295,24 @@ export async function cancelBooking(
   };
 
   const outcome = resolveCancellation(money, actor, new Date(booking.starts_at), now);
-  const capturedCents = booking.captured_at ? booking.total_cents : 0;
 
+  /*
+   * What we are actually holding, which is not the same as what was quoted.
+   *
+   * The card is charged when the payment sheet is completed, not when the row
+   * is written, so a booking abandoned at the card form has a total and no
+   * money behind it. Refunding against the quoted figure there would send real
+   * money to somebody who never paid any.
+   */
+  const paidCents = booking.captured_at ? booking.total_cents : 0;
+
+  let refundedCents = 0;
   if (booking.stripe_payment_intent_id) {
-    await stripeGateway.settle(booking.stripe_payment_intent_id, capturedCents, outcome);
+    ({ refundedCents } = await stripeGateway.settle(
+      booking.stripe_payment_intent_id,
+      paidCents,
+      outcome,
+    ));
   }
 
   await admin
@@ -295,20 +321,24 @@ export async function cancelBooking(
       status: actor === "host" ? "cancelled_by_host" : "cancelled_by_practitioner",
       cancelled_at: now.toISOString(),
       cancelled_by: actor,
+      // Both or neither — the row constraint says so, and the payout sweep
+      // reads this to know the money is no longer ours to pass on.
+      ...(refundedCents > 0
+        ? { refunded_at: now.toISOString(), refunded_cents: refundedCents }
+        : {}),
     })
     .eq("id", bookingId);
 
-  // Nothing to award: a host's cancellation releases the hold in full and
-  // that is the whole compensation.
+  // Nothing to award: a host's cancellation refunds in full and that is the
+  // whole compensation.
 
-  // Last, so the figures quoted are the ones that actually landed.
-  // Taken from the settlement rather than inferred, so the message can never
-  // describe a refund Stripe was not asked to make. The usual cancellation is
-  // a void of an uncaptured hold: nothing left the card, so nothing returns.
-  const settlement = settlementFor(outcome, capturedCents);
-
+  /*
+   * Last, so the figures quoted are the ones that actually landed — and taken
+   * from what Stripe did rather than from what the policy said, so an email
+   * can never describe a refund that was not made.
+   */
   await notifyCancellation(admin, bookingId, actor, {
     chargedCents: outcome.chargedCents,
-    refundedCents: settlement.kind === "refund" ? settlement.amountCents : 0,
+    refundedCents,
   });
 }

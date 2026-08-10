@@ -44,6 +44,21 @@ const BANNED = [
   /\bturned other bookings away\b/i,
   /\bdon't worry\b/i,
   /\bthat's normal\b/i,
+
+  /*
+   * The old payment model, which the app promised in six places.
+   *
+   * The card is charged when a booking is made, not held until the session, so
+   * every one of these sentences became untrue in the same commit. They are
+   * banned rather than merely fixed because the phrasing is natural enough for
+   * anybody who last read the code before it changed to write it again.
+   */
+  /\bheld rather than charged\b/i,
+  /\bnever charged\b/i,
+  /\bnot charged yet\b/i,
+  /\bwas only ever held\b/i,
+  /\bauthoris(ed|ation)\b/i,
+  /\bhold is now released\b/i,
 ];
 
 function sourceFiles(dir: string): string[] {

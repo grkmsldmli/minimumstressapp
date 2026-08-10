@@ -222,3 +222,41 @@ export async function payHost(
 
   return { transferId: transfer.id };
 }
+
+/**
+ * Gives money back after a refund request, and takes it from the right place.
+ *
+ * Cancellation refunds are simple because they happen before the session, so
+ * the whole charge is still ours to return. A refund *request* comes after —
+ * the host may already have been paid, and refunding the full amount from our
+ * balance would mean paying for the host's mistake out of our own pocket.
+ *
+ * So when staff decide the host is at fault and the transfer has gone, it is
+ * reversed first. The practitioner gets their money, the host loses a payment
+ * for a session they got wrong, and we are not the ones absorbing it. Reversing
+ * is deliberately a separate step from refunding: if the reversal fails the
+ * refund does not happen either, rather than silently landing on us.
+ */
+export async function refundRequested(
+  paymentIntentId: string,
+  amountCents: number,
+  hostTransferId: string | null,
+  clawBackFromHost: number,
+): Promise<{ refundedCents: number; reversedCents: number }> {
+  if (amountCents <= 0) return { refundedCents: 0, reversedCents: 0 };
+
+  let reversedCents = 0;
+  if (hostTransferId && clawBackFromHost > 0) {
+    const reversal = await stripe().transfers.createReversal(hostTransferId, {
+      amount: clawBackFromHost,
+    });
+    reversedCents = reversal.amount;
+  }
+
+  const refund = await stripe().refunds.create({
+    payment_intent: paymentIntentId,
+    amount: amountCents,
+  });
+
+  return { refundedCents: refund.amount, reversedCents };
+}

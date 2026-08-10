@@ -12,7 +12,7 @@ import { supabaseAdmin } from "@/lib/supabase/server";
  *
  * `actor` says which side is cancelling, and the two are not interchangeable:
  * a practitioner inside 24 hours is charged in full, while a host cancelling at
- * any point owes a refund and goodwill credit. So the claim is checked rather
+ * any point owes a refund. So the claim is checked rather
  * than trusted — `cancelBooking` verifies the caller really is the
  * practitioner on the booking or the host of its space, and refuses otherwise.
  */

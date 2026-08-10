@@ -4,6 +4,7 @@ import { isStaff } from "@/lib/admin/access";
 import { loadQueue } from "@/lib/admin/queue";
 import { handled, jsonError, requireUser } from "@/lib/api/session";
 import { jsonObject, oneOf, optionalString, uuid } from "@/lib/api/validate";
+import { RefundError, decideRefund } from "@/lib/refund-service";
 import { supabaseAdmin } from "@/lib/supabase/server";
 
 /**
@@ -18,13 +19,13 @@ import { supabaseAdmin } from "@/lib/supabase/server";
  * an address nobody should have found deserves.
  */
 /**
- * Null when the caller is staff; a 404 when they are not.
+ * Who is asking, when they are staff; a 404 when they are not.
  *
- * Returning the refusal rather than a union of shapes, because `in` narrowing
- * against optional properties still leaves the value possibly undefined and
- * every call site then has to prove something it already knows.
+ * It used to return null on success, which was enough while every action was
+ * anonymous. A refund decision is not: it is written down with a name against
+ * it, because "somebody approved this" is not an answer anyone can follow up.
  */
-async function refuseNonStaff(): Promise<Response | null> {
+async function staffOrRefusal(): Promise<Response | { staffId: string }> {
   const auth = await requireUser();
   if ("response" in auth) return new Response("Not found", { status: 404 });
 
@@ -35,13 +36,13 @@ async function refuseNonStaff(): Promise<Response | null> {
     return new Response("Not found", { status: 404 });
   }
 
-  return null;
+  return { staffId: auth.user.id };
 }
 
 export async function GET(): Promise<Response> {
   return handled(async () => {
-    const refusal = await refuseNonStaff();
-    if (refusal) return refusal;
+    const staff = await staffOrRefusal();
+    if (staff instanceof Response) return staff;
 
     return Response.json(await loadQueue(supabaseAdmin()), {
       headers: { "Cache-Control": "no-store" },
@@ -51,8 +52,8 @@ export async function GET(): Promise<Response> {
 
 export async function POST(request: NextRequest): Promise<Response> {
   return handled(async () => {
-    const refusal = await refuseNonStaff();
-    if (refusal) return refusal;
+    const staff = await staffOrRefusal();
+    if (staff instanceof Response) return staff;
 
     const body = await jsonObject(request);
     if (!body.ok) return jsonError(body.reason, 400);
@@ -62,6 +63,7 @@ export async function POST(request: NextRequest): Promise<Response> {
       "reject_listing",
       "resolve_escalation",
       "approve_account_change",
+      "decide_refund",
     ] as const);
     if (!action.ok) return jsonError(action.reason, 400);
 
@@ -173,6 +175,40 @@ export async function POST(request: NextRequest): Promise<Response> {
           .eq("id", id.value);
 
         return Response.json({ ok: true });
+      }
+
+      /**
+       * The end of a refund request, and the only place money moves for one.
+       *
+       * A note is required rather than optional. It is quoted back to the
+       * person who asked, and a refusal that explains itself is one they can
+       * argue with — an unexplained one is a wall, and the person on the other
+       * side of it writes to their bank instead, which costs everyone more
+       * than the refund would have.
+       */
+      case "decide_refund": {
+        const outcome = oneOf(body.value, "outcome", ["full", "our_fee", "none"] as const);
+        if (!outcome.ok) return jsonError(outcome.reason, 400);
+
+        if (!note.value || note.value.trim().length < 15) {
+          return jsonError("Say why — it is quoted back to them", 400);
+        }
+
+        try {
+          const { refundedCents } = await decideRefund(
+            admin,
+            id.value,
+            staff.staffId,
+            outcome.value,
+            note.value,
+          );
+          return Response.json({ ok: true, refundedCents });
+        } catch (failure) {
+          if (failure instanceof RefundError) {
+            return jsonError(failure.message, failure.status);
+          }
+          throw failure;
+        }
       }
 
       default:

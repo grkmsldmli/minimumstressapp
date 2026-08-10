@@ -331,7 +331,7 @@ export function MyBookings({
                         </p>
                         <p className="font-body font-normal text-[13.5px] text-ink-faint">
                           {sessionDate(booking.startsAt, booking.timeZone)}
-                          {booking.status === "cancelled_by_host" && " · refunded and credited"}
+                          {booking.status === "cancelled_by_host" && " · refunded in full"}
                         </p>
                       </div>
                       <StatusPill status={booking.status} />

@@ -23,7 +23,9 @@ export type NotificationKind =
   | "reliability_suspended"
   | "payout_failed"
   | "safety_escalation"
-  | "account_change_requested";
+  | "account_change_requested"
+  | "refund_requested"
+  | "refund_decided";
 
 export interface Message {
   subject: string;
@@ -269,6 +271,56 @@ export function render(kind: NotificationKind, context: MessageContext): Message
      * whether somebody looks at a report tonight or on Monday, and a subject
      * line that hides the severity behind politeness gets read on Monday.
      */
+    /**
+     * Somebody has asked for their money back, and this goes to the studio.
+     *
+     * Written as a question rather than an accusation. The studio is being
+     * asked what happened, not told what they did — nothing has been decided,
+     * and a message that reads like a verdict makes an honest host defensive
+     * before they have said a word.
+     */
+    case "refund_requested":
+      return {
+        subject: `A refund was requested — ${spaceName}`,
+        body: lines(
+          greeting(name),
+          `Somebody who booked ${spaceName} on ${when} has asked for a refund.`,
+          `Their reason: ${context.reason ?? "not given"}.`,
+          context.note ? `They wrote:
+
+"${context.note}"` : "They left no detail.",
+          "Nothing has been decided. Open the booking in the app and tell us what happened from your side — we read both accounts before anything moves.",
+          "If we do not hear from you in two days it goes to us to decide on what we have.",
+          SIGN_OFF,
+        ),
+        sms: null,
+      };
+
+    /**
+     * The answer, with the reasoning attached.
+     *
+     * A refusal that explains itself is arguable; one that does not is just a
+     * wall, and the person on the other side of it writes to their bank
+     * instead — which costs everyone more than the refund would have.
+     */
+    case "refund_decided":
+      return {
+        subject:
+          (context.refundedCents ?? 0) > 0
+            ? `Refunded ${formatCents(context.refundedCents ?? 0)} — ${spaceName}`
+            : `About your refund request — ${spaceName}`,
+        body: lines(
+          greeting(name),
+          (context.refundedCents ?? 0) > 0
+            ? `${formatCents(context.refundedCents ?? 0)} is on its way back to the card you paid with. It usually lands in five to ten days, depending on your bank.`
+            : `We are not refunding this one.`,
+          context.note ? `Why: ${context.note}` : null,
+          "If you think this is wrong, reply to this email and a person will read it.",
+          SIGN_OFF,
+        ),
+        sms: null,
+      };
+
     case "safety_escalation":
       return {
         subject:

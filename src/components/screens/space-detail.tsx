@@ -438,8 +438,8 @@ export function SpaceDetail({
           <Check size={14} color="#3B9BE8" className="mt-0.5 shrink-0" />
           <p className="font-body font-normal text-[14px] leading-relaxed text-[#2E5578]">
             You pay when you book. Cancel 24 hours or more ahead and you get all of it back. If
-            the studio ever cancels on you, you&apos;re refunded automatically whenever it happens,
-            plus a credit for next time.
+            the studio ever cancels on you, you&apos;re refunded automatically whenever it happens.
+            If a session goes wrong, you can ask us to look at it for a week afterwards.
           </p>
         </div>
       </div>

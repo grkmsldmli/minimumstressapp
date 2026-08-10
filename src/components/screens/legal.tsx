@@ -89,7 +89,10 @@ const SECTIONS = [
       "Cancel 24 or more hours ahead and you are refunded in full, back to the card you paid with.",
       "Cancel inside 24 hours, or fail to attend, and the full amount is captured.",
       "If a host cancels on you, you are refunded automatically. That refund is never replaced by credit or made optional.",
-      "A host cancellation also earns you goodwill credit worth our own fee on that booking. It applies to a future booking and never reduces what that future host is paid.",
+      "If something went wrong with a session you paid for, you can ask for a refund within 7 days. You pick a reason and tell us what happened.",
+      "Where the reason points at the studio, we ask them what happened before deciding, and a person reads both accounts. Anything unsafe skips that and reaches a person immediately.",
+      "Three outcomes: everything back, our service fee back with the studio keeping their rate, or nothing. You are told which and why.",
+      "If we refund in full for something the studio got wrong, we take their payment back too. You are never refunded out of another practitioner's pocket, and no studio is charged for a decision we made without asking them.",
     ],
   },
   {

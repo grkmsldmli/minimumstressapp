@@ -72,6 +72,12 @@ export const LIMITS = {
 
   /** Cancelling, same reasoning from the other direction. */
   cancel: { limit: 10, windowMs: 60_000 },
+  /*
+   * Deliberately mean. One request per booking is all the table allows, so a
+   * burst here is somebody probing rather than somebody asking — and each
+   * attempt reads a booking and counts a history.
+   */
+  refund: { limit: 5, windowMs: 300_000 },
 
   /** Starting Stripe onboarding — a link a host follows once, maybe twice. */
   connect: { limit: 5, windowMs: 60_000 },

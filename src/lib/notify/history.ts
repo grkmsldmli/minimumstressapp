@@ -36,6 +36,8 @@ const LABELS: Record<NotificationKind, string> = {
   payout_failed: "A payout could not be sent",
   safety_escalation: "A safety report was received",
   account_change_requested: "An account change was requested",
+  refund_requested: "A refund was requested",
+  refund_decided: "Your refund request was answered",
 };
 
 /**

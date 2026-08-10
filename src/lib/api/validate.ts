@@ -42,13 +42,19 @@ export async function jsonObject(request: Request): Promise<Validated<Record<str
 export function requiredString(
   body: Record<string, unknown>,
   field: string,
-  { max = 500 }: { max?: number } = {},
+  { max = 500, min = 1 }: { max?: number; min?: number } = {},
 ): Validated<string> {
   const value = body[field];
   if (typeof value !== "string") return bad(`${field} is required`);
 
   const trimmed = value.trim();
   if (trimmed === "") return bad(`${field} is required`);
+  /*
+   * A floor as well as a ceiling, for the fields where one word is not an
+   * answer. A refund detail of "bad" leaves a host answering an accusation
+   * they cannot see the shape of, and staff choosing between two blanks.
+   */
+  if (trimmed.length < min) return bad(`${field} needs a bit more than that`);
   if (trimmed.length > max) return bad(`${field} is too long`);
 
   return ok(trimmed);

@@ -195,13 +195,16 @@ export async function createBooking(
       instant_fee_cents: money.instantFeeCents,
       pro_discount_cents: money.proDiscountCents,
       /*
-       * Zero, and honestly zero: nothing in the app spends credit yet.
+       * Always zero, and the column is the last of a feature that never was.
        *
-       * The ledger is real — a host cancellation writes goodwill credit to it —
-       * but `quote()` takes no balance and no caller passes one, so every
-       * booking is paid in full. The column is not-null with no default, so
-       * leaving it out did not mean "none": it meant the insert failed, and
-       * with it every booking ever attempted through this route.
+       * A comment here once said a host cancellation writes goodwill credit to
+       * the ledger. Nothing ever did — no writer, no reader, `quote()` takes no
+       * balance — while three screens and the terms promised it. The promise is
+       * gone now, replaced by refunds that actually move money; the column
+       * stays because it is not-null and dropping it is a separate decision.
+       *
+       * Leaving it out of this insert did not mean "none". It meant the insert
+       * failed, and with it every booking ever attempted through this route.
        */
       credit_applied_cents: 0,
       total_cents: money.totalCents,

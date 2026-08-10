@@ -146,6 +146,46 @@ describe("migrations apply cleanly", () => {
   });
 });
 
+/**
+ * What a booking insert must supply.
+ *
+ * `credit_applied_cents` was not-null with no default and the insert in
+ * booking-service.ts never mentioned it, so every booking ever attempted
+ * through the API died on a constraint the type system could not see. Nothing
+ * caught it: the column exists, the code compiles, and the failure only
+ * happens against a real Postgres.
+ *
+ * So the list is written down. Add a required column to `bookings` and this
+ * fails, naming the insert that has to learn about it.
+ */
+describe("a booking row can actually be written", () => {
+  it("requires exactly the columns booking-service supplies", async () => {
+    const required = await rows<{ column_name: string }>(
+      `select column_name from information_schema.columns
+       where table_schema = 'public' and table_name = 'bookings'
+         and is_nullable = 'NO' and column_default is null
+       order by column_name`,
+    );
+
+    // Every one of these is named in the insert in src/lib/booking-service.ts.
+    expect(required.map((c) => c.column_name)).toEqual([
+      "credit_applied_cents",
+      "ends_at",
+      "host_rate_cents",
+      "instant_fee_cents",
+      "is_instant",
+      "platform_cents",
+      "practitioner_id",
+      "pro_discount_cents",
+      "service_fee_cents",
+      "space_id",
+      "starts_at",
+      "total_cents",
+      "was_pro",
+    ]);
+  });
+});
+
 describe("private columns stay out of the public views", () => {
   /** The whole address-privacy rule rests on these columns being absent. */
   it("omits address and entry instructions from spaces_public", async () => {

@@ -188,6 +188,16 @@ export async function createBooking(
       service_fee_cents: money.serviceFeeCents,
       instant_fee_cents: money.instantFeeCents,
       pro_discount_cents: money.proDiscountCents,
+      /*
+       * Zero, and honestly zero: nothing in the app spends credit yet.
+       *
+       * The ledger is real — a host cancellation writes goodwill credit to it —
+       * but `quote()` takes no balance and no caller passes one, so every
+       * booking is paid in full. The column is not-null with no default, so
+       * leaving it out did not mean "none": it meant the insert failed, and
+       * with it every booking ever attempted through this route.
+       */
+      credit_applied_cents: 0,
       total_cents: money.totalCents,
       platform_cents: money.platformCents,
       access_code: generateAccessCode(),

@@ -79,6 +79,8 @@ interface SpaceRow {
   restroom: string | null;
   buffer_minutes: number;
   timezone: string;
+  parking?: string[] | null;
+  parking_limit_minutes?: number | null;
   status?: "pending" | "active" | "delisted";
   description?: string;
   amenities?: string[];
@@ -377,6 +379,10 @@ export class SupabaseRepository implements Repository {
       // Older rows predate the column; the fallback is the same one the
       // migration used to seed them, not a guess made here.
       timeZone: row.timezone || FALLBACK_ZONE,
+      parking: {
+        options: row.parking ?? [],
+        limitMinutes: row.parking_limit_minutes ?? null,
+      },
       amenities: row.amenities ?? [],
       requirements: row.requirements ?? [],
       houseRules: row.house_rules ?? "",
@@ -782,6 +788,10 @@ export class SupabaseRepository implements Repository {
     // Moves with the address. A room that crossed a zone boundary and kept its
     // old zone would quietly shift every future booking by an hour.
     if (edit.timeZone !== undefined) patch.timezone = edit.timeZone;
+    if (edit.parking !== undefined) {
+      patch.parking = edit.parking.options;
+      patch.parking_limit_minutes = edit.parking.limitMinutes;
+    }
     if (edit.lng !== undefined) patch.lng = edit.lng;
 
     if (Object.keys(patch).length === 0) {
@@ -923,6 +933,8 @@ export class SupabaseRepository implements Repository {
         restroom: input.restroom?.toLowerCase() ?? null,
         buffer_minutes: input.bufferMinutes,
         timezone: input.timeZone,
+        parking: input.parking.options,
+        parking_limit_minutes: input.parking.limitMinutes,
         description: input.description,
         amenities: input.amenities,
         requirements: input.requirements,

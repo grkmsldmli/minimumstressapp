@@ -10,6 +10,7 @@ import { SpaceMediaManager } from "@/components/space-media-manager";
 import { errorMessage } from "@/lib/error-message";
 import type { HostSpace, SpaceEdit } from "@/lib/domain";
 import { MIN_DESCRIPTION_CHARS, describesTheRoom } from "@/lib/listing-quality";
+import { PARKING_LIMIT_OPTIONS, PARKING_OPTIONS, limitOutlastsSession } from "@/lib/parking";
 import { formatCents, quote } from "@/lib/money";
 import { CATEGORY_KEYS, roomTypeFor } from "@/lib/taxonomy";
 
@@ -54,6 +55,8 @@ export function EditSpace({
   const [address, setAddress] = useState(space.addressLine);
   const [access, setAccess] = useState(space.access);
   const [description, setDescription] = useState(space.description);
+  const [parking, setParking] = useState<string[]>(space.parking.options);
+  const [parkingLimit, setParkingLimit] = useState<number | null>(space.parking.limitMinutes);
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -76,7 +79,9 @@ export function EditSpace({
     access.floor !== space.access.floor ||
     access.doorwayInches !== space.access.doorwayInches ||
     access.restroom !== space.access.restroom ||
-    description !== space.description;
+    description !== space.description ||
+    parking.join() !== space.parking.options.join() ||
+    parkingLimit !== space.parking.limitMinutes;
 
   const toggleListed = async () => {
     setError(null);
@@ -102,6 +107,7 @@ export function EditSpace({
         capacity: Number(capacity),
         entryInstructions: entry.trim(),
         description: description.trim(),
+        parking: { options: parking, limitMinutes: parkingLimit },
         bufferMinutes: Number(buffer),
         entranceAccess: access.entrance,
         floorAccess: access.floor,
@@ -207,6 +213,68 @@ export function EditSpace({
         */}
         <Label>Getting in</Label>
         <AccessEditor details={access} onChange={setAccess} />
+
+        <Label>Parking</Label>
+        <div className="flex flex-wrap gap-2">
+          {PARKING_OPTIONS.map((option) => {
+            const on = parking.includes(option.key);
+            return (
+              <button
+                key={option.key}
+                type="button"
+                onClick={() =>
+                  setParking((list) => {
+                    if (list.includes(option.key)) return list.filter((k) => k !== option.key);
+                    // "No parking" is the absence of the others, not one more.
+                    return option.key === "none"
+                      ? ["none"]
+                      : [...list.filter((k) => k !== "none"), option.key];
+                  })
+                }
+                className="px-3 py-2 rounded-xl font-body text-[14px] press"
+                style={{
+                  backgroundColor: on ? "#16304E" : "#fff",
+                  color: on ? "#fff" : "#16304E",
+                  border: `1px solid ${on ? "#16304E" : "#DCE7F2"}`,
+                }}
+              >
+                {option.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {parking.length > 0 && !parking.includes("none") && (
+          <>
+            <Label>How long can a car stay?</Label>
+            <div className="flex flex-wrap gap-2">
+              {[null, ...PARKING_LIMIT_OPTIONS].map((minutes) => {
+                const on = parkingLimit === minutes;
+                return (
+                  <button
+                    key={String(minutes)}
+                    type="button"
+                    onClick={() => setParkingLimit(minutes)}
+                    className="px-3 py-2 rounded-xl font-body text-[14px] press"
+                    style={{
+                      backgroundColor: on ? "#16304E" : "#fff",
+                      color: on ? "#fff" : "#16304E",
+                      border: `1px solid ${on ? "#16304E" : "#DCE7F2"}`,
+                    }}
+                  >
+                    {minutes === null ? "No limit" : minutes < 60 ? `${minutes} min` : `${minutes / 60} hr`}
+                  </button>
+                );
+              })}
+            </div>
+            {parkingLimit !== null && !limitOutlastsSession(parkingLimit) && (
+              <Note tone="warn">
+                Sessions are an hour. This limit means moving the car before one ends, and
+                practitioners will see that on your listing.
+              </Note>
+            )}
+          </>
+        )}
 
         <div className="h-px my-7" style={{ backgroundColor: "#E7EEF6" }} />
 

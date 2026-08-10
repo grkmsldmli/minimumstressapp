@@ -39,6 +39,8 @@ interface Listing {
   description: string;
   amenities: readonly string[];
   access: AccessDetails;
+  /** False when the host has not said anything about parking either way. */
+  parkingAnswered: boolean;
   mediaCount: number;
 }
 
@@ -73,6 +75,13 @@ export function listingGaps(listing: Listing): ListingGap[] {
     gaps.push({
       label: "How somebody gets in",
       because: "Anyone who needs to know has to message you first, and most will book elsewhere.",
+    });
+  }
+
+  if (listing.parkingAnswered === false) {
+    gaps.push({
+      label: "Where to park",
+      because: "Anyone driving decides on this, and the ones who cannot find out drive somewhere else.",
     });
   }
 

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, Check, Key, Lock, Sun, Users, Zap } from "lucide-react";
 
 import { AccessPanel } from "@/components/access-panel";
+import { ParkingPanel } from "@/components/parking-panel";
 import { BookingCalendar } from "@/components/booking-calendar";
 import { SpaceGallery } from "@/components/space-gallery";
 import { PrimaryButton } from "@/components/primitives";
@@ -197,6 +198,15 @@ export function SpaceDetail({
         */}
         <Label>Getting in</Label>
         <AccessPanel details={space.access} />
+
+        {/*
+          Under "getting in" rather than as its own section, because arriving
+          by car is part of the same question — and because a listing with no
+          parking answer should not grow an empty heading.
+        */}
+        <div className="mt-2.5">
+          <ParkingPanel parking={space.parking} />
+        </div>
 
         {space.amenities.length > 0 && (
           <>

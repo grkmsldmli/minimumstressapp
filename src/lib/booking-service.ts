@@ -5,6 +5,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { explainRejection, planBooking } from "./booking-plan";
 import { resolveCancellation, type BookingMoney } from "./money";
 import { notifyBookingCreated, notifyCancellation } from "./notify/for-booking";
+import { SESSION_MINUTES } from "./session";
 
 /**
  * Creating and cancelling a booking, server-side.
@@ -21,7 +22,6 @@ import { notifyBookingCreated, notifyCancellation } from "./notify/for-booking";
  * recoverable rather than to pretend they cannot happen.
  */
 
-const SESSION_MINUTES = 60;
 const ACCESS_CODE_LEAD_MS = 30 * 60 * 1000;
 
 export interface CreateBookingRequest {

@@ -28,6 +28,7 @@ import { DocumentUpload } from "@/components/uploads";
 import { WeekSchedule } from "@/components/week-schedule";
 import { usePointZone } from "@/lib/use-point-zone";
 import { MIN_DESCRIPTION_CHARS, describesTheRoom } from "@/lib/listing-quality";
+import { PARKING_LIMIT_OPTIONS, PARKING_OPTIONS } from "@/lib/parking";
 import { zoneAbbreviation } from "@/lib/timezone";
 import type { AvailabilityBlock } from "@/lib/availability";
 import { isValidSchedule } from "@/lib/availability";
@@ -89,6 +90,8 @@ export function AddSpace({
   // Step 2 — only the media is required.
   const [media, setMedia] = useState<PickedMedia[]>([]);
   const [amenities, setAmenities] = useState<string[]>([]);
+  const [parking, setParking] = useState<string[]>([]);
+  const [parkingLimit, setParkingLimit] = useState<number | null>(null);
   const [requirements, setRequirements] = useState<string[]>([]);
   const [houseRules, setHouseRules] = useState("");
   const [description, setDescription] = useState("");
@@ -177,6 +180,7 @@ export function AddSpace({
         restroom,
         description: description.trim(),
         amenities,
+        parking: { options: parking, limitMinutes: parkingLimit },
         requirements,
         houseRules: houseRules.trim(),
         bufferMinutes,
@@ -471,6 +475,68 @@ export function AddSpace({
                 </Chip>
               ))}
             </div>
+
+            <SectionLabel className="mt-6">Parking</SectionLabel>
+            <p className="font-body font-normal text-[13.5px] mb-3 text-ink-faint">
+              Pick everything that applies — a room can have its own spaces and a street anybody
+              can use.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {PARKING_OPTIONS.map((option) => (
+                <Chip
+                  key={option.key}
+                  active={parking.includes(option.key)}
+                  onClick={() =>
+                    setParking((list) => {
+                      if (list.includes(option.key)) {
+                        return list.filter((k) => k !== option.key);
+                      }
+                      /*
+                       * "No parking" is not one answer among several — it is
+                       * the absence of the others, and a listing claiming both
+                       * a private lot and no parking tells nobody anything.
+                       */
+                      return option.key === "none" ? ["none"] : [...list.filter((k) => k !== "none"), option.key];
+                    })
+                  }
+                >
+                  {option.label}
+                </Chip>
+              ))}
+            </div>
+
+            {parking.length > 0 && !parking.includes("none") && (
+              <>
+                <FieldLabel className="mt-5">How long can a car stay?</FieldLabel>
+                <div className="flex flex-wrap gap-2">
+                  <Chip active={parkingLimit === null} onClick={() => setParkingLimit(null)}>
+                    No limit
+                  </Chip>
+                  {PARKING_LIMIT_OPTIONS.map((minutes) => (
+                    <Chip
+                      key={minutes}
+                      active={parkingLimit === minutes}
+                      onClick={() => setParkingLimit(minutes)}
+                    >
+                      {minutes < 60 ? `${minutes} min` : `${minutes / 60} hr`}
+                    </Chip>
+                  ))}
+                </div>
+                {/*
+                  Said to the host at the moment they pick it, because they are
+                  the only one who can do anything about it — and because a
+                  limit shorter than the session is the kind of detail that
+                  looks harmless until somebody is walking out mid-class.
+                */}
+                {parkingLimit !== null && parkingLimit < 75 && (
+                  <p className="font-body font-normal text-[13px] mt-2 text-[#8B6C37]">
+                    Sessions are an hour. A {parkingLimit < 60 ? `${parkingLimit}-minute` : "1-hour"}{" "}
+                    limit means moving the car before it ends — worth saying, and practitioners will
+                    see it.
+                  </p>
+                )}
+              </>
+            )}
 
             <FieldLabel className="mt-5">
               Wheelchair accessible <OptionalTag />

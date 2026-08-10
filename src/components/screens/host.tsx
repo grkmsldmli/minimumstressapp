@@ -939,6 +939,7 @@ function Unfinished({ space, onEdit }: { space: HostSpace; onEdit: () => void })
     description: space.description,
     amenities: space.amenities,
     access: space.access,
+    parkingAnswered: space.parking.options.length > 0,
     mediaCount: space.media.length,
   });
 

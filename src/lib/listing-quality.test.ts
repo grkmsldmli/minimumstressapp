@@ -13,6 +13,7 @@ const COMPLETE: Listing = {
     doorwayInches: 34,
     restroom: "accessible",
   },
+  parkingAnswered: true,
   mediaCount: 3,
 };
 
@@ -66,6 +67,11 @@ describe("what a listing is still missing", () => {
     expect(some.some((g) => /gets in/i.test(g.label))).toBe(false);
   });
 
+  it("asks about parking when the host has said nothing either way", () => {
+    expect(listing({ parkingAnswered: false }).some((g) => /park/i.test(g.label))).toBe(true);
+    expect(listing({ parkingAnswered: true }).some((g) => /park/i.test(g.label))).toBe(false);
+  });
+
   it("asks for more photos below three", () => {
     expect(listing({ mediaCount: 1 }).some((g) => /photos/i.test(g.label))).toBe(true);
     expect(listing({ mediaCount: 3 }).some((g) => /photos/i.test(g.label))).toBe(false);
@@ -89,12 +95,14 @@ describe("what a listing is still missing", () => {
       description: "",
       amenities: ["mats"],
       access: { entrance: null, floor: null, doorwayInches: null, restroom: null },
+      parkingAnswered: false,
       mediaCount: 3,
     });
 
     expect(gaps.map((g) => g.label)).toEqual([
       "A description of the room",
       "How somebody gets in",
+      "Where to park",
       "What the room comes with",
     ]);
   });

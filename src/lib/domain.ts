@@ -7,6 +7,7 @@
  */
 
 import type { AccessDetails } from "./access-details";
+import type { Parking } from "./parking";
 import type { AvailabilityBlock } from "./availability";
 import type { AccessTypeKey, CategoryKey, RestroomOption } from "./taxonomy";
 
@@ -140,6 +141,13 @@ export interface PublicSpace {
    * which is shown as unanswered.
    */
   access: AccessDetails;
+  /**
+   * Where somebody leaves the car, and how long they may leave it.
+   *
+   * Public because it is read while deciding, which is before a booking
+   * exists — and because "street parking" locates nothing.
+   */
+  parking: Parking;
   approxLat: number | null;
   approxLng: number | null;
   distanceLabel: string;
@@ -241,6 +249,7 @@ export interface SpaceEdit {
   lng?: number;
   /** Re-resolved whenever the coordinates above change, never typed. */
   timeZone?: string;
+  parking?: Parking;
 }
 
 /** The money frozen onto the booking at creation. Mirrors bookings' columns. */
@@ -324,6 +333,7 @@ export interface NewSpaceInput {
   mapY: number;
   /** Resolved from the coordinates above, server-side. See zone-for-point.ts. */
   timeZone: string;
+  parking: Parking;
   accessible: boolean | null;
   restroom: RestroomOption | null;
   amenities: string[];

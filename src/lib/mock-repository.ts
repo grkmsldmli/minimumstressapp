@@ -46,11 +46,11 @@ import type { AccessDetails } from "./access-details";
 import type { MediaKind, SpaceEdit } from "./domain";
 import type { NotificationEntry } from "./notify/history";
 import { type CategoryKey, roomTypeFor } from "./taxonomy";
+import { SESSION_MINUTES } from "./session";
 import { FALLBACK_ZONE, addDays, civilIn } from "./timezone";
 import { rejectionReason } from "./uploads";
 
 const ME = "me";
-const SESSION_MINUTES = 60;
 const ACCESS_CODE_LEAD_MS = 30 * 60 * 1000;
 
 function id(prefix: string): string {
@@ -299,6 +299,7 @@ export class MockRepository implements Repository {
         // Matches the peninsula coordinates above; seed data with a zone from
         // somewhere else would make every demo slot an hour it is not.
         timeZone: FALLBACK_ZONE,
+        parking: { options: ["street", "free"], limitMinutes: 120 },
         amenities: seed.amenities,
         requirements: seed.requirements,
         houseRules: seed.houseRules,
@@ -658,6 +659,7 @@ export class MockRepository implements Repository {
       accessible: input.accessible,
       restroom: input.restroom,
       timeZone: input.timeZone,
+      parking: input.parking,
       bufferMinutes: input.bufferMinutes,
       amenities: input.amenities,
       requirements: input.requirements,

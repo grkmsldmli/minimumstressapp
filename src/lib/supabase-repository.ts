@@ -491,12 +491,26 @@ export class SupabaseRepository implements Repository {
     if (error) throw asError(error);
     if (!data?.length) return [];
 
+    /*
+     * A checkout somebody walked away from is not a booking they had.
+     *
+     * Releasing an abandoned hour writes it as a cancellation, which is the
+     * only status the schema has for it, and it was then appearing in their
+     * own history as "Cancelled" — a session they never paid for and never
+     * held, listed as one they gave up. Same line as everywhere else: money
+     * arrived, or it never happened.
+     */
+    const real = data.filter(
+      (row) => row.captured_at !== null || row.status === "upcoming",
+    );
+    if (!real.length) return [];
+
     // The view carries no space name, and a practitioner cannot read `spaces`
     // directly, so the label comes from the public catalogue.
     const spaces = await this.listPublicSpaces();
     const byId = new Map(spaces.map((s) => [s.id, s]));
 
-    return data.map((row): Booking => {
+    return real.map((row): Booking => {
       const space = byId.get(row.space_id);
       const category = (space?.category ?? "physical") as CategoryKey;
       return {

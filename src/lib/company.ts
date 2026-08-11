@@ -32,3 +32,14 @@ export const SUPPORT_EMAIL = "info@minimumstress.com";
 
 /** The marketing site. Not the source of the in-app terms — those are here. */
 export const WEBSITE = "https://minimumstress.com";
+
+/**
+ * Where the app itself lives.
+ *
+ * Separate from the marketing site on purpose: they are two different places
+ * and conflating them is how a booking confirmation links somebody to a
+ * brochure. Absolute rather than relative because the places that need it —
+ * link previews, the manifest, an email — are all read outside the browser
+ * that would have resolved a relative path.
+ */
+export const APP_URL = "https://minimumstress.app";

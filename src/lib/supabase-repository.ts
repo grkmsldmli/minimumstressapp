@@ -302,6 +302,28 @@ export class SupabaseRepository implements Repository {
     return this.getProfile();
   }
 
+  /**
+   * Opened in a new tab rather than by replacing this one.
+   *
+   * Stripe's dashboard is somewhere a host goes to check something and come
+   * back; navigating away would drop them out of the app to do it, and the
+   * link is single-use, so the back button would land on a dead one.
+   */
+  async openPayoutDashboard(): Promise<void> {
+    const opened = window.open("", "_blank", "noopener");
+
+    const response = await fetch("/api/connect/dashboard", { method: "POST" });
+    if (!response.ok) {
+      opened?.close();
+      const { error } = await response.json().catch(() => ({ error: null }));
+      throw new Error(error ?? "Could not open your payout account");
+    }
+
+    const { url } = (await response.json()) as { url: string };
+    if (opened) opened.location.href = url;
+    else window.location.href = url;
+  }
+
   async signOut(): Promise<void> {
     const { error } = await this.db.auth.signOut();
     if (error) throw asError(error);

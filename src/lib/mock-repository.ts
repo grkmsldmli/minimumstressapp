@@ -370,6 +370,10 @@ export class MockRepository implements Repository {
     return { ...this.profile };
   }
 
+  async openPayoutDashboard(): Promise<void> {
+    // There is no Stripe here to open, and no window to send anywhere.
+  }
+
   async signOut(): Promise<void> {
     // Nothing is persisted here, so there is no token to discard. The real
     // implementation calls supabase.auth.signOut().

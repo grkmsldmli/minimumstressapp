@@ -1259,6 +1259,7 @@ export function App() {
           onPickAvatar={(file) => mutate(() => repo.uploadAvatar(file))}
           onGoLegal={() => go("legal")}
           onConnectPayouts={() => void mutate(() => repo.connectPayouts())}
+          onOpenPayoutDashboard={() => void repo.openPayoutDashboard()}
           onSignOut={signOut}
         />
       );

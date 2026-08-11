@@ -88,6 +88,37 @@ export async function createOnboardingLink(
 }
 
 /**
+ * A way back into Stripe for a host who has already finished.
+ *
+ * Onboarding is a one-way door without this: the bank account, the tax
+ * details and anything Stripe later asks for all live on Stripe's side, and a
+ * host whose bank changed had nowhere in the app to go.
+ *
+ * An account link rather than a dashboard login link. The accounts this
+ * platform creates come back with `controller.stripe_dashboard.type: "none"`
+ * — asked for as `type: "express"`, resolved by the current API version into
+ * a platform-controlled account with no dashboard of its own — so
+ * `createLoginLink` refuses them outright. `account_update` is the hosted flow
+ * that does work for these, and it opens on exactly what a host comes here to
+ * change.
+ *
+ * Single-use and short-lived either way, so it is fetched at the tap.
+ */
+export async function createAccountUpdateLink(
+  accountId: string,
+  returnUrl: string,
+  refreshUrl: string,
+): Promise<string> {
+  const link = await stripe().accountLinks.create({
+    account: accountId,
+    type: "account_update",
+    return_url: returnUrl,
+    refresh_url: refreshUrl,
+  });
+  return link.url;
+}
+
+/**
  * Whether this account can actually be paid.
  *
  * `payouts_enabled` is the honest signal, not "the host clicked through the

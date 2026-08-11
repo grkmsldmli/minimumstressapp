@@ -169,6 +169,13 @@ export interface Repository {
    */
   connectPayouts(): Promise<Profile>;
 
+  /**
+   * Opens the host's own Stripe dashboard, for everything that happens after
+   * onboarding: a changed bank account, a payout that bounced, a detail Stripe
+   * has started asking for.
+   */
+  openPayoutDashboard(): Promise<void>;
+
   /** Ends the session. */
   signOut(): Promise<void>;
 }

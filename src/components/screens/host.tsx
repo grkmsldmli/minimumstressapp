@@ -746,6 +746,7 @@ export function HostProfile({
   onPickAvatar,
   onGoLegal,
   onConnectPayouts,
+  onOpenPayoutDashboard,
   onSignOut,
 }: {
   profile: Profile;
@@ -761,6 +762,7 @@ export function HostProfile({
   onPickAvatar: (file: File) => Promise<unknown>;
   onGoLegal: () => void;
   onConnectPayouts: () => void;
+  onOpenPayoutDashboard: () => void;
   onSignOut: () => void;
 }) {
   const activeCount = spaces.filter((s) => s.status === "active").length;
@@ -810,7 +812,17 @@ export function HostProfile({
         </div>
         <div className="flex flex-col gap-2.5">
           {profile.stripeConnected ? (
-            <ProfileRow icon={ShieldCheck} label="Payout method" value="Stripe · connected" />
+            /*
+              Tappable, because onboarding was otherwise a one-way door. A
+              bank account that changes, or a detail Stripe starts asking for
+              later, is fixed on their side and the app had no way through.
+            */
+            <ProfileRow
+              icon={ShieldCheck}
+              label="Payout method"
+              value="Stripe · connected"
+              onClick={onOpenPayoutDashboard}
+            />
           ) : (
             /*
               Not a settings row. Without this a host can take bookings and

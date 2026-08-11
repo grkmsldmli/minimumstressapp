@@ -10,6 +10,7 @@ import {
   FileUp,
   LogOut,
   Repeat,
+  Scale,
   ScrollText,
   Undo2,
 } from "lucide-react";
@@ -297,6 +298,8 @@ export function PractitionerProfile({
   onDeleteAccount,
   onPickAvatar,
   onGoLegal,
+  onGoDisputes,
+  disputesWaiting,
   onGoInsurance,
   onSignOut,
 }: {
@@ -312,6 +315,9 @@ export function PractitionerProfile({
   /** Uploads the picture and resolves once it is stored, not once it is shown. */
   onPickAvatar: (file: File) => Promise<unknown>;
   onGoLegal: () => void;
+  onGoDisputes: () => void;
+  /** How many refund requests or claims are waiting on this account. */
+  disputesWaiting: number;
   onGoInsurance: () => void;
   onSignOut: () => void;
 }) {
@@ -368,6 +374,20 @@ export function PractitionerProfile({
             label="Insurance certificate"
             value={profile.insuranceDocName ?? "Not added"}
             onClick={onGoInsurance}
+          />
+          {/*
+            Shown with a count when something is waiting, because being asked
+            to answer an accusation is not a thing to find by browsing.
+          */}
+          <ProfileRow
+            icon={Scale}
+            label="Sorted out"
+            value={
+              disputesWaiting > 0
+                ? `${disputesWaiting} waiting on you`
+                : undefined
+            }
+            onClick={onGoDisputes}
           />
           <ProfileRow icon={ScrollText} label="Terms & privacy" onClick={onGoLegal} />
           <ProfileRow icon={LogOut} label="Log out" onClick={onSignOut} danger />

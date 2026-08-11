@@ -8,6 +8,7 @@ import type {
   HostSpace,
   Profile,
   PublicSpace,
+  OpenDispute,
   PublicReview,
   SpaceAccessDetails,
 } from "@/lib/domain";
@@ -25,6 +26,8 @@ import {
 import { type Provider, enabledProviders } from "@/lib/auth-providers";
 import { BOOKING_HORIZON_DAYS } from "@/lib/money";
 import type { NotificationEntry } from "@/lib/notify/history";
+import { ClaimForm } from "@/components/screens/claim-form";
+import { Disputes } from "@/components/screens/disputes";
 import { RefundRequest } from "@/components/screens/refund-request";
 import { rebookable } from "@/lib/rebook";
 import { FALLBACK_ZONE } from "@/lib/timezone";
@@ -86,6 +89,8 @@ export function App() {
     threadBookingId,
     refundBookingId,
     setRefundBookingId,
+    claimBookingId,
+    setClaimBookingId,
     setThreadBookingId,
     revision,
     refresh,
@@ -118,6 +123,31 @@ export function App() {
    * Null while it is in flight, so the section stays absent rather than
    * flashing "New" and then filling in.
    */
+  /**
+   * Refund requests and studio claims involving this account.
+   *
+   * Loaded with the rest of the session data rather than on demand: the badge
+   * on the nav has to know whether anything is waiting before somebody opens
+   * the screen, and a person who is being asked something should not have to
+   * go looking for it.
+   */
+  const [disputes, setDisputes] = useState<OpenDispute[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const found = await repo.listOpenDisputes();
+        if (!cancelled) setDisputes(found);
+      } catch {
+        // The rest of the app is still usable without them.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [repo, revision]);
+
   const [spaceReviews, setSpaceReviews] = useState<{
     spaceId: string;
     items: PublicReview[];
@@ -738,6 +768,10 @@ export function App() {
             setReviewing({ bookingId, role: "host" });
             go("review");
           }}
+          onReportProblem={(bookingId) => {
+            setClaimBookingId(bookingId);
+            go("claim");
+          }}
           onMessageBooking={(bookingId) => {
             setThreadBookingId(bookingId);
             go("thread");
@@ -957,6 +991,53 @@ export function App() {
       );
     }
 
+    case "claim": {
+      const subject = hostBookings.find((b) => b.id === claimBookingId);
+      const room = subject ? spaces.find((s) => s.id === subject.spaceId) : undefined;
+      if (!subject || !room) return <Fallback onBack={back} />;
+
+      return (
+        <ClaimForm
+          spaceName={room.name}
+          hourlyRateCents={room.hourlyRateCents}
+          onBack={back}
+          onSubmit={async (input) => {
+            const response = await fetch(`/api/bookings/${subject.id}/claim`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(input),
+            });
+            const body = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(body.error ?? "That did not send.");
+            refresh();
+            return body;
+          }}
+        />
+      );
+    }
+
+    case "disputes":
+      return (
+        <Disputes
+          disputes={disputes}
+          onBack={back}
+          onReply={async (dispute, reply) => {
+            const url =
+              dispute.kind === "refund" ? `/api/refunds/${dispute.id}` : `/api/claims/${dispute.id}`;
+            const field = dispute.kind === "refund" ? { reply } : { reply };
+
+            const response = await fetch(url, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(field),
+            });
+            const body = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(body.error ?? "That did not send.");
+            refresh();
+          }}
+        />
+      );
+
     case "thread": {
       if (!threadBookingId) return <Fallback onBack={() => go("discover")} />;
 
@@ -1043,6 +1124,8 @@ export function App() {
           onUpdate={(patch) => mutate(() => repo.updateProfile(patch))}
           onPickAvatar={(file) => mutate(() => repo.uploadAvatar(file))}
           onGoLegal={() => go("legal")}
+          onGoDisputes={() => go("disputes")}
+          disputesWaiting={disputes.filter((d) => d.awaitingYou).length}
           onGoInsurance={() => go("verify")}
           onSignOut={signOut}
         />

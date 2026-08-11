@@ -56,6 +56,7 @@ import type {
   MediaKind,
   Message,
   NewSpaceInput,
+  OpenDispute,
   PublicReview,
   Profile,
   PublicSpace,
@@ -65,6 +66,8 @@ import type {
 import type { CancellationEvent } from "./reliability";
 import type { CreateBookingInput, Repository, ReviewInput } from "./repository";
 import { type CategoryKey, roomTypeFor } from "./taxonomy";
+import { type ClaimKind, claimType, overstayCents } from "./claims";
+import { type RefundReason, questionFor } from "./refunds";
 import { FALLBACK_ZONE } from "./timezone";
 
 /** Rows as PostgREST returns them, before mapping into domain shapes. */
@@ -790,6 +793,84 @@ export class SupabaseRepository implements Repository {
     }));
   }
 
+  /**
+   * Everything either side has said about a session that is still unsettled.
+   *
+   * Two reads rather than one query, because they are two tables with two row
+   * policies and joining them in SQL would mean a view that has to be right
+   * about both. The lists are short by nature — a marketplace with a long one
+   * has a different problem than a screen can fix.
+   */
+  async listOpenDisputes(): Promise<OpenDispute[]> {
+    const me = await this.userId();
+
+    const [refunds, claims] = await Promise.all([
+      this.db
+        .from("refund_requests")
+        .select(
+          "id, reason, detail, state, practitioner_id, outcome, bookings!inner(id, starts_at, total_cents, spaces!inner(name, timezone))",
+        )
+        .order("created_at", { ascending: false }),
+      this.db
+        .from("studio_claims")
+        .select(
+          "id, kind, detail, state, host_id, charged_cents, minutes_over, claimed_cents, bookings!inner(id, starts_at, spaces!inner(name, timezone, hourly_rate_cents))",
+        )
+        .order("created_at", { ascending: false }),
+    ]);
+
+    if (refunds.error) throw asError(refunds.error);
+    if (claims.error) throw asError(claims.error);
+
+    const fromRefunds: OpenDispute[] = (refunds.data ?? []).map((row) => {
+      const booking = (row as unknown as { bookings: RefundBookingRow }).bookings;
+      return {
+        id: row.id as string,
+        kind: "refund" as const,
+        bookingId: booking.id,
+        spaceName: booking.spaces.name,
+        sessionStart: new Date(booking.starts_at),
+        timeZone: booking.spaces.timezone,
+        reason: questionFor(row.reason as RefundReason).label,
+        detail: row.detail as string,
+        amountCents: booking.total_cents,
+        // The host answers a refund request; the practitioner made it.
+        awaitingYou: row.state === "awaiting_host" && row.practitioner_id !== me,
+        outcome: (row.outcome as string) ?? null,
+      };
+    });
+
+    const fromClaims: OpenDispute[] = (claims.data ?? []).map((row) => {
+      const booking = (row as unknown as { bookings: ClaimBookingRow }).bookings;
+      const type = claimType(row.kind as ClaimKind);
+      return {
+        id: row.id as string,
+        kind: "claim" as const,
+        bookingId: booking.id,
+        spaceName: booking.spaces.name,
+        sessionStart: new Date(booking.starts_at),
+        timeZone: booking.spaces.timezone,
+        reason: type.label,
+        detail: row.detail as string,
+        amountCents:
+          (row.charged_cents as number) ??
+          type.fixedCents ??
+          (row.kind === "overstay"
+            ? overstayCents((row.minutes_over as number) ?? 0, booking.spaces.hourly_rate_cents)
+            : ((row.claimed_cents as number) ?? null)),
+        // The practitioner answers a claim; the studio made it.
+        awaitingYou: row.state === "awaiting_practitioner" && row.host_id !== me,
+        outcome: ["upheld", "rejected", "uncollectable"].includes(row.state as string)
+          ? (row.state as string)
+          : null,
+      };
+    });
+
+    return [...fromRefunds, ...fromClaims].sort(
+      (a, b) => Number(b.awaitingYou) - Number(a.awaitingYou),
+    );
+  }
+
   async editSpace(spaceId: string, edit: SpaceEdit): Promise<HostSpace> {
     const hostId = await this.userId();
 
@@ -1161,3 +1242,17 @@ export class SupabaseRepository implements Repository {
   }
 }
 
+
+/** The joined shapes the dispute lists read back, named so the casts are honest. */
+interface RefundBookingRow {
+  id: string;
+  starts_at: string;
+  total_cents: number;
+  spaces: { name: string; timezone: string };
+}
+
+interface ClaimBookingRow {
+  id: string;
+  starts_at: string;
+  spaces: { name: string; timezone: string; hourly_rate_cents: number };
+}

@@ -15,6 +15,8 @@
  * genuine damage is assessed.
  */
 
+import { SESSION_MS } from "./session";
+
 export type ClaimKind = "cleaning" | "overstay" | "damage";
 
 export interface ClaimType {
@@ -108,6 +110,17 @@ export function overstayCents(minutesOver: number, hourlyRateCents: number): num
 
   const halfHours = Math.ceil(Math.min(minutesOver, 240) / 30);
   return Math.round((halfHours * hourlyRateCents) / 2);
+}
+
+/**
+ * When a host's window closes, for the screen that offers the button.
+ *
+ * Here rather than in the service because it is arithmetic, and a client
+ * component reaching into the service for it drags `server-only` Stripe code
+ * into the browser bundle — which is how the build found this.
+ */
+export function claimWindowEndsAt(sessionStart: Date): Date {
+  return new Date(sessionStart.getTime() + SESSION_MS + CLAIM_WINDOW_HOURS * 60 * 60 * 1000);
 }
 
 export type ClaimRoute =

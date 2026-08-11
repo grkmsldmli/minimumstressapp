@@ -172,6 +172,35 @@ export interface PublicSpace {
 }
 
 /**
+ * Something the other side has said about a session, waiting on an answer.
+ *
+ * One shape for both directions. A practitioner asking for their money back
+ * and a studio asking to be paid for a mess are the same conversation pointed
+ * opposite ways: somebody made a claim about a session, the other person is
+ * asked what happened, and a person decides. Two screens for that would be two
+ * places to look and two sets of wording to keep honest.
+ */
+export interface OpenDispute {
+  id: string;
+  /** Which direction it points. */
+  kind: "refund" | "claim";
+  bookingId: string;
+  spaceName: string;
+  sessionStart: Date;
+  timeZone: string;
+  /** What they picked from the list, in words. */
+  reason: string;
+  /** What they wrote. */
+  detail: string;
+  /** What it would cost, where there is already a figure. */
+  amountCents: number | null;
+  /** True when this account is the one being asked to answer. */
+  awaitingYou: boolean;
+  /** Set once decided, so a closed one still reads as an answer. */
+  outcome: string | null;
+}
+
+/**
  * A review somebody else wrote, once it has been released.
  *
  * Released means both sides wrote, or fourteen days passed — see the

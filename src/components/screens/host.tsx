@@ -30,6 +30,7 @@ import type { HostBooking, HostSpace, Profile } from "@/lib/domain";
 import { formatCents } from "@/lib/money";
 import { PAYOUT_DELAY_DAYS, describeSpeed } from "@/lib/payouts";
 import type { Standing } from "@/lib/reliability";
+import { claimWindowEndsAt } from "@/lib/claims";
 import { listingGaps } from "@/lib/listing-quality";
 import { FALLBACK_ZONE, zoneAbbreviation } from "@/lib/timezone";
 import { sessionDate, sessionTime } from "@/lib/when";
@@ -53,6 +54,7 @@ export function HostDashboard({
   onGoNotifications,
   undeliveredCount,
   onReviewBooking,
+  onReportProblem,
   onMessageBooking,
 }: {
   spaces: HostSpace[];
@@ -69,6 +71,8 @@ export function HostDashboard({
   undeliveredCount: number;
   /** Absent until the review window opens for a session. */
   onReviewBooking?: (bookingId: string) => void;
+  /** Absent once the 48-hour window on that session has closed. */
+  onReportProblem?: (bookingId: string) => void;
   /** Opens the thread for a booking. */
   onMessageBooking?: (bookingId: string) => void;
 }) {
@@ -403,6 +407,11 @@ export function HostDashboard({
                       index={i}
                       past
                       onReview={onReviewBooking ? () => onReviewBooking(booking.id) : undefined}
+                      onReportProblem={
+                        onReportProblem && withinClaimWindow(booking)
+                          ? () => onReportProblem(booking.id)
+                          : undefined
+                      }
                     />
                   ))}
                 </div>
@@ -977,12 +986,25 @@ function Unfinished({ space, onEdit }: { space: HostSpace; onEdit: () => void })
   );
 }
 
+/**
+ * Whether this session can still be reported.
+ *
+ * The same window the server applies, so the link is never offered for a claim
+ * the route would refuse — and it is short on purpose: a room used by other
+ * people since cannot honestly be pinned on one of them.
+ */
+function withinClaimWindow(booking: HostBooking): boolean {
+  if (booking.status !== "completed") return false;
+  return claimWindowEndsAt(booking.startsAt) > new Date();
+}
+
 function HostBookingRow({
   booking,
   timeZone,
   index,
   past = false,
   onReview,
+  onReportProblem,
   onMessage,
 }: {
   booking: HostBooking;
@@ -991,6 +1013,7 @@ function HostBookingRow({
   index: number;
   past?: boolean;
   onReview?: () => void;
+  onReportProblem?: () => void;
   onMessage?: () => void;
 }) {
   const cancelled = booking.status.startsWith("cancelled");
@@ -1064,6 +1087,22 @@ function HostBookingRow({
           style={{ border: "1px solid #DCE7F2", color: "#16304E" }}
         >
           Leave a review
+        </button>
+      )}
+
+      {/*
+        Quieter than the review, and underneath it. Most sessions end fine; a
+        report offered with equal weight invites the thought rather than
+        answering it.
+      */}
+      {past && !cancelled && onReportProblem && (
+        <button
+          type="button"
+          onClick={onReportProblem}
+          className="w-full mt-2 py-2 font-body text-[13.5px] press"
+          style={{ color: "#8CA3BD" }}
+        >
+          Something was wrong with the room afterwards
         </button>
       )}
     </div>

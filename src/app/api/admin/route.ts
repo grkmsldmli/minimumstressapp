@@ -3,7 +3,9 @@ import type { NextRequest } from "next/server";
 import { isStaff } from "@/lib/admin/access";
 import { loadQueue } from "@/lib/admin/queue";
 import { handled, jsonError, requireUser } from "@/lib/api/session";
-import { jsonObject, oneOf, optionalString, uuid } from "@/lib/api/validate";
+import { integer, jsonObject, oneOf, optionalString, uuid } from "@/lib/api/validate";
+import { ClaimError, decideClaim } from "@/lib/claim-service";
+import { CLAIM_CAP_CENTS } from "@/lib/claims";
 import { RefundError, decideRefund } from "@/lib/refund-service";
 import { supabaseAdmin } from "@/lib/supabase/server";
 
@@ -64,6 +66,7 @@ export async function POST(request: NextRequest): Promise<Response> {
       "resolve_escalation",
       "approve_account_change",
       "decide_refund",
+      "decide_claim",
     ] as const);
     if (!action.ok) return jsonError(action.reason, 400);
 
@@ -205,6 +208,51 @@ export async function POST(request: NextRequest): Promise<Response> {
           return Response.json({ ok: true, refundedCents });
         } catch (failure) {
           if (failure instanceof RefundError) {
+            return jsonError(failure.message, failure.status);
+          }
+          throw failure;
+        }
+      }
+
+      /**
+       * The end of a studio's claim, and the only place a practitioner's kept
+       * card is charged for one.
+       *
+       * `amountCents` is what staff settled on and matters only for damage —
+       * the fixed kinds are recomputed server-side, so a host cannot inflate a
+       * published flat rate by editing a payload.
+       *
+       * An upheld claim whose card refuses comes back as `uncollectable`
+       * rather than as an error. That is a real outcome with a real meaning
+       * for the host: we agreed with you and still could not collect, which is
+       * where your own insurer comes in.
+       */
+      case "decide_claim": {
+        const verdict = oneOf(body.value, "verdict", ["uphold", "reject"] as const);
+        if (!verdict.ok) return jsonError(verdict.reason, 400);
+
+        if (!note.value || note.value.trim().length < 15) {
+          return jsonError("Say why — both sides are told", 400);
+        }
+
+        const amount =
+          body.value.amountCents === undefined
+            ? { ok: true as const, value: 0 }
+            : integer(body.value, "amountCents", { min: 1, max: CLAIM_CAP_CENTS });
+        if (!amount.ok) return jsonError(amount.reason, 400);
+
+        try {
+          const result = await decideClaim(
+            admin,
+            id.value,
+            staff.staffId,
+            verdict.value === "uphold",
+            amount.value,
+            note.value,
+          );
+          return Response.json({ ok: true, ...result });
+        } catch (failure) {
+          if (failure instanceof ClaimError) {
             return jsonError(failure.message, failure.status);
           }
           throw failure;

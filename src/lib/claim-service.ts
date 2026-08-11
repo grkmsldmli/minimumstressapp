@@ -4,7 +4,6 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { type ClaimKind, claimType, overstayCents, routeClaim } from "./claims";
 import { notifyClaimDecided, notifyClaimFiled } from "./notify/for-claim";
-import { SESSION_MS } from "./session";
 import { chargeForClaim } from "./stripe/client";
 
 /**
@@ -279,7 +278,3 @@ async function close(
   if (error) throw error;
 }
 
-/** How long a host still has, for the screen that offers the button. */
-export function claimWindowEndsAt(sessionStart: Date): Date {
-  return new Date(sessionStart.getTime() + SESSION_MS + 48 * 60 * 60 * 1000);
-}

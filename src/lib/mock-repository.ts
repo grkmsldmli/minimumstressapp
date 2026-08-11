@@ -29,6 +29,7 @@ import type {
   HostSpace,
   Message,
   NewSpaceInput,
+  OpenDispute,
   PublicReview,
   Profile,
   PublicSpace,
@@ -679,6 +680,17 @@ export class MockRepository implements Repository {
       role: "practitioner" as const,
       createdAt: new Date(Date.now() - (i + 1) * 9 * 24 * 60 * 60 * 1000),
     }));
+  }
+
+  /**
+   * Nothing waiting, and that is the honest demo.
+   *
+   * A mock that invents a dispute would show every new account an argument
+   * about a session that never happened. The screen's empty state is the state
+   * almost everybody is in, and it is worth seeing working.
+   */
+  async listOpenDisputes(): Promise<OpenDispute[]> {
+    return [];
   }
 
   async createSpace(input: NewSpaceInput): Promise<HostSpace> {

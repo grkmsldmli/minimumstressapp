@@ -17,6 +17,7 @@ import type {
   MediaKind,
   Message,
   NewSpaceInput,
+  OpenDispute,
   Profile,
   PublicReview,
   PublicSpace,
@@ -108,6 +109,13 @@ export interface Repository {
    * 0011 and nothing has ever read from it.
    */
   listSpaceReviews(spaceId: string): Promise<PublicReview[]>;
+  /**
+   * Refund requests and studio claims involving this account, both directions.
+   *
+   * One call rather than two, because the screen that shows them is one screen:
+   * a person wants to know what is waiting on them, not which table it is in.
+   */
+  listOpenDisputes(): Promise<OpenDispute[]>;
 
   /**
    * Changes an existing listing.

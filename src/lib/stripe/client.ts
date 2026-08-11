@@ -274,3 +274,68 @@ export async function refundRequested(
 
   return { refundedCents: refund.amount, reversedCents };
 }
+
+/**
+ * Charges a practitioner for an upheld claim, on the card they booked with.
+ *
+ * That card specifically, read back from the session's own PaymentIntent,
+ * rather than whatever is newest on the customer. If somebody has to be charged
+ * for damage to a room, the defensible card is the one that paid for the hour
+ * in that room.
+ *
+ * Off-session, so it can fail in ways an in-person payment cannot: an expired
+ * card, no funds, or an issuer that wants the cardholder present. Every one of
+ * those is returned rather than thrown, because the caller has to record which
+ * happened — and because the answer to "the card refused" is to tell the host,
+ * never to pay it ourselves. We collect on a studio's behalf. We do not
+ * guarantee, and a marketplace that quietly tops up failed claims has become
+ * an insurer without pricing the risk.
+ */
+export async function chargeForClaim(
+  bookingPaymentIntentId: string,
+  amountCents: number,
+  meta: { claimId: string; bookingId: string },
+): Promise<{ ok: true; chargeId: string } | { ok: false; reason: string }> {
+  const original = await stripe().paymentIntents.retrieve(bookingPaymentIntentId);
+
+  const customer = typeof original.customer === "string" ? original.customer : original.customer?.id;
+  const paymentMethod =
+    typeof original.payment_method === "string"
+      ? original.payment_method
+      : original.payment_method?.id;
+
+  if (!customer || !paymentMethod) {
+    return {
+      ok: false,
+      reason: "That booking was paid before cards were kept on file, so there is nothing to charge.",
+    };
+  }
+
+  try {
+    const intent = await stripe().paymentIntents.create(
+      {
+        amount: amountCents,
+        currency: "usd",
+        customer,
+        payment_method: paymentMethod,
+        off_session: true,
+        confirm: true,
+        description: "Minimum Stress — studio claim",
+        metadata: { claim_id: meta.claimId, booking_id: meta.bookingId },
+      },
+      // The claim id, so a retried decision cannot charge somebody twice for
+      // the same damage.
+      { idempotencyKey: `claim_charge_${meta.claimId}` },
+    );
+
+    if (intent.status !== "succeeded") {
+      return { ok: false, reason: `The card did not complete the payment (${intent.status}).` };
+    }
+
+    return { ok: true, chargeId: intent.id };
+  } catch (failure) {
+    const message =
+      failure instanceof Error ? failure.message : "The card was refused.";
+    return { ok: false, reason: message };
+  }
+}

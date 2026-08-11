@@ -7,7 +7,7 @@ import { ArrowLeft, Check, Lock } from "lucide-react";
 import { Ambient, Headline } from "@/components/brand";
 import { PrimaryButton } from "@/components/primitives";
 import type { BookingMoneyRecord } from "@/lib/domain";
-import { formatCents } from "@/lib/money";
+import { cancellationCostCents, earlyCancellationRefundCents, formatCents } from "@/lib/money";
 import { STRIPE_APPEARANCE, stripeBrowser } from "@/lib/stripe/browser";
 import { sessionWhen } from "@/lib/when";
 
@@ -166,7 +166,10 @@ function SheetBody({
               handing over a card has to describe what the button does.
             */}
             <p className="font-body font-normal text-[13.5px] leading-relaxed text-[#2E5578]">
-              You pay now. Cancel 24 hours or more ahead and all of it comes back to this card.
+              You pay now. Cancel 24 hours or more ahead and{" "}
+              {formatCents(earlyCancellationRefundCents(money.totalCents))} comes back to this card —
+              everything except the {formatCents(cancellationCostCents(money.totalCents))} the card
+              network charges to process a payment, which it keeps whether or not you go.
             </p>
             {/*
               Said here rather than buried in the terms, because this is the

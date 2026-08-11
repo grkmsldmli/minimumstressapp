@@ -18,7 +18,13 @@ import { ConfettiBurst } from "@/components/primitives";
 import { SpaceDirections } from "@/components/space-directions";
 import { CancellationConsequence } from "@/components/standing-notice";
 import type { Booking, SpaceAccessDetails } from "@/lib/domain";
-import { PRO_PRICE_CENTS, formatCents, isFreeCancellation } from "@/lib/money";
+import {
+  PRO_PRICE_CENTS,
+  cancellationCostCents,
+  earlyCancellationRefundCents,
+  formatCents,
+  isFreeCancellation,
+} from "@/lib/money";
 import type { Standing } from "@/lib/reliability";
 import { REFUND_WINDOW_DAYS, canRequestRefund } from "@/lib/refunds";
 import { sessionDate, sessionTime, sessionWeekday } from "@/lib/when";
@@ -90,7 +96,10 @@ export function Confirmed({
             <span>{formatCents(booking.totalCents)}</span>
           </div>
           <p className="font-body font-normal text-[13.5px] text-white/50 mt-2 leading-relaxed">
-            Cancel 24 hours or more before your session and this is refunded in full.
+            Cancel 24 hours or more before your session and{" "}
+            {formatCents(earlyCancellationRefundCents(booking.totalCents))} comes back — everything
+            except the {formatCents(cancellationCostCents(booking.totalCents))} card fee, which the
+            payment network keeps either way.
           </p>
         </div>
 
@@ -531,8 +540,13 @@ function UpcomingBooking({
               className="font-body font-normal text-[13.5px] leading-relaxed"
               style={{ color: freeToCancel ? "#2E5578" : "#7A4A42" }}
             >
+              {/*
+                The exact figure, before the button rather than after it. A
+                refund that arrives smaller than expected is how somebody
+                learns about a fee from their bank statement instead of us.
+              */}
               {freeToCancel
-                ? `More than 24 hours away — cancel now and ${formatCents(booking.totalCents)} is refunded in full. It usually reaches your card in a few working days.`
+                ? `More than 24 hours away — cancel now and ${formatCents(earlyCancellationRefundCents(booking.totalCents))} comes back to your card, usually within a few working days. The ${formatCents(cancellationCostCents(booking.totalCents))} card fee is kept by the payment network and cannot be returned.`
                 : `Less than 24 hours away. Cancelling now, ${formatCents(booking.totalCents)} is not refunded — the studio kept the hour free for you.`}
             </p>
           </div>

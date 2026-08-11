@@ -318,6 +318,12 @@ export function resolveCancellation(
   sessionStart: Date,
   now: Date,
 ): CancellationOutcome {
+  /*
+   * A host cancelling costs the practitioner nothing at all, processing
+   * included. They arranged their day around a room somebody else took away;
+   * charging them a fee for that would be indefensible, so this is the one
+   * cancellation whose cost we absorb.
+   */
   if (actor === "host") {
     return {
       action: "void",
@@ -329,8 +335,8 @@ export function resolveCancellation(
   if (isFreeCancellation(sessionStart, now)) {
     return {
       action: "void",
-      chargedCents: 0,
-      reason: "Cancelled 24 or more hours ahead — refunded in full",
+      chargedCents: cancellationCostCents(booking.totalCents),
+      reason: "Cancelled 24 or more hours ahead — refunded apart from the card fee",
     };
   }
 
@@ -339,6 +345,33 @@ export function resolveCancellation(
     chargedCents: booking.totalCents,
     reason: "Cancelled inside 24 hours — charged in full, not refunded",
   };
+}
+
+/**
+ * What a cancellation costs the person cancelling.
+ *
+ * Stripe keeps its processing fee when a charge is refunded — measured, not
+ * assumed: a $42.00 booking refunded in full returns $42.00 to the card and
+ * leaves us $1.52 down, with no revenue against it. Free cancellation is a
+ * promise we make on purpose, but paying for somebody else's change of plan
+ * out of our own margin is not part of it.
+ *
+ * So the processing cost stays with whoever caused it, and nothing else does.
+ * This is deliberately milder than the industry it sits in — Airbnb keeps the
+ * whole guest service fee, ticketing keeps every fee always — and it is priced
+ * at cost rather than as a penalty. We are not made better off by a
+ * cancellation; we are simply not made worse.
+ *
+ * It has to be said before somebody books, not discovered afterwards. See the
+ * calendar footer, the payment sheet and the terms.
+ */
+export function cancellationCostCents(totalCents: number): number {
+  return estimateStripeFeeCents(totalCents);
+}
+
+/** What actually returns to the card when a practitioner cancels early. */
+export function earlyCancellationRefundCents(totalCents: number): number {
+  return Math.max(0, totalCents - cancellationCostCents(totalCents));
 }
 
 /** True when a slot falls inside the instant window, measured against real wall-clock time. */

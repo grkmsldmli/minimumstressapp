@@ -72,7 +72,7 @@ describe("migrations apply cleanly", () => {
         `select table_name from information_schema.tables
          where table_schema = 'public' and table_type = 'BASE TABLE'`,
       );
-      expect(tables.rows).toHaveLength(12);
+      expect(tables.rows).toHaveLength(13);
     } finally {
       await fresh.close();
     }
@@ -98,6 +98,7 @@ describe("migrations apply cleanly", () => {
       "reviews",
       "space_media",
       "spaces",
+      "studio_claims",
     ]);
   });
 

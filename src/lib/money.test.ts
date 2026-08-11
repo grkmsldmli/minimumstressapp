@@ -13,6 +13,9 @@ import {
   quote,
   resolveCancellation,
   BOOKING_HORIZON_DAYS,
+  cancellationCostCents,
+  earlyCancellationRefundCents,
+  estimateStripeFeeCents,
   CAPTURE_SWEEP_HOURS,
 } from "./money";
 import { addDays, instantFrom } from "./timezone";
@@ -209,11 +212,39 @@ describe("cancellation", () => {
     quote({ hostRateCents: 4500, isInstant: false, isPro: false }),
   );
 
-  it("voids the hold when the practitioner cancels 24 hours ahead", () => {
+  /**
+   * Everything back except what the card network kept.
+   *
+   * Measured rather than assumed: Stripe returns the amount and keeps its fee,
+   * so a booking refunded "in full" left us $1.52 down with no revenue against
+   * it. Free cancellation is a promise worth making; paying for somebody
+   * else's change of plan out of our own margin was not part of it.
+   */
+  it("returns everything but the card fee when the practitioner cancels early", () => {
     const now = new Date(sessionStart.getTime() - FREE_CANCEL_WINDOW_MS);
     const outcome = resolveCancellation(bookingWithoutCredit, "practitioner", sessionStart, now);
 
     expect(outcome.action).toBe("void");
+    expect(outcome.chargedCents).toBe(cancellationCostCents(bookingWithoutCredit.totalCents));
+  });
+
+  /** Priced at cost. A cancellation must not be a thing we profit from. */
+  it("keeps only what processing actually cost", () => {
+    const total = bookingWithoutCredit.totalCents;
+
+    expect(cancellationCostCents(total)).toBe(estimateStripeFeeCents(total));
+    expect(earlyCancellationRefundCents(total)).toBe(total - estimateStripeFeeCents(total));
+    expect(cancellationCostCents(total)).toBeLessThan(bookingWithoutCredit.serviceFeeCents);
+  });
+
+  /**
+   * The one cancellation whose cost we absorb. Somebody who arranged their day
+   * around a room the studio then took away must not be charged for it.
+   */
+  it("costs the practitioner nothing at all when the host cancels", () => {
+    const now = new Date(sessionStart.getTime() - 60_000);
+    const outcome = resolveCancellation(bookingWithoutCredit, "host", sessionStart, now);
+
     expect(outcome.chargedCents).toBe(0);
   });
 

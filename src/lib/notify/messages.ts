@@ -25,7 +25,9 @@ export type NotificationKind =
   | "safety_escalation"
   | "account_change_requested"
   | "refund_requested"
-  | "refund_decided";
+  | "refund_decided"
+  | "claim_filed"
+  | "claim_decided";
 
 export interface Message {
   subject: string;
@@ -315,6 +317,58 @@ export function render(kind: NotificationKind, context: MessageContext): Message
             ? `${formatCents(context.refundedCents ?? 0)} is on its way back to the card you paid with. It usually lands in five to ten days, depending on your bank.`
             : `We are not refunding this one.`,
           context.note ? `Why: ${context.note}` : null,
+          "If you think this is wrong, reply to this email and a person will read it.",
+          SIGN_OFF,
+        ),
+        sms: null,
+      };
+
+    /**
+     * A studio says a session left the room worse than it found it, and this
+     * goes to the practitioner.
+     *
+     * Written as a question. Nothing has been decided and nothing has been
+     * charged — and a message that reads like a bill makes somebody who did
+     * nothing wrong reach for their bank rather than for the reply button.
+     */
+    case "claim_filed":
+      return {
+        subject: `About your session at ${spaceName}`,
+        body: lines(
+          greeting(name),
+          `The studio has raised something about your session at ${spaceName} on ${when}.`,
+          `What they reported: ${context.reason ?? "not given"}.`,
+          context.note ? `They wrote:
+
+"${context.note}"` : "They left no detail.",
+          context.amountCents !== undefined
+            ? `If it is upheld, ${formatCents(context.amountCents)} would be charged to the card you booked with.`
+            : "If it is upheld, an amount would be charged to the card you booked with.",
+          "Nothing has been charged and nothing is decided. Open the booking and tell us what happened from your side — we read both accounts before anything moves.",
+          SIGN_OFF,
+        ),
+        sms: null,
+      };
+
+    /**
+     * The answer, to both sides, with the number and the reasoning.
+     *
+     * "Uncollectable" is said plainly rather than dressed up. A host whose
+     * claim was upheld but whose money did not arrive needs to know which of
+     * those two things happened, because only one of them is arguable.
+     */
+    case "claim_decided":
+      return {
+        subject: `About the claim on ${spaceName}`,
+        body: lines(
+          greeting(name),
+          (context.amountCents ?? 0) > 0
+            ? `${formatCents(context.amountCents ?? 0)} was charged for the session at ${spaceName} on ${when}.`
+            : `Nothing was charged for the session at ${spaceName} on ${when}.`,
+          context.note ? `Why: ${context.note}` : null,
+          context.reason
+            ? `The card could not be charged: ${context.reason}. We are not able to collect this on your behalf — your own insurer is the next step, and everything on record is available to you.`
+            : null,
           "If you think this is wrong, reply to this email and a person will read it.",
           SIGN_OFF,
         ),

@@ -86,7 +86,8 @@ const SECTIONS = [
     title: "Cancellation Policy",
     points: [
       "You pay when you book. We hold the money until the session has happened, then pay the studio.",
-      "Cancel 24 or more hours ahead and you are refunded in full, back to the card you paid with.",
+      "Cancel 24 or more hours ahead and you are refunded, back to the card you paid with, apart from what the card network charges to process a payment — it keeps that whether or not the session happens, and we do not add anything to it.",
+      "If the studio cancels on you, you get everything back including that fee. You did not cause it and you do not pay for it.",
       "Cancel inside 24 hours, or fail to attend, and the full amount is captured.",
       "If a host cancels on you, you are refunded automatically. That refund is never replaced by credit or made optional.",
       "If something went wrong with a session you paid for, you can ask for a refund within 7 days. You pick a reason and tell us what happened.",

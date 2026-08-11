@@ -11,6 +11,15 @@ import { defineConfig } from "vitest/config";
  * app and in the editor.
  */
 export default defineConfig({
+  test: {
+    /**
+     * A git worktree under `.claude/` is a second checkout of this repo, and
+     * its tests are a copy of these ones against a different commit. Left in,
+     * the suite ran twice and the copy failed against its own fixtures — a red
+     * result that says nothing about the code being changed.
+     */
+    exclude: ["**/node_modules/**", "**/dist/**", "**/.next/**", "**/.claude/**"],
+  },
   resolve: {
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),

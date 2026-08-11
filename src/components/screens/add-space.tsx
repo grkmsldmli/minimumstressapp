@@ -371,8 +371,8 @@ export function AddSpace({
                 <p className="font-body font-normal text-[14px] leading-relaxed mt-1 text-ink-soft">
                   We opened in San Francisco, the peninsula down to San Jose, and the East Bay.
                   Listing a room outside that today means photographing it, writing it up and
-                  setting up payouts for a room nobody would find — so we would rather say it now
-                  than take the afternoon first.
+                  setting up payouts for a room nobody would find — so this is the moment to say
+                  it, not after the afternoon is gone.
                 </p>
                 <p className="font-body font-normal text-[14px] leading-relaxed mt-2 text-ink-soft">
                   Write to {SUPPORT_EMAIL} and we will come to you sooner. Where studios ask from

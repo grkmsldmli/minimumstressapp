@@ -34,12 +34,21 @@ const RESTROOM = [
   { value: "none", label: "None on site" },
 ] as const;
 
+/**
+ * `onChange` takes an updater rather than a value, and both callers pass their
+ * `useState` setter straight in.
+ *
+ * The value form spread the prop, which is the snapshot from the last render.
+ * Two answers picked before that render commits both build on the same stale
+ * object and the first one silently disappears — a listing that says nothing
+ * about its entrance because the host also answered the floor question.
+ */
 export function AccessEditor({
   details,
   onChange,
 }: {
   details: AccessDetails;
-  onChange: (next: AccessDetails) => void;
+  onChange: (update: (previous: AccessDetails) => AccessDetails) => void;
 }) {
   return (
     <div className="flex flex-col gap-4">
@@ -47,14 +56,14 @@ export function AccessEditor({
         label="From the street to the front door"
         options={ENTRANCE}
         value={details.entrance}
-        onPick={(entrance) => onChange({ ...details, entrance })}
+        onPick={(entrance) => onChange((previous) => ({ ...previous, entrance }))}
       />
 
       <Question
         label="From the door to the room"
         options={FLOOR}
         value={details.floor}
-        onPick={(floor) => onChange({ ...details, floor })}
+        onPick={(floor) => onChange((previous) => ({ ...previous, floor }))}
       />
 
       {/*
@@ -75,7 +84,7 @@ export function AccessEditor({
         label="Restroom"
         options={RESTROOM}
         value={details.restroom}
-        onPick={(restroom) => onChange({ ...details, restroom })}
+        onPick={(restroom) => onChange((previous) => ({ ...previous, restroom }))}
       />
     </div>
   );

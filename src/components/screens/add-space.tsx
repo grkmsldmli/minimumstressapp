@@ -147,6 +147,32 @@ export function AddSpace({
   const canSubmit = subleaseDoc !== null && agreed;
   const canAdvance = step === 1 ? canStep1 : step === 2 ? canStep2 : canSubmit;
 
+  /*
+   * What is still missing, named.
+   *
+   * Step one asks for nine things and the button simply greys out, so a host
+   * who missed one — the room type is the easy one to scroll past — is left
+   * comparing a dead button against a form that looks full. Naming it costs a
+   * line and saves the guess.
+   */
+  const missing: string[] = [];
+  if (step === 1) {
+    if (name.trim() === "") missing.push("a name");
+    if (address.trim() === "" || point === null) missing.push("an address you picked from the list");
+    if (category === null) missing.push("a room type");
+    if (!rateIsNumber || !isViableHostRate(rateCents)) missing.push("an hourly rate");
+    if (!(Number(capacity) > 0)) missing.push("how many people fit");
+    if (accessType === null) missing.push("how somebody gets in");
+    if (entryInstructions.trim() === "") missing.push("the entry instructions");
+  } else if (step === 2) {
+    if (media.length < 1) missing.push("at least one photo");
+    if (!describesTheRoom(description)) missing.push("a description of the room");
+    if (!isValidSchedule(blocks)) missing.push("some hours somebody can book");
+  } else {
+    if (subleaseDoc === null) missing.push("proof you can sublet the room");
+    if (!agreed) missing.push("the acknowledgement");
+  }
+
   const addMedia = (file: File) => {
     if (media.length >= MAX_MEDIA) return;
     setMedia((m) => [...m, createPickedMedia(file)]);
@@ -301,8 +327,17 @@ export function AddSpace({
                 setPoint({ lat: picked.lat, lng: picked.lng });
               }}
             />
+            {/*
+              This said the opposite until the address was published, and a
+              host consenting on the strength of a promise the app no longer
+              keeps is the worst version of a stale sentence. A retail studio's
+              address is already on its own website; the door code is what
+              needed protecting, and it still is.
+            */}
             <p className="font-body font-normal text-[13.5px] mt-2 text-ink-faint">
-              Only shown to a practitioner once they&apos;ve booked — never public.
+              Shown on your listing, like any studio&apos;s address. What stays private
+              is below: the entry instructions and the code go only to the practitioner
+              who booked, shortly before their session.
             </p>
 
             <div className="mt-3">
@@ -779,6 +814,11 @@ export function AddSpace({
               {submitError}
             </p>
           </div>
+        )}
+        {!canAdvance && !submitting && missing.length > 0 && (
+          <p className="font-body font-normal text-[13.5px] mb-2.5 text-ink-faint">
+            Still needs {missing.length === 1 ? missing[0] : `${missing.slice(0, -1).join(", ")} and ${missing.at(-1)}`}.
+          </p>
         )}
         <PrimaryButton
           disabled={!canAdvance || submitting}

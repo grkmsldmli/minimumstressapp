@@ -21,13 +21,18 @@ const DEFAULT_END = 17 * 60;
  *
  * Blocks are a flat list rather than a per-day tree, matching how they are
  * stored — one row per block — so nothing has to be reshaped on save.
+ *
+ * `onChange` takes an updater, and every caller passes its `useState` setter
+ * straight in. Building the next list from the `blocks` prop reads the
+ * snapshot of the last render, so a host opening two days faster than React
+ * commits gets one of them — which looks exactly like hours that did not save.
  */
 export function WeekSchedule({
   blocks,
   onChange,
 }: {
   blocks: AvailabilityBlock[];
-  onChange: (next: AvailabilityBlock[]) => void;
+  onChange: (update: (previous: AvailabilityBlock[]) => AvailabilityBlock[]) => void;
 }) {
   const problems = findProblems(blocks);
 
@@ -40,23 +45,27 @@ export function WeekSchedule({
     );
 
   const setDayOpen = (weekday: number, open: boolean) => {
-    if (open) {
-      onChange([
-        ...blocks,
-        { weekday, startMinute: DEFAULT_START, endMinute: DEFAULT_END },
-      ]);
-    } else {
-      onChange(blocks.filter((b) => b.weekday !== weekday));
-    }
+    onChange((previous) =>
+      open
+        ? [...previous, { weekday, startMinute: DEFAULT_START, endMinute: DEFAULT_END }]
+        : previous.filter((b) => b.weekday !== weekday),
+    );
   };
 
   const addBlock = (weekday: number) => {
-    onChange([...blocks, { weekday, startMinute: DEFAULT_START, endMinute: DEFAULT_END }]);
+    onChange((previous) => [
+      ...previous,
+      { weekday, startMinute: DEFAULT_START, endMinute: DEFAULT_END },
+    ]);
   };
 
+  /*
+   * Identity, not position. The index is looked up inside the updater against
+   * the list being changed — a index taken from the rendered array points at
+   * the wrong block once anything else has moved.
+   */
   const removeBlock = (target: AvailabilityBlock) => {
-    const index = blocks.indexOf(target);
-    onChange(blocks.filter((_, i) => i !== index));
+    onChange((previous) => previous.filter((b) => b !== target));
   };
 
   const updateBlock = (
@@ -64,8 +73,9 @@ export function WeekSchedule({
     field: "startMinute" | "endMinute",
     value: number,
   ) => {
-    const index = blocks.indexOf(target);
-    onChange(blocks.map((b, i) => (i === index ? { ...b, [field]: value } : b)));
+    onChange((previous) =>
+      previous.map((b) => (b === target ? { ...b, [field]: value } : b)),
+    );
   };
 
   return (

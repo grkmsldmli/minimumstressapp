@@ -1125,6 +1125,18 @@ export function App() {
           onPickAvatar={(file) => mutate(() => repo.uploadAvatar(file))}
           onGoLegal={() => go("legal")}
           onGoDisputes={() => go("disputes")}
+          onRequestAccountChange={async (reason) => {
+            const response = await fetch("/api/account/change-request", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                requestedType: profile.accountType === "host" ? "practitioner" : "host",
+                reason,
+              }),
+            });
+            const body = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(body.error ?? "That did not send.");
+          }}
           disputesWaiting={disputes.filter((d) => d.awaitingYou).length}
           onGoInsurance={() => go("verify")}
           onSignOut={signOut}

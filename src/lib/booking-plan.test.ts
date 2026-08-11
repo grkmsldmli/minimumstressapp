@@ -49,7 +49,7 @@ const SPACE: SpaceFacts = {
   })),
 };
 
-const HOST: HostFacts = { stripeAccountId: "acct_1", chargesEnabled: true };
+const HOST: HostFacts = { stripeAccountId: "acct_1", payable: true };
 const PRACTITIONER: PractitionerFacts = {
   id: "pr_1",
   isPro: false,
@@ -251,7 +251,7 @@ describe("the booking horizon", () => {
 
 describe("refusing to take money nobody can receive", () => {
   it("refuses when the host has no connected account", () => {
-    expect(plan({ host: { stripeAccountId: null, chargesEnabled: false } })).toEqual({
+    expect(plan({ host: { stripeAccountId: null, payable: false } })).toEqual({
       ok: false,
       reason: "host_cannot_be_paid",
     });
@@ -260,7 +260,7 @@ describe("refusing to take money nobody can receive", () => {
   it("refuses when onboarding was started but never finished", () => {
     // Someone can abandon Stripe's hosted form halfway; the account exists
     // and cannot be paid.
-    expect(plan({ host: { stripeAccountId: "acct_1", chargesEnabled: false } })).toEqual({
+    expect(plan({ host: { stripeAccountId: "acct_1", payable: false } })).toEqual({
       ok: false,
       reason: "host_cannot_be_paid",
     });

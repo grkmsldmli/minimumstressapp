@@ -35,7 +35,15 @@ export interface SpaceFacts {
 
 export interface HostFacts {
   stripeAccountId: string | null;
-  chargesEnabled: boolean;
+  /**
+   * Whether money can both be taken and reach their bank.
+   *
+   * Not "charges enabled", despite the column it comes from being called that.
+   * The webhook writes `charges_enabled && payouts_enabled` into it, so the
+   * stored value already means payable — and reading the name at face value
+   * suggests this check is weaker than it is.
+   */
+  payable: boolean;
 }
 
 export interface PractitionerFacts {
@@ -76,7 +84,7 @@ export function planBooking(input: {
   // Refusing here rather than at payout time. Taking money for a host who
   // cannot receive it leaves the platform holding funds with nowhere to send
   // them, and a practitioner with a booking nobody can honour.
-  if (!host?.stripeAccountId || !host.chargesEnabled) {
+  if (!host?.stripeAccountId || !host.payable) {
     return { ok: false, reason: "host_cannot_be_paid" };
   }
 

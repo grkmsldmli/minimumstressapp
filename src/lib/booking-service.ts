@@ -158,7 +158,8 @@ export async function createBooking(
     host: hostRow
       ? {
           stripeAccountId: hostRow.stripe_connect_account_id,
-          chargesEnabled: hostRow.stripe_connect_charges_enabled,
+          // The column name says charges; the webhook stores both flags ANDed.
+          payable: hostRow.stripe_connect_charges_enabled,
         }
       : null,
     practitioner: {

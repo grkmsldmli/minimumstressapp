@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 
 import { AccountBadge } from "@/components/account-badge";
+import { AccountChange } from "@/components/account-change";
 import { DeleteAccount } from "@/components/delete-account";
 import { EmergencyContactCard } from "@/components/emergency-contact";
 import { BadgeCard } from "@/components/badge-card";
@@ -300,6 +301,7 @@ export function PractitionerProfile({
   onGoLegal,
   onGoDisputes,
   disputesWaiting,
+  onRequestAccountChange,
   onGoInsurance,
   onSignOut,
 }: {
@@ -316,6 +318,8 @@ export function PractitionerProfile({
   onPickAvatar: (file: File) => Promise<unknown>;
   onGoLegal: () => void;
   onGoDisputes: () => void;
+  /** Asks staff to move this account to the other side. */
+  onRequestAccountChange: (reason: string) => Promise<void>;
   /** How many refund requests or claims are waiting on this account. */
   disputesWaiting: number;
   onGoInsurance: () => void;
@@ -391,6 +395,10 @@ export function PractitionerProfile({
           />
           <ProfileRow icon={ScrollText} label="Terms & privacy" onClick={onGoLegal} />
           <ProfileRow icon={LogOut} label="Log out" onClick={onSignOut} danger />
+
+          {profile.accountType && (
+            <AccountChange accountType={profile.accountType} onRequest={onRequestAccountChange} />
+          )}
         </div>
 
         <div className="mt-6">

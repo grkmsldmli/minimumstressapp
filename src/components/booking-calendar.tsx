@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
 import type { AvailabilityBlock } from "@/lib/availability";
-import { BOOKING_HORIZON_DAYS } from "@/lib/money";
+import { horizonDaysFor } from "@/lib/money";
 import {
   type CivilDate,
   addDays,
@@ -39,6 +39,7 @@ const WEEKDAY_INITIALS = ["S", "M", "T", "W", "T", "F", "S"];
 export function BookingCalendar({
   availability,
   timeZone,
+  isPro,
   selected,
   now,
   onPick,
@@ -46,6 +47,15 @@ export function BookingCalendar({
   availability: readonly AvailabilityBlock[];
   /** The room's zone, which is the calendar this grid is drawn in. */
   timeZone: string;
+  /**
+   * How far ahead this reader may book, which Pro pays to extend.
+   *
+   * It used to be the free horizon for everybody. The server already honoured
+   * the longer one, so a Pro practitioner was refused by their own calendar on
+   * days the booking route would have accepted — sold thirty days and shown
+   * fourteen.
+   */
+  isPro: boolean;
   /** The day being shown below. Null before anything is chosen. */
   selected: CivilDate | null;
   now: Date;
@@ -60,9 +70,10 @@ export function BookingCalendar({
     [availability],
   );
 
+  const horizonDays = horizonDaysFor(isPro);
   const lastBookable = useMemo(
-    () => addDays(today, BOOKING_HORIZON_DAYS),
-    [today],
+    () => addDays(today, horizonDays),
+    [today, horizonDays],
   );
 
   /** Whole weeks, so the grid never jumps as months change length. */
@@ -200,7 +211,7 @@ export function BookingCalendar({
       </div>
 
       <p className="font-body font-normal text-[13.5px] mt-2.5 leading-relaxed text-ink-faint">
-        Open days are marked. Booking opens {BOOKING_HORIZON_DAYS} days ahead, and later dates
+        Open days are marked. Booking opens {horizonDays} days ahead, and later dates
         become available as they come closer.
       </p>
     </div>

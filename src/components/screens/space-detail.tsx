@@ -336,6 +336,7 @@ export function SpaceDetail({
           <BookingCalendar
             availability={space.availability}
             timeZone={space.timeZone}
+            isPro={isPro}
             selected={day}
             now={now}
             onPick={(picked) => {

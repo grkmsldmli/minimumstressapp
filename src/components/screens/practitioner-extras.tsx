@@ -3,14 +3,15 @@
 import { useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
-  ChevronRight,
+  CalendarClock,
   CalendarRange,
+  ChevronRight,
   CreditCard,
   FileUp,
   LogOut,
-  Percent,
+  Repeat,
   ScrollText,
-  Zap,
+  Undo2,
 } from "lucide-react";
 
 import { AccountBadge } from "@/components/account-badge";
@@ -24,8 +25,9 @@ import { AvatarUpload, DocumentUpload } from "@/components/uploads";
 import type { AccountType, Profile } from "@/lib/domain";
 import type { Standing } from "@/lib/reliability";
 import {
-  INSTANT_FEE_CENTS,
+  BOOKING_HORIZON_DAYS,
   MAX_UPCOMING_BOOKINGS_FREE,
+  PRO_BOOKING_HORIZON_DAYS,
   PRO_PRICE_CENTS,
   formatCents,
 } from "@/lib/money";
@@ -136,31 +138,37 @@ export function InsuranceUpload({
 /*  Pro                                                                */
 /* ------------------------------------------------------------------ */
 
+/*
+ * Pro sells room to work, never a cheaper hour.
+ *
+ * It used to lead with 10% off and a waived instant fee. Both were funded out
+ * of a margin that is about a sixth of what a practitioner pays, so both got
+ * more expensive the more somebody booked — Pro lost money from the third
+ * session of the month, worst on exactly the person it was sold to.
+ *
+ * Everything here costs nothing per booking and earns more as somebody books
+ * more. That is not a coincidence, it is the test each one had to pass.
+ */
 const PERKS = [
   {
-    icon: Zap,
-    title: "Skip every instant fee",
-    sub: `Book last-minute slots free — save ${formatCents(INSTANT_FEE_CENTS)} each time`,
-  },
-  {
     icon: CalendarRange,
-    title: "Book as many at a time as you like",
-    /*
-     * This replaced "priority booking window", which had stopped being true.
-     * Everybody sees seven days now — a shorter window made a host open on
-     * Tuesdays and Fridays invisible five days out of seven, so it was not a
-     * benefit being sold, it was the product being withheld.
-     *
-     * The cap is the honest version of the same idea: invisible to somebody
-     * who has never booked, felt only by the practitioner already running
-     * several rooms a week.
-     */
-    sub: `Run more than ${MAX_UPCOMING_BOOKINGS_FREE} sessions at once — free accounts hold ${MAX_UPCOMING_BOOKINGS_FREE} at a time`,
+    title: "As many sessions as you need",
+    sub: `Free accounts hold ${MAX_UPCOMING_BOOKINGS_FREE} at a time — enough for a fortnight, not for a term`,
   },
   {
-    icon: Percent,
-    title: "10% off every room",
-    sub: "Applied automatically to the all-in price, every category, every booking",
+    icon: Repeat,
+    title: "Book a whole term at once",
+    sub: "Every Tuesday at five for eight weeks, in one go, instead of eight separate bookings",
+  },
+  {
+    icon: CalendarClock,
+    title: `Plan ${PRO_BOOKING_HORIZON_DAYS} days out`,
+    sub: `Free accounts reach ${BOOKING_HORIZON_DAYS} days, which is every hour a studio opens — Pro is room to plan past it`,
+  },
+  {
+    icon: Undo2,
+    title: "Change your mind for nothing",
+    sub: "Cancel 24 hours ahead and every cent comes back, card fee included",
   },
 ] as const;
 
@@ -185,8 +193,8 @@ export function ProScreen({
             <Headline pre="You're" accent="Pro." size={28} light />
           </div>
           <p className="font-body font-normal text-[14.5px] text-white/70 leading-relaxed mt-3">
-            Instant fees are waived, your 10% discount is live, and there is no limit on how many
-            sessions you hold at once.
+            No limit on how many sessions you hold, {PRO_BOOKING_HORIZON_DAYS} days to plan
+            ahead, whole terms booked in one go, and early cancellations cost you nothing.
           </p>
           <button
             type="button"

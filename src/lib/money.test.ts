@@ -13,6 +13,7 @@ import {
   quote,
   resolveCancellation,
   BOOKING_HORIZON_DAYS,
+  PRO_BOOKING_HORIZON_DAYS,
   cancellationCostCents,
   earlyCancellationRefundCents,
   estimateStripeFeeCents,
@@ -116,26 +117,32 @@ describe("the numbers from the brief", () => {
     expect(instant.hostCents).toBe(normal.hostCents);
   });
 
-  it("takes Pro's 10% off the all-in total: $54.00 becomes $48.60", () => {
-    const q = quote({ hostRateCents: 4500, isInstant: false, isPro: true });
+  /**
+   * Pro no longer touches a price, and this is the assertion that keeps it
+   * that way.
+   *
+   * It used to take 10% off the total — funded from a margin that is a sixth
+   * of it, so 10% of the total was 60% of ours, and the subscription stopped
+   * covering the gap at the third booking of the month. It lost the most on
+   * exactly the practitioner it was sold to, without a ceiling.
+   */
+  it("charges a Pro account exactly what it charges anybody else", () => {
+    for (const hostRateCents of RATE_GRID) {
+      for (const isInstant of [false, true]) {
+        const free = quote({ hostRateCents, isInstant, isPro: false });
+        const pro = quote({ hostRateCents, isInstant, isPro: true });
 
-    expect(q.proDiscountCents).toBe(540);
-    expect(q.totalCents).toBe(4860);
-    expect(formatCents(q.totalCents)).toBe("$48.60");
-    expect(q.hostCents).toBe(4500);
-    expect(q.platformCents).toBe(360);
+        expect(pro, `${hostRateCents} instant=${isInstant}`).toEqual(free);
+      }
+    }
   });
 
-  it("waives the instant fee for Pro rather than discounting it", () => {
+  /** Including the instant fee, which was the same unbounded shape. */
+  it("charges Pro the instant fee like everybody else", () => {
     const q = quote({ hostRateCents: 4500, isInstant: true, isPro: true });
-    const proNormal = quote({
-      hostRateCents: 4500,
-      isInstant: false,
-      isPro: true,
-    });
 
-    expect(q.instantFeeCents).toBe(0);
-    expect(q.totalCents).toBe(proNormal.totalCents);
+    expect(q.instantFeeCents).toBe(INSTANT_FEE_CENTS);
+    expect(q.proDiscountCents).toBe(0);
   });
 
   it("leaves hosting economics untouched by Pro", () => {
@@ -166,14 +173,9 @@ describe("the arithmetic floor on host rates", () => {
     expect(isViableHostRate(threshold - 1)).toBe(false);
   });
 
-  it("sets a higher floor for Pro, whose discount is deliberately not clamped", () => {
-    const standard = minViableHostRateCents(false);
-    const pro = minViableHostRateCents(true);
-
-    expect(pro).toBeGreaterThan(standard);
-    expect(pro).toBe(623);
-    expect(isViableHostRate(pro, true)).toBe(true);
-    expect(isViableHostRate(pro - 1, true)).toBe(false);
+  /** One floor now, because Pro and free pay the same for the same hour. */
+  it("has one viability floor, the same for both tiers", () => {
+    expect(minViableHostRateCents(true)).toBe(minViableHostRateCents(false));
   });
 
   it("keeps both floors far below any realistic room rate", () => {
@@ -379,18 +381,40 @@ describe("booking horizon", () => {
     ).toBe(true);
   });
 
-  it("stops the day after, paid or not", () => {
+  it("stops a free account the day after its window", () => {
     const past = BOOKING_HORIZON_DAYS + 1;
     expect(isWithinBookingHorizon(daysFromNow(past), now, false, ZONE)).toBe(false);
-    expect(isWithinBookingHorizon(daysFromNow(past), now, true, ZONE)).toBe(false);
   });
 
-  it("gives Pro no further reach", () => {
-    for (const day of [0, 1, BOOKING_HORIZON_DAYS, BOOKING_HORIZON_DAYS + 1]) {
-      expect(
-        isWithinBookingHorizon(daysFromNow(day, 20), now, true, ZONE),
-        `day ${day}`,
-      ).toBe(isWithinBookingHorizon(daysFromNow(day, 20), now, false, ZONE));
+  /**
+   * Pro reaches further, and this is not the tiering that was wrong before.
+   *
+   * The old version gave a free account a single day, which hid most of a
+   * host's week — a room open on Tuesdays was invisible on a Wednesday. Nothing
+   * is hidden now: fourteen days shows every slot of a weekly cycle twice. The
+   * extra sixteen are room to plan a term, not access to a schedule somebody
+   * else cannot see.
+   */
+  it("gives Pro thirty days where a free account has fourteen", () => {
+    const beyondFree = BOOKING_HORIZON_DAYS + 1;
+
+    expect(isWithinBookingHorizon(daysFromNow(beyondFree), now, false, ZONE)).toBe(false);
+    expect(isWithinBookingHorizon(daysFromNow(beyondFree), now, true, ZONE)).toBe(true);
+
+    expect(isWithinBookingHorizon(daysFromNow(PRO_BOOKING_HORIZON_DAYS, 23), now, true, ZONE)).toBe(
+      true,
+    );
+    expect(isWithinBookingHorizon(daysFromNow(PRO_BOOKING_HORIZON_DAYS + 1), now, true, ZONE)).toBe(
+      false,
+    );
+  });
+
+  /** Every slot a host offers is inside a free account's window. */
+  it("hides no part of a weekly schedule from anybody", () => {
+    for (let day = 0; day < 7; day += 1) {
+      expect(isWithinBookingHorizon(daysFromNow(day, 20), now, false, ZONE), `day ${day}`).toBe(
+        true,
+      );
     }
   });
 

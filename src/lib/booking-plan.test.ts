@@ -7,7 +7,12 @@ import {
   type PractitionerFacts,
   type SpaceFacts,
 } from "./booking-plan";
-import { BOOKING_HORIZON_DAYS, INSTANT_FEE_CENTS, MAX_UPCOMING_BOOKINGS_FREE } from "./money";
+import {
+  BOOKING_HORIZON_DAYS,
+  INSTANT_FEE_CENTS,
+  MAX_UPCOMING_BOOKINGS_FREE,
+  PRO_BOOKING_HORIZON_DAYS,
+} from "./money";
 import { addDays, instantFrom } from "./timezone";
 
 /**
@@ -80,13 +85,18 @@ describe("the price comes from the space, never the request", () => {
     expect(result.money.totalCents).toBe(9600);
   });
 
-  it("takes Pro from the stored profile, so the discount cannot be claimed", () => {
+  /**
+   * Pro is still read from the stored profile rather than the request, and it
+   * still has to be — it decides how far ahead somebody may book and how many
+   * sessions they may hold, both of which a caller would happily claim.
+   */
+  it("prices a Pro account exactly like any other", () => {
     const standard = plan();
     const pro = plan({ practitioner: { ...PRACTITIONER, isPro: true } });
 
     expect(standard.ok && standard.money.totalCents).toBe(5400);
-    expect(pro.ok && pro.money.totalCents).toBe(4860);
-    expect(pro.ok && pro.money.proDiscountCents).toBe(540);
+    expect(pro.ok && pro.money.totalCents).toBe(5400);
+    expect(pro.ok && pro.money.proDiscountCents).toBe(0);
   });
 
   it("derives instant from the clock, not from a flag on the request", () => {
@@ -212,14 +222,30 @@ describe("the booking horizon", () => {
    * more — the money is taken at booking, so nothing expires while a booking
    * waits. See BOOKING_HORIZON_DAYS.
    */
-  it("stops past the end of it, for everyone", () => {
+  it("stops a free account past the end of its window", () => {
     // Open, so the only thing refusing it is the horizon.
-    for (const practitioner of [PRACTITIONER, { ...PRACTITIONER, isPro: true }]) {
-      expect(plan({ practitioner, startsAt: at(14, firstOpenOutside) })).toEqual({
-        ok: false,
-        reason: "beyond_booking_horizon",
-      });
-    }
+    expect(plan({ startsAt: at(14, firstOpenOutside) })).toEqual({
+      ok: false,
+      reason: "beyond_booking_horizon",
+    });
+  });
+
+  /** The same day, reachable on Pro. Room to plan a term, nothing hidden. */
+  it("lets Pro reach a day a free account cannot", () => {
+    const pro = plan({
+      practitioner: { ...PRACTITIONER, isPro: true },
+      startsAt: at(14, firstOpenOutside),
+    });
+
+    expect(pro.ok).toBe(true);
+  });
+
+  it("stops Pro at thirty days", () => {
+    const beyondPro = PRO_BOOKING_HORIZON_DAYS + 2;
+
+    expect(
+      plan({ practitioner: { ...PRACTITIONER, isPro: true }, startsAt: at(14, beyondPro) }),
+    ).toEqual({ ok: false, reason: "beyond_booking_horizon" });
   });
 });
 

@@ -500,7 +500,7 @@ export class MockRepository implements Repository {
     // Resolved for its side effects on the real path — the hold is voided or
     // captured there. Here there is no card, so the outcome is only the reason
     // the status changes.
-    resolveCancellation(booking, actor, booking.startsAt, new Date());
+    resolveCancellation(booking, actor, booking.startsAt, new Date(), booking.wasPro);
 
     booking.status = actor === "host" ? "cancelled_by_host" : "cancelled_by_practitioner";
     return this.withRevealedCode(booking);

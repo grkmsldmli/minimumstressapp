@@ -332,7 +332,18 @@ export async function cancelBooking(
     platformCents: booking.platform_cents,
   };
 
-  const outcome = resolveCancellation(money, actor, new Date(booking.starts_at), now);
+  /*
+   * Read from the booking rather than the profile. `was_pro` is what they held
+   * when they paid, and a subscription that lapsed afterwards must not
+   * retroactively add a fee to a session they bought under Pro.
+   */
+  const outcome = resolveCancellation(
+    money,
+    actor,
+    new Date(booking.starts_at),
+    now,
+    Boolean(booking.was_pro),
+  );
 
   /*
    * What we are actually holding, which is not the same as what was quoted.

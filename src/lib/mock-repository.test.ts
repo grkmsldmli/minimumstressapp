@@ -64,20 +64,24 @@ describe("pricing flows through the money module", () => {
     expect(later.instantFeeCents).toBe(0);
   });
 
-  it("waives the instant fee and discounts the total for Pro", async () => {
-    await repo.startProSubscription();
+  /** Pro buys room on the calendar, not a cheaper hour. */
+  it("charges a Pro account the same as anybody else", async () => {
     const spaceId = await firstSpaceId();
+    const startsAt = new Date(Date.now() + 30 * 60 * 1000);
 
-    const { booking: booking } = await repo.createBooking({
+    const before = await repo.createBooking({ spaceId, startsAt });
+    await repo.cancelBooking(before.booking.id, "practitioner");
+
+    await repo.startProSubscription();
+    const { booking } = await repo.createBooking({
       spaceId,
-      startsAt: new Date(Date.now() + 30 * 60 * 1000),
+      startsAt: new Date(Date.now() + 90 * 60 * 1000),
     });
 
     expect(booking.wasPro).toBe(true);
-    expect(booking.instantFeeCents).toBe(0);
-    expect(booking.proDiscountCents).toBe(540);
-    expect(booking.totalCents).toBe(4860);
-    expect(booking.hostRateCents).toBe(4500);
+    expect(booking.proDiscountCents).toBe(0);
+    expect(booking.hostRateCents).toBe(before.booking.hostRateCents);
+    expect(booking.totalCents).toBe(before.booking.totalCents);
   });
 
   it("freezes the price so a later rate change cannot rewrite it", async () => {

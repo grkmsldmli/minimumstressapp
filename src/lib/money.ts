@@ -18,8 +18,24 @@ export const SERVICE_FEE_RATE = 0.2;
 /** Flat fee on slots starting within the instant window. 100% platform revenue. */
 export const INSTANT_FEE_CENTS = 500;
 
-/** Pro discount, taken off the all-in total and absorbed entirely by the platform. */
-export const PRO_DISCOUNT_RATE = 0.1;
+/**
+ * Pro sells access, never a discount.
+ *
+ * It used to take 10% off the all-in total, absorbed entirely by us. The
+ * arithmetic of that was fatal and went unnoticed for months: the discount
+ * comes off what the practitioner pays, but it is funded from a margin that is
+ * only about a sixth of it — so 10% of the total is 60% of ours. Measured on a
+ * $35 room, a Pro booking left us $1.40 where a free one left $5.48, and the
+ * subscription stopped covering the gap at the third booking of the month.
+ *
+ * Which meant Pro lost the most money on exactly the person it was sold to.
+ * The busier the practitioner, the worse it got, with no ceiling.
+ *
+ * So nothing Pro gives may scale with usage. What it gives instead — the cap
+ * lifted, thirty days of reach, a whole term booked at once, no card fee on an
+ * early cancellation — costs nothing per booking and earns more as somebody
+ * books more, because every session pays full freight.
+ */
 
 /** Pro subscription price, practitioner-side only. */
 export const PRO_PRICE_CENTS = 990;
@@ -81,6 +97,24 @@ export const CAPTURE_SWEEP_HOURS = 12;
 export const BOOKING_HORIZON_DAYS = 14;
 
 /**
+ * How far a Pro account reaches. Thirty days, and it costs us nothing.
+ *
+ * Tiering the horizon was wrong once and is not wrong here, and the difference
+ * is worth stating. The old version gave free accounts a single day, which hid
+ * most of a host's week from them — a room open on Tuesdays was invisible to
+ * anybody looking on a Wednesday, and the app appeared empty to somebody who
+ * had never booked. Nothing is hidden now: fourteen days shows every slot in a
+ * weekly cycle twice over. Thirty is room to plan a term, not access to a
+ * schedule somebody else cannot see.
+ */
+export const PRO_BOOKING_HORIZON_DAYS = 30;
+
+/** How far this account reaches, in days. */
+export function horizonDaysFor(isPro: boolean): number {
+  return isPro ? PRO_BOOKING_HORIZON_DAYS : BOOKING_HORIZON_DAYS;
+}
+
+/**
  * How many sessions a free account may have on the calendar at once.
  *
  * This is what Pro sells instead of the schedule. Hiding hours broke the app
@@ -96,9 +130,9 @@ export const BOOKING_HORIZON_DAYS = 14;
  */
 export const MAX_UPCOMING_BOOKINGS_FREE = 3;
 
-/** @deprecated Both tiers see the same schedule. Kept so callers still read. */
+/** @deprecated Read horizonDaysFor instead — the two tiers differ again. */
 export const STANDARD_HORIZON_DAYS = BOOKING_HORIZON_DAYS;
-export const PRO_HORIZON_DAYS = BOOKING_HORIZON_DAYS;
+export const PRO_HORIZON_DAYS = PRO_BOOKING_HORIZON_DAYS;
 
 /** Stripe standard US card pricing, used to size the platform's floor. */
 export const STRIPE_PERCENT = 0.029;
@@ -236,22 +270,31 @@ export function minPlatformCents(hostRateCents: number): number {
  * with the remainder rolled over is honest and keeps us cash-positive.
  */
 export function quote(input: QuoteInput): Quote {
-  const { hostRateCents, isInstant, isPro } = input;
+  /*
+   * `isPro` is deliberately read no further. It stays on the input so callers
+   * keep passing it and the test suite can assert, across every rate and both
+   * instant states, that a Pro account is quoted exactly what anybody else is.
+   * Dropping the field would remove the thing that proves the indifference.
+   */
+  const { hostRateCents, isInstant } = input;
   assertMoney(hostRateCents, "hostRateCents");
 
   const serviceFeeCents = Math.round(hostRateCents * SERVICE_FEE_RATE);
-  const instantFeeCents = isInstant && !isPro ? INSTANT_FEE_CENTS : 0;
 
-  const listPriceCents = hostRateCents + serviceFeeCents + instantFeeCents;
-  const platformBeforeDiscount = serviceFeeCents + instantFeeCents;
+  /*
+   * The instant fee is charged to everyone, Pro included.
+   *
+   * Waiving it was the same unbounded shape as the discount — $5 of pure
+   * margin given away per instant booking, against a fixed subscription. Pro
+   * buys room on the calendar, not cheaper hours.
+   */
+  const instantFeeCents = isInstant ? INSTANT_FEE_CENTS : 0;
 
-  // 10% off the all-in total. Clamped to the platform's own cut so the host's
-  // rate can never be reached, however the constants are later retuned.
-  const proDiscountCents = isPro
-    ? Math.min(Math.round(listPriceCents * PRO_DISCOUNT_RATE), platformBeforeDiscount)
-    : 0;
+  // Kept at zero rather than removed: a booking freezes its own breakdown, and
+  // rows written while the discount existed still carry what they were sold at.
+  const proDiscountCents = 0;
 
-  const platformCents = platformBeforeDiscount - proDiscountCents;
+  const platformCents = serviceFeeCents + instantFeeCents;
   const totalCents = hostRateCents + platformCents;
   const stripeFeeCents = estimateStripeFeeCents(totalCents);
 
@@ -317,6 +360,8 @@ export function resolveCancellation(
   actor: CancellationActor,
   sessionStart: Date,
   now: Date,
+  /** Pro pays no card fee on an early cancellation. One of the things it buys. */
+  isPro = false,
 ): CancellationOutcome {
   /*
    * A host cancelling costs the practitioner nothing at all, processing
@@ -333,6 +378,19 @@ export function resolveCancellation(
   }
 
   if (isFreeCancellation(sessionStart, now)) {
+    /*
+     * Pro absorbs the processing cost, and this is the only Pro benefit that
+     * costs us anything at all. It is bounded — a couple of dollars a month
+     * against $9.90 — which is the test every other benefit had to pass too.
+     */
+    if (isPro) {
+      return {
+        action: "void",
+        chargedCents: 0,
+        reason: "Cancelled 24 or more hours ahead — refunded in full, card fee included with Pro",
+      };
+    }
+
     return {
       action: "void",
       chargedCents: cancellationCostCents(booking.totalCents),
@@ -408,7 +466,7 @@ export function isWithinBookingHorizon(
 ): boolean {
   if (slotStart.getTime() < now.getTime()) return false;
 
-  const horizonDays = Math.max(isPro ? PRO_HORIZON_DAYS : STANDARD_HORIZON_DAYS, extraDays);
+  const horizonDays = Math.max(horizonDaysFor(isPro), extraDays);
   const lastBookableDay = addDays(civilIn(now, timeZone), horizonDays);
 
   return compareCivil(civilIn(slotStart, timeZone), lastBookableDay) <= 0;

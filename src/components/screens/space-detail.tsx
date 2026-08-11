@@ -11,8 +11,8 @@ import { PrimaryButton } from "@/components/primitives";
 import { slotStartsForDate } from "@/lib/availability";
 import type { PublicSpace } from "@/lib/domain";
 import {
-  INSTANT_FEE_CENTS,
   MAX_UPCOMING_BOOKINGS_FREE,
+  PRO_BOOKING_HORIZON_DAYS,
   formatCents,
   isInstantSlot,
   isWithinBookingHorizon,
@@ -364,8 +364,9 @@ export function SpaceDetail({
               Pro holds more than {MAX_UPCOMING_BOOKINGS_FREE} at once
             </span>
             <span className="block font-body font-normal text-[13.5px] mt-0.5 text-ink-soft">
-              A free account holds {MAX_UPCOMING_BOOKINGS_FREE} sessions at a time. Pro also waives
-              the {formatCents(INSTANT_FEE_CENTS)} instant fee and takes 10% off every booking.
+              A free account holds {MAX_UPCOMING_BOOKINGS_FREE} sessions at a time. Pro lifts that,
+              reaches {PRO_BOOKING_HORIZON_DAYS} days ahead, books a whole term in one go, and
+              cancels early for nothing.
             </span>
           </button>
         )}

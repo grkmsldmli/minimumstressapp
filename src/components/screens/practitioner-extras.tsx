@@ -22,6 +22,7 @@ import { EmergencyContactCard } from "@/components/emergency-contact";
 import { BadgeCard } from "@/components/badge-card";
 import { Ambient, BreathingLogo, Headline } from "@/components/brand";
 import { ConfettiBurst, PrimaryButton, Toggle } from "@/components/primitives";
+import { SavedCard } from "@/components/saved-card";
 import { StandingNotice } from "@/components/standing-notice";
 import { AvatarUpload, DocumentUpload } from "@/components/uploads";
 import type { AccountType, Profile } from "@/lib/domain";
@@ -373,11 +374,11 @@ export function PractitionerProfile({
         </div>
         <div className="flex flex-col gap-2.5">
           {/*
-            No stored card to manage yet. Stripe's embedded element collects it
-            at checkout, so this states where it happens instead of offering a
-            settings screen that has nothing in it.
+            The card is kept and can be charged off-session afterwards, so this
+            is a screen rather than a label. Saying only where it is typed was
+            silent about the part that matters: what can reach it later.
           */}
-          <ProfileRow icon={CreditCard} label="Payment method" value="Entered at checkout" />
+          <SavedCard isPro={profile.isPro} />
           <ProfileRow
             icon={FileUp}
             label="Insurance certificate"

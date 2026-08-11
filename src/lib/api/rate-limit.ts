@@ -87,6 +87,12 @@ export const LIMITS = {
   /** Starting Stripe onboarding — a link a host follows once, maybe twice. */
   connect: { limit: 5, windowMs: 60_000 },
 
+  /**
+   * Reading or removing the saved card. Read on opening a settings panel,
+   * removed once — a rate a person cannot reach and a script hits immediately.
+   */
+  card: { limit: 20, windowMs: 60_000 },
+
   /** Opening Stripe checkout or the billing portal. A link, followed once. */
   pro: { limit: 5, windowMs: 60_000 },
 

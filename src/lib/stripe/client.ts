@@ -118,6 +118,76 @@ export async function createAccountUpdateLink(
   return link.url;
 }
 
+export interface SavedCard {
+  id: string;
+  /** "visa", "mastercard" — Stripe's own word, lowercased. */
+  brand: string;
+  last4: string;
+  expMonth: number;
+  expYear: number;
+}
+
+/**
+ * The card we kept, as much of it as anybody should ever see again.
+ *
+ * Four digits and a brand, which is what somebody needs to recognise their own
+ * card and nothing more. The full number never reaches us at any point — this
+ * reads what Stripe already holds against the customer.
+ *
+ * The most recently attached one wins. A practitioner who pays with a
+ * different card is charged on that one next time, so the newest is the one a
+ * claim would reach.
+ */
+export async function savedCardFor(customerId: string): Promise<SavedCard | null> {
+  const methods = await stripe().paymentMethods.list({
+    customer: customerId,
+    type: "card",
+    limit: 10,
+  });
+
+  const newest = methods.data
+    .filter((method) => method.card)
+    .sort((a, b) => b.created - a.created)[0];
+  if (!newest?.card) return null;
+
+  return {
+    id: newest.id,
+    brand: newest.card.brand,
+    last4: newest.card.last4,
+    expMonth: newest.card.exp_month,
+    expYear: newest.card.exp_year,
+  };
+}
+
+/**
+ * Stop keeping any of them.
+ *
+ * Every card, not the one on the screen. A customer accumulates payment
+ * methods — a booking here, a Pro subscription there, a second card when the
+ * first expired — and detaching only the newest leaves the rest chargeable by
+ * a claim. Somebody who asks us to stop keeping their card means all of it,
+ * and a screen that removed one of three while saying "removed" would be
+ * lying in the most expensive place possible.
+ *
+ * Detached rather than deleted, which is Stripe's word for the same thing: the
+ * cards can no longer be charged off-session, and the charges already made
+ * with them are untouched — they are somebody's receipts and two people's
+ * records.
+ */
+export async function forgetCards(customerId: string): Promise<number> {
+  const methods = await stripe().paymentMethods.list({
+    customer: customerId,
+    type: "card",
+    limit: 100,
+  });
+
+  for (const method of methods.data) {
+    await stripe().paymentMethods.detach(method.id);
+  }
+
+  return methods.data.length;
+}
+
 /**
  * Whether this account can actually be paid.
  *

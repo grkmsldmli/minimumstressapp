@@ -99,6 +99,13 @@ export interface PublicSpace {
   restroom: RestroomOption | null;
   bufferMinutes: number;
   /**
+   * Usable floor area in square feet. Null when the host has not said.
+   *
+   * Capacity is a judgement — a room that seats twelve for meditation seats
+   * four for movement — and this is the fact underneath it.
+   */
+  floorAreaSqft: number | null;
+  /**
    * IANA zone of the room, e.g. "America/Los_Angeles".
    *
    * Public because it has to be: availability is stored as wall-clock minutes,
@@ -162,6 +169,23 @@ export interface PublicSpace {
    */
   reviewCount: number;
   averageRating: number | null;
+}
+
+/**
+ * A review somebody else wrote, once it has been released.
+ *
+ * Released means both sides wrote, or fourteen days passed — see the
+ * public_reviews view in 0011. Nobody sees a review that could still be
+ * answered, which is what keeps the second one from being a reply to the first.
+ */
+export interface PublicReview {
+  id: string;
+  /** 1-5. */
+  overall: number;
+  comment: string | null;
+  /** Which side wrote it: a room's review, or its practitioner's. */
+  role: "practitioner" | "host";
+  createdAt: Date;
 }
 
 /** Released only once the practitioner holds a booking on this space. */
@@ -254,6 +278,7 @@ export interface SpaceEdit {
   /** Re-resolved whenever the coordinates above change, never typed. */
   timeZone?: string;
   parking?: Parking;
+  floorAreaSqft?: number | null;
 }
 
 /** The money frozen onto the booking at creation. Mirrors bookings' columns. */
@@ -338,6 +363,7 @@ export interface NewSpaceInput {
   /** Resolved from the coordinates above, server-side. See zone-for-point.ts. */
   timeZone: string;
   parking: Parking;
+  floorAreaSqft: number | null;
   /**
    * The four answered facts, which is what the listing shows.
    *

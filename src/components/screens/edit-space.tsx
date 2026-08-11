@@ -55,6 +55,9 @@ export function EditSpace({
   const [address, setAddress] = useState(space.addressLine);
   const [access, setAccess] = useState(space.access);
   const [description, setDescription] = useState(space.description);
+  const [floorArea, setFloorArea] = useState(
+    space.floorAreaSqft === null ? "" : String(space.floorAreaSqft),
+  );
   const [parking, setParking] = useState<string[]>(space.parking.options);
   const [parkingLimit, setParkingLimit] = useState<number | null>(space.parking.limitMinutes);
 
@@ -80,6 +83,7 @@ export function EditSpace({
     access.doorwayInches !== space.access.doorwayInches ||
     access.restroom !== space.access.restroom ||
     description !== space.description ||
+    floorArea !== (space.floorAreaSqft === null ? "" : String(space.floorAreaSqft)) ||
     parking.join() !== space.parking.options.join() ||
     parkingLimit !== space.parking.limitMinutes;
 
@@ -108,6 +112,7 @@ export function EditSpace({
         entryInstructions: entry.trim(),
         description: description.trim(),
         parking: { options: parking, limitMinutes: parkingLimit },
+        floorAreaSqft: floorArea === "" ? null : Number(floorArea),
         bufferMinutes: Number(buffer),
         entranceAccess: access.entrance,
         floorAccess: access.floor,
@@ -213,6 +218,19 @@ export function EditSpace({
         */}
         <Label>Getting in</Label>
         <AccessEditor details={access} onChange={setAccess} />
+
+        <Label>Floor area (square feet)</Label>
+        <div className="flex items-center gap-2">
+          <input
+            value={floorArea}
+            onChange={(event) => setFloorArea(event.target.value.replace(/[^\d]/g, "").slice(0, 5))}
+            inputMode="numeric"
+            placeholder="Not given"
+            className="font-body text-[15px] outline-none rounded-xl px-3.5 py-3 w-full text-navy"
+            style={FIELD}
+          />
+          <span className="font-body font-normal text-[15px] shrink-0 text-ink-soft">sq ft</span>
+        </div>
 
         <Label>Parking</Label>
         <div className="flex flex-wrap gap-2">

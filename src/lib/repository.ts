@@ -18,6 +18,7 @@ import type {
   Message,
   NewSpaceInput,
   Profile,
+  PublicReview,
   PublicSpace,
   SpaceAccessDetails,
   SpaceEdit,
@@ -99,6 +100,14 @@ export interface Repository {
 
   listMySpaces(): Promise<HostSpace[]>;
   createSpace(input: NewSpaceInput): Promise<HostSpace>;
+  /**
+   * What people wrote about a room, newest first.
+   *
+   * Reads the released view, so an unanswered review is invisible to everybody
+   * including the person it is about — the machinery for that has existed since
+   * 0011 and nothing has ever read from it.
+   */
+  listSpaceReviews(spaceId: string): Promise<PublicReview[]>;
 
   /**
    * Changes an existing listing.

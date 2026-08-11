@@ -92,6 +92,7 @@ export function AddSpace({
   const [media, setMedia] = useState<PickedMedia[]>([]);
   const [amenities, setAmenities] = useState<string[]>([]);
   const [parking, setParking] = useState<string[]>([]);
+  const [floorArea, setFloorArea] = useState("");
   const [parkingLimit, setParkingLimit] = useState<number | null>(null);
   const [requirements, setRequirements] = useState<string[]>([]);
   const [houseRules, setHouseRules] = useState("");
@@ -187,6 +188,7 @@ export function AddSpace({
         description: description.trim(),
         amenities,
         parking: { options: parking, limitMinutes: parkingLimit },
+        floorAreaSqft: floorArea === "" ? null : Number(floorArea),
         requirements,
         houseRules: houseRules.trim(),
         bufferMinutes,
@@ -481,6 +483,31 @@ export function AddSpace({
                 </Chip>
               ))}
             </div>
+
+            <FieldLabel className="mt-5">
+              Floor area <OptionalTag />
+            </FieldLabel>
+            <div className="flex items-center gap-2">
+              <input
+                value={floorArea}
+                onChange={(event) => setFloorArea(event.target.value.replace(/[^\d]/g, "").slice(0, 5))}
+                inputMode="numeric"
+                placeholder="e.g. 450"
+                className="font-body text-[15px] outline-none rounded-xl px-3.5 py-3 w-full text-navy"
+                style={{ border: "1px solid #DCE7F2" }}
+              />
+              <span className="font-body font-normal text-[15px] shrink-0 text-ink-soft">sq ft</span>
+            </div>
+            {/*
+              Optional, and left blank rather than guessed. Capacity is a
+              judgement — a room that seats twelve for meditation seats four
+              for movement — and this is the fact underneath it. An invented
+              measurement is worse than a missing one, because somebody would
+              plan a class around it.
+            */}
+            <p className="font-body font-normal text-[13.5px] mt-1.5 text-ink-faint">
+              The usable floor, if you know it. Leave blank rather than guess.
+            </p>
 
             <SectionLabel className="mt-6">Parking</SectionLabel>
             <p className="font-body font-normal text-[13.5px] mb-3 text-ink-faint">

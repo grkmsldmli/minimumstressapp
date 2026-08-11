@@ -1,15 +1,16 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Check, Key, MapPin, Sun, Users, Zap } from "lucide-react";
+import { ArrowLeft, Check, Key, MapPin, Ruler, Sun, Users, Zap } from "lucide-react";
 
 import { AccessPanel } from "@/components/access-panel";
 import { ParkingPanel } from "@/components/parking-panel";
+import { ReviewsPanel, hasReviewsToShow } from "@/components/reviews-panel";
 import { BookingCalendar } from "@/components/booking-calendar";
 import { SpaceGallery } from "@/components/space-gallery";
 import { PrimaryButton } from "@/components/primitives";
 import { slotStartsForDate } from "@/lib/availability";
-import type { PublicSpace } from "@/lib/domain";
+import type { PublicReview, PublicSpace } from "@/lib/domain";
 import {
   MAX_UPCOMING_BOOKINGS_FREE,
   PRO_BOOKING_HORIZON_DAYS,
@@ -60,9 +61,12 @@ export function SpaceDetail({
   preview = false,
   error,
   startAt,
+  reviews,
 }: {
   space: PublicSpace;
   isPro: boolean;
+  /** Null while they are still loading, so the section does not flash empty. */
+  reviews: PublicReview[] | null;
   onBack: () => void;
   onBook: (startsAt: Date) => void | Promise<void>;
   /** Why the booking was refused. Silence here was the bug. */
@@ -185,6 +189,9 @@ export function SpaceDetail({
 
         <div className="grid grid-cols-3 gap-2.5 mt-5">
           <Fact icon={Users} label="Fits" value={`${space.capacity} ppl`} />
+          {space.floorAreaSqft !== null && (
+            <Fact icon={Ruler} label="Floor" value={`${space.floorAreaSqft} sq ft`} />
+          )}
           <Fact icon={Sun} label="Turnover" value={space.bufferMinutes === 0 ? "None" : `${space.bufferMinutes} min`} />
           <Fact icon={Key} label="Entry" value={accessLabel} />
         </div>
@@ -196,6 +203,22 @@ export function SpaceDetail({
           restroom are all compatible with a ticked box — so they booked,
           travelled, paid, and could not get in.
         */}
+        {/*
+          Under the description, above everything a host wrote about their own
+          room. Somebody deciding reads what other people said before they read
+          the pitch.
+        */}
+        {hasReviewsToShow(reviews, space.reviewCount) && reviews && (
+          <>
+            <Label>What people said</Label>
+            <ReviewsPanel
+              reviews={reviews}
+              count={space.reviewCount}
+              average={space.averageRating}
+            />
+          </>
+        )}
+
         <Label>Getting in</Label>
         <AccessPanel details={space.access} />
 

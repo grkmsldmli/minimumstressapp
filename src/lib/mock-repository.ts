@@ -29,6 +29,7 @@ import type {
   HostSpace,
   Message,
   NewSpaceInput,
+  PublicReview,
   Profile,
   PublicSpace,
   SpaceAccessDetails,
@@ -307,6 +308,7 @@ export class MockRepository implements Repository {
         // somewhere else would make every demo slot an hour it is not.
         timeZone: FALLBACK_ZONE,
         parking: { options: ["street", "free"], limitMinutes: 120 },
+        floorAreaSqft: 480,
         amenities: seed.amenities,
         requirements: seed.requirements,
         houseRules: seed.houseRules,
@@ -655,6 +657,30 @@ export class MockRepository implements Repository {
     return { ...space };
   }
 
+  /**
+   * A handful of written reviews, so the panel can be seen working.
+   *
+   * Deterministic per space rather than random: a demo whose reviews change on
+   * every render is a demo nobody trusts.
+   */
+  async listSpaceReviews(spaceId: string): Promise<PublicReview[]> {
+    const seed = spaceId.split("").reduce((n, c) => n + c.charCodeAt(0), 0);
+    const written = [
+      { overall: 5, comment: "Quiet, clean, and the floor is properly sprung. Easy in and out." },
+      { overall: 4, comment: "Good light in the afternoon. Street parking filled up by six." },
+      { overall: 5, comment: "Exactly as described. The host answered a question in minutes." },
+      { overall: 4, comment: null },
+    ];
+
+    return written.slice(0, 2 + (seed % 3)).map((r, i) => ({
+      id: `rev_${spaceId}_${i}`,
+      overall: r.overall,
+      comment: r.comment,
+      role: "practitioner" as const,
+      createdAt: new Date(Date.now() - (i + 1) * 9 * 24 * 60 * 60 * 1000),
+    }));
+  }
+
   async createSpace(input: NewSpaceInput): Promise<HostSpace> {
     const space: HostSpace = {
       id: id("sp"),
@@ -668,6 +694,7 @@ export class MockRepository implements Repository {
       restroom: input.restroom,
       timeZone: input.timeZone,
       parking: input.parking,
+      floorAreaSqft: input.floorAreaSqft,
       bufferMinutes: input.bufferMinutes,
       amenities: input.amenities,
       requirements: input.requirements,

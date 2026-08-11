@@ -56,6 +56,7 @@ import type {
   MediaKind,
   Message,
   NewSpaceInput,
+  PublicReview,
   Profile,
   PublicSpace,
   SpaceAccessDetails,
@@ -79,6 +80,7 @@ interface SpaceRow {
   restroom: string | null;
   buffer_minutes: number;
   timezone: string;
+  floor_area_sqft?: number | null;
   parking?: string[] | null;
   parking_limit_minutes?: number | null;
   status?: "pending" | "active" | "delisted";
@@ -382,6 +384,7 @@ export class SupabaseRepository implements Repository {
         options: row.parking ?? [],
         limitMinutes: row.parking_limit_minutes ?? null,
       },
+      floorAreaSqft: row.floor_area_sqft ?? null,
       addressLine: row.address_line ?? null,
       lat: row.lat ?? null,
       lng: row.lng ?? null,
@@ -762,6 +765,31 @@ export class SupabaseRepository implements Repository {
     });
   }
 
+  /**
+   * What people wrote about a room.
+   *
+   * Straight from `public_reviews`, which is where the release rule lives —
+   * both sides wrote, or fourteen days passed. Filtering here instead would be
+   * a second copy of that rule in a language the database cannot check.
+   */
+  async listSpaceReviews(spaceId: string): Promise<PublicReview[]> {
+    const { data, error } = await this.db
+      .from("public_reviews")
+      .select("id, overall, comment, role, created_at")
+      .eq("space_id", spaceId)
+      .order("created_at", { ascending: false })
+      .limit(50);
+    if (error) throw asError(error);
+
+    return (data ?? []).map((row) => ({
+      id: row.id as string,
+      overall: row.overall as number,
+      comment: (row.comment as string) || null,
+      role: row.role as PublicReview["role"],
+      createdAt: new Date(row.created_at as string),
+    }));
+  }
+
   async editSpace(spaceId: string, edit: SpaceEdit): Promise<HostSpace> {
     const hostId = await this.userId();
 
@@ -785,6 +813,7 @@ export class SupabaseRepository implements Repository {
     // Moves with the address. A room that crossed a zone boundary and kept its
     // old zone would quietly shift every future booking by an hour.
     if (edit.timeZone !== undefined) patch.timezone = edit.timeZone;
+    if (edit.floorAreaSqft !== undefined) patch.floor_area_sqft = edit.floorAreaSqft;
     if (edit.parking !== undefined) {
       patch.parking = edit.parking.options;
       patch.parking_limit_minutes = edit.parking.limitMinutes;
@@ -936,6 +965,7 @@ export class SupabaseRepository implements Repository {
         restroom: input.restroom?.toLowerCase() ?? null,
         buffer_minutes: input.bufferMinutes,
         timezone: input.timeZone,
+        floor_area_sqft: input.floorAreaSqft,
         parking: input.parking.options,
         parking_limit_minutes: input.parking.limitMinutes,
         description: input.description,

@@ -8,6 +8,7 @@ import type {
   HostSpace,
   Profile,
   PublicSpace,
+  PublicReview,
   SpaceAccessDetails,
 } from "@/lib/domain";
 import { errorMessage } from "@/lib/error-message";
@@ -106,6 +107,40 @@ export function App() {
    * request when a thread is actually opened.
    */
   const [thread, setThread] = useState<ThreadMessage[]>([]);
+
+  /**
+   * What people wrote about the room being looked at.
+   *
+   * Loaded when a listing is opened rather than with the catalogue: fifty
+   * reviews for every space on Discover is a payload nobody reads, and this is
+   * a question that only matters once somebody is deciding on one room.
+   *
+   * Null while it is in flight, so the section stays absent rather than
+   * flashing "New" and then filling in.
+   */
+  const [spaceReviews, setSpaceReviews] = useState<{
+    spaceId: string;
+    items: PublicReview[];
+  } | null>(null);
+
+  useEffect(() => {
+    if (!activeSpaceId) return;
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const items = await repo.listSpaceReviews(activeSpaceId);
+        if (!cancelled) setSpaceReviews({ spaceId: activeSpaceId, items });
+      } catch {
+        // A listing is still worth reading without them.
+        if (!cancelled) setSpaceReviews({ spaceId: activeSpaceId, items: [] });
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [repo, activeSpaceId]);
 
   useEffect(() => {
     if (!threadBookingId) return;
@@ -792,6 +827,7 @@ export function App() {
         <SpaceDetail
           space={activeSpace}
           isPro={profile.isPro}
+          reviews={spaceReviews?.spaceId === activeSpaceId ? spaceReviews.items : null}
           preview={previewingOwnListing}
           startAt={openAtSlot}
           onBack={back}

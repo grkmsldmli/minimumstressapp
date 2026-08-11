@@ -710,12 +710,19 @@ export class SupabaseRepository implements Repository {
    * RLS already scopes it: a practitioner sees their own bookings, a host sees
    * those on their spaces. So this returns what they are entitled to and
    * `standingFor` picks out the side being asked about.
+   *
+   * Only ones that cancelled a real session. A checkout somebody walked away
+   * from is released as a practitioner cancellation — that is the only status
+   * the schema has for it — and counting those would let six closed tabs
+   * suspend an account that never let anybody down. `captured_at` is the line:
+   * money arrived, so an hour was genuinely taken and then given back.
    */
   async listCancellationHistory(): Promise<CancellationEvent[]> {
     const { data, error } = await this.db
       .from("bookings")
       .select("starts_at, cancelled_at, cancelled_by")
-      .not("cancelled_at", "is", null);
+      .not("cancelled_at", "is", null)
+      .not("captured_at", "is", null);
     if (error) throw asError(error);
 
     return (data ?? [])

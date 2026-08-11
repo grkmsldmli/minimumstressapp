@@ -521,6 +521,10 @@ export async function loadQueue(admin: SupabaseClient): Promise<AdminQueue> {
 
   for (const booking of rows) {
     if (!String(booking.status).startsWith("cancelled")) continue;
+    // Same line the practitioner's own standing card uses: a checkout somebody
+    // abandoned is released as a cancellation, and counting those would put
+    // people on this list for closing a tab.
+    if (!booking.captured_at) continue;
     if (new Date(booking.starts_at as string) < lateWindow) continue;
 
     const byHost = booking.status === "cancelled_by_host";

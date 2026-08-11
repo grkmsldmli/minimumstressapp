@@ -258,11 +258,27 @@ export async function decideClaim(
     decided_by: staffId,
     decided_at: now.toISOString(),
     decision_note: note,
-    // Kept because this is the only irreversible act in the flow. Somebody
-    // disputing it with their bank, or staff deciding it was wrong, both need
-    // to point at the charge rather than at an amount.
-    stripe_payment_intent_id: charge.chargeId,
   });
+
+  /*
+   * The charge id, written separately and on purpose.
+   *
+   * It belongs on the row — this is the only irreversible act in the flow, and
+   * a bank asking which charge we mean needs an answer. But the card has
+   * already been charged by this point, so it must not share a statement with
+   * the close: a deploy that lands before its migration would fail the whole
+   * update and leave the claim open with the money taken.
+   */
+  const { error: idError } = await admin
+    .from("studio_claims")
+    .update({ stripe_payment_intent_id: charge.chargeId })
+    .eq("id", claimId);
+  if (idError) {
+    console.error(
+      `Charged ${charge.chargeId} for claim ${claimId} and could not record it:`,
+      idError,
+    );
+  }
   await notifyClaimDecided(admin, claimId).catch(() => {});
 
   return { state: "upheld", chargedCents: owed, error: null };

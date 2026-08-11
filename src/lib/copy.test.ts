@@ -59,6 +59,17 @@ const BANNED = [
   /\bwas only ever held\b/i,
   /\bauthoris(ed|ation)\b/i,
   /\bhold is now released\b/i,
+
+  /*
+   * The same model, in the words the checkout screen actually used. It said
+   * "Hold the hour", listed the total as "Held on your card" and put "Hold
+   * $42.00" on the button — three lines above a paragraph beginning "You pay
+   * now". The one screen where the contradiction matters most, since it is
+   * what somebody reads before typing a card number.
+   */
+  /\bheld on your card\b/i,
+  /\bHold the\b/,
+  /\bHold \$\{/,
 ];
 
 function sourceFiles(dir: string): string[] {

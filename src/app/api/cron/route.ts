@@ -1,8 +1,9 @@
 import type { NextRequest } from "next/server";
 
+import { abandonedBefore } from "@/lib/abandoned";
 import { notifyAccessCodesReady, rebuildPending } from "@/lib/notify/for-booking";
 import { retryPending } from "@/lib/notify/send";
-import { payHost } from "@/lib/stripe/client";
+import { payHost, settle } from "@/lib/stripe/client";
 import { supabaseAdmin } from "@/lib/supabase/server";
 
 /**
@@ -56,10 +57,17 @@ export async function GET(request: NextRequest): Promise<Response> {
      * was not paid for it.
      */
     const paid = await payHostsForFinishedSessions(now);
+    const released = await releaseAbandonedCheckouts(now);
     const announced = await announceAccessCodes(now);
     const retried = await retryFailedNotifications();
 
-    return Response.json({ ranAt: now.toISOString(), ...paid, ...announced, ...retried });
+    return Response.json({
+      ranAt: now.toISOString(),
+      ...paid,
+      ...released,
+      ...announced,
+      ...retried,
+    });
   } catch (error) {
     // Supabase rejects with a plain object rather than an Error, so the default
     // logging renders it as `{}` — useless at 3am when a payout run has
@@ -76,6 +84,75 @@ function describe(error: unknown): string {
     return [e.code, e.message, e.details, e.hint].filter(Boolean).join(" — ") || JSON.stringify(error);
   }
   return String(error);
+}
+
+/**
+ * Give back hours that were taken and never paid for.
+ *
+ * The booking row is written before the card is charged, on purpose — a charge
+ * with no row is worse than a row with no charge. `booking-service` says as
+ * much and calls the leftover "visible, unpaid, and safe to reap". Nothing
+ * reaped it, so a closed tab at the card form blocked a studio's hour
+ * permanently, ate one of a free account's three concurrent sessions, and
+ * counted toward "booked this month" as money nobody paid.
+ *
+ * Cancelling the Stripe intent is what actually closes the booking: the
+ * `payment_intent.canceled` webhook already moves the row to cancelled, and
+ * routing through it means a hand-cancelled intent in the Stripe dashboard
+ * ends the same way. The row is updated here too, because a webhook that is
+ * slow or misconfigured must not leave the hour blocked.
+ *
+ * Failures are counted rather than thrown, for the same reason as payouts: one
+ * stale intent must not stop the rest from being released.
+ */
+async function releaseAbandonedCheckouts(
+  now: Date,
+): Promise<{ released: number; releaseFailed: number }> {
+  const admin = supabaseAdmin();
+
+  const { data: stale, error } = await admin
+    .from("bookings")
+    .select("id, stripe_payment_intent_id")
+    .eq("status", "upcoming")
+    // Never paid. This is the whole safety condition — `captured_at` is
+    // written by the `payment_intent.succeeded` webhook and by nothing else.
+    .is("captured_at", null)
+    .lt("created_at", abandonedBefore(now).toISOString());
+
+  if (error) throw error;
+  if (!stale?.length) return { released: 0, releaseFailed: 0 };
+
+  let released = 0;
+  let releaseFailed = 0;
+
+  for (const booking of stale) {
+    try {
+      if (booking.stripe_payment_intent_id) {
+        await settle(booking.stripe_payment_intent_id, { kind: "abandon" });
+      }
+
+      const { error: updateError } = await admin
+        .from("bookings")
+        .update({
+          status: "cancelled_by_practitioner",
+          cancelled_at: now.toISOString(),
+          cancelled_by: "practitioner",
+        })
+        .eq("id", booking.id)
+        // Only from where we found it. If the card went through in the
+        // meantime, this matches nothing and the booking stands.
+        .eq("status", "upcoming")
+        .is("captured_at", null);
+      if (updateError) throw updateError;
+
+      released += 1;
+    } catch (failure) {
+      releaseFailed += 1;
+      console.error(`Could not release abandoned booking ${booking.id}:`, describe(failure));
+    }
+  }
+
+  return { released, releaseFailed };
 }
 
 /**

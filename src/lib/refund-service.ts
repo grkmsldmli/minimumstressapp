@@ -41,6 +41,8 @@ interface BookingRow {
   total_cents: number;
   host_rate_cents: number;
   stripe_payment_intent_id: string | null;
+  /** Written by the `payment_intent.succeeded` webhook, and by nothing else. */
+  captured_at: string | null;
   stripe_transfer_id: string | null;
   host_paid_at: string | null;
   refunded_cents: number | null;
@@ -50,7 +52,7 @@ async function loadBooking(admin: SupabaseClient, bookingId: string): Promise<Bo
   const { data, error } = await admin
     .from("bookings")
     .select(
-      "id, practitioner_id, space_id, status, starts_at, total_cents, host_rate_cents, stripe_payment_intent_id, stripe_transfer_id, host_paid_at, refunded_cents",
+      "id, practitioner_id, space_id, status, starts_at, total_cents, host_rate_cents, stripe_payment_intent_id, captured_at, stripe_transfer_id, host_paid_at, refunded_cents",
     )
     .eq("id", bookingId)
     .maybeSingle();
@@ -83,7 +85,13 @@ export async function requestRefund(
     throw new RefundError("No such booking", 404);
   }
 
-  const paidCents = booking.stripe_payment_intent_id ? booking.total_cents : 0;
+  /*
+   * Captured, not merely attempted. An intent id says a card form was opened,
+   * which is also true of a checkout somebody abandoned — and one of those,
+   * once released, is a cancelled booking that would otherwise look refundable
+   * and send us to Stripe asking for money back that never arrived.
+   */
+  const paidCents = booking.captured_at ? booking.total_cents : 0;
   if (
     !canRequestRefund({
       status: booking.status,

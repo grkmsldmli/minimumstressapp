@@ -2,6 +2,7 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { abandonedBefore } from "./abandoned";
 import { explainRejection, planBooking } from "./booking-plan";
 import { resolveCancellation, type BookingMoney } from "./money";
 import { notifyBookingCreated, notifyCancellation } from "./notify/for-booking";
@@ -52,6 +53,58 @@ function generateAccessCode(): string {
   return String(buf[0] % 10_000).padStart(4, "0");
 }
 
+/**
+ * Cancel unpaid holds on one room, so the hour goes back on sale.
+ *
+ * The Stripe intent is cancelled first and the row is only freed if that
+ * worked. The order matters: freeing the row while the intent is still live
+ * would let the person who abandoned the checkout hit Pay afterwards and
+ * succeed — paying, in full, for an hour we had already resold to somebody
+ * else.
+ *
+ * Everything here is best-effort. A booking that cannot be released stays
+ * exactly as it was, which is the state this whole function exists to
+ * improve, so failing quietly is safe.
+ */
+async function releaseAbandoned(
+  admin: SupabaseClient,
+  stripeGateway: StripeGateway,
+  spaceId: string,
+  now: Date,
+): Promise<void> {
+  try {
+    const { data: stale } = await admin
+      .from("bookings")
+      .select("id, stripe_payment_intent_id")
+      .eq("space_id", spaceId)
+      .eq("status", "upcoming")
+      .is("captured_at", null)
+      .lt("created_at", abandonedBefore(now).toISOString());
+
+    for (const booking of stale ?? []) {
+      if (booking.stripe_payment_intent_id) {
+        await stripeGateway.settle(booking.stripe_payment_intent_id, 0, {
+          action: "void",
+          chargedCents: 0,
+        });
+      }
+
+      await admin
+        .from("bookings")
+        .update({
+          status: "cancelled_by_practitioner",
+          cancelled_at: now.toISOString(),
+          cancelled_by: "practitioner",
+        })
+        .eq("id", booking.id)
+        .eq("status", "upcoming")
+        .is("captured_at", null);
+    }
+  } catch (failure) {
+    console.error(`Could not release abandoned bookings on ${spaceId}:`, failure);
+  }
+}
+
 export interface StripeGateway {
   /** Takes the practitioner's money. The host is not named, and is not paid. */
   charge(
@@ -87,6 +140,16 @@ export async function createBooking(
     .eq("id", request.spaceId)
     .maybeSingle();
   if (spaceError) throw spaceError;
+
+  /*
+   * Give back this room's abandoned hours before deciding what is free.
+   *
+   * The nightly job does the same sweep, but twice a day is no help to the
+   * person looking at the calendar right now: they would see an hour marked
+   * taken by a checkout somebody closed a week ago. Doing it here means the
+   * one room somebody is actually trying to book is always current.
+   */
+  if (space) await releaseAbandoned(admin, stripeGateway, space.id, now);
 
   const [
     { data: practitioner },

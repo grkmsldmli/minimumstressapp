@@ -119,7 +119,7 @@ function SheetBody({
           <ArrowLeft size={16} color="#fff" />
         </button>
         <div className="mt-3 relative z-10">
-          <Headline pre="Hold the" accent="hour." size={24} light />
+          <Headline pre="Book the" accent="hour." size={24} light />
         </div>
         <p className="font-body font-normal text-[14px] text-white/65 mt-1 relative z-10">
           {spaceName} ·{" "}
@@ -149,7 +149,7 @@ function SheetBody({
           )}
           <div className="h-px my-2" style={{ backgroundColor: "#E7EEF6" }} />
           <div className="flex justify-between font-body font-semibold text-[15px] text-navy">
-            <span>Held on your card</span>
+            <span>Charged now</span>
             <span>{formatCents(money.totalCents)}</span>
           </div>
         </div>
@@ -201,7 +201,7 @@ function SheetBody({
 
       <div className="px-6 pt-3 pb-6 shrink-0" style={{ borderTop: "1px solid #F0ECE0" }}>
         <PrimaryButton disabled={!stripe || busy} onClick={submit}>
-          {busy ? "Holding…" : `Hold ${formatCents(money.totalCents)}`}
+          {busy ? "Paying…" : `Pay ${formatCents(money.totalCents)}`}
         </PrimaryButton>
         <p className="text-center font-body font-normal text-[12px] mt-2.5 text-ink-faint">
           Card details go straight to Stripe. They never touch our servers.

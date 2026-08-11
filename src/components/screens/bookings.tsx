@@ -20,6 +20,7 @@ import { CancellationConsequence } from "@/components/standing-notice";
 import type { Booking, SpaceAccessDetails } from "@/lib/domain";
 import { PRO_PRICE_CENTS, formatCents, isFreeCancellation } from "@/lib/money";
 import type { Standing } from "@/lib/reliability";
+import { REFUND_WINDOW_DAYS, canRequestRefund } from "@/lib/refunds";
 import { sessionDate, sessionTime, sessionWeekday } from "@/lib/when";
 
 /* ------------------------------------------------------------------ */
@@ -224,6 +225,24 @@ function isToday(date: Date): boolean {
 /*  My Bookings                                                        */
 /* ------------------------------------------------------------------ */
 
+/**
+ * Whether this session can still be asked about.
+ *
+ * The same two rules the server applies, so the link is never offered for a
+ * request the route would refuse — a button that leads to a refusal is worse
+ * than no button.
+ */
+function refundable(booking: Booking, now: Date): boolean {
+  const daysSince = (now.getTime() - booking.startsAt.getTime()) / (24 * 60 * 60 * 1000);
+  if (daysSince > REFUND_WINDOW_DAYS) return false;
+
+  return canRequestRefund({
+    status: booking.status,
+    paidCents: booking.totalCents,
+    refundedCents: 0,
+  });
+}
+
 export function MyBookings({
   bookings,
   accessFor,
@@ -231,6 +250,7 @@ export function MyBookings({
   onBack,
   onCancel,
   onReview,
+  onAskRefund,
   onMessage,
 }: {
   bookings: Booking[];
@@ -240,6 +260,8 @@ export function MyBookings({
   onCancel: (id: string) => void;
   /** Offered on a finished session that has not been reviewed yet. */
   onReview?: (id: string) => void;
+  /** Absent for a host, who asks through a claim rather than a refund. */
+  onAskRefund?: (id: string) => void;
   /** Opens the thread for a booking. */
   onMessage?: (id: string) => void;
 }) {
@@ -345,6 +367,22 @@ export function MyBookings({
                         style={{ border: "1px solid #DCE7F2", color: "#16304E" }}
                       >
                         How was it? Leave a review
+                      </button>
+                    )}
+
+                    {/*
+                      Underneath the review rather than beside it, and quieter.
+                      Most sessions are fine; a refund link with equal weight
+                      invites the thought rather than answering it.
+                    */}
+                    {onAskRefund && refundable(booking, now) && (
+                      <button
+                        type="button"
+                        onClick={() => onAskRefund(booking.id)}
+                        className="w-full mt-2 py-2 font-body text-[13.5px] press"
+                        style={{ color: "#8CA3BD" }}
+                      >
+                        Something went wrong with this session
                       </button>
                     )}
                   </div>

@@ -135,6 +135,20 @@ export async function chargeBooking(
       transfer_group: plan.transfer_group,
       metadata: plan.metadata,
       customer: customerId,
+      /*
+       * The card is kept, and this is the line that makes it possible.
+       *
+       * The parameter above existed and was never passed, so every intent was
+       * anonymous — which meant a studio whose room was damaged, left filthy or
+       * held past the hour had nothing to be made whole from. An approved claim
+       * would have had no card to charge.
+       *
+       * `off_session` because the later charge happens without the practitioner
+       * present, days after the session. Stripe records the mandate at this
+       * moment, which is why the consent has to be shown on the same screen —
+       * see the payment sheet.
+       */
+      setup_future_usage: customerId ? "off_session" : undefined,
       // Not automatic_payment_methods — see payment-methods.ts for why.
       payment_method_types: [...BOOKING_PAYMENT_METHODS],
     },

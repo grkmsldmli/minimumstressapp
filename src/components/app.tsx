@@ -24,6 +24,7 @@ import {
 import { type Provider, enabledProviders } from "@/lib/auth-providers";
 import { BOOKING_HORIZON_DAYS } from "@/lib/money";
 import type { NotificationEntry } from "@/lib/notify/history";
+import { RefundRequest } from "@/components/screens/refund-request";
 import { rebookable } from "@/lib/rebook";
 import { FALLBACK_ZONE } from "@/lib/timezone";
 import { sessionDayShort } from "@/lib/when";
@@ -82,6 +83,8 @@ export function App() {
     reviewing,
     setReviewing,
     threadBookingId,
+    refundBookingId,
+    setRefundBookingId,
     setThreadBookingId,
     revision,
     refresh,
@@ -891,6 +894,33 @@ export function App() {
       );
     }
 
+    case "refund": {
+      const subject = bookings.find((b) => b.id === refundBookingId);
+      if (!subject) return <Fallback onBack={back} />;
+
+      return (
+        <RefundRequest
+          booking={subject}
+          onBack={back}
+          onSubmit={async (input) => {
+            const response = await fetch(`/api/bookings/${subject.id}/refund`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(input),
+            });
+
+            const body = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(body.error ?? "That did not send.");
+
+            // The list is stale the moment a request is decided on the spot —
+            // a refunded booking is not one you can ask about again.
+            refresh();
+            return body;
+          }}
+        />
+      );
+    }
+
     case "thread": {
       if (!threadBookingId) return <Fallback onBack={() => go("discover")} />;
 
@@ -953,6 +983,10 @@ export function App() {
           onReview={(id) => {
             setReviewing({ bookingId: id, role: "practitioner" });
             go("review");
+          }}
+          onAskRefund={(id) => {
+            setRefundBookingId(id);
+            go("refund");
           }}
           onMessage={(id) => {
             setThreadBookingId(id);

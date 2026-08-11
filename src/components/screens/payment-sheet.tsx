@@ -159,10 +159,28 @@ function SheetBody({
           style={{ backgroundColor: "#EDF6FE", border: "1px solid #D4E8FA" }}
         >
           <Lock size={13} color="#3B9BE8" className="mt-0.5 shrink-0" />
-          <p className="font-body font-normal text-[13.5px] leading-relaxed text-[#2E5578]">
-            This places a hold, not a charge. We take the payment when your session starts, so
-            cancelling 24 hours ahead costs you nothing at all.
-          </p>
+          <div>
+            {/*
+              This said "a hold, not a charge" long after the money started
+              being taken at booking. Copy on the one screen where somebody is
+              handing over a card has to describe what the button does.
+            */}
+            <p className="font-body font-normal text-[13.5px] leading-relaxed text-[#2E5578]">
+              You pay now. Cancel 24 hours or more ahead and all of it comes back to this card.
+            </p>
+            {/*
+              Said here rather than buried in the terms, because this is the
+              screen where the card is handed over and Stripe records the
+              mandate at this exact moment. Somebody should know their card is
+              being kept, what it can be charged for, and that nothing happens
+              without them being asked first.
+            */}
+            <p className="font-body font-normal text-[13.5px] leading-relaxed mt-2 text-[#2E5578]">
+              We keep this card for your next booking. It is only charged again if a studio reports
+              damage, extra cleaning, or time over the hour — and never before you have been asked
+              about it and a person has decided. The amounts are listed in the terms.
+            </p>
+          </div>
         </div>
 
         <PaymentElement options={{ layout: "tabs" }} />

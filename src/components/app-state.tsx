@@ -28,6 +28,7 @@ export type Screen =
   | "confirmed"
   | "bookings"
   | "review"
+  | "refund"
   | "thread"
   | "notifications"
   | "practitioner-profile"
@@ -77,6 +78,10 @@ interface AppState {
   reviewing: { bookingId: string; role: "practitioner" | "host" } | null;
   setReviewing: (target: { bookingId: string; role: "practitioner" | "host" } | null) => void;
 
+  /** Which booking a refund is being asked about. */
+  refundBookingId: string | null;
+  setRefundBookingId: (id: string | null) => void;
+
   /** Which booking's thread is open. */
   threadBookingId: string | null;
   setThreadBookingId: (id: string | null) => void;
@@ -108,6 +113,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     bookingId: string;
     role: "practitioner" | "host";
   } | null>(null);
+  const [refundBookingId, setRefundBookingId] = useState<string | null>(null);
   const [threadBookingId, setThreadBookingId] = useState<string | null>(null);
   const [editingSpaceId, setEditingSpaceId] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);
@@ -161,6 +167,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     setEditingSpaceId(null);
     setClientSecret(null);
     setReviewing(null);
+    setRefundBookingId(null);
     setThreadBookingId(null);
   }, []);
 
@@ -187,6 +194,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       setClientSecret,
       reviewing,
       setReviewing,
+      refundBookingId,
+      setRefundBookingId,
       threadBookingId,
       setThreadBookingId,
       revision,
@@ -205,6 +214,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       editingSpaceId,
       clientSecret,
       reviewing,
+      refundBookingId,
       threadBookingId,
       revision,
       refresh,

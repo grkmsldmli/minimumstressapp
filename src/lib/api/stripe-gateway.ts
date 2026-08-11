@@ -12,7 +12,7 @@ import { settlementFor } from "../stripe/payments";
  * a second processor slot in without touching the money logic.
  */
 export const stripeGateway: StripeGateway = {
-  charge: (money, meta) => chargeBooking(money, meta),
+  charge: (money, meta, customerId) => chargeBooking(money, meta, customerId),
 
   settle: async (paymentIntentId, paidCents, outcome) =>
     settlementFor(outcome, paidCents).kind === "none"

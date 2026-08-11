@@ -6,6 +6,7 @@ import { explainRejection, planBooking } from "./booking-plan";
 import { resolveCancellation, type BookingMoney } from "./money";
 import { notifyBookingCreated, notifyCancellation } from "./notify/for-booking";
 import { SESSION_MINUTES } from "./session";
+import { customerFor } from "./stripe/subscription";
 
 /**
  * Creating and cancelling a booking, server-side.
@@ -56,6 +57,8 @@ export interface StripeGateway {
   charge(
     money: BookingMoney,
     meta: { bookingId: string; spaceId: string; practitionerId: string },
+    /** Whose card to keep. Without it the charge is anonymous and unrepeatable. */
+    customerId?: string,
   ): Promise<{ paymentIntentId: string; clientSecret: string }>;
   /** Returns what went back, so the booking can record it. */
   settle(paymentIntentId: string, paidCents: number, outcome: {
@@ -92,7 +95,11 @@ export async function createBooking(
     { data: taken },
     { count: upcomingCount },
   ] = await Promise.all([
-      admin.from("profiles").select("id, is_pro").eq("id", practitionerId).maybeSingle(),
+      admin
+        .from("profiles")
+        .select("id, is_pro, stripe_customer_id")
+        .eq("id", practitionerId)
+        .maybeSingle(),
       space
         ? admin
             .from("profiles")
@@ -226,11 +233,38 @@ export async function createBooking(
      * refuses a host who cannot be paid, because taking somebody's money for a
      * session we could not settle would be the worse failure.
      */
-    const charged = await stripeGateway.charge(money, {
-      bookingId: booking.id,
-      spaceId: request.spaceId,
+    /*
+     * A customer, so the card can be kept.
+     *
+     * Resolved here rather than at sign-up because this is the first moment it
+     * is needed and the first moment a card exists to attach. Reused across
+     * bookings and shared with the Pro subscription — two customers for one
+     * person is two payment histories that nobody can reconcile.
+     */
+    const customerId = await customerFor(
       practitionerId,
-    });
+      // profiles carries no email; the metadata link is what makes the Stripe
+      // row identifiable, and Pro fills the address in if they ever subscribe.
+      null,
+      practitioner?.stripe_customer_id ?? null,
+    );
+
+    if (customerId !== practitioner?.stripe_customer_id) {
+      await admin
+        .from("profiles")
+        .update({ stripe_customer_id: customerId })
+        .eq("id", practitionerId);
+    }
+
+    const charged = await stripeGateway.charge(
+      money,
+      {
+        bookingId: booking.id,
+        spaceId: request.spaceId,
+        practitionerId,
+      },
+      customerId,
+    );
 
     await admin
       .from("bookings")

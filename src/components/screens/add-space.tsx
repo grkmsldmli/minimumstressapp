@@ -29,7 +29,9 @@ import { AccessEditor } from "@/components/access-editor";
 import type { AccessDetails } from "@/lib/access-details";
 import { usePointZone } from "@/lib/use-point-zone";
 import { MIN_DESCRIPTION_CHARS, describesTheRoom } from "@/lib/listing-quality";
+import { SUPPORT_EMAIL } from "@/lib/company";
 import { PARKING_LIMIT_OPTIONS, PARKING_OPTIONS } from "@/lib/parking";
+import { milesOutside } from "@/lib/service-area";
 import { zoneAbbreviation } from "@/lib/timezone";
 import type { AvailabilityBlock } from "@/lib/availability";
 import { isValidSchedule } from "@/lib/availability";
@@ -126,9 +128,21 @@ export function AddSpace({
   const rateCents = Math.round(Number(rate) * 100);
   const rateIsNumber = rate !== "" && Number.isFinite(Number(rate)) && rateCents > 0;
 
+  /*
+   * Checked here rather than at submit.
+   *
+   * A studio outside the launch area can fill in every field, photograph the
+   * room, upload a lease and set up payouts — and then wait for a practitioner
+   * who is two hundred miles away. Taking all of that first and refusing after
+   * is worse than refusing, so the address is where it is said.
+   */
+  const outsideBy = point ? milesOutside(point) : 0;
+  const outside = point !== null && outsideBy > 0;
+
   const canStep1 =
     name.trim() !== "" &&
     point !== null &&
+    !outside &&
     address.trim() !== "" &&
     category !== null &&
     rateIsNumber &&
@@ -339,6 +353,33 @@ export function AddSpace({
               is below: the entry instructions and the code go only to the practitioner
               who booked, shortly before their session.
             </p>
+
+            {/*
+              Where we are, not only where we are not. A refusal with no map of
+              its own edges reads as a fault in the app, and the number is what
+              lets somebody judge for themselves rather than be judged.
+            */}
+            {outside && (
+              <div
+                className="rounded-2xl p-4 mt-3"
+                style={{ backgroundColor: "#FFF7F5", border: "1px solid #F6D5D0" }}
+              >
+                <p className="font-body font-medium text-[14.5px] text-navy">
+                  That is about {outsideBy} {outsideBy === 1 ? "mile" : "miles"} outside where we
+                  have practitioners
+                </p>
+                <p className="font-body font-normal text-[14px] leading-relaxed mt-1 text-ink-soft">
+                  We opened in San Francisco, the peninsula down to San Jose, and the East Bay.
+                  Listing a room outside that today means photographing it, writing it up and
+                  setting up payouts for a room nobody would find — so we would rather say it now
+                  than take the afternoon first.
+                </p>
+                <p className="font-body font-normal text-[14px] leading-relaxed mt-2 text-ink-soft">
+                  Write to {SUPPORT_EMAIL} and we will come to you sooner. Where studios ask from
+                  is how we decide where to open next.
+                </p>
+              </div>
+            )}
 
             <div className="mt-3">
               <LocationMap point={point} onPick={point ? setPoint : undefined} />

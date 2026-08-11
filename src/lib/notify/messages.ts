@@ -11,23 +11,32 @@ import { formatCents } from "../money";
 
 /**
  * Every kind of message the app sends. Adding one here forces the switch in
- * `render` to handle it, which is the point of the union.
+ * `render` to handle it, which is the point of the type.
+ *
+ * A list rather than a bare union so it exists at runtime too. The tests that
+ * check every kind has wording used to keep their own copy of this, and a
+ * hand-kept copy of a list is a list that falls behind — four kinds had been
+ * added and none of them were being checked.
  */
-export type NotificationKind =
-  | "booking_confirmed"
-  | "host_new_booking"
-  | "access_code_ready"
-  | "cancelled_by_practitioner"
-  | "cancelled_by_host"
-  | "reliability_warning"
-  | "reliability_suspended"
-  | "payout_failed"
-  | "safety_escalation"
-  | "account_change_requested"
-  | "refund_requested"
-  | "refund_decided"
-  | "claim_filed"
-  | "claim_decided";
+export const NOTIFICATION_KINDS = [
+  "booking_confirmed",
+  "host_new_booking",
+  "access_code_ready",
+  "cancelled_by_practitioner",
+  "cancelled_by_host",
+  "reliability_warning",
+  "reliability_suspended",
+  "payout_failed",
+  "safety_escalation",
+  "account_change_requested",
+  "refund_requested",
+  "refund_decided",
+  "refund_taken_back",
+  "claim_filed",
+  "claim_decided",
+] as const;
+
+export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
 
 export interface Message {
   subject: string;
@@ -324,6 +333,30 @@ export function render(kind: NotificationKind, context: MessageContext): Message
       };
 
     /**
+     * The host's half of a refund, and the only message in this file that
+     * tells somebody money has left their account.
+     *
+     * It exists because the alternative is silent: a refund on a session that
+     * was already paid out reverses the host's transfer, and until this was
+     * written the host found out by reading their bank statement. A studio
+     * that loses forty-five dollars without being told assumes theft, and is
+     * right to.
+     */
+    case "refund_taken_back":
+      return {
+        subject: `${formatCents(context.amountCents ?? 0)} returned to a practitioner — ${spaceName}`,
+        body: lines(
+          greeting(name),
+          `We refunded the session at ${spaceName} on ${when}, and because you had already been paid for it, ${formatCents(context.amountCents ?? 0)} has been taken back from your account.`,
+          context.note ? `Why: ${context.note}` : null,
+          "Your standing is unchanged. This is the same money going back to the card that paid it.",
+          "If you think this is wrong, reply to this email and a person will read it.",
+          SIGN_OFF,
+        ),
+        sms: null,
+      };
+
+    /**
      * A studio says a session left the room worse than it found it, and this
      * goes to the practitioner.
      *
@@ -380,11 +413,13 @@ export function render(kind: NotificationKind, context: MessageContext): Message
         subject:
           context.reason === "safety"
             ? `SAFETY CONCERN reported — ${spaceName}`
-            : `${context.strikes}-star review needs review — ${spaceName}`,
+            : `${context.strikes ?? "Low"}-star review needs review — ${spaceName}`,
         body: lines(
           context.reason === "safety"
             ? "A safety concern was reported on a completed session."
-            : `A session was rated ${context.strikes} out of 5.`,
+            : context.strikes !== undefined
+              ? `A session was rated ${context.strikes} out of 5.`
+              : "A session was rated low enough to need reading.",
           `Space: ${spaceName}`,
           `Reported by: the ${context.role === "host" ? "studio" : "practitioner"}`,
           context.note ? `They wrote:
@@ -403,11 +438,18 @@ export function render(kind: NotificationKind, context: MessageContext): Message
      * waiting on a human, so it says who and why rather than just that it
      * happened.
      */
-    case "account_change_requested":
+    case "account_change_requested": {
+      /*
+       * Both sides of the arrow are named defensively. A staff message that
+       * reads "from undefined to undefined" is worse than a vague one — it
+       * tells whoever opens it that the app lost the request.
+       */
+      const from = context.role ?? "their current side";
+      const to = context.reason ?? "the other side";
       return {
-        subject: `Account change requested: ${context.role} → ${context.reason}`,
+        subject: `Account change requested: ${from} → ${to}`,
         body: lines(
-          `${context.name ?? "Someone"} has asked to move from ${context.role} to ${context.reason}.`,
+          `${context.name ?? "Someone"} has asked to move from ${from} to ${to}.`,
           context.note ? `They wrote:
 
 "${context.note}"` : "They gave no reason.",
@@ -417,6 +459,7 @@ export function render(kind: NotificationKind, context: MessageContext): Message
         ),
         sms: null,
       };
+    }
 
     /** Money the host has earned and cannot receive. Nobody finds out unless we say. */
     case "payout_failed":

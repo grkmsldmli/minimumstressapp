@@ -18,6 +18,7 @@ import { errorMessage } from "@/lib/error-message";
 import type { AdminQueue, ListingRow, LiveSession, Person, SessionParty } from "@/lib/admin/queue";
 import { formatCents } from "@/lib/money";
 
+import { DisputeQueue } from "./disputes";
 import { Funnel } from "./funnel";
 import { MoneyChart } from "./money-chart";
 
@@ -81,13 +82,19 @@ export function AdminDashboard() {
     };
   }, [revision]);
 
-  const act = async (action: string, id: string, note?: string) => {
+  const act = async (
+    action: string,
+    id: string,
+    note?: string,
+    /** Whatever else the action needs — an outcome, a verdict, an amount. */
+    extra?: Record<string, unknown>,
+  ) => {
     setBusy(id);
     try {
       const response = await fetch("/api/admin", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, id, note }),
+        body: JSON.stringify({ action, id, note, ...extra }),
       });
       const body = (await response.json().catch(() => ({}))) as { error?: string };
       if (!response.ok) throw new Error(body.error ?? "That did not work");
@@ -247,6 +254,31 @@ export function AdminDashboard() {
           style={{ gridTemplateColumns: "repeat(auto-fit,minmax(340px,1fr))" }}
         >
           <div className="flex flex-col gap-4">
+            {/*
+              First in the column, because it is the only panel where somebody
+              is waiting on us for money rather than for a decision about a
+              listing. Safety reports inside it are sorted to the top.
+            */}
+            <Panel
+              title="Refunds and claims"
+              count={queue.openDisputes.filter((d) => d.waitingOn === "us").length}
+            >
+              <DisputeQueue
+                disputes={queue.openDisputes}
+                busy={busy}
+                onDecide={(dispute, outcome, note, amountCents) => {
+                  if (dispute.kind === "refund") {
+                    void act("decide_refund", dispute.id, note, { outcome });
+                  } else {
+                    void act("decide_claim", dispute.id, note, {
+                      verdict: outcome,
+                      ...(amountCents ? { amountCents } : {}),
+                    });
+                  }
+                }}
+              />
+            </Panel>
+
             <Panel title="Safety and low ratings" count={queue.escalations.length}>
               {queue.escalations.map((item) => (
                 <Card key={item.id} tone={item.priority === "safety" ? "bad" : "plain"}>

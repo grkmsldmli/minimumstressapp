@@ -1,3 +1,5 @@
+import { type ClaimKind, claimType, overstayCents } from "../claims";
+import { type RefundReason, questionFor } from "../refunds";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { type Party, THRESHOLDS } from "@/lib/reliability";
@@ -264,10 +266,42 @@ export function sessionState(
   return now < endsAt ? "in progress" : "just finished";
 }
 
+/**
+ * A refund request or a studio claim, waiting on a person.
+ *
+ * Both sides of the argument in one row, because the decision is a comparison
+ * and a screen that shows one account at a time invites deciding on whichever
+ * was read last. `waitingOn` is the honest state: a request nobody has answered
+ * is not the same job as one where both accounts are in.
+ */
+export interface StaffDispute {
+  id: string;
+  kind: "refund" | "claim";
+  bookingId: string;
+  spaceName: string;
+  sessionStart: string;
+  /** Who raised it, and what they picked from the list. */
+  raisedBy: "practitioner" | "host";
+  reason: string;
+  detail: string;
+  /** The other side's account, once it exists. */
+  reply: string | null;
+  /** What is at stake, where there is already a figure. */
+  amountCents: number | null;
+  /** How many requests this practitioner has made lately — the pattern. */
+  recentFromSamePerson: number;
+  waitingOn: "the other side" | "us";
+  /** Safety reports jump the queue and are never auto-anything. */
+  urgent: boolean;
+  createdAt: string;
+}
+
 export interface AdminQueue {
   /* --- work --- */
   /** Sessions in the room right now, or within a few hours either side. */
   liveSessions: LiveSession[];
+  /** Money arguments waiting on a decision, both directions. */
+  openDisputes: StaffDispute[];
   escalations: OpenEscalation[];
   pendingListings: PendingListing[];
   accountChangeRequests: AccountChangeRequest[];
@@ -560,6 +594,93 @@ export async function loadQueue(admin: SupabaseClient): Promise<AdminQueue> {
     };
   };
 
+  /*
+   * Every unsettled money argument, both directions, in one list.
+   *
+   * Read here rather than joined into the queue query because they are two
+   * tables with two row policies and a view spanning both would have to be
+   * right about each. They are short by nature: a marketplace with a long one
+   * has a problem no screen fixes.
+   */
+  const [refundRows, claimRows] = await Promise.all([
+    admin
+      .from("refund_requests")
+      .select(
+        "id, reason, detail, host_reply, state, practitioner_id, created_at, bookings!inner(id, starts_at, total_cents, spaces!inner(name))",
+      )
+      .in("state", ["awaiting_host", "awaiting_staff"])
+      .order("created_at"),
+    admin
+      .from("studio_claims")
+      .select(
+        "id, kind, detail, practitioner_reply, state, host_id, minutes_over, claimed_cents, created_at, bookings!inner(id, starts_at, spaces!inner(name, hourly_rate_cents))",
+      )
+      .in("state", ["awaiting_practitioner", "awaiting_staff"])
+      .order("created_at"),
+  ]);
+
+  /** How often this person has asked lately. A count, not a verdict. */
+  const requestsPerPractitioner = new Map<string, number>();
+  for (const row of refundRows.data ?? []) {
+    const who = row.practitioner_id as string;
+    requestsPerPractitioner.set(who, (requestsPerPractitioner.get(who) ?? 0) + 1);
+  }
+
+  const openDisputes: StaffDispute[] = [
+    ...(refundRows.data ?? []).map((row) => {
+      const booking = (row as unknown as { bookings: DisputeBookingRow }).bookings;
+      return {
+        id: row.id as string,
+        kind: "refund" as const,
+        bookingId: booking.id,
+        spaceName: booking.spaces.name,
+        sessionStart: booking.starts_at,
+        raisedBy: "practitioner" as const,
+        reason: questionFor(row.reason as RefundReason).label,
+        detail: row.detail as string,
+        reply: (row.host_reply as string) ?? null,
+        amountCents: booking.total_cents ?? null,
+        recentFromSamePerson: requestsPerPractitioner.get(row.practitioner_id as string) ?? 1,
+        waitingOn: row.state === "awaiting_host" ? ("the other side" as const) : ("us" as const),
+        urgent: row.reason === "unsafe",
+        createdAt: row.created_at as string,
+      };
+    }),
+    ...(claimRows.data ?? []).map((row) => {
+      const booking = (row as unknown as { bookings: DisputeBookingRow }).bookings;
+      const type = claimType(row.kind as ClaimKind);
+      return {
+        id: row.id as string,
+        kind: "claim" as const,
+        bookingId: booking.id,
+        spaceName: booking.spaces.name,
+        sessionStart: booking.starts_at,
+        raisedBy: "host" as const,
+        reason: type.label,
+        detail: row.detail as string,
+        reply: (row.practitioner_reply as string) ?? null,
+        amountCents:
+          type.fixedCents ??
+          (row.kind === "overstay"
+            ? overstayCents(
+                (row.minutes_over as number) ?? 0,
+                booking.spaces.hourly_rate_cents ?? 0,
+              )
+            : ((row.claimed_cents as number) ?? null)),
+        recentFromSamePerson: 1,
+        waitingOn:
+          row.state === "awaiting_practitioner" ? ("the other side" as const) : ("us" as const),
+        urgent: false,
+        createdAt: row.created_at as string,
+      };
+    }),
+  ].sort((a, b) => {
+    // Safety first, then whatever is actually on our desk, then oldest.
+    if (a.urgent !== b.urgent) return a.urgent ? -1 : 1;
+    if ((a.waitingOn === "us") !== (b.waitingOn === "us")) return a.waitingOn === "us" ? -1 : 1;
+    return a.createdAt.localeCompare(b.createdAt);
+  });
+
   const liveSessions: LiveSession[] = (bookings.data ?? [])
     .flatMap((booking) => {
       const state = sessionState(
@@ -821,6 +942,7 @@ export async function loadQueue(admin: SupabaseClient): Promise<AdminQueue> {
     termsOutstanding,
 
     liveSessions,
+    openDisputes,
 
     people: (profiles.data ?? [])
       .map((row) => {
@@ -1067,4 +1189,12 @@ function buildActivity(input: {
     .filter((entry) => entry.at)
     .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
     .slice(0, 30);
+}
+
+/** The joined booking a dispute row carries, named so the cast is honest. */
+interface DisputeBookingRow {
+  id: string;
+  starts_at: string;
+  total_cents?: number;
+  spaces: { name: string; hourly_rate_cents?: number };
 }

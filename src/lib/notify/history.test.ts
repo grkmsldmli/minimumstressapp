@@ -1,24 +1,17 @@
 import { describe, expect, it } from "vitest";
 
 import { describeNotification, explainState } from "./history";
-import type { NotificationKind } from "./messages";
+import { NOTIFICATION_KINDS } from "./messages";
 
 /**
  * Every kind the app sends has a line here, because a history that silently
  * drops a message is the app hiding that it wrote to somebody.
+ *
+ * Read from the source list rather than copied. The copy that used to live
+ * here had fallen four kinds behind, so the refund and claim messages were
+ * never checked at all.
  */
-const EVERY_KIND: NotificationKind[] = [
-  "booking_confirmed",
-  "host_new_booking",
-  "access_code_ready",
-  "cancelled_by_practitioner",
-  "cancelled_by_host",
-  "reliability_warning",
-  "reliability_suspended",
-  "payout_failed",
-  "safety_escalation",
-  "account_change_requested",
-];
+const EVERY_KIND = NOTIFICATION_KINDS;
 
 describe("describeNotification", () => {
   it.each(EVERY_KIND)("has wording for %s", (kind) => {

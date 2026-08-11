@@ -38,6 +38,7 @@ const LABELS: Record<NotificationKind, string> = {
   account_change_requested: "An account change was requested",
   refund_requested: "A refund was requested",
   refund_decided: "Your refund request was answered",
+  refund_taken_back: "A refund was taken back from a payout",
   claim_filed: "A studio raised something about a session",
   claim_decided: "A studio claim was decided",
 };

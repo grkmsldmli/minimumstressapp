@@ -1,22 +1,18 @@
 import { describe, expect, it } from "vitest";
 
-import { type NotificationKind, render, toHtml } from "./messages";
+import { NOTIFICATION_KINDS, render, toHtml } from "./messages";
 
 /**
  * The failure mode here is not an exception. It is a correct delivery of the
  * wrong number to a real person, so these check what the words actually say.
  */
 
-const ALL_KINDS: NotificationKind[] = [
-  "booking_confirmed",
-  "host_new_booking",
-  "access_code_ready",
-  "cancelled_by_practitioner",
-  "cancelled_by_host",
-  "reliability_warning",
-  "reliability_suspended",
-  "payout_failed",
-];
+/**
+ * Read from the source list rather than copied. The copy that used to be here
+ * had stopped at `payout_failed`, so seven kinds — every refund and claim
+ * message the app sends — were never checked for a leaked `undefined`.
+ */
+const ALL_KINDS = NOTIFICATION_KINDS;
 
 const FULL = {
   name: "Elena",
@@ -195,6 +191,34 @@ describe("suspension wording", () => {
       expect(render(kind, FULL).body).toMatch(/already booked|already in your calendar/i);
     },
   );
+});
+
+/**
+ * The only message that tells somebody money has left their account. It was
+ * missing entirely until a walkthrough noticed a host could lose a payout and
+ * hear nothing, so what it says is the whole point of it existing.
+ */
+describe("taking a payout back", () => {
+  const said = render("refund_taken_back", { ...FULL, amountCents: 4500 });
+
+  it("names the amount in both the subject and the body", () => {
+    expect(said.subject).toContain("$45.00");
+    expect(said.body).toContain("$45.00");
+  });
+
+  /**
+   * A claw-back reads like a fine, so the message says what it does to their
+   * standing — as a fact, since reassurance about a rule is arguable in a way
+   * a fact is not.
+   */
+  it("says what it does to their standing", () => {
+    expect(said.body).toMatch(/standing is unchanged/i);
+  });
+
+  it("carries the reasoning staff wrote", () => {
+    const withNote = render("refund_taken_back", { ...FULL, note: "The door was propped open." });
+    expect(withNote.body).toContain("The door was propped open.");
+  });
 });
 
 describe("toHtml", () => {

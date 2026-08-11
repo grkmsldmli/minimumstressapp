@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Check, Key, MapPin, Ruler, Sun, Users, Zap } from "lucide-react";
+import { ArrowLeft, Check, Key, MapPin, Repeat, Ruler, Sun, Users, Zap } from "lucide-react";
 
 import { AccessPanel } from "@/components/access-panel";
 import { ParkingPanel } from "@/components/parking-panel";
 import { ReviewsPanel, hasReviewsToShow } from "@/components/reviews-panel";
+import { weeksAvailable } from "@/lib/series";
+import { sessionDayLong, sessionWeekday } from "@/lib/when";
 import { BookingCalendar } from "@/components/booking-calendar";
 import { SpaceGallery } from "@/components/space-gallery";
 import { PrimaryButton } from "@/components/primitives";
@@ -60,6 +62,8 @@ export function SpaceDetail({
   onGoPro,
   preview = false,
   error,
+  notice,
+  skipped = [],
   startAt,
   reviews,
 }: {
@@ -68,9 +72,14 @@ export function SpaceDetail({
   /** Null while they are still loading, so the section does not flash empty. */
   reviews: PublicReview[] | null;
   onBack: () => void;
-  onBook: (startsAt: Date) => void | Promise<void>;
+  /** `weeks` is 1 for a single session, more for a term. */
+  onBook: (startsAt: Date, weeks: number) => void | Promise<void>;
   /** Why the booking was refused. Silence here was the bug. */
   error?: string | null;
+  /** What a term booking managed, when it managed some of it. */
+  notice?: string | null;
+  /** The weeks it could not take, each with its own reason. */
+  skipped?: { startsAt: string; because: string }[];
   /**
    * A slot to open on, from "book again".
    *
@@ -105,6 +114,8 @@ export function SpaceDetail({
     civilIn(startAt ?? now, space.timeZone),
   );
   const [selected, setSelected] = useState<Date | null>(startAt ?? null);
+  /** 1 is a single session. More is a term, and Pro only. */
+  const [weeks, setWeeks] = useState(1);
 
   /*
    * The window is no longer computed here. The calendar owns which days are
@@ -140,6 +151,14 @@ export function SpaceDetail({
     });
 
   const selectedIsInstant = selected ? isInstantSlot(selected, now) : false;
+
+  /*
+   * How many weekly repeats this hour could actually reach, so the picker
+   * never offers a week the horizon will refuse. Computed for a Pro account
+   * even when this one is not, because a free account is being shown what it
+   * would get — offering "repeat weekly" and then one week is not an offer.
+   */
+  const repeatable = selected ? weeksAvailable(selected, space.timeZone, true, now) : 0;
 
   const priced = quote({
     hostRateCents: space.hourlyRateCents,
@@ -486,6 +505,81 @@ export function SpaceDetail({
           </p>
         )}
 
+        {/*
+          A term rarely lands whole. Naming the weeks that did not is the
+          difference between a number somebody has to interpret and an answer
+          they can act on.
+        */}
+        {notice && (
+          <div
+            className="rounded-xl p-3 mb-2.5"
+            style={{ backgroundColor: "#EDF6FE", border: "1px solid #D4E8FA" }}
+          >
+            <p className="font-body font-medium text-[14px] text-[#2E5578]">{notice}</p>
+            {skipped.map((week) => (
+              <p
+                key={week.startsAt}
+                className="font-body font-normal text-[13px] mt-1 text-[#2E5578]"
+              >
+                {sessionDayLong(new Date(week.startsAt), space.timeZone)} — {week.because}
+              </p>
+            ))}
+          </div>
+        )}
+
+        {/*
+          Offered only once an hour is chosen, and only to Pro.
+          
+          A weekly class is the reason somebody comes back, and the app made
+          them walk the whole discovery flow for each one — a decision made in
+          September, re-entered every Tuesday. Free accounts see it and see
+          what it costs, because a cap nobody can see is not a reason to pay.
+        */}
+        {!preview && selected && repeatable > 1 && (
+          <button
+            type="button"
+            onClick={() => (isPro ? setWeeks(weeks > 1 ? 1 : Math.min(4, repeatable)) : onGoPro())}
+            className="flex items-center justify-between w-full mb-2.5 px-3.5 py-2.5 rounded-xl press"
+            style={{
+              backgroundColor: weeks > 1 ? "#EDF6FE" : "#fff",
+              border: `1px solid ${weeks > 1 ? "#3B9BE8" : "#DCE7F2"}`,
+            }}
+          >
+            <span className="flex items-center gap-2 font-body text-[14px] text-navy">
+              <Repeat size={13} color={weeks > 1 ? "#3B9BE8" : "#8CA3BD"} />
+              {weeks > 1
+                ? `Every ${sessionWeekday(selected, space.timeZone)} for ${weeks} weeks`
+                : `Repeat weekly${isPro ? "" : " — Pro"}`}
+            </span>
+            <span className="font-body font-medium text-[14px] text-navy">
+              {weeks > 1 ? formatCents(priced.totalCents * weeks) : ""}
+            </span>
+          </button>
+        )}
+
+        {/* How many weeks, once repeating is on. */}
+        {!preview && weeks > 1 && (
+          <div className="flex gap-1.5 mb-2.5">
+            {Array.from({ length: Math.min(4, repeatable) }, (_, i) => i + 1)
+              .filter((n) => n > 1)
+              .map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => setWeeks(n)}
+                  className="flex-1 py-2 rounded-lg font-body text-[13.5px] press"
+                  style={{
+                    backgroundColor: weeks === n ? "#16304E" : "#fff",
+                    color: weeks === n ? "#fff" : "#16304E",
+                    border: `1px solid ${weeks === n ? "#16304E" : "#DCE7F2"}`,
+                  }}
+                >
+                  {n} weeks
+                </button>
+              ))}
+          </div>
+        )}
+
         {preview ? (
           <PrimaryButton onClick={onBack}>Back to your studio</PrimaryButton>
         ) : (
@@ -498,13 +592,15 @@ export function SpaceDetail({
           onClick={() => {
             if (!selected) return;
             setBooking(true);
-            void Promise.resolve(onBook(selected)).finally(() => setBooking(false));
+            void Promise.resolve(onBook(selected, weeks)).finally(() => setBooking(false));
           }}
         >
           {booking
             ? "One moment…"
             : selected
-              ? `Book ${clock(selected)}${zoneNote ? ` ${zoneNote}` : ""} · ${formatCents(priced.totalCents)}`
+              ? weeks > 1
+                ? `Book ${weeks} weeks · ${formatCents(priced.totalCents * weeks)}`
+                : `Book ${clock(selected)}${zoneNote ? ` ${zoneNote}` : ""} · ${formatCents(priced.totalCents)}`
             : slots.length === 0
               ? isToday
                 ? "Nothing left today"

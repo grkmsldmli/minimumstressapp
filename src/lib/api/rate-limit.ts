@@ -78,6 +78,11 @@ export const LIMITS = {
    * attempt reads a booking and counts a history.
    */
   refund: { limit: 5, windowMs: 300_000 },
+  /*
+   * One request here is up to twelve bookings and twelve card charges, so it
+   * is limited by what it costs rather than by how it looks.
+   */
+  series: { limit: 3, windowMs: 300_000 },
 
   /** Starting Stripe onboarding — a link a host follows once, maybe twice. */
   connect: { limit: 5, windowMs: 60_000 },

@@ -159,8 +159,13 @@ const PERKS = [
   },
   {
     icon: Repeat,
-    title: "Book a whole term at once",
-    sub: "Every Tuesday at five for eight weeks, in one go, instead of eight separate bookings",
+    title: "Book a month of classes at once",
+    /*
+     * Four weeks, not eight. The first version of this line said a term, which
+     * does not fit inside a thirty-day window — a promise the horizon could
+     * not keep, written on the same screen as the horizon.
+     */
+    sub: "Every Tuesday at five for four weeks, in one go, instead of four separate bookings",
   },
   {
     icon: CalendarClock,

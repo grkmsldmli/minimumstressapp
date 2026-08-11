@@ -101,6 +101,9 @@ export function App() {
   const [authError, setAuthError] = useState<string | null>(null);
   const [roleError, setRoleError] = useState<string | null>(null);
   const [bookingError, setBookingError] = useState<string | null>(null);
+  /** What a term booking did, including the weeks it could not take. */
+  const [bookingNotice, setBookingNotice] = useState<string | null>(null);
+  const [seriesSkipped, setSeriesSkipped] = useState<{ startsAt: string; because: string }[]>([]);
 
   const [authBusy, setAuthBusy] = useState(false);
 
@@ -867,7 +870,41 @@ export function App() {
           onBack={back}
           onGoPro={() => go("pro")}
           error={bookingError}
-          onBook={async (startsAt) => {
+          notice={bookingNotice}
+          skipped={seriesSkipped}
+          onBook={async (startsAt, weeks) => {
+            /*
+             * A term goes through its own route, which walks the weeks and
+             * books each one under the ordinary rules. It reports what it
+             * could not do rather than refusing the lot, so the message is
+             * the server's own summary rather than a count invented here.
+             */
+            if (weeks > 1) {
+              setBookingError(null);
+              const response = await fetch("/api/bookings/series", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  spaceId: activeSpace.id,
+                  startsAt: startsAt.toISOString(),
+                  weeks,
+                }),
+              });
+              const body = await response.json().catch(() => ({}));
+
+              if (!response.ok) {
+                setBookingError(body.error ?? "Those weeks could not be booked.");
+                return;
+              }
+
+              refresh();
+              // Said where they acted rather than on a screen they were sent
+              // to. "3 of 4 booked" is only useful next to the fourth.
+              setBookingNotice(body.summary ?? null);
+              setSeriesSkipped(body.skipped ?? []);
+              return;
+            }
+
             /*
              * Awaited, and the refusal shown.
              *

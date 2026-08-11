@@ -258,6 +258,10 @@ export async function decideClaim(
     decided_by: staffId,
     decided_at: now.toISOString(),
     decision_note: note,
+    // Kept because this is the only irreversible act in the flow. Somebody
+    // disputing it with their bank, or staff deciding it was wrong, both need
+    // to point at the charge rather than at an amount.
+    stripe_payment_intent_id: charge.chargeId,
   });
   await notifyClaimDecided(admin, claimId).catch(() => {});
 

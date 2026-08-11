@@ -102,6 +102,30 @@ describe("migrations apply cleanly", () => {
     ]);
   });
 
+  /**
+   * Every irreversible movement of money keeps a pointer to the thing that
+   * moved it.
+   *
+   * An upheld claim charged a card and stored only the amount, which is the
+   * one case that had to be found by hand: nothing failed, the money arrived,
+   * and there was simply no way afterwards to answer a bank asking which
+   * charge we were talking about.
+   */
+  it("keeps a Stripe id beside every amount it moves", async () => {
+    const missing = await rows<{ table_name: string }>(
+      `select t.table_name
+       from (values ('bookings'), ('studio_claims')) as t(table_name)
+       where not exists (
+         select 1 from information_schema.columns c
+         where c.table_schema = 'public'
+           and c.table_name = t.table_name
+           and c.column_name = 'stripe_payment_intent_id'
+       )`,
+    );
+
+    expect(missing).toEqual([]);
+  });
+
   it("grants service_role access to every table the server writes", async () => {
     /**
      * This is the check that was missing. A policy without a GRANT is dead

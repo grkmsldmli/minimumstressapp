@@ -2781,3 +2781,34 @@ alter table spaces
   add constraint spaces_description_length check (
     description is null or length(description) <= 1200
   );
+
+
+-- ===================================================================
+-- 0028_moving_a_listing.sql
+-- ===================================================================
+
+-- Moving a listing has to move everything that says where it is.
+--
+-- The edit screen took the address as free text and saved the string on its
+-- own. `lat`, `lng` and the browse-map pair went on describing the building
+-- the host used to be in, so a host who moved across town ended up with a
+-- listing that read one address and behaved like another: the map a
+-- practitioner opens once they have booked centred on the old street, and
+-- nearby search ranked the listing by its distance from a city it had left.
+--
+-- The screen now resolves the address the way the listing form does and sends
+-- the coordinates with it. `lat` and `lng` were already in 0019's list.
+-- `map_x`/`map_y` were not — they arrived in 0008, after the blanket update
+-- had been revoked and re-granted column by column, so a host could write them
+-- when the listing was created and never again. The write failed on exactly
+-- the path that needed it.
+--
+-- Granting them exposes nothing new. They are already public in
+-- `spaces_public`, already written by the host at creation, and 0008's check
+-- constraint keeps them inside the drawing. They are a coarse function of the
+-- ~11 km cell a coordinate falls in — see `toBrowsePosition` — which is what
+-- makes them safe to publish in the first place. What this permits is a host
+-- keeping the decoration in step with an address they were already allowed to
+-- change.
+
+grant update (map_x, map_y) on spaces to authenticated;

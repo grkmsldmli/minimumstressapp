@@ -229,8 +229,20 @@ export interface SpaceEdit {
   restroomAccess?: AccessDetails["restroom"];
   category?: CategoryKey;
   addressLine?: string;
+  /*
+   * The address as a place, not as a string.
+   *
+   * Sent together or not at all. A listing whose text says one city and whose
+   * coordinates say another is worse than one that is merely out of date: the
+   * map after booking, the distance ranking on Discover and the pin on the
+   * browse map all read the numbers, and all three would quietly point at the
+   * building the host used to be in.
+   */
   lat?: number;
   lng?: number;
+  /** Derived from lat/lng by toBrowsePosition, and granted in 0028. */
+  mapX?: number;
+  mapY?: number;
 }
 
 /** The money frozen onto the booking at creation. Mirrors bookings' columns. */

@@ -4,11 +4,14 @@ import { useState } from "react";
 import { AlertTriangle, ArrowLeft } from "lucide-react";
 
 import { AccessEditor } from "@/components/access-editor";
+import { AddressAutocomplete } from "@/components/address-autocomplete";
 import { DocumentStatus } from "@/components/document-status";
+import { LocationMap } from "@/components/location-map";
 import { PrimaryButton } from "@/components/primitives";
 import { SpaceMediaManager } from "@/components/space-media-manager";
 import { errorMessage } from "@/lib/error-message";
 import type { HostSpace, SpaceEdit } from "@/lib/domain";
+import { type LatLng, toBrowsePosition } from "@/lib/geo";
 import { formatCents, quote } from "@/lib/money";
 import { CATEGORY_KEYS, roomTypeFor } from "@/lib/taxonomy";
 
@@ -51,6 +54,17 @@ export function EditSpace({
   const [buffer, setBuffer] = useState(String(space.bufferMinutes));
   const [category, setCategory] = useState(space.category);
   const [address, setAddress] = useState(space.addressLine);
+  /**
+   * Where the address actually is, which the old free-text field never asked.
+   *
+   * Null for a listing predating the geocoder, and null again the moment the
+   * text is edited — the coordinates belonged to the address that was picked,
+   * and carrying them over is how a listing moves city on paper while its map,
+   * its distance ranking and its browse pin all stay put.
+   */
+  const [point, setPoint] = useState<LatLng | null>(
+    space.lat !== null && space.lng !== null ? { lat: space.lat, lng: space.lng } : null,
+  );
   const [access, setAccess] = useState(space.access);
   const [description, setDescription] = useState(space.description);
 
@@ -61,7 +75,15 @@ export function EditSpace({
   const rateIsNumber = rate.trim() !== "" && Number.isFinite(rateCents) && rateCents > 0;
 
   const locked = bookedSessions > 0;
-  const moving = !locked && (address !== space.addressLine || category !== space.category);
+
+  const addressEdited = address.trim() !== space.addressLine;
+  // Nudging the pin without touching the text is a move too — 0019 compares
+  // lat and lng, not just the string.
+  const movedPoint = point && (point.lat !== space.lat || point.lng !== space.lng) ? point : null;
+  /** Address typed over but never resolved, so there is no place to save. */
+  const unplaced = !locked && addressEdited && point === null;
+
+  const moving = !locked && (addressEdited || movedPoint !== null || category !== space.category);
 
   const changed =
     name !== space.name ||
@@ -70,7 +92,8 @@ export function EditSpace({
     entry !== space.entryInstructions ||
     Number(buffer) !== space.bufferMinutes ||
     category !== space.category ||
-    address !== space.addressLine ||
+    addressEdited ||
+    movedPoint !== null ||
     access.entrance !== space.access.entrance ||
     access.floor !== space.access.floor ||
     access.doorwayInches !== space.access.doorwayInches ||
@@ -92,6 +115,16 @@ export function EditSpace({
       return;
     }
 
+    /*
+     * Refused rather than saved as text alone. Saving the string on its own is
+     * what this screen used to do, and it is how a listing ends up reading one
+     * address while every map and every distance still points at the last one.
+     */
+    if (unplaced) {
+      setError("Pick the new address from the list so we know where it is.");
+      return;
+    }
+
     setError(null);
     setSaving(true);
     try {
@@ -108,7 +141,18 @@ export function EditSpace({
         restroomAccess: access.restroom,
         // Only sent when they are actually free to change, so a locked
         // listing cannot be moved by a stale value sitting in a field.
-        ...(locked ? {} : { category, addressLine: address.trim() }),
+        ...(locked
+          ? {}
+          : {
+              category,
+              addressLine: address.trim(),
+              // The address and the place it names travel together. mapX/mapY
+              // are derived from the same point, so the pin on the browse map
+              // lands in the new neighbourhood rather than the old one.
+              ...(movedPoint
+                ? { lat: movedPoint.lat, lng: movedPoint.lng, ...toBrowsePosition(movedPoint) }
+                : {}),
+            }),
       });
       onBack();
     } catch (cause) {
@@ -246,7 +290,24 @@ export function EditSpace({
             </div>
 
             <Label>Location</Label>
-            <Text value={address} onChange={setAddress} />
+            <AddressAutocomplete
+              value={address}
+              onChange={(next) => {
+                setAddress(next);
+                setPoint(null);
+              }}
+              onSelect={(picked) => {
+                setAddress(picked.addressLine);
+                setPoint({ lat: picked.lat, lng: picked.lng });
+              }}
+            />
+            <p className="font-body font-normal text-[13.5px] mt-2 text-ink-faint">
+              Only shown to a practitioner once they&apos;ve booked — never public.
+            </p>
+
+            <div className="mt-3">
+              <LocationMap point={point} onPick={point ? setPoint : undefined} />
+            </div>
 
             {moving && (
               <Note tone="warn">

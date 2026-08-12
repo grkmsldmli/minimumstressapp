@@ -25,6 +25,24 @@ const SUPABASE_SOCKET = SUPABASE_ORIGIN.replace(/^https:/, "wss:");
 const STRIPE = "https://js.stripe.com https://api.stripe.com https://hooks.stripe.com";
 const TILES = "https://tile.openstreetmap.org";
 
+/**
+ * The one thing development needs and production must never have.
+ *
+ * React's development build calls eval() to rebuild a callstack that crossed
+ * the server/client boundary, and Turbopack compiles hot-reloaded modules the
+ * same way. Under the shipped policy both are refused, so `next dev` opened on
+ * a console error and stack traces lost the source positions that make them
+ * worth reading — the tooling was broken, on the machine where the tooling is
+ * the whole point.
+ *
+ * Off everywhere else, which is the half that matters: a string reaching
+ * eval() has the same reach as an injected script tag, and that is the attack
+ * the nonce exists to stop. NODE_ENV is set by the framework rather than by
+ * us, so this cannot be turned on by an environment file — and the test below
+ * pins it shut for every value but "development".
+ */
+const DEV_EVAL = process.env.NODE_ENV === "development" ? " 'unsafe-eval'" : "";
+
 export function proxy(request: NextRequest): NextResponse {
   const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
 
@@ -37,7 +55,7 @@ export function proxy(request: NextRequest): NextResponse {
     // overlay route that is the real risk.
     `style-src 'self' 'unsafe-inline'`,
 
-    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic' ${STRIPE}`,
+    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${DEV_EVAL} ${STRIPE}`,
 
     // `data:` covers inline SVG icons; `blob:` covers the local preview a host
     // sees before their photo has finished uploading.

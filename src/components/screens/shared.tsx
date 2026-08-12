@@ -5,7 +5,7 @@ import { Building2, ChevronRight, Mail, Sparkles, Users } from "lucide-react";
 
 import { Ambient, BreathingLogo, Headline, Wordmark } from "@/components/brand";
 import { PrimaryButton } from "@/components/primitives";
-import type { Provider } from "@/lib/auth-providers";
+import { PROVIDER_LABELS, type Provider } from "@/lib/auth-providers";
 
 const NAVY_WASH =
   "radial-gradient(120% 90% at 50% 0%, #1E4066 0%, #16304E 55%, #0E2138 100%)";
@@ -181,6 +181,25 @@ function DiagramNode({
 /*  Auth                                                               */
 /* ------------------------------------------------------------------ */
 
+/** "Apple, Google or Microsoft" — an Oxford-less list of what is switched on. */
+function listProviders(providers: Provider[]): string {
+  const names = providers.map((provider) => PROVIDER_LABELS[provider]);
+  if (names.length === 1) return names[0];
+  return `${names.slice(0, -1).join(", ")} or ${names[names.length - 1]}`;
+}
+
+/** The four squares, in Microsoft's own colours. Flat by design, like theirs. */
+function MicrosoftGlyph({ size = 16 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 23 23" aria-hidden="true">
+      <path fill="#F25022" d="M1 1h10v10H1z" />
+      <path fill="#7FBA00" d="M12 1h10v10H12z" />
+      <path fill="#00A4EF" d="M1 12h10v10H1z" />
+      <path fill="#FFB900" d="M12 12h10v10H12z" />
+    </svg>
+  );
+}
+
 function AppleGlyph({ size = 16 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 384 512" fill="currentColor" aria-hidden="true">
@@ -233,9 +252,16 @@ export function AuthEntry({
         <div className="mt-6">
           <Headline pre="Let's get" accent="you in." size={27} light />
         </div>
+        {/*
+          Named from what is actually enabled, not from a sentence typed once.
+          It read "One tap with Apple or Google" while only Google was on, so
+          the screen promised a button that was not there — the exact failure
+          auth-providers.ts exists to prevent, reintroduced one line below the
+          fix.
+        */}
         <p className="font-body font-normal text-[14px] text-white/60 mt-3 leading-relaxed">
           {providers.length > 0
-            ? "One tap with Apple or Google — or use email below."
+            ? `One tap with ${listProviders(providers)} — or use email below.`
             : "We'll email you a six-digit code. No password to remember."}
         </p>
       </div>
@@ -261,6 +287,16 @@ export function AuthEntry({
                 style={{ backgroundColor: "#fff", border: "1px solid #E1E6EC" }}
               >
                 <GoogleGlyph /> Continue with Google
+              </button>
+            )}
+            {providers.includes("azure") && (
+              <button
+                type="button"
+                onClick={() => onProvider("azure")}
+                className="w-full flex items-center justify-center gap-2 py-3.5 rounded-full font-body font-medium text-[15px] press text-navy"
+                style={{ backgroundColor: "#fff", border: "1px solid #E1E6EC" }}
+              >
+                <MicrosoftGlyph /> Continue with Microsoft
               </button>
             )}
           </div>

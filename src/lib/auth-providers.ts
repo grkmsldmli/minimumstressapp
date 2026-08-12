@@ -16,9 +16,24 @@
  * from the truth, because it is the truth.
  */
 
-export type Provider = "apple" | "google";
+/**
+ * Supabase's own keys, not ours to prettify.
+ *
+ * "azure" is Microsoft. The name is Supabase's — its settings endpoint reports
+ * it and signInWithOAuth expects it — so it is what this file speaks, and the
+ * screen translates at the last moment. A person has a Microsoft account;
+ * nobody outside a data centre has an Azure one.
+ */
+export type Provider = "apple" | "google" | "azure";
 
-const PROVIDERS: Provider[] = ["apple", "google"];
+const PROVIDERS: Provider[] = ["apple", "google", "azure"];
+
+/** What each one is called to the person choosing it. */
+export const PROVIDER_LABELS: Record<Provider, string> = {
+  apple: "Apple",
+  google: "Google",
+  azure: "Microsoft",
+};
 
 /**
  * Fails closed.

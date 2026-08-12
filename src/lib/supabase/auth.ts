@@ -2,7 +2,8 @@
 
 import { supabaseBrowser } from "./client";
 
-export type OAuthProvider = "apple" | "google";
+/** Supabase's keys. "azure" is Microsoft — see PROVIDER_LABELS. */
+export type OAuthProvider = "apple" | "google" | "azure";
 
 /**
  * Sends a six-digit sign-in code.

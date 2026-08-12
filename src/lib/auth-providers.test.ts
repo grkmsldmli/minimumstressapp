@@ -31,10 +31,25 @@ describe("enabledProviders", () => {
     expect(await enabledProviders("https://x.supabase.co", "key")).not.toContain("email");
   });
 
+  /**
+   * Supabase enables plenty this app has never drawn a button for. Turning one
+   * on in the dashboard must not put a dead control on the sign-in screen —
+   * which is the failure this whole module was written to end.
+   *
+   * The example used to be azure. It stopped being one when Microsoft was
+   * added, and the test caught that itself rather than quietly passing on a
+   * premise that had become false.
+   */
   it("ignores a provider the app has no button for", async () => {
-    vi.stubGlobal("fetch", answer({ github: true, azure: true }));
+    vi.stubGlobal("fetch", answer({ github: true, discord: true, notion: true }));
 
     expect(await enabledProviders("https://x.supabase.co", "key")).toEqual([]);
+  });
+
+  it("reports Microsoft under the key Supabase uses for it", async () => {
+    vi.stubGlobal("fetch", answer({ azure: true, google: true }));
+
+    expect(await enabledProviders("https://x.supabase.co", "key")).toEqual(["google", "azure"]);
   });
 
   /**

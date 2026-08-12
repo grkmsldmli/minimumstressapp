@@ -588,9 +588,17 @@ export class MockRepository implements Repository {
     const space = this.mySpaces.find((s) => s.id === spaceId);
     if (!space) throw new Error("No such space");
 
+    /*
+     * Coordinates count as a move, the same as the address text does. The
+     * trigger in 0019 compares lat and lng too, so a mock that only watched
+     * the string would let a nudged pin through here and be refused against
+     * the real database.
+     */
     const moved =
       (edit.addressLine !== undefined && edit.addressLine !== space.addressLine) ||
-      (edit.category !== undefined && edit.category !== space.category);
+      (edit.category !== undefined && edit.category !== space.category) ||
+      (edit.lat !== undefined && edit.lat !== space.lat) ||
+      (edit.lng !== undefined && edit.lng !== space.lng);
 
     /*
      * The same refusal the trigger in 0019 raises, in the same words.

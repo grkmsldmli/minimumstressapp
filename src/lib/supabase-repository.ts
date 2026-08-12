@@ -943,6 +943,12 @@ export class SupabaseRepository implements Repository {
       patch.parking_limit_minutes = edit.parking.limitMinutes;
     }
     if (edit.lng !== undefined) patch.lng = edit.lng;
+    // The pin on the browse map is derived from the coordinates, so it moves
+    // with them. Writable since 0037 — before that the column was granted at
+    // insert and never after, and this update failed on the one path that
+    // needed it.
+    if (edit.mapX !== undefined) patch.map_x = edit.mapX;
+    if (edit.mapY !== undefined) patch.map_y = edit.mapY;
 
     if (Object.keys(patch).length === 0) {
       const [unchanged] = (await this.listMySpaces()).filter((s) => s.id === spaceId);

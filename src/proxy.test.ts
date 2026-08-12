@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 /**
  * Imported after the environment is set, not before.
@@ -94,5 +94,46 @@ describe("the content security policy", () => {
 
     expect(connect).not.toMatch(/google|locationiq|photon|nominatim/i);
     expect(connect).toMatch(/supabase/);
+  });
+});
+
+/**
+ * The one directive that differs by environment, and the reason to assert it.
+ *
+ * React's development build calls eval() to rebuild a callstack that crossed
+ * the server/client boundary; the shipped policy refuses it, so `next dev`
+ * opened on a console error. The exception that fixes that is also the exact
+ * hole the nonce exists to close, so "only in development" is not a comment —
+ * it is the assertion below.
+ *
+ * Re-imported per case because the flag is read once when the module loads.
+ */
+describe("the eval exception", () => {
+  async function scriptSrc(nodeEnv: string): Promise<string> {
+    vi.resetModules();
+    vi.stubEnv("NODE_ENV", nodeEnv);
+    process.env.NEXT_PUBLIC_SUPABASE_URL = SUPABASE;
+
+    const fresh = (await import("./proxy")) as unknown as { proxy: typeof proxy };
+    const response = fresh.proxy(new NextRequest("https://minimumstress.app/"));
+    const header = response.headers.get("content-security-policy") ?? "";
+    return header.match(/script-src[^;]*/)?.[0] ?? "";
+  }
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("gives development the eval its tooling needs", async () => {
+    expect(await scriptSrc("development")).toContain("'unsafe-eval'");
+  });
+
+  /** Production is the one that matters; test is here so the suite proves it. */
+  it.each(["production", "test"])("withholds it in %s", async (nodeEnv) => {
+    expect(await scriptSrc(nodeEnv)).not.toContain("'unsafe-eval'");
+  });
+
+  it("still carries a nonce in development", async () => {
+    expect(await scriptSrc("development")).toMatch(/'nonce-[A-Za-z0-9+/=]+'/);
   });
 });

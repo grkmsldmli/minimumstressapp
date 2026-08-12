@@ -2755,7 +2755,7 @@ grant execute on function space_access_details(uuid) to authenticated;
 
 
 -- ===================================================================
--- 0027_description_editable.sql
+-- 0028_description_editable.sql
 -- ===================================================================
 
 -- Let a host write the paragraph their listing already shows.
@@ -2781,3 +2781,723 @@ alter table spaces
   add constraint spaces_description_length check (
     description is null or length(description) <= 1200
   );
+
+
+-- ===================================================================
+-- 0029_space_timezone.sql
+-- ===================================================================
+
+-- A room's hours belong to the room's own city.
+--
+-- Availability is stored as a weekday and a minute of the day: "Tuesday, 540"
+-- means Tuesday at 9am. Nowhere did it say 9am *where*, and the code turned
+-- those minutes into real instants using whichever timezone the running
+-- process happened to be in. In a browser that is the practitioner's zone; on
+-- the server it is UTC. The phone offered 4pm Pacific, the server rebuilt the
+-- same grid in UTC, the two never matched, and every booking was rejected as
+-- an hour the host had not opened.
+--
+-- The missing fact was never in the code. It was here: a schedule of wall-clock
+-- times with no zone attached cannot be converted to instants at all. So the
+-- zone is stored beside the coordinates it comes from.
+--
+-- Derived from lat/lng rather than typed, because a host picking their own
+-- address already told us where the room is, and asking them to also name a
+-- timezone is asking the same question twice with more ways to get it wrong.
+-- Postgres cannot do that lookup — it knows every zone's rules but not which
+-- zone covers a point — so the app resolves it and writes it here.
+
+alter table spaces
+  add column if not exists timezone text not null default 'America/Los_Angeles';
+
+-- Shape only. Whether a zone actually exists is a question for the tz database,
+-- which Postgres has and the check cannot reach from a constraint, so the app
+-- validates against Intl before writing. This stops the empty strings and the
+-- 'PST' abbreviations, which are the mistakes that actually happen.
+alter table spaces
+  drop constraint if exists spaces_timezone_is_iana;
+
+alter table spaces
+  add constraint spaces_timezone_is_iana
+  check (timezone ~ '^[A-Za-z][A-Za-z0-9+_-]*(/[A-Za-z0-9+_.-]+)+$');
+
+comment on column spaces.timezone is
+  'IANA zone of the room itself, e.g. America/Los_Angeles. Availability minutes '
+  'are wall-clock times in this zone. Resolved from lat/lng at write time.';
+
+-- 0019 revoked blanket update on spaces and grants one column at a time, so a
+-- new column is read-only until it is named here. It changes with the address,
+-- and the address is editable.
+grant update (timezone) on spaces to authenticated;
+
+-- ------------------------------------------------------------------
+-- The zone is public, because the hours are.
+--
+-- A practitioner has to be told when the room is open before deciding to book
+-- it, and a list of wall-clock hours with no zone is not an answer. It gives
+-- nothing away either: the neighbourhood is already shown, and a timezone is a
+-- far coarser fact than that.
+--
+-- Adding it here rather than relying on the column existing: the client reads
+-- this view with `select *`, so a column missing from it arrives as undefined
+-- and falls back to Pacific — every listing on earth quietly on one clock,
+-- with nothing failing to say so.
+-- ------------------------------------------------------------------
+drop view if exists spaces_public;
+
+create view spaces_public as
+  select
+    id, host_id, name, category, hourly_rate_cents, capacity, access_type,
+    accessible, restroom, buffer_minutes, timezone, status, created_at,
+    description, amenities, requirements, house_rules,
+    map_x, map_y,
+    entrance_access, floor_access, doorway_inches, restroom_access,
+    public_area(address_line) as area,
+    approx_lat(id, lat) as approx_lat,
+    approx_lng(id, lat, lng) as approx_lng
+  from spaces
+  where status = 'active';
+
+grant select on spaces_public to anon, authenticated;
+grant select on spaces_public to service_role;
+
+/*
+ * The default above is a starting value for the four rows that already exist,
+ * every one of them in the Bay Area. It is deliberately not a promise: the app
+ * always sends a resolved zone on insert, and the day a listing is created
+ * outside Pacific time without one, that listing is wrong in an obvious way
+ * rather than a silent one.
+ */
+
+
+-- ===================================================================
+-- 0030_charge_at_booking.sql
+-- ===================================================================
+
+-- The money is taken when the booking is made, and the host is paid after the
+-- session. Two different moments, so two different columns.
+--
+-- It used to be one. The card was authorised at booking and captured at the
+-- session, and Stripe split that capture between us and the host in the same
+-- instant — so "captured_at" answered both "did we get paid" and "did the host
+-- get paid" at once, because they were the same event.
+--
+-- They are not the same event any more. Charging up front means the money sits
+-- with us for as long as the booking is in the future, and the host's rate is
+-- transferred once the hour has actually happened. That gap is the whole
+-- reason the change works: a cancellation before the session refunds out of
+-- our balance and never touches an account the host has already seen money
+-- arrive in.
+--
+-- `captured_at` keeps its meaning — the practitioner's money reached us — and
+-- the rest is new.
+
+alter table bookings
+  add column if not exists host_paid_at timestamptz,
+  add column if not exists stripe_transfer_id text,
+  add column if not exists refunded_at timestamptz,
+  add column if not exists refunded_cents integer;
+
+comment on column bookings.captured_at is
+  'When the practitioner''s card was charged. At booking now, not at the session.';
+comment on column bookings.host_paid_at is
+  'When the host''s rate was transferred to their connected account, after the session.';
+comment on column bookings.refunded_cents is
+  'What went back to the practitioner. Null when nothing did.';
+
+-- A refund without an amount, or an amount without a refund, means one of the
+-- two writes did not happen — and the payout sweep reads both.
+alter table bookings
+  drop constraint if exists bookings_refund_consistent;
+
+alter table bookings
+  add constraint bookings_refund_consistent
+  check (
+    (refunded_at is null and refunded_cents is null)
+    or (refunded_at is not null and refunded_cents is not null and refunded_cents >= 0)
+  );
+
+-- Likewise: a transfer id is the receipt for the payout, and one without the
+-- other would leave the sweep unable to tell a paid host from an unpaid one.
+alter table bookings
+  drop constraint if exists bookings_payout_consistent;
+
+alter table bookings
+  add constraint bookings_payout_consistent
+  check (
+    (host_paid_at is null and stripe_transfer_id is null)
+    or (host_paid_at is not null and stripe_transfer_id is not null)
+  );
+
+/*
+ * The sweep reads this on every run: sessions that have happened, whose money
+ * we are holding, that have not been refunded and whose host has not been paid.
+ */
+create index if not exists bookings_awaiting_payout
+  on bookings (starts_at)
+  where host_paid_at is null and captured_at is not null and refunded_at is null;
+
+-- ------------------------------------------------------------------
+-- Nobody but the platform writes any of this.
+--
+-- 0002 granted the practitioner and host views their own columns; these are
+-- ours. A host being able to write host_paid_at would be a host able to mark
+-- themselves paid.
+-- ------------------------------------------------------------------
+revoke update (host_paid_at, stripe_transfer_id, refunded_at, refunded_cents)
+  on bookings from authenticated;
+
+
+-- ===================================================================
+-- 0031_parking.sql
+-- ===================================================================
+
+-- Where somebody leaves the car.
+--
+-- A practitioner arriving by car asks three things in this order: is there
+-- anywhere to park, will it cost me, and can I leave it there for the whole
+-- session. The listing answered none of them, so the only way to find out was
+-- to message the host and wait — or to turn up and find out.
+--
+-- The third question is the one that matters most here and the one a listings
+-- site normally has no field for. This marketplace sells hours. A two-hour
+-- street limit is fine; a one-hour limit on a one-hour session means leaving
+-- mid-session to move the car, or a ticket.
+--
+-- Several answers at once, because a studio can have two spaces out front and
+-- a street anybody can use. One choice would make the host pick the better one
+-- and leave out the one somebody actually needed.
+
+alter table spaces
+  add column if not exists parking text[] not null default '{}',
+  add column if not exists parking_limit_minutes integer;
+
+comment on column spaces.parking is
+  'Keys from PARKING_OPTIONS in src/lib/parking.ts. Empty means unanswered, '
+  'which is shown as unanswered rather than as "no parking".';
+comment on column spaces.parking_limit_minutes is
+  'How long a car may stay. Null means no limit.';
+
+-- A limit of zero or a negative one is not a stricter rule, it is a mistake.
+-- The upper bound is a day: anything longer is "no limit" and belongs as null.
+alter table spaces
+  drop constraint if exists spaces_parking_limit_sane;
+
+alter table spaces
+  add constraint spaces_parking_limit_sane
+  check (
+    parking_limit_minutes is null
+    or (parking_limit_minutes > 0 and parking_limit_minutes <= 1440)
+  );
+
+-- 0019 revoked the blanket update and grants per column, so a new column stays
+-- read-only to its own owner until it is named here.
+grant update (parking, parking_limit_minutes) on spaces to authenticated;
+
+-- ------------------------------------------------------------------
+-- Public, for the same reason the accessibility answers are.
+--
+-- None of it locates the room — "street parking" is true of most streets — and
+-- it is read while deciding, which is before a booking exists.
+--
+-- Rebuilt in full rather than altered: the client reads this view with
+-- `select *`, so a column missing from it arrives as undefined and the listing
+-- silently shows nothing, with no error anywhere to say so.
+-- ------------------------------------------------------------------
+drop view if exists spaces_public;
+
+create view spaces_public as
+  select
+    id, host_id, name, category, hourly_rate_cents, capacity, access_type,
+    accessible, restroom, buffer_minutes, timezone, status, created_at,
+    description, amenities, requirements, house_rules,
+    map_x, map_y,
+    entrance_access, floor_access, doorway_inches, restroom_access,
+    parking, parking_limit_minutes,
+    public_area(address_line) as area,
+    approx_lat(id, lat) as approx_lat,
+    approx_lng(id, lat, lng) as approx_lng
+  from spaces
+  where status = 'active';
+
+grant select on spaces_public to anon, authenticated;
+grant select on spaces_public to service_role;
+
+
+-- ===================================================================
+-- 0032_public_address.sql
+-- ===================================================================
+
+-- The address is public. How to get in is not.
+--
+-- Every listing here is a retail studio. Its address is on Google Maps, on its
+-- own website, on the sign above the door — so withholding the street number
+-- protected nothing and cost a practitioner the single fact they judge a room
+-- by. "Redwood City, CA 94063" is not somewhere you can decide to go.
+--
+-- It was never much of a defence against booking off-platform either. One
+-- booking and the address is theirs forever; what actually keeps a marketplace
+-- together is that the money, the record, the cover and the terms live here.
+--
+-- What stays behind the booking is the part that is genuinely not public: the
+-- entry instructions and the access code. "386 Convention Way" tells somebody
+-- where the building is. "Side door, keypad 4021, press # after" tells them how
+-- to get inside it, and that belongs to whoever paid for the hour.
+--
+-- So the approximate coordinates go too. They existed to draw a pin 250-450m
+-- from a room we would not name; with the address published, a deliberately
+-- wrong pin is just a worse map.
+
+drop view if exists spaces_public;
+
+create view spaces_public as
+  select
+    id, host_id, name, category, hourly_rate_cents, capacity, access_type,
+    accessible, restroom, buffer_minutes, timezone, status, created_at,
+    description, amenities, requirements, house_rules,
+    map_x, map_y,
+    entrance_access, floor_access, doorway_inches, restroom_access,
+    parking, parking_limit_minutes,
+    -- The street, at last. Still nothing about the door.
+    address_line,
+    lat,
+    lng,
+    public_area(address_line) as area
+  from spaces
+  where status = 'active';
+
+grant select on spaces_public to anon, authenticated;
+grant select on spaces_public to service_role;
+
+/*
+ * `entry_instructions` is deliberately absent, as it has always been, and
+ * `space_access_details` is left exactly as 0027 wrote it: still gated on
+ * holding a booking inside the 24-hour line. It now releases one thing that is
+ * already published and one that is not, which is harmless — the caller reads
+ * it for the instructions.
+ *
+ * `area` stays because the browse list uses it as a short label, and a town is
+ * easier to scan than a street address in a row of cards.
+ */
+
+
+-- ===================================================================
+-- 0033_refund_requests.sql
+-- ===================================================================
+
+-- Asking for money back, with a reason attached.
+--
+-- The automatic rule covers one case: cancel 24 hours ahead, get the charge
+-- back. Everything else had no path. Somebody who stood outside a locked door
+-- had the same options as somebody who changed their mind — none — and the
+-- terms meanwhile promised a goodwill credit that no code has ever written.
+--
+-- A reason from a fixed list rather than a paragraph, because a reason that
+-- cannot be counted cannot be compared, and a marketplace that cannot compare
+-- cannot see a pattern. The paragraph is kept as well, never instead.
+--
+-- What this table is really for is the part after the request: the host's
+-- answer, and a decision with a name on it. A refund system that pays out on
+-- one unchecked story gets farmed, and the person who pays for that is a host
+-- who did nothing wrong.
+
+do $$ begin
+  create type refund_reason as enum (
+    'no_access', 'not_as_described', 'double_booked', 'unsafe',
+    'host_no_show', 'changed_plans', 'other'
+  );
+exception when duplicate_object then null; end $$;
+
+do $$ begin
+  create type refund_state as enum (
+    'awaiting_host', 'awaiting_staff', 'approved', 'refused'
+  );
+exception when duplicate_object then null; end $$;
+
+do $$ begin
+  create type refund_outcome as enum ('full', 'our_fee', 'none');
+exception when duplicate_object then null; end $$;
+
+create table if not exists refund_requests (
+  id uuid primary key default gen_random_uuid(),
+
+  -- One request per booking. Somebody who disagrees with the answer takes it
+  -- up with a person; they do not get to ask again with a better reason.
+  booking_id uuid not null unique references bookings (id) on delete cascade,
+  practitioner_id uuid not null references profiles (id) on delete cascade,
+
+  reason refund_reason not null,
+  -- In their own words, alongside the reason rather than instead of it.
+  detail text not null,
+  -- Storage path, for the reasons where a photograph settles it.
+  evidence_path text,
+
+  state refund_state not null default 'awaiting_staff',
+
+  -- The host's account of the same events. Null until they answer, and the
+  -- request moves on without them after HOST_REPLY_HOURS either way.
+  host_reply text,
+  host_replied_at timestamptz,
+
+  -- The decision, and who made it.
+  outcome refund_outcome,
+  decided_by uuid references profiles (id),
+  decided_at timestamptz,
+  decision_note text,
+  refunded_cents integer,
+
+  created_at timestamptz not null default now()
+);
+
+-- A decision is a decision: it has an outcome, a time and a person, or it has
+-- none of them. Half-written rows are how a refund gets paid twice.
+alter table refund_requests
+  drop constraint if exists refund_requests_decision_complete;
+
+alter table refund_requests
+  add constraint refund_requests_decision_complete
+  check (
+    (state in ('awaiting_host', 'awaiting_staff')
+      and outcome is null and decided_at is null and decided_by is null)
+    or
+    (state in ('approved', 'refused')
+      and outcome is not null and decided_at is not null and decided_by is not null)
+  );
+
+-- Approved means money moved, or moved to zero deliberately. Refused never
+-- pays. Stated here so a bug in the route cannot write a contradiction.
+alter table refund_requests
+  drop constraint if exists refund_requests_outcome_matches_state;
+
+alter table refund_requests
+  add constraint refund_requests_outcome_matches_state
+  check (
+    state <> 'refused' or outcome = 'none'
+  );
+
+create index if not exists refund_requests_open_idx
+  on refund_requests (state, created_at)
+  where state in ('awaiting_host', 'awaiting_staff');
+
+-- The count that makes a pattern visible, without a scan per request.
+create index if not exists refund_requests_by_practitioner_idx
+  on refund_requests (practitioner_id, created_at desc);
+
+-- ------------------------------------------------------------------
+-- Who may see and do what.
+-- ------------------------------------------------------------------
+alter table refund_requests enable row level security;
+
+drop policy if exists "practitioner reads own refund requests" on refund_requests;
+create policy "practitioner reads own refund requests"
+  on refund_requests for select
+  using (practitioner_id = auth.uid());
+
+/*
+ * The host reads the request against their own room, and nothing else.
+ *
+ * They are being asked to answer an account of events, so they have to see it
+ * — but through the booking they own, never by practitioner id, or a host
+ * could read every request that person has ever made and answer the pattern
+ * rather than the day.
+ */
+drop policy if exists "host reads requests on their own rooms" on refund_requests;
+create policy "host reads requests on their own rooms"
+  on refund_requests for select
+  using (
+    exists (
+      select 1 from bookings b
+      join spaces s on s.id = b.space_id
+      where b.id = refund_requests.booking_id
+        and s.host_id = auth.uid()
+    )
+  );
+
+/*
+ * Nobody writes here from the browser. Not the practitioner, not the host.
+ *
+ * Creating a request has to check the booking was paid, that the window is
+ * open, and how many have been asked before; a reply has to check who is
+ * replying and that it is still open to replies. All of that is the route's
+ * job, on the service key. An insert policy would be a second copy of those
+ * rules, kept in a different language, drifting.
+ */
+
+grant select on refund_requests to authenticated;
+
+
+-- ===================================================================
+-- 0034_studio_claims.sql
+-- ===================================================================
+
+-- When a studio is left worse than it was found.
+--
+-- The mirror of 0033, pointing the other way, and built to the same rule:
+-- nobody's card is charged on one side's account of events. A host reports, the
+-- practitioner answers, a person decides. Reversing that — charge first, argue
+-- later — is how a marketplace collects chargebacks instead of money, and at
+-- this size one chargeback costs more than the claim it was meant to recover.
+--
+-- What is deliberately absent is any notion of us paying. We decide and we
+-- collect; we do not guarantee. If the practitioner's card fails, the host is
+-- told and given the record, and it is theirs and their insurer's to pursue. A
+-- marketplace that tops up failed claims out of its own margin has quietly
+-- become an insurer without pricing the risk.
+
+do $$ begin
+  create type claim_kind as enum ('cleaning', 'overstay', 'damage');
+exception when duplicate_object then null; end $$;
+
+do $$ begin
+  create type claim_state as enum (
+    'awaiting_practitioner', 'awaiting_staff', 'upheld', 'rejected', 'uncollectable'
+  );
+exception when duplicate_object then null; end $$;
+
+create table if not exists studio_claims (
+  id uuid primary key default gen_random_uuid(),
+
+  -- One claim per booking, same as a refund request. A host who disagrees with
+  -- the answer takes it up with a person rather than filing again.
+  booking_id uuid not null unique references bookings (id) on delete cascade,
+  host_id uuid not null references profiles (id) on delete cascade,
+
+  kind claim_kind not null,
+  detail text not null,
+  -- Required for cleaning and damage. Enforced in the route, where the rule
+  -- that decides it also lives — see claims.ts.
+  evidence_path text,
+
+  -- Only for overstay, and only as reported. What it costs is computed from
+  -- the room's own rate rather than trusted from here.
+  minutes_over integer,
+  -- What the host says it will cost to put right. Null for the fixed kinds.
+  claimed_cents integer,
+
+  state claim_state not null default 'awaiting_practitioner',
+
+  -- The practitioner's account of the same session.
+  practitioner_reply text,
+  practitioner_replied_at timestamptz,
+
+  -- The decision.
+  charged_cents integer,
+  decided_by uuid references profiles (id),
+  decided_at timestamptz,
+  decision_note text,
+  -- Set when the decision was made but the card would not pay. The host is
+  -- owed nothing by us in that case, and this is how the screen says so.
+  collection_error text,
+
+  created_at timestamptz not null default now()
+);
+
+alter table studio_claims
+  drop constraint if exists studio_claims_decision_complete;
+
+alter table studio_claims
+  add constraint studio_claims_decision_complete
+  check (
+    (state in ('awaiting_practitioner', 'awaiting_staff')
+      and decided_at is null and decided_by is null and charged_cents is null)
+    or
+    (state in ('upheld', 'rejected', 'uncollectable')
+      and decided_at is not null and decided_by is not null)
+  );
+
+-- Rejected means nothing was taken. Uncollectable means we tried and the card
+-- refused — a distinction the host needs, because one is a judgement about
+-- their claim and the other is not.
+alter table studio_claims
+  drop constraint if exists studio_claims_charge_matches_state;
+
+alter table studio_claims
+  add constraint studio_claims_charge_matches_state
+  check (
+    (state = 'rejected' and coalesce(charged_cents, 0) = 0)
+    or (state = 'upheld' and charged_cents > 0)
+    or (state = 'uncollectable' and coalesce(charged_cents, 0) = 0
+        and collection_error is not null)
+    or state in ('awaiting_practitioner', 'awaiting_staff')
+  );
+
+-- A host cannot invoice for time nobody spent, or for a negative amount.
+alter table studio_claims
+  drop constraint if exists studio_claims_amounts_sane;
+
+alter table studio_claims
+  add constraint studio_claims_amounts_sane
+  check (
+    (minutes_over is null or (minutes_over > 0 and minutes_over <= 600))
+    and (claimed_cents is null or (claimed_cents > 0 and claimed_cents <= 1000000))
+  );
+
+create index if not exists studio_claims_open_idx
+  on studio_claims (state, created_at)
+  where state in ('awaiting_practitioner', 'awaiting_staff');
+
+create index if not exists studio_claims_by_host_idx
+  on studio_claims (host_id, created_at desc);
+
+-- ------------------------------------------------------------------
+-- Who sees what.
+-- ------------------------------------------------------------------
+alter table studio_claims enable row level security;
+
+drop policy if exists "host reads their own claims" on studio_claims;
+create policy "host reads their own claims"
+  on studio_claims for select
+  using (host_id = auth.uid());
+
+/*
+ * The practitioner reads the claim against them, through the booking.
+ *
+ * They are being asked to answer it, so they have to see it — but never by
+ * host id, or somebody could read every claim a studio has ever filed and
+ * answer the pattern rather than the session.
+ */
+drop policy if exists "practitioner reads claims against them" on studio_claims;
+create policy "practitioner reads claims against them"
+  on studio_claims for select
+  using (
+    exists (
+      select 1 from bookings b
+      where b.id = studio_claims.booking_id
+        and b.practitioner_id = auth.uid()
+    )
+  );
+
+-- Nothing is written from a browser. Filing checks the window, the booking and
+-- the evidence; replying checks who is replying and that it is still open.
+-- Both are the route's job, on the service key.
+grant select on studio_claims to authenticated;
+
+
+-- ===================================================================
+-- 0035_floor_area.sql
+-- ===================================================================
+
+-- How big the room actually is.
+--
+-- Capacity answers "how many people fit", which is the host's judgement about
+-- their own room and varies with what they picture happening in it. A studio
+-- that seats twelve for meditation seats four for movement, and the listing
+-- said twelve either way.
+--
+-- Square feet is the fact underneath the judgement. Somebody planning a mat
+-- class knows what 400 square feet means for eight people in a way that
+-- "capacity 8" never tells them, and it is the number every commercial
+-- listing already carries — a retail studio knows its own floor area.
+--
+-- Optional, because a host who does not know should say nothing rather than
+-- guess. An invented measurement is worse than a missing one: somebody would
+-- plan around it.
+
+alter table spaces
+  add column if not exists floor_area_sqft integer;
+
+comment on column spaces.floor_area_sqft is
+  'Usable floor area in square feet. Null when the host has not said.';
+
+-- A room smaller than a cupboard or larger than a warehouse is a typo, and a
+-- typo here is somebody arriving at a room a tenth of the size they planned
+-- a class around.
+alter table spaces
+  drop constraint if exists spaces_floor_area_sane;
+
+alter table spaces
+  add constraint spaces_floor_area_sane
+  check (floor_area_sqft is null or (floor_area_sqft >= 50 and floor_area_sqft <= 50000));
+
+-- 0019 grants updates per column; a new one is read-only to its owner until
+-- it is named here.
+grant update (floor_area_sqft) on spaces to authenticated;
+
+-- ------------------------------------------------------------------
+-- Published, like every other fact somebody decides on.
+--
+-- Rebuilt in full rather than altered: the client reads this view with
+-- `select *`, so a column missing from it arrives as undefined and the listing
+-- silently shows nothing, with nothing anywhere failing to say so.
+-- ------------------------------------------------------------------
+drop view if exists spaces_public;
+
+create view spaces_public as
+  select
+    id, host_id, name, category, hourly_rate_cents, capacity, access_type,
+    accessible, restroom, buffer_minutes, timezone, status, created_at,
+    description, amenities, requirements, house_rules,
+    map_x, map_y,
+    entrance_access, floor_access, doorway_inches, restroom_access,
+    parking, parking_limit_minutes,
+    floor_area_sqft,
+    address_line,
+    lat,
+    lng,
+    public_area(address_line) as area
+  from spaces
+  where status = 'active';
+
+grant select on spaces_public to anon, authenticated;
+grant select on spaces_public to service_role;
+
+
+-- ===================================================================
+-- 0036_claim_charge_id.sql
+-- ===================================================================
+
+-- What we actually charged, and where.
+--
+-- An upheld claim charges a practitioner's kept card off-session, and until
+-- now the row recorded only the amount. Stripe returned a charge id and the
+-- service threw it away, so the one irreversible act in the whole claim flow
+-- was the only money movement in this app with nothing pointing at it —
+-- bookings keep their payment intent, payouts keep their transfer, this kept
+-- a number.
+--
+-- It matters at exactly the moment it is missing. Somebody disputes the
+-- seventeen dollars with their bank and we have to answer with evidence tied
+-- to that charge; staff decide a claim was wrong and there is nothing to
+-- refund against; the month's collections have to be reconciled and there is
+-- no key to join on.
+
+alter table studio_claims
+  add column if not exists stripe_payment_intent_id text;
+
+comment on column studio_claims.stripe_payment_intent_id is
+  'The off-session charge that collected this claim. Null until upheld and paid, and on any claim that was rejected or could not be collected.';
+
+-- Written only by the service role deciding a claim. Nobody on either side of
+-- a dispute may touch the record of what was charged.
+revoke update (stripe_payment_intent_id) on studio_claims from authenticated;
+
+
+-- ===================================================================
+-- 0037_moving_a_listing.sql
+-- ===================================================================
+
+-- Moving a listing has to move everything that says where it is.
+--
+-- The edit screen took the address as free text and saved the string on its
+-- own. `lat`, `lng` and the browse-map pair went on describing the building
+-- the host used to be in, so a host who moved across town ended up with a
+-- listing that read one address and behaved like another: the map a
+-- practitioner opens once they have booked centred on the old street, and
+-- nearby search ranked the listing by its distance from a city it had left.
+--
+-- The screen now resolves the address the way the listing form does and sends
+-- the coordinates with it. `lat` and `lng` were already in 0019's list.
+-- `map_x`/`map_y` were not — they arrived in 0008, after the blanket update
+-- had been revoked and re-granted column by column, so a host could write them
+-- when the listing was created and never again. The write failed on exactly
+-- the path that needed it.
+--
+-- Granting them exposes nothing new. They are already public in
+-- `spaces_public`, already written by the host at creation, and 0008's check
+-- constraint keeps them inside the drawing. They are a coarse function of the
+-- ~11 km cell a coordinate falls in — see `toBrowsePosition` — which is what
+-- makes them safe to publish in the first place. What this permits is a host
+-- keeping the decoration in step with an address they were already allowed to
+-- change.
+
+grant update (map_x, map_y) on spaces to authenticated;

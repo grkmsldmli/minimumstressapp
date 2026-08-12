@@ -656,6 +656,37 @@ describe("what a host may change on a listing", () => {
   });
 
   /**
+   * A move that only changes the string is the bug this guards.
+   *
+   * 0019 granted `lat` and `lng` with the address. `map_x`/`map_y` came in
+   * 0008, after the blanket update had been revoked and re-granted column by
+   * column, so the edit could carry the new coordinates and then be refused
+   * the two that decide where the pin sits on the browse map — leaving a
+   * listing reading one city and drawn in another. 0037 grants them.
+   */
+  it("lets the coordinates and the browse pin move with the address", async () => {
+    await asUser(
+      HOST,
+      `update spaces
+          set address_line = '400 Market Street', lat = 37.7936, lng = -122.3965,
+              map_x = 71.4, map_y = 33.8
+        where id = '${PENDING_SPACE}'`,
+    );
+
+    const [space] = await asUser<{
+      lat: number;
+      lng: number;
+      map_x: string;
+      map_y: string;
+    }>(HOST, `select lat, lng, map_x, map_y from spaces where id = '${PENDING_SPACE}'`);
+
+    expect(space.lat).toBeCloseTo(37.7936);
+    expect(space.lng).toBeCloseTo(-122.3965);
+    expect(Number(space.map_x)).toBe(71.4);
+    expect(Number(space.map_y)).toBe(33.8);
+  });
+
+  /**
    * We verified a particular lease for a particular address. Changing either
    * means what was checked is not what is listed, so it comes off search until
    * somebody has looked again — and the document state goes back with it,

@@ -57,16 +57,21 @@ export default function About() {
       >
         <div className="mx-auto" style={{ maxWidth: 720 }}>
           {/*
-            The name, as text, at the top. Google's reviewer compares the app
-            name on the consent screen with the one on this page, and a name
-            that exists only inside a logo is a name they cannot read.
+            The name is the heading, not a label above one.
+
+            It was set as a small tracking-wide caption with the tagline in the
+            h1, which reads well and failed the one test this page has to pass:
+            Google's reviewer compares the app name on the consent screen with
+            the name on this page, and "Minimum Stress" in 12px at 60% opacity
+            under a larger, different sentence is a name they can miss. It is
+            also the only heading a screen reader announces first.
           */}
-          <p className="font-body font-semibold text-[12px] uppercase tracking-[0.25em] text-white/60">
+          <h1 className="font-display italic font-semibold text-white text-[38px] leading-tight">
             {BRAND}
-          </p>
-          <h1 className="font-display italic font-semibold text-white mt-4 text-[34px] leading-tight">
-            Private rooms by the hour.
           </h1>
+          <p className="font-body font-medium text-[18px] text-white/85 mt-3">
+            Private rooms by the hour.
+          </p>
           <p className="font-body font-normal text-[16px] text-white/75 mt-4 leading-relaxed">
             {BRAND} is a marketplace where wellness practitioners rent a room for an hour, and the
             people who own those rooms fill the hours they are not using. Movement, coaching,

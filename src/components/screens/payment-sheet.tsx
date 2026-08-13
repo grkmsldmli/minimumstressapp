@@ -8,6 +8,7 @@ import { Ambient, Headline } from "@/components/brand";
 import { PrimaryButton } from "@/components/primitives";
 import type { BookingMoneyRecord } from "@/lib/domain";
 import { cancellationCostCents, earlyCancellationRefundCents, formatCents } from "@/lib/money";
+import { LATE_CANCELLATION_HOURS } from "@/lib/reliability";
 import { STRIPE_APPEARANCE, stripeBrowser } from "@/lib/stripe/browser";
 import { sessionWhen } from "@/lib/when";
 
@@ -135,8 +136,10 @@ function SheetBody({
         >
           <div className="flex items-center gap-1.5 mb-3">
             <Check size={11} color="#557255" />
+            {/* Shortened with the listing's copy of it, which wrapped to two
+                lines here and said the same thing twice in both places. */}
             <p className="font-body font-semibold text-[12px] uppercase tracking-[0.14em] text-positive">
-              All In Price — nothing added later
+              Nothing added later
             </p>
           </div>
           <Row label="Session" value={formatCents(money.hostRateCents)} />
@@ -165,23 +168,24 @@ function SheetBody({
               being taken at booking. Copy on the one screen where somebody is
               handing over a card has to describe what the button does.
             */}
-            <p className="font-body font-normal text-[13.5px] leading-relaxed text-[#2E5578]">
-              You pay now. Cancel 24 hours or more ahead and{" "}
-              {formatCents(earlyCancellationRefundCents(money.totalCents))} comes back to this card —
-              everything except the {formatCents(cancellationCostCents(money.totalCents))} the card
-              network charges to process a payment, which it keeps whether or not you go.
-            </p>
             {/*
-              Said here rather than buried in the terms, because this is the
-              screen where the card is handed over and Stripe records the
-              mandate at this exact moment. Somebody should know their card is
-              being kept, what it can be charged for, and that nothing happens
-              without them being asked first.
+              Two paragraphs of about seventy words used to sit here, on the
+              one screen where somebody is holding a card and deciding. Both
+              facts are worth stating — and the second has to be stated, since
+              Stripe records the card-on-file mandate at this exact moment and
+              a saved card nobody was told about is the thing that rule exists
+              to prevent — but neither had to be a paragraph. Two sentences,
+              one fact each, and the figures still spelled out rather than
+              rounded to a reassuring shape.
             */}
+            <p className="font-body font-normal text-[13.5px] leading-relaxed text-[#2E5578]">
+              Cancel {LATE_CANCELLATION_HOURS} hours ahead and{" "}
+              {formatCents(earlyCancellationRefundCents(money.totalCents))} comes back. The{" "}
+              {formatCents(cancellationCostCents(money.totalCents))} card fee is kept either way.
+            </p>
             <p className="font-body font-normal text-[13.5px] leading-relaxed mt-2 text-[#2E5578]">
-              We keep this card for your next booking. It is only charged again if a studio reports
-              damage, extra cleaning, or time over the hour — and never before you have been asked
-              about it and a person has decided. The amounts are listed in the terms.
+              Your card is saved for next time. It is charged again only for damage, cleaning or
+              overtime, and only after we ask — amounts are in the terms.
             </p>
           </div>
         </div>

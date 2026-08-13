@@ -21,6 +21,7 @@ import {
   isWithinBookingHorizon,
   quote,
 } from "@/lib/money";
+import { LATE_CANCELLATION_HOURS } from "@/lib/reliability";
 import { ACCESS_TYPES, requirementsByKind, roomTypeFor } from "@/lib/taxonomy";
 import {
   type CivilDate,
@@ -479,12 +480,22 @@ export function SpaceDetail({
           className="mt-3 rounded-2xl p-4 flex items-start gap-3"
           style={{ backgroundColor: "#EDF6FE", border: "1px solid #D4E8FA" }}
         >
+          {/*
+             Four sentences sat here, directly above the button, and nobody
+             read them. Two of the four answered questions that only arise
+             after something has gone wrong — the studio cancelling, a session
+             that went badly — which is not the moment somebody is in when they
+             are about to tap Book. They are in the terms, where they belong,
+             and they reach the person by notification when the thing actually
+             happens.
+
+             What is left is the two facts that change the decision in front of
+             them: the money leaves now, and it comes back if they change their
+             mind in time.
+           */}
           <Check size={14} color="#3B9BE8" className="mt-0.5 shrink-0" />
           <p className="font-body font-normal text-[14px] leading-relaxed text-[#2E5578]">
-            You pay when you book. Cancel 24 hours or more ahead and you get it back apart from
-            the card fee. If
-            the studio ever cancels on you, you&apos;re refunded automatically whenever it happens.
-            If a session goes wrong, you can ask us to look at it for a week afterwards.
+            You pay now. Cancel {LATE_CANCELLATION_HOURS} hours ahead for a refund.
           </p>
         </div>
       </div>

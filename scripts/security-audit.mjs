@@ -103,11 +103,30 @@ record("database", "the public listing view is readable", (await rest("spaces_pu
 
 /**
  * The column list is the safety of a definer view, so each of these asks for
- * a field that must not exist rather than trusting that it is unselected.
+ * a field by name rather than trusting that it is merely unselected.
+ *
+ * The line they defend moved in 0032, and this list moved with it. It demanded
+ * that `lat`, `lng` and `address_line` be absent — right while a listing's
+ * position was withheld, and three standing failures from the day the address
+ * was published on purpose. An audit that cries wolf on three checks is one
+ * nobody reads to the end, which is how the fourth failure gets missed.
+ *
+ * What is still private is how to get *inside*: the entry instructions, and
+ * the lease a host handed over for review.
  */
-for (const column of ["lat", "lng", "address_line", "entry_instructions", "sublease_doc_path"]) {
+for (const column of ["entry_instructions", "sublease_doc_path"]) {
   const { status } = await rest(`spaces_public?select=${column}&limit=1`);
   record("database", `${column} is absent from the public listing view`, status === 400);
+}
+
+/*
+ * Asserted present, not merely allowed. Both maps read these, and a view
+ * rewritten without them takes Discover's map down without failing a request —
+ * which is exactly how it went down once already.
+ */
+for (const column of ["lat", "lng", "address_line"]) {
+  const { status } = await rest(`spaces_public?select=${column}&limit=1`);
+  record("database", `${column} is published, as 0032 intends`, status === 200);
 }
 
 for (const column of ["access_code", "stripe_payment_intent_id"]) {

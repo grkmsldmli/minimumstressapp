@@ -47,14 +47,11 @@ const DESCRIPTION =
  * Stress" tells a practitioner who has never heard of us nothing at all, and
  * it sat directly under the .com's own line, which does say what it sells.
  *
- * Shaped like the marketing site's own line — brand, what it is, where — so
- * the two appear as one company when they turn up next to each other in a
- * browser's suggestions, which is exactly where they do.
- *
- * Kept near sixty characters, because search results are cut there and a title
- * truncated mid-word reads as a broken page rather than a busy one.
+ * Brand, what it is, and what to do about it. Kept near sixty characters,
+ * because search results are cut there and a title truncated mid-word reads as
+ * a broken page rather than a busy one.
  */
-const SITE_TITLE = `${BRAND}: Private Wellness Rooms by the Hour | Bay Area`;
+const SITE_TITLE = `${BRAND}: Private Wellness Space by the Hour | Book Now`;
 
 export const metadata: Metadata = {
   // Every relative URL below is resolved against this, including the

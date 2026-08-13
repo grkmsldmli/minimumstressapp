@@ -190,7 +190,7 @@ const COMPARISON: { label: string; free: string | false; pro: string | true }[] 
      * share sheet does the sending — which is why this can be a Pro line
      * without becoming a line about collecting somebody's number.
      */
-    label: "Send to your client",
+    label: "Send to client",
     free: false,
     pro: true,
   },
@@ -207,8 +207,8 @@ const COMPARISON: { label: string; free: string | false; pro: string | true }[] 
      * is stated in full.
      */
     label: "Cancel 24h+",
-    free: "Part refund",
-    pro: "Full refund",
+    free: "Partial",
+    pro: "Full",
   },
 ];
 
@@ -287,7 +287,7 @@ export function ProScreen({
             heights and the table looking like a mistake rather than a
             comparison.
           */}
-          <div className="grid" style={{ gridTemplateColumns: "1.6fr 0.95fr 1fr" }}>
+          <div className="grid" style={{ gridTemplateColumns: "1.7fr 0.85fr 0.95fr" }}>
             <span />
             <span className="py-2.5 text-center font-body font-medium text-[13.5px] text-ink-soft">
               Free

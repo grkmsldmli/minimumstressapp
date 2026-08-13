@@ -214,7 +214,7 @@ export function SpaceDetail({
       </SpaceGallery>
 
       <div className="flex-1 overflow-y-auto px-6 pt-5 pb-36">
-        <p className="font-body font-normal text-[14.5px] leading-relaxed text-ink-muted">
+        <p className="font-body font-normal text-[15px] leading-relaxed text-ink-muted">
           {space.description}
         </p>
 
@@ -322,7 +322,7 @@ export function SpaceDetail({
 
               {space.houseRules && (
                 <p
-                  className={`font-body font-normal text-[14px] leading-relaxed text-[#7A5B33] ${requirementGroups.length > 0 ? "mt-3 pt-3" : ""}`}
+                  className={`font-body font-normal text-[15px] leading-relaxed text-[#7A5B33] ${requirementGroups.length > 0 ? "mt-3 pt-3" : ""}`}
                   style={
                     requirementGroups.length > 0 ? { borderTop: "1px solid #F5DFC4" } : undefined
                   }
@@ -373,13 +373,13 @@ export function SpaceDetail({
 
 
         {zoneNote && slots.length > 0 && (
-          <p className="font-body font-normal text-[13px] text-ink-faint mb-2">
+          <p className="font-body font-normal text-[13.5px] text-ink-faint mb-2">
             Times shown in {zoneNote}, where the room is.
           </p>
         )}
 
         {slots.length === 0 ? (
-          <p className="font-body font-normal text-[14px] text-ink-faint">
+          <p className="font-body font-normal text-[15px] text-ink-faint">
             Nothing open {isToday ? "for the rest of today" : "on this day"}.
           </p>
         ) : (
@@ -392,7 +392,7 @@ export function SpaceDetail({
                   key={startsAt.toISOString()}
                   type="button"
                   onClick={() => setSelected(startsAt)}
-                  className={`relative py-3 rounded-xl font-body text-[14.5px] press transition-colors ${active ? "slot-pop" : ""}`}
+                  className={`relative py-3 rounded-xl font-body text-[15px] press transition-colors ${active ? "slot-pop" : ""}`}
                   style={{
                     backgroundColor: active ? "#16304E" : "#FFFFFF",
                     color: active ? "#fff" : "#16304E",
@@ -427,14 +427,20 @@ export function SpaceDetail({
             className="w-full mt-3 rounded-2xl p-3.5 text-left press"
             style={{ backgroundColor: "#FFF8F1", border: "1px solid #F5DFC4" }}
           >
+            {/*
+              A hook, not the Pro page.
+              This carried the whole comparison — four benefits in one sentence
+              with two numbers in it — beside a grid of hours somebody is
+              trying to choose from. It interrupts either way, so it should
+              cost one line and lead somewhere with room to explain, which is
+              what the screen it opens now does.
+            */}
             <span className="flex items-center gap-1.5 font-body font-medium text-[15px] text-navy">
               <Zap size={12} color="#E8A23D" />
-              Pro holds more than {MAX_UPCOMING_BOOKINGS_FREE} at once
+              Booking more than {MAX_UPCOMING_BOOKINGS_FREE} at a time?
             </span>
             <span className="block font-body font-normal text-[13.5px] mt-0.5 text-ink-soft">
-              A free account holds {MAX_UPCOMING_BOOKINGS_FREE} sessions at a time. Pro lifts that,
-              reaches {PRO_BOOKING_HORIZON_DAYS} days ahead, books a whole term in one go, and
-              cancels early for nothing.
+              Pro lifts the limit and reaches {PRO_BOOKING_HORIZON_DAYS} days ahead.
             </span>
           </button>
         )}
@@ -456,8 +462,13 @@ export function SpaceDetail({
         >
           <div className="flex items-center gap-1.5">
             <Check size={11} color="#557255" />
+            {/*
+              "All In Price — nothing added later" said the same thing twice,
+              in a label that is read in a glance. The promise is the half
+              worth keeping; the number underneath is already visibly a price.
+            */}
             <p className="font-body font-semibold text-[12px] uppercase tracking-[0.14em] text-positive">
-              All In Price — nothing added later
+              Nothing added later
             </p>
           </div>
 
@@ -518,7 +529,7 @@ export function SpaceDetail({
              mind in time.
            */}
           <Check size={14} color="#3B9BE8" className="mt-0.5 shrink-0" />
-          <p className="font-body font-normal text-[14px] leading-relaxed text-[#2E5578]">
+          <p className="font-body font-normal text-[15px] leading-relaxed text-[#2E5578]">
             You pay now. Cancel {LATE_CANCELLATION_HOURS} hours ahead for a refund.
           </p>
         </div>
@@ -536,7 +547,7 @@ export function SpaceDetail({
           messages is written for the person reading it.
         */}
         {error && (
-          <p className="font-body font-normal text-[14px] leading-relaxed mb-2.5 text-coral-deep">
+          <p className="font-body font-normal text-[15px] leading-relaxed mb-2.5 text-coral-deep">
             {error}
           </p>
         )}
@@ -551,11 +562,11 @@ export function SpaceDetail({
             className="rounded-xl p-3 mb-2.5"
             style={{ backgroundColor: "#EDF6FE", border: "1px solid #D4E8FA" }}
           >
-            <p className="font-body font-medium text-[14px] text-[#2E5578]">{notice}</p>
+            <p className="font-body font-medium text-[15px] text-[#2E5578]">{notice}</p>
             {skipped.map((week) => (
               <p
                 key={week.startsAt}
-                className="font-body font-normal text-[13px] mt-1 text-[#2E5578]"
+                className="font-body font-normal text-[13.5px] mt-1 text-[#2E5578]"
               >
                 {sessionDayLong(new Date(week.startsAt), space.timeZone)} — {week.because}
               </p>
@@ -581,13 +592,13 @@ export function SpaceDetail({
               border: `1px solid ${weeks > 1 ? "#3B9BE8" : "#DCE7F2"}`,
             }}
           >
-            <span className="flex items-center gap-2 font-body text-[14px] text-navy">
+            <span className="flex items-center gap-2 font-body text-[15px] text-navy">
               <Repeat size={13} color={weeks > 1 ? "#3B9BE8" : "#8CA3BD"} />
               {weeks > 1
                 ? `Every ${sessionWeekday(selected, space.timeZone)} for ${weeks} weeks`
                 : `Repeat weekly${isPro ? "" : " — Pro"}`}
             </span>
-            <span className="font-body font-medium text-[14px] text-navy">
+            <span className="font-body font-medium text-[15px] text-navy">
               {weeks > 1 ? formatCents(priced.totalCents * weeks) : ""}
             </span>
           </button>

@@ -230,6 +230,62 @@ describe("cancellation", () => {
     expect(outcome.chargedCents).toBe(cancellationCostCents(bookingWithoutCredit.totalCents));
   });
 
+  /**
+   * The one Pro benefit that costs us anything, and it had no test at all.
+   *
+   * `resolveCancellation` was never called with `isPro` true anywhere in this
+   * suite, so the branch that absorbs the card fee could have been deleted,
+   * inverted, or quietly stopped being reached, and everything would still
+   * have passed. It is also the failure nobody would report: a Pro account
+   * cancelling early and losing $1.87 does not look like a bug from outside,
+   * it looks like the fee everybody pays.
+   */
+  it("absorbs the card fee when a Pro account cancels early", () => {
+    const now = new Date(sessionStart.getTime() - FREE_CANCEL_WINDOW_MS);
+    const outcome = resolveCancellation(
+      bookingWithoutCredit,
+      "practitioner",
+      sessionStart,
+      now,
+      true,
+    );
+
+    expect(outcome.action).toBe("void");
+    expect(outcome.chargedCents).toBe(0);
+  });
+
+  /** The difference Pro buys here, stated as the comparison it is sold as. */
+  it("charges a free account the fee it spares a Pro one", () => {
+    const now = new Date(sessionStart.getTime() - FREE_CANCEL_WINDOW_MS);
+    const free = resolveCancellation(bookingWithoutCredit, "practitioner", sessionStart, now, false);
+    const pro = resolveCancellation(bookingWithoutCredit, "practitioner", sessionStart, now, true);
+
+    expect(free.chargedCents).toBeGreaterThan(0);
+    expect(pro.chargedCents).toBe(0);
+  });
+
+  /**
+   * Pro buys room on the calendar, not a way out of a late cancellation.
+   *
+   * Inside the window a studio held an hour nobody else could take, and that
+   * money is theirs whoever is cancelling. A Pro badge that waived it would be
+   * the platform paying a host out of its own margin because somebody
+   * subscribed.
+   */
+  it("does not spare a Pro account a late cancellation", () => {
+    const now = new Date(sessionStart.getTime() - 60_000);
+    const outcome = resolveCancellation(
+      bookingWithoutCredit,
+      "practitioner",
+      sessionStart,
+      now,
+      true,
+    );
+
+    expect(outcome.action).toBe("capture_full");
+    expect(outcome.chargedCents).toBe(bookingWithoutCredit.totalCents);
+  });
+
   /** Priced at cost. A cancellation must not be a thing we profit from. */
   it("keeps only what processing actually cost", () => {
     const total = bookingWithoutCredit.totalCents;

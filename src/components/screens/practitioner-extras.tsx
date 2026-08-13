@@ -185,6 +185,17 @@ const COMPARISON: { label: string; free: string | false; pro: string | true }[] 
   },
   {
     /*
+     * Sending the room, the hour and the street to whoever is coming with
+     * them. The app never learns anything about that person — the phone's own
+     * share sheet does the sending — which is why this can be a Pro line
+     * without becoming a line about collecting somebody's number.
+     */
+    label: "Send to your client",
+    free: false,
+    pro: true,
+  },
+  {
+    /*
      * The one benefit that costs us anything, and it is bounded — see
      * resolveCancellation.
      *

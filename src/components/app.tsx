@@ -1161,6 +1161,14 @@ export function App() {
         <MyBookings
           bookings={bookings}
           accessFor={(spaceId) => access[spaceId] ?? null}
+          // The street off the public catalogue rather than off `access`.
+          // `access` arrives a day before the session and carries the door code
+          // with it; the address has been public since 0032, and somebody
+          // telling a client where to be next Tuesday should not wait until
+          // Monday to do it.
+          addressFor={(spaceId) => spaces.find((s) => s.id === spaceId)?.addressLine ?? null}
+          isPro={profile.isPro}
+          onGoPro={() => go("pro")}
           standing={practitionerStanding}
           onBack={back}
           onCancel={(id) => void mutate(() => repo.cancelBooking(id, "practitioner"))}

@@ -10,6 +10,7 @@ import {
   ChevronRight,
   KeyRound,
   MessageCircle,
+  Share2,
 } from "lucide-react";
 
 import { Ambient, BreathingLogo, Headline, categoryGradient } from "@/components/brand";
@@ -18,6 +19,7 @@ import { ConfettiBurst } from "@/components/primitives";
 import { SpaceDirections } from "@/components/space-directions";
 import { CancellationConsequence } from "@/components/standing-notice";
 import type { Booking, SpaceAccessDetails } from "@/lib/domain";
+import { shareTextFor } from "@/lib/share-session";
 import {
   PRO_PRICE_CENTS,
   cancellationCostCents,
@@ -141,6 +143,83 @@ export function Confirmed({
 }
 
 /**
+ * Sending the details to whoever is coming with them.
+ *
+ * A booking has a third person the app has never known about: the client who
+ * has to find the building. The practitioner was reading the address off this
+ * screen and retyping it into a message.
+ *
+ * The phone's own share sheet does the sending, so SMS, WhatsApp and mail all
+ * work without us implementing any of them — and, more to the point, without
+ * us asking for the client's number. We store nothing about them, they never
+ * agreed to our terms, and the practitioner keeps their own client
+ * relationship, which is theirs rather than ours to hold.
+ *
+ * The door code is not in the message and cannot be: shareTextFor has no
+ * parameter for one. See share-session.ts.
+ */
+function ShareWithClient({
+  booking,
+  addressLine,
+  isPro,
+  onGoPro,
+}: {
+  booking: Booking;
+  addressLine: string | null;
+  isPro: boolean;
+  onGoPro: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  const send = async () => {
+    if (!isPro) {
+      onGoPro();
+      return;
+    }
+
+    const { title, body } = shareTextFor({
+      spaceName: booking.spaceName,
+      startsAt: booking.startsAt,
+      timeZone: booking.timeZone,
+      addressLine,
+    });
+
+    /*
+     * The share sheet where there is one, the clipboard where there is not.
+     *
+     * Desktop browsers and a few mobile ones have no navigator.share, and a
+     * button that silently does nothing is worse than no button. Copying is
+     * the same job with one more step, and saying so is what makes it obvious
+     * the tap worked.
+     */
+    try {
+      if (typeof navigator !== "undefined" && navigator.share) {
+        await navigator.share({ title, text: body });
+        return;
+      }
+      await navigator.clipboard.writeText(body);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Cancelling the share sheet rejects. That is somebody changing their
+      // mind, not a failure, and it needs no message.
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={() => void send()}
+      className="w-full mt-2 py-2.5 rounded-xl font-body font-medium text-[15px] press flex items-center justify-center gap-1.5"
+      style={{ border: "1px solid #DCE7F2", color: "#16304E" }}
+    >
+      <Share2 size={13} />
+      {copied ? "Copied" : isPro ? "Share with your client" : "Share with your client — Pro"}
+    </button>
+  );
+}
+
+/**
  * The access code and address, or an honest explanation of when they arrive.
  *
  * The code exists from the moment of booking but the server withholds it until
@@ -255,6 +334,9 @@ function refundable(booking: Booking, now: Date): boolean {
 export function MyBookings({
   bookings,
   accessFor,
+  addressFor,
+  isPro,
+  onGoPro,
   standing,
   onBack,
   onCancel,
@@ -264,6 +346,10 @@ export function MyBookings({
 }: {
   bookings: Booking[];
   accessFor: (spaceId: string) => SpaceAccessDetails | null;
+  /** The public street, which exists from the moment a room is listed. */
+  addressFor: (spaceId: string) => string | null;
+  isPro: boolean;
+  onGoPro: () => void;
   standing: Standing;
   onBack: () => void;
   onCancel: (id: string) => void;
@@ -321,6 +407,9 @@ export function MyBookings({
               key={booking.id}
               booking={booking}
               access={accessFor(booking.spaceId)}
+              addressLine={addressFor(booking.spaceId)}
+              isPro={isPro}
+              onGoPro={onGoPro}
               now={now}
               standing={standing}
               open={openId === booking.id}
@@ -415,6 +504,9 @@ function UpcomingBooking({
   onToggle,
   onCancel,
   onMessage,
+  addressLine,
+  isPro,
+  onGoPro,
 }: {
   booking: Booking;
   access: SpaceAccessDetails | null;
@@ -424,6 +516,17 @@ function UpcomingBooking({
   onToggle: () => void;
   onCancel: () => void;
   onMessage?: () => void;
+  /**
+   * From the public listing, not from `access`.
+   *
+   * `access` arrives a day before the session and carries the door code with
+   * it. The street is public from the moment a room is listed, and somebody
+   * telling a client where to be next Tuesday should not have to wait until
+   * Monday to do it.
+   */
+  addressLine: string | null;
+  isPro: boolean;
+  onGoPro: () => void;
 }) {
   const [from, to] = categoryGradient(booking.category);
   // Derived from the real start time, so the warning changes as the session
@@ -541,6 +644,13 @@ function UpcomingBooking({
                 <MessageCircle size={13} /> Message the studio
               </button>
             )}
+
+            <ShareWithClient
+              booking={booking}
+              addressLine={addressLine}
+              isPro={isPro}
+              onGoPro={onGoPro}
+            />
           </div>
 
           <div

@@ -5,7 +5,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { abandonedBefore } from "./abandoned";
 import { explainRejection, planBooking } from "./booking-plan";
 import { resolveCancellation, type BookingMoney } from "./money";
-import { notifyBookingCreated, notifyCancellation } from "./notify/for-booking";
+import { notifyCancellation } from "./notify/for-booking";
 import { SESSION_MINUTES } from "./session";
 import { customerFor } from "./stripe/subscription";
 
@@ -338,11 +338,20 @@ export async function createBooking(
       })
       .eq("id", booking.id);
 
-    // After the money, and deliberately not awaited into the failure path: the
-    // booking is real whether or not an email goes out, so a provider outage
-    // must not roll back a payment. notifyBookingCreated swallows its own
-    // errors for the same reason.
-    await notifyBookingCreated(admin, booking.id);
+    /*
+     * Nobody is told yet, and the comment that used to sit here was wrong.
+     *
+     * It read "after the money". This point is a PaymentIntent created and a
+     * card form about to be rendered — the practitioner has not entered a card
+     * and may never do so. The host was emailed "New booking" from this line,
+     * and thirty minutes later the reaper in abandoned.ts quietly took the hour
+     * back, because nothing notifies on that path. A studio that moved its
+     * afternoon around the email had no way to learn the session was gone.
+     *
+     * The telling moved to `payment_intent.succeeded`, which is the moment the
+     * money reaches us. Capture is automatic, so that webhook arrives seconds
+     * after the card is confirmed rather than after the session.
+     */
 
     return { bookingId: booking.id, money, clientSecret: charged.clientSecret };
   } catch (error) {

@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import type Stripe from "stripe";
 
-import { recipientFor } from "@/lib/notify/for-booking";
+import { notifyBookingCreated, recipientFor } from "@/lib/notify/for-booking";
 import { notify } from "@/lib/notify/send";
 import { stripe } from "@/lib/stripe/client";
 import { grantsPro } from "@/lib/stripe/subscription";
@@ -125,12 +125,28 @@ async function handle(event: Stripe.Event): Promise<void> {
      */
     case "payment_intent.succeeded": {
       const intent = event.data.object;
-      await admin
+      const { data: paid } = await admin
         .from("bookings")
         .update({ captured_at: new Date().toISOString() })
         .eq("stripe_payment_intent_id", intent.id)
         // Guarded so a replayed event cannot overwrite a time already recorded.
-        .is("captured_at", null);
+        .is("captured_at", null)
+        .select("id");
+
+      /*
+       * And this is where the host finds out.
+       *
+       * It used to be `createBooking`, which runs before the card form is even
+       * shown — so a studio was emailed "New booking" for a checkout somebody
+       * then closed, and thirty minutes later the reaper took the hour back
+       * without telling anyone. Here the money has arrived.
+       *
+       * Safe on a replay twice over: the guard above means a second delivery
+       * selects no rows, and notify() claims a unique dedupe key per kind and
+       * subject in any case.
+       */
+      const bookingId = paid?.[0]?.id;
+      if (bookingId) await notifyBookingCreated(admin, bookingId);
       return;
     }
 

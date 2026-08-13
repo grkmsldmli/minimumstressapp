@@ -179,7 +179,7 @@ const COMPARISON: { label: string; free: string | false; pro: string | true }[] 
     pro: `${PRO_BOOKING_HORIZON_DAYS} days`,
   },
   {
-    label: "Book a weekly series",
+    label: "Weekly series",
     free: false,
     pro: true,
   },
@@ -264,7 +264,13 @@ export function ProScreen({
 
       <div className="flex-1 overflow-y-auto px-6 pt-6 pb-6">
         <div className="rounded-2xl overflow-hidden" style={{ border: "1px solid #E7EEF6" }}>
-          <div className="grid" style={{ gridTemplateColumns: "1.35fr 1fr 1fr" }}>
+          {/*
+            The label column is wide enough for its longest label on one line.
+            At 1.35fr three of the four wrapped, which left the rows different
+            heights and the table looking like a mistake rather than a
+            comparison.
+          */}
+          <div className="grid" style={{ gridTemplateColumns: "1.6fr 0.95fr 1fr" }}>
             <span />
             <span className="py-2.5 text-center font-body font-medium text-[13.5px] text-ink-soft">
               Free
@@ -279,7 +285,7 @@ export function ProScreen({
             {COMPARISON.map(({ label, free, pro }, i) => (
               <Fragment key={label}>
                 <span
-                  className="px-3.5 py-3 font-body font-medium text-[14px] text-navy"
+                  className="px-3 py-3 font-body font-medium text-[14px] text-navy"
                   style={{ borderTop: "1px solid #E7EEF6" }}
                 >
                   {label}
@@ -306,6 +312,17 @@ export function ProScreen({
             ))}
           </div>
         </div>
+
+        {/*
+          One line to close the table, where there was a screen of white.
+          It is the rule the plan is actually built on — see the comment in
+          quote(), where waiving a fee was tried and taken back out — so it
+          also says what Pro will never be, which is cheaper hours.
+        */}
+        <p className="font-body font-normal text-[14px] leading-relaxed mt-5 text-center text-ink-soft">
+          Pro buys room on the calendar: more sessions at once, further ahead, and a whole term
+          in one go.
+        </p>
       </div>
 
       <div className="px-6 pb-7 shrink-0">
@@ -318,7 +335,7 @@ export function ProScreen({
           Start Pro — {formatCents(PRO_PRICE_CENTS)}/mo
         </PrimaryButton>
         <p className="text-center font-body font-normal text-[13.5px] mt-2.5 text-ink-faint">
-          Cancel anytime. For practitioners only — hosting stays commission-based.
+          Cancel anytime.
         </p>
       </div>
     </div>

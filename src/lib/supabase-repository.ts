@@ -500,9 +500,21 @@ export class SupabaseRepository implements Repository {
      * held, listed as one they gave up. Same line as everywhere else: money
      * arrived, or it never happened.
      */
-    const real = data.filter(
-      (row) => row.captured_at !== null || row.status === "upcoming",
-    );
+    /*
+     * The `|| status === "upcoming"` that used to be on this line let the
+     * whole rule through anyway.
+     *
+     * An abandoned checkout is `upcoming` with no `captured_at` for the thirty
+     * minutes before the reaper reaches it. So a closed card form showed up
+     * here as a session, and under Book again as "Last used" — a room somebody
+     * had never paid for and never stood in, offered back to them as a habit.
+     *
+     * The cost of running the rule properly is a second or two: a booking paid
+     * for right now stays invisible until `payment_intent.succeeded` lands.
+     * That is the right direction to be wrong in — briefly missing something
+     * real beats indefinitely showing something that never was.
+     */
+    const real = data.filter((row) => row.captured_at !== null);
     if (!real.length) return [];
 
     // The view carries no space name, and a practitioner cannot read `spaces`

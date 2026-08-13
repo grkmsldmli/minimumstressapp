@@ -106,18 +106,21 @@ beforeAll(async () => {
        'Lockbox under the bench', '9 Hidden Way', 'pending',
        'space/y/lease.pdf', now(), 'pending', null);
 
-    -- One booking for PRACTITIONER, already past its reveal time.
+    -- One paid booking for PRACTITIONER, already past its reveal time.
+    -- captured_at is what makes it a booking rather than a held hour, which
+    -- is the distinction 0038 draws for the host's side.
     insert into bookings (
       space_id, practitioner_id, starts_at, ends_at, is_instant, was_pro,
       host_rate_cents, service_fee_cents, instant_fee_cents, pro_discount_cents,
       credit_applied_cents, total_cents, platform_cents,
-      access_code, access_code_revealed_at
+      access_code, access_code_revealed_at, captured_at
     ) values (
       '${SPACE}', '${PRACTITIONER}',
       now() + interval '20 minutes', now() + interval '80 minutes',
       true, false, 4500, 900, 500, 0, 0, 5900, 1400,
-      '4821', now() - interval '10 minutes'
+      '4821', now() - interval '10 minutes', now() - interval '1 hour'
     );
+
 
     insert into credit_ledger (practitioner_id, delta_cents, reason) values
       ('${PRACTITIONER}', 900, 'host_cancellation'),
@@ -356,6 +359,51 @@ describe("profiles keep their payment identifiers to themselves", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].practitioner_name).toBe("Elena R.");
     expect(rows[0].net_cents).toBe(4500);
+  });
+
+  /**
+   * A checkout nobody paid for, which is what 0038 is about.
+   *
+   * Closing the card form put a session on a studio's calendar for the thirty
+   * minutes before the reaper reached it, and the host had no way to learn it
+   * had gone again. The hour genuinely is held underneath — the availability
+   * check excludes anything upcoming, so nobody quicker can take it from the
+   * person still at the card form — but a held hour is not a booking.
+   *
+   * Written and removed inside the test rather than added to the fixture: the
+   * counts in the suite above are assertions of their own, and a second row
+   * appearing in them would be this test breaking those instead of proving
+   * itself.
+   */
+  it("keeps a checkout nobody paid for off the host's calendar", async () => {
+    await db.exec(`
+      insert into bookings (
+        id, space_id, practitioner_id, starts_at, ends_at, is_instant, was_pro,
+        host_rate_cents, service_fee_cents, instant_fee_cents, pro_discount_cents,
+        credit_applied_cents, total_cents, platform_cents, access_code
+      ) values (
+        '99999999-9999-4999-8999-999999999999',
+        '${SPACE}', '${PRACTITIONER}',
+        now() + interval '3 days', now() + interval '3 days 1 hour',
+        false, false, 4500, 900, 0, 0, 0, 5400, 900, '9999'
+      );
+    `);
+
+    try {
+      const rows = await asUser<{ booking_id: string }>(
+        HOST,
+        `select booking_id from host_bookings()`,
+      );
+
+      expect(rows.map((r) => r.booking_id)).not.toContain(
+        "99999999-9999-4999-8999-999999999999",
+      );
+      expect(rows).toHaveLength(1);
+    } finally {
+      await db.exec(
+        `delete from bookings where id = '99999999-9999-4999-8999-999999999999'`,
+      );
+    }
   });
 
   it("shows a host nothing for spaces they do not own", async () => {

@@ -167,8 +167,19 @@ export function SpaceDetail({
     isPro,
   });
 
+  /*
+   * The tile wants a word, not a sentence.
+   *
+   * ACCESS_TYPES carries "Someone lets you in", which is the right phrasing
+   * where a host is choosing how their door works — it says what will happen
+   * to you. Inside a 104px tile under the heading ENTRY it stacks a word per
+   * line and drags every other tile down to match, and the heading has
+   * already supplied the noun.
+   */
   const accessLabel =
-    ACCESS_TYPES.find((a) => a.key === space.accessType)?.label ?? "Keypad code";
+    space.accessType === "greeter"
+      ? "Greeter"
+      : (ACCESS_TYPES.find((a) => a.key === space.accessType)?.label ?? "Keypad code");
   const requirementGroups = requirementsByKind(space.requirements);
 
   return (
@@ -207,7 +218,20 @@ export function SpaceDetail({
           {space.description}
         </p>
 
-        <div className="grid grid-cols-3 gap-2.5 mt-5">
+        {/*
+          One row that slides, rather than a grid that grows.
+
+          Three to a row meant a fourth fact started a second row and pushed
+          the hours further down the page — and the number of facts is not
+          fixed, since floor area is optional and more may follow. A grid
+          answers that by taking more of the screen every time; a row answers
+          it by staying one row.
+
+          `pr-6 -mx-6 px-6` lets the strip run to the edges of a padded page,
+          so the last tile is cut off rather than tidily inset. That clipping
+          is the only thing telling a thumb there is more to the right.
+        */}
+        <div className="no-scrollbar flex gap-2.5 mt-5 overflow-x-auto -mx-6 px-6">
           <Fact icon={Users} label="Fits" value={`${space.capacity} ppl`} />
           {space.floorAreaSqft !== null && (
             <Fact icon={Ruler} label="Floor" value={`${space.floorAreaSqft} sq ft`} />
@@ -636,11 +660,18 @@ function Fact({
 }) {
   return (
     <div
-      className="rounded-2xl p-3 text-center"
+      /*
+       * Fixed width and no shrinking, because these now sit in a row that
+       * slides rather than a grid that wraps. Left to itself, flex would
+       * squeeze four tiles into the width of three and "Someone lets you in"
+       * would stack a word per line, making every tile as tall as the worst
+       * one.
+       */
+      className="rounded-2xl p-3 text-center shrink-0 w-[104px]"
       style={{ backgroundColor: "#F4F8FC", border: "1px solid #E7EEF6" }}
     >
       <Icon size={14} color="#3B9BE8" className="mx-auto" />
-      <p className="font-body font-medium text-[15px] mt-1.5 text-navy">{value}</p>
+      <p className="font-body font-medium text-[15px] mt-1.5 leading-snug text-navy">{value}</p>
       <p className="font-body text-[12px] uppercase tracking-wide mt-0.5 text-ink-faint">
         {label}
       </p>

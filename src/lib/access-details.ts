@@ -34,14 +34,26 @@ export interface AccessDetails {
  * A name rather than a component, so this file stays free of the icon library
  * and can go on being tested as arithmetic over strings. The screen maps them.
  *
- * Every row carried the same tick or the same warning triangle, which told
- * somebody whether we approved of the answer and nothing about what the answer
- * meant. "Step-free from the street" is a phrase you either already know or
- * puzzle over — and the people most likely to be reading it carefully are the
- * ones a wrong guess strands on a pavement. The wheelchair symbol says it in
- * the one language this subject already has.
+ * Each one draws the thing described, not the person it might matter to. An
+ * earlier pass put the wheelchair symbol on every answer that cleared a path —
+ * three of them down a Pilates listing — which turned "how do you get in" into
+ * a page about disability facilities. That is a narrower question than the one
+ * this panel answers: whether there is a step, which floor, where the restroom
+ * is. Everyone booking wants those, and a symbol aimed at one reader tells the
+ * rest that the section is not for them.
+ *
+ * It survives in exactly one place, where the answer itself is the claim: an
+ * accessible restroom is not a restroom with a picture on the door, it is the
+ * word the host chose over "standard".
  */
-export type AccessIcon = "wheelchair" | "stairs" | "lift" | "width" | "restroom" | "none";
+export type AccessIcon =
+  | "door"
+  | "stairs"
+  | "lift"
+  | "width"
+  | "restroom"
+  | "accessible_restroom"
+  | "none";
 
 export interface AccessFact {
   /** What the host was asked. */
@@ -61,19 +73,19 @@ export interface AccessFact {
 type Answer = { answer: string; blocks: boolean; icon: AccessIcon };
 
 const ENTRANCE: Record<EntranceAccess, Answer> = {
-  step_free: { answer: "Step-free from the street", blocks: false, icon: "wheelchair" },
+  step_free: { answer: "Step-free from the street", blocks: false, icon: "door" },
   one_step: { answer: "One step at the entrance", blocks: true, icon: "stairs" },
   steps: { answer: "Steps at the entrance", blocks: true, icon: "stairs" },
 };
 
 const FLOOR: Record<FloorAccess, Answer> = {
-  ground_floor: { answer: "On the ground floor", blocks: false, icon: "wheelchair" },
+  ground_floor: { answer: "On the ground floor", blocks: false, icon: "door" },
   lift: { answer: "Lift to the floor", blocks: false, icon: "lift" },
   stairs_only: { answer: "Stairs only", blocks: true, icon: "stairs" },
 };
 
 const RESTROOM: Record<RestroomAccess, Answer> = {
-  accessible: { answer: "Accessible restroom", blocks: false, icon: "wheelchair" },
+  accessible: { answer: "Accessible restroom", blocks: false, icon: "accessible_restroom" },
   standard: { answer: "Standard restroom", blocks: false, icon: "restroom" },
   none: { answer: "No restroom on site", blocks: true, icon: "none" },
 };

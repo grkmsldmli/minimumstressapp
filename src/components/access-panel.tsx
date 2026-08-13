@@ -5,6 +5,7 @@ import {
   ArrowUpDown,
   Ban,
   Bath,
+  DoorOpen,
   Footprints,
   MoveHorizontal,
 } from "lucide-react";
@@ -21,21 +22,22 @@ import {
  *
  * Every row used to carry the same tick or the same warning triangle, which
  * said whether we approved of the answer and nothing about what it meant.
- * "Step-free from the street" is a phrase somebody either knows already or
- * puzzles over, and the people reading it most carefully are the ones a wrong
- * guess strands outside the building.
  *
- * The wheelchair symbol repeats deliberately across the answers that clear a
- * path — entrance, floor, restroom. Three of it down the panel is the point:
- * it reads at a glance as a room somebody can get through, which is the
- * question being asked.
+ * Each icon draws the thing described rather than the person it might matter
+ * to. A first pass used the wheelchair symbol on every answer that cleared a
+ * path, and three of them down a Pilates listing turned "how do you get in"
+ * into a page about disability facilities — a narrower question than the one
+ * being answered, and one that tells every other reader the section is not for
+ * them. It stays on the accessible restroom alone, where the word is the
+ * host's own answer rather than our framing of it.
  */
 const ICONS: Record<AccessIcon, typeof Accessibility> = {
-  wheelchair: Accessibility,
+  door: DoorOpen,
   stairs: Footprints,
   lift: ArrowUpDown,
   width: MoveHorizontal,
   restroom: Bath,
+  accessible_restroom: Accessibility,
   none: Ban,
 };
 

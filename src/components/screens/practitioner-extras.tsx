@@ -186,11 +186,17 @@ const COMPARISON: { label: string; free: string | false; pro: string | true }[] 
   {
     /*
      * The one benefit that costs us anything, and it is bounded — see
-     * resolveCancellation. Worth naming plainly rather than burying: it is
-     * also the one somebody is most relieved to find they have.
+     * resolveCancellation.
+     *
+     * "Cancel 24h ahead" against "Minus card fee" wrapped both cells on a
+     * phone, which left this row taller than the other three and the table
+     * looking broken. Part against Full is the same fact in words that fit,
+     * and reads as a pair. What "part" leaves out — that the shortfall is the
+     * card network's processing fee, not ours — belongs in the terms, where it
+     * is stated in full.
      */
-    label: "Cancel 24h ahead",
-    free: "Minus card fee",
+    label: "Cancel 24h+",
+    free: "Part refund",
     pro: "Full refund",
   },
 ];

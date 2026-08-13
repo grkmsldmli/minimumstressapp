@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Crosshair } from "lucide-react";
 
 import { CatIcon } from "@/components/brand";
+import { TILE_ATTRIBUTION, tileUrl } from "@/lib/map-tiles";
 import type { CategoryKey } from "@/lib/taxonomy";
 import {
   ADDRESS_ZOOM,
@@ -37,8 +38,6 @@ import {
  * for us is the projection in geo.ts, which is a dozen tested lines, plus the
  * gesture handling below.
  */
-
-const TILE_HOST = "https://tile.openstreetmap.org";
 
 /** Wide enough to hold a few neighbourhoods, which is the scale this opens at. */
 const BROWSE_ZOOM = ADDRESS_ZOOM - 3;
@@ -332,7 +331,7 @@ export function BrowseMap({
           // eslint-disable-next-line @next/next/no-img-element
           <img
             key={tile.key}
-            src={`${TILE_HOST}/${layout.zoom}/${tile.x}/${tile.y}.png`}
+            src={tileUrl(layout.zoom, tile.x, tile.y)}
             alt=""
             aria-hidden="true"
             className="absolute select-none"
@@ -447,7 +446,7 @@ export function BrowseMap({
         className="absolute right-1 bottom-1 px-1.5 py-0.5 font-body text-[12px] text-ink-faint"
         style={{ backgroundColor: "rgba(255,255,255,0.75)" }}
       >
-        © OpenStreetMap
+        {TILE_ATTRIBUTION}
       </span>
     </div>
   );

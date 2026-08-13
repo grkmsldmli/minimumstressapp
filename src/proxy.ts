@@ -1,5 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
+import { TILE_ORIGIN } from "@/lib/map-tiles";
+
 /**
  * The content security policy, built per request so it can carry a nonce.
  *
@@ -23,7 +25,12 @@ import { NextResponse, type NextRequest } from "next/server";
 const SUPABASE_ORIGIN = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 const SUPABASE_SOCKET = SUPABASE_ORIGIN.replace(/^https:/, "wss:");
 const STRIPE = "https://js.stripe.com https://api.stripe.com https://hooks.stripe.com";
-const TILES = "https://tile.openstreetmap.org";
+/*
+ * Read from the same module the maps read, rather than written down twice. A
+ * policy naming one tile host while the pictures come from another blocks
+ * every tile on both maps at once, and a blocked image fails silently.
+ */
+const TILES = TILE_ORIGIN;
 
 /**
  * The one thing development needs and production must never have.

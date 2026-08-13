@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ADDRESS_ZOOM, type LatLng, pixelToPoint, pointToPixel, tileGrid } from "@/lib/geo";
+import { TILE_ATTRIBUTION, tileUrl } from "@/lib/map-tiles";
 
 /**
  * A real map of one point, for the host confirming their own address.
@@ -18,8 +19,6 @@ import { ADDRESS_ZOOM, type LatLng, pixelToPoint, pointToPixel, tileGrid } from 
  * view; the projection it would do for us is a dozen lines in `geo.ts` and is
  * tested there.
  */
-
-const TILE_HOST = "https://tile.openstreetmap.org";
 
 export function LocationMap({
   point,
@@ -131,7 +130,7 @@ export function LocationMap({
           // eslint-disable-next-line @next/next/no-img-element
           <img
             key={tile.key}
-            src={`${TILE_HOST}/${ADDRESS_ZOOM}/${tile.x}/${tile.y}.png`}
+            src={tileUrl(ADDRESS_ZOOM, tile.x, tile.y)}
             alt=""
             aria-hidden="true"
             width={256}
@@ -178,7 +177,7 @@ export function LocationMap({
           className="absolute bottom-0 right-0 px-1.5 py-0.5 font-body text-[12px] text-ink-faint"
           style={{ backgroundColor: "rgba(255,255,255,0.75)" }}
         >
-          © OpenStreetMap
+          {TILE_ATTRIBUTION}
         </span>
       </div>
 

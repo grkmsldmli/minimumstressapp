@@ -81,6 +81,19 @@ export function roomTypeFor(key: CategoryKey): string {
   return getCategory(key).roomType;
 }
 
+/**
+ * The practices a room of this kind is for.
+ *
+ * Read by search, so somebody typing "yoga" finds a Movement Studio whether or
+ * not the host happened to write the word. They are searching for their own
+ * practice, not for a host's choice of adjective — and a listing reading
+ * "bright, sprung floor, mirrors on one wall" is a yoga room without
+ * containing the term anywhere.
+ */
+export function specialtiesFor(key: CategoryKey): readonly string[] {
+  return getCategory(key).specialties;
+}
+
 /* ------------------------------------------------------------------ */
 /*  Listing vocabulary                                                 */
 /* ------------------------------------------------------------------ */

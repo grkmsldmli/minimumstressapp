@@ -33,7 +33,7 @@ import { BrowseMap } from "@/components/browse-map";
 import { TiltCard } from "@/components/primitives";
 import type { PublicSpace } from "@/lib/domain";
 import { formatCents, quote } from "@/lib/money";
-import { CATEGORIES, type CategoryKey, roomTypeFor } from "@/lib/taxonomy";
+import { CATEGORIES, type CategoryKey, roomTypeFor, specialtiesFor } from "@/lib/taxonomy";
 
 type Filter = CategoryKey | "all";
 
@@ -148,19 +148,28 @@ export function Discover({
     if (!needle) return ordered;
 
     /**
-     * Searches what a listing says about itself, not where it is.
+     * Everything the listing already shows, which now includes where it is.
      *
-     * The address is deliberately absent — matching on it would turn the
-     * search box into an oracle: type a street, see whether anything comes
-     * back, and a room that is private until booked is no longer private. Name,
-     * room type, description and amenities are all things the listing already
-     * shows to everyone.
+     * The address used to be left out on purpose, and the reason was sound
+     * while it held: matching on a street turned the box into an oracle —
+     * type an address, see whether anything comes back — and a room private
+     * until booked would not have stayed private. 0032 publishes the address
+     * on the listing, so the oracle answers a question anybody can already ask
+     * by scrolling, and leaving it out only meant somebody could read "San
+     * Mateo" on a card and find nothing by typing it.
+     *
+     * The category's specialties go in too. A Movement Studio is a room for
+     * yoga and pilates whether or not the host happened to write those words,
+     * and somebody searching for their own practice is searching for the
+     * thing, not for a host's choice of adjective.
      */
     return ordered.filter((space) => {
       const haystack = [
         space.name,
         roomTypeFor(space.category),
         space.description,
+        space.addressLine ?? space.area ?? "",
+        ...specialtiesFor(space.category),
         ...space.amenities,
       ]
         .join(" ")
@@ -374,9 +383,29 @@ export function Discover({
           </SectionLabel>
 
           {visible.length === 0 ? (
-            <p className="px-6 font-body font-normal text-[14px] text-ink-faint">
-              No spaces listed yet.
-            </p>
+            /*
+              "No spaces listed yet" was shown for both of these, and they are
+              not the same sentence. One says the platform is empty; the other
+              says this particular search found nothing — and reading the first
+              when the second is true tells somebody there is nothing here and
+              sends them away.
+            */
+            <div className="px-6">
+              <p className="font-body font-normal text-[15px] text-ink-soft">
+                {query.trim()
+                  ? `Nothing matches “${query.trim()}”.`
+                  : "No spaces listed yet."}
+              </p>
+              {query.trim() && (
+                <button
+                  type="button"
+                  onClick={() => setQuery("")}
+                  className="font-body font-medium text-[15px] mt-1.5 press text-sky-text"
+                >
+                  Clear search
+                </button>
+              )}
+            </div>
           ) : (
             <div className="px-6 flex flex-col gap-2.5">
               {visible.map((space, i) => (

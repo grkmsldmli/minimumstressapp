@@ -38,6 +38,24 @@ const poppins = Poppins({
 const DESCRIPTION =
   "Private rooms by the hour for every kind of practice — movement, coaching, meditation, and healing.";
 
+/**
+ * The title, which was the brand name and nothing else.
+ *
+ * That is the right answer for a tab somebody already has open and the wrong
+ * one everywhere the title does its actual work: a search result, a browser's
+ * address suggestions, a bookmark, a link pasted into a message. "Minimum
+ * Stress" tells a practitioner who has never heard of us nothing at all, and
+ * it sat directly under the .com's own line, which does say what it sells.
+ *
+ * Shaped like the marketing site's own line — brand, what it is, where — so
+ * the two appear as one company when they turn up next to each other in a
+ * browser's suggestions, which is exactly where they do.
+ *
+ * Kept near sixty characters, because search results are cut there and a title
+ * truncated mid-word reads as a broken page rather than a busy one.
+ */
+const SITE_TITLE = `${BRAND}: Private Wellness Rooms by the Hour | Bay Area`;
+
 export const metadata: Metadata = {
   // Every relative URL below is resolved against this, including the
   // generated Open Graph image. Without it they resolve against localhost in
@@ -48,8 +66,9 @@ export const metadata: Metadata = {
   // load, and a broken preview is worse than a plain link.
   metadataBase: new URL(siteUrl()),
   title: {
-    default: BRAND,
-    // A room's own page can name itself and still be recognisably ours.
+    default: SITE_TITLE,
+    // A room's own page can name itself and still be recognisably ours. The
+    // brand alone is right here: the page has already said what it is.
     template: `%s · ${BRAND}`,
   },
   description: DESCRIPTION,
@@ -58,12 +77,12 @@ export const metadata: Metadata = {
   openGraph: {
     type: "website",
     siteName: BRAND,
-    title: BRAND,
+    title: SITE_TITLE,
     description: DESCRIPTION,
     url: siteUrl(),
     locale: "en_US",
   },
-  twitter: { card: "summary_large_image", title: BRAND, description: DESCRIPTION },
+  twitter: { card: "summary_large_image", title: SITE_TITLE, description: DESCRIPTION },
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,

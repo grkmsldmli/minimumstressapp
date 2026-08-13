@@ -13,6 +13,7 @@ import type {
   SpaceAccessDetails,
 } from "@/lib/domain";
 import { errorMessage } from "@/lib/error-message";
+import { delayFor, isTransient } from "@/lib/transient";
 import { type CancellationEvent, standingFor } from "@/lib/reliability";
 import type { LocationChoice } from "@/components/location-prompt";
 import { supabaseBackendEnabled } from "@/lib/repository-factory";
@@ -378,7 +379,7 @@ export function App() {
 
     let cancelled = false;
 
-    (async () => {
+    const fetchAll = async (): Promise<Snapshot> => {
       const [
         profile,
         spaces,
@@ -407,31 +408,60 @@ export function App() {
         if (details) access[spaceId] = details;
       }
 
-      if (!cancelled) {
-        setData({
-          profile,
-          spaces,
-          bookings,
-          mySpaces,
-          hostBookings,
-          access,
-          cancellations,
-          sessions,
-          notifications,
-        });
+      return {
+        profile,
+        spaces,
+        bookings,
+        mySpaces,
+        hostBookings,
+        access,
+        cancellations,
+        sessions,
+        notifications,
+      };
+    };
+
+    void (async () => {
+      for (let attempt = 0; !cancelled; attempt++) {
+        try {
+          const snapshot = await fetchAll();
+          if (cancelled) return;
+          setData(snapshot);
+          setLoadError(null);
+          return;
+        } catch (cause) {
+          if (cancelled) return;
+
+          /*
+           * Some failures are a wait rather than a problem.
+           *
+           * Signing in with Google landed on "We could not load your account —
+           * JWT issued at future", and Try again worked every time: the token
+           * is stamped by one server and checked by another a second behind
+           * it. Showing that to somebody, on the first screen after they
+           * signed in, reads as a broken account. So the app does the waiting
+           * — see transient.ts for which errors qualify and why the list is
+           * short.
+           */
+          const delay = isTransient(cause) ? delayFor(attempt) : null;
+          if (delay === null) {
+            /*
+             * A failed load used to render nothing at all.
+             *
+             * There was no catch here, so one rejected request left `data`
+             * null forever and the guard below painted a blank white screen —
+             * no message, no retry, nothing to tell anybody whether the app
+             * was slow, broken, or signed out. The person looking at it cannot
+             * tell those apart, and neither could we.
+             */
+            setLoadError(errorMessage(cause, "Something went wrong loading your account."));
+            return;
+          }
+
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        }
       }
-    })().catch((cause) => {
-      /*
-       * A failed load used to render nothing at all.
-       *
-       * There was no catch here, so one rejected request left `data` null
-       * forever and the guard below painted a blank white screen — no message,
-       * no retry, nothing to tell anybody whether the app was slow, broken, or
-       * signed out. The person looking at it cannot tell those apart, and
-       * neither could we.
-       */
-      if (!cancelled) setLoadError(errorMessage(cause, "Something went wrong loading your account."));
-    });
+    })();
 
     return () => {
       cancelled = true;

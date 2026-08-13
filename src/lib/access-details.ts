@@ -28,11 +28,27 @@ export interface AccessDetails {
   restroom: RestroomAccess | null;
 }
 
+/**
+ * Which picture belongs beside an answer.
+ *
+ * A name rather than a component, so this file stays free of the icon library
+ * and can go on being tested as arithmetic over strings. The screen maps them.
+ *
+ * Every row carried the same tick or the same warning triangle, which told
+ * somebody whether we approved of the answer and nothing about what the answer
+ * meant. "Step-free from the street" is a phrase you either already know or
+ * puzzle over — and the people most likely to be reading it carefully are the
+ * ones a wrong guess strands on a pavement. The wheelchair symbol says it in
+ * the one language this subject already has.
+ */
+export type AccessIcon = "wheelchair" | "stairs" | "lift" | "width" | "restroom" | "none";
+
 export interface AccessFact {
   /** What the host was asked. */
   question: string;
   /** Their answer, in the words a practitioner needs. */
   answer: string;
+  icon: AccessIcon;
   /**
    * Whether this particular fact is an obstacle.
    *
@@ -42,22 +58,24 @@ export interface AccessFact {
   blocks: boolean;
 }
 
-const ENTRANCE: Record<EntranceAccess, { answer: string; blocks: boolean }> = {
-  step_free: { answer: "Step-free from the street", blocks: false },
-  one_step: { answer: "One step at the entrance", blocks: true },
-  steps: { answer: "Steps at the entrance", blocks: true },
+type Answer = { answer: string; blocks: boolean; icon: AccessIcon };
+
+const ENTRANCE: Record<EntranceAccess, Answer> = {
+  step_free: { answer: "Step-free from the street", blocks: false, icon: "wheelchair" },
+  one_step: { answer: "One step at the entrance", blocks: true, icon: "stairs" },
+  steps: { answer: "Steps at the entrance", blocks: true, icon: "stairs" },
 };
 
-const FLOOR: Record<FloorAccess, { answer: string; blocks: boolean }> = {
-  ground_floor: { answer: "On the ground floor", blocks: false },
-  lift: { answer: "Lift to the floor", blocks: false },
-  stairs_only: { answer: "Stairs only", blocks: true },
+const FLOOR: Record<FloorAccess, Answer> = {
+  ground_floor: { answer: "On the ground floor", blocks: false, icon: "wheelchair" },
+  lift: { answer: "Lift to the floor", blocks: false, icon: "lift" },
+  stairs_only: { answer: "Stairs only", blocks: true, icon: "stairs" },
 };
 
-const RESTROOM: Record<RestroomAccess, { answer: string; blocks: boolean }> = {
-  accessible: { answer: "Accessible restroom", blocks: false },
-  standard: { answer: "Standard restroom", blocks: false },
-  none: { answer: "No restroom on site", blocks: true },
+const RESTROOM: Record<RestroomAccess, Answer> = {
+  accessible: { answer: "Accessible restroom", blocks: false, icon: "wheelchair" },
+  standard: { answer: "Standard restroom", blocks: false, icon: "restroom" },
+  none: { answer: "No restroom on site", blocks: true, icon: "none" },
 };
 
 /**
@@ -88,6 +106,7 @@ export function accessFacts(details: AccessDetails): AccessFact[] {
       // The number either way. "Wide enough" is a judgement about a body we
       // know nothing about; the measurement lets somebody make their own.
       answer: `${details.doorwayInches} inches`,
+      icon: "width",
       blocks: !wide,
     });
   }

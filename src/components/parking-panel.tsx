@@ -1,4 +1,4 @@
-import { AlertTriangle, Car } from "lucide-react";
+import { AlertTriangle, CircleParking } from "lucide-react";
 
 import { type Parking, parkingFacts } from "@/lib/parking";
 
@@ -21,25 +21,44 @@ export function ParkingPanel({ parking }: { parking: Parking }) {
   if (facts.length === 0) return null;
 
   return (
-    <div className="flex flex-wrap gap-2">
-      {facts.map((fact) => (
-        <span
-          key={fact.answer}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full font-body text-[13.5px]"
-          style={{
-            backgroundColor: fact.warns ? "#FFF8F1" : "#F4F8FC",
-            border: `1px solid ${fact.warns ? "#F5DFC4" : "#DCE7F2"}`,
-            color: fact.warns ? "#8B6C37" : "#2E5578",
-          }}
-        >
-          {fact.warns ? (
-            <AlertTriangle size={12} className="shrink-0" />
-          ) : (
-            <Car size={12} className="shrink-0" />
-          )}
-          {fact.answer}
-        </span>
-      ))}
+    <div>
+      {/*
+        Said out loud, because a car icon was not saying it.
+        These chips read "Free" and "2 hours maximum" with a small car beside
+        them, which could as easily have been about getting there as about
+        leaving something behind. The heading names the subject once; the P
+        carries it after that.
+      */}
+      <div className="flex items-center gap-2 mb-2">
+        <CircleParking size={16} color="#2578C2" className="shrink-0" />
+        <p className="font-body font-medium text-[13.5px] text-ink-soft">Parking</p>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        {facts.map((fact) => (
+          <span
+            key={fact.answer}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full font-body text-[13.5px]"
+            style={{
+              backgroundColor: fact.warns ? "#FFF8F1" : "#F4F8FC",
+              border: `1px solid ${fact.warns ? "#F5DFC4" : "#DCE7F2"}`,
+              color: fact.warns ? "#8B6C37" : "#2E5578",
+            }}
+          >
+            {/*
+              The warning triangle stays where it is earning its keep: a limit
+              shorter than the session is a car that has to be moved mid-hour,
+              which is the one thing here worth interrupting somebody for.
+            */}
+            {fact.warns ? (
+              <AlertTriangle size={12} className="shrink-0" />
+            ) : (
+              <CircleParking size={13} className="shrink-0" />
+            )}
+            {fact.answer}
+          </span>
+        ))}
+      </div>
     </div>
   );
 }

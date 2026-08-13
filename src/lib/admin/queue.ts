@@ -1128,7 +1128,12 @@ async function emailsFor(
  * the two people on that booking, and an operator reading it would undo the
  * masking from the inside — the thing the whole feature exists to guarantee.
  */
-function buildActivity(input: {
+/*
+ * Exported for the suite, which had nothing on this at all — the feed a person
+ * reads to decide whether the marketplace is working was assembled by an
+ * untested function.
+ */
+export function buildActivity(input: {
   rows: Record<string, unknown>[];
   spaceName: Map<string, string>;
   spaces: Record<string, unknown>[];
@@ -1142,6 +1147,22 @@ function buildActivity(input: {
   for (const booking of input.rows.slice(0, 25)) {
     const name = input.spaceName.get(booking.space_id as string) ?? "a space";
     const status = String(booking.status);
+
+    /*
+     * A held hour is not a booking, and the operator's screen is the last
+     * place that should say otherwise.
+     *
+     * An abandoned checkout sits at `upcoming` with no `captured_at` until the
+     * sweep reaches it, and it was written into this feed as "— booked".
+     * abandoned.ts named this exact reader when it listed who pays for the
+     * leftovers: "The operator's numbers lie. Booked this month counts money
+     * that was never taken."
+     *
+     * Cancellations are kept whatever their money did. A cancelled row is a
+     * thing that happened to somebody, and this feed is a history rather than
+     * a ledger.
+     */
+    if (status === "upcoming" && booking.captured_at == null) continue;
 
     entries.push(
       status.startsWith("cancelled")

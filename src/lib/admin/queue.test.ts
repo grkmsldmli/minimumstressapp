@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { LIVE_LEAD_MS, LIVE_TRAIL_MS, type PaidBooking, rollUp, sessionState } from "./queue";
+import {
+  LIVE_LEAD_MS,
+  LIVE_TRAIL_MS,
+  type PaidBooking,
+  buildActivity,
+  rollUp,
+  sessionState,
+} from "./queue";
 
 /**
  * The operator screen turns numbers back into names, and this is the part that
@@ -161,5 +168,65 @@ describe("sessionState", () => {
 
   it("keeps a completed session, which is how a past hour is recorded", () => {
     expect(at(-1.5, "completed")).toBe("just finished");
+  });
+});
+
+/**
+ * The feed a person reads to decide whether the marketplace is working.
+ *
+ * It had no test at all, and it was counting held hours as bookings. An
+ * abandoned checkout sits at `upcoming` with no `captured_at` until the sweep
+ * reaches it, and it appeared here as "— booked" — the exact failure
+ * abandoned.ts predicted when it named who pays for the leftovers: "The
+ * operator's numbers lie. Booked this month counts money that was never
+ * taken."
+ */
+describe("the activity feed", () => {
+  const spaceName = new Map([["space-1", "Reformer Hit"]]);
+
+  const feed = (rows: Record<string, unknown>[]) =>
+    buildActivity({
+      rows,
+      spaceName,
+      spaces: [],
+      profiles: [],
+      reviews: [],
+      messages: [],
+      emails: new Map(),
+    });
+
+  const booking = (over: Record<string, unknown> = {}) => ({
+    id: "b1",
+    space_id: "space-1",
+    status: "upcoming",
+    starts_at: "2026-09-01T17:00:00Z",
+    captured_at: "2026-08-20T10:00:00Z",
+    ...over,
+  });
+
+  it("reports a paid booking", () => {
+    expect(feed([booking()]).map((e) => e.text)).toEqual(["Reformer Hit — booked"]);
+  });
+
+  it("says nothing about an hour somebody held and never paid for", () => {
+    expect(feed([booking({ captured_at: null })])).toEqual([]);
+  });
+
+  /**
+   * A cancelled row is a thing that happened to somebody, and this feed is a
+   * history rather than a ledger — so it stays whatever its money did.
+   */
+  it("keeps a cancellation whether or not it was ever paid", () => {
+    const texts = feed([
+      booking({ id: "b1", status: "cancelled_by_practitioner", cancelled_at: "2026-08-21T10:00:00Z" }),
+      booking({ id: "b2", status: "cancelled_by_host", captured_at: null, cancelled_at: "2026-08-22T10:00:00Z" }),
+    ]).map((e) => e.text);
+
+    expect(texts).toContain("Reformer Hit — cancelled by the practitioner");
+    expect(texts).toContain("Reformer Hit — cancelled by the studio");
+  });
+
+  it("does not drop a completed session", () => {
+    expect(feed([booking({ status: "completed" })])).toHaveLength(1);
   });
 });

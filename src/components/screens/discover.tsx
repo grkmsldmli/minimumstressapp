@@ -645,9 +645,9 @@ function MapView({
   return (
     <div className="relative flex-1 overflow-hidden">
       {/*
-        A real map, and circles rather than pins. What was here drew painted
-        roads and placed markers at two decorative numbers from the prototype —
-        it looked like a map, so it was read as one.
+        A real map. What was here drew painted roads and placed markers at two
+        decorative numbers from the prototype — it looked like a map, so it was
+        read as one.
       */}
       <BrowseMap
         pins={spaces
@@ -656,6 +656,7 @@ function MapView({
             id: space.id,
             name: space.name,
             point: { lat: space.lat!, lng: space.lng! },
+            category: space.category,
             active: selected === space.id,
           }))}
         you={you}

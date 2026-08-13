@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Crosshair } from "lucide-react";
 
+import { CatIcon } from "@/components/brand";
+import type { CategoryKey } from "@/lib/taxonomy";
 import {
   ADDRESS_ZOOM,
   type LatLng,
@@ -73,6 +75,8 @@ export interface MapPin {
   id: string;
   name: string;
   point: LatLng;
+  /** Drawn inside the pin, so a glance tells movement from meditation. */
+  category: CategoryKey;
   active: boolean;
 }
 
@@ -342,7 +346,24 @@ export function BrowseMap({
         const at = place(pin.point);
         if (!at) return null;
 
+        const size = pin.active ? 38 : 30;
+
         return (
+          /*
+           * A pin, pointing at the door.
+           *
+           * This was a translucent circle 68px across, and the reason was
+           * sound while it was true: the coordinates were deliberately fuzzed
+           * 250-450m, so a point would have claimed a precision we did not
+           * have. 0032 publishes the real address — the studios here are
+           * retail premises whose address is on their own website — and once
+           * the position is exact, a circle covering a city block is the
+           * misleading shape. It reads as "somewhere around here" about a
+           * building we could name.
+           *
+           * Same pin as the host sees confirming their own address, so the
+           * two maps in this app agree about what a room looks like.
+           */
           <button
             key={pin.id}
             type="button"
@@ -352,23 +373,25 @@ export function BrowseMap({
               onSelect(pin.id);
             }}
             aria-label={pin.name}
-            className="absolute rounded-full press"
-            style={{
-              /*
-               * A circle rather than a pin, and now a marker rather than a
-               * claim about area: 0032 publishes the real address, so the
-               * ring that once stood for 250–450m of deliberate vagueness is
-               * drawn on the building itself. Kept round because it reads at
-               * a glance and does not point at a doorway.
-               */
-              left: at.left - 34,
-              top: at.top - 34,
-              width: 68,
-              height: 68,
-              backgroundColor: pin.active ? "rgba(37,120,194,0.32)" : "rgba(37,120,194,0.18)",
-              border: `2px solid ${pin.active ? "#2578C2" : "rgba(37,120,194,0.45)"}`,
-            }}
-          />
+            aria-pressed={pin.active}
+            className="absolute pin-drop press"
+            style={{ left: at.left, top: at.top, transform: "translate(-50%,-100%)" }}
+          >
+            <span
+              className="pin-shape"
+              style={{
+                width: size,
+                height: size,
+                background: pin.active
+                  ? "linear-gradient(135deg, #3B9BE8, #16304E)"
+                  : "linear-gradient(135deg, #6FB3EA, #2A4F79)",
+              }}
+            >
+              <span className="pin-icon flex">
+                <CatIcon cat={pin.category} size={pin.active ? 15 : 12} color="#fff" />
+              </span>
+            </span>
+          </button>
         );
       })}
 

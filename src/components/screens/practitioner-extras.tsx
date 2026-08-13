@@ -1,18 +1,16 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
-  CalendarClock,
-  CalendarRange,
+  Check,
   ChevronRight,
   CreditCard,
   FileUp,
   LogOut,
-  Repeat,
   Scale,
   ScrollText,
-  Undo2,
+  X,
 } from "lucide-react";
 
 import { AccountBadge } from "@/components/account-badge";
@@ -152,33 +150,50 @@ export function InsuranceUpload({
  * Everything here costs nothing per booking and earns more as somebody books
  * more. That is not a coincidence, it is the test each one had to pass.
  */
-const PERKS = [
+/**
+ * What the two plans actually differ on, side by side.
+ *
+ * This was four paragraphs, one per benefit, each explaining the free limit in
+ * a sentence before saying what Pro does about it. Every word was true and the
+ * screen still did not answer the only question being asked — what do I get for
+ * the money — because the reader had to hold the free number in their head
+ * while reading the Pro one.
+ *
+ * Two columns answers it by sitting them next to each other. It also keeps the
+ * screen honest: a row can only exist here if there is something real to put in
+ * both cells, so a benefit the product does not have has nowhere to go.
+ *
+ * Every number is read from the constant the rule runs on. Typed out, they
+ * would be right the day they were written and wrong the day a limit moved,
+ * with nothing to catch it.
+ */
+const COMPARISON: { label: string; free: string | false; pro: string | true }[] = [
   {
-    icon: CalendarRange,
-    title: "As many sessions as you need",
-    sub: `Free accounts hold ${MAX_UPCOMING_BOOKINGS_FREE} at a time — enough for a fortnight, not for a term`,
+    label: "Sessions at once",
+    free: String(MAX_UPCOMING_BOOKINGS_FREE),
+    pro: "Unlimited",
   },
   {
-    icon: Repeat,
-    title: "Book a month of classes at once",
+    label: "Book ahead",
+    free: `${BOOKING_HORIZON_DAYS} days`,
+    pro: `${PRO_BOOKING_HORIZON_DAYS} days`,
+  },
+  {
+    label: "Book a weekly series",
+    free: false,
+    pro: true,
+  },
+  {
     /*
-     * Four weeks, not eight. The first version of this line said a term, which
-     * does not fit inside a thirty-day window — a promise the horizon could
-     * not keep, written on the same screen as the horizon.
+     * The one benefit that costs us anything, and it is bounded — see
+     * resolveCancellation. Worth naming plainly rather than burying: it is
+     * also the one somebody is most relieved to find they have.
      */
-    sub: "Every Tuesday at five for four weeks, in one go, instead of four separate bookings",
+    label: "Cancel 24h ahead",
+    free: "Minus card fee",
+    pro: "Full refund",
   },
-  {
-    icon: CalendarClock,
-    title: `Plan ${PRO_BOOKING_HORIZON_DAYS} days out`,
-    sub: `Free accounts reach ${BOOKING_HORIZON_DAYS} days, which is every hour a studio opens — Pro is room to plan past it`,
-  },
-  {
-    icon: Undo2,
-    title: "Change your mind for nothing",
-    sub: "Cancel 24 hours ahead and every cent comes back, card fee included",
-  },
-] as const;
+];
 
 export function ProScreen({
   isPro,
@@ -248,29 +263,48 @@ export function ProScreen({
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 pt-6 pb-6">
-        <div className="flex flex-col gap-2.5">
-          {PERKS.map(({ icon: Icon, title, sub }, i) => (
-            <div
-              key={title}
-              className="flex items-start gap-3 p-3.5 rounded-2xl card-in"
-              style={{
-                backgroundColor: "#F4F8FC",
-                border: "1px solid #E7EEF6",
-                animationDelay: `${i * 90}ms`,
-              }}
+        <div className="rounded-2xl overflow-hidden" style={{ border: "1px solid #E7EEF6" }}>
+          <div className="grid" style={{ gridTemplateColumns: "1.35fr 1fr 1fr" }}>
+            <span />
+            <span className="py-2.5 text-center font-body font-medium text-[13.5px] text-ink-soft">
+              Free
+            </span>
+            <span
+              className="py-2.5 text-center font-body font-semibold text-[13.5px] text-white"
+              style={{ backgroundColor: "#2578C2" }}
             >
-              <div
-                className="w-9 h-9 rounded-full flex items-center justify-center shrink-0"
-                style={{ background: "linear-gradient(135deg, #3B9BE8, #16304E)" }}
-              >
-                <Icon size={15} color="#fff" />
-              </div>
-              <div>
-                <p className="font-body font-medium text-[14.5px] text-navy">{title}</p>
-                <p className="font-body font-normal text-[14px] mt-0.5 text-ink-soft">{sub}</p>
-              </div>
-            </div>
-          ))}
+              Pro
+            </span>
+
+            {COMPARISON.map(({ label, free, pro }, i) => (
+              <Fragment key={label}>
+                <span
+                  className="px-3.5 py-3 font-body font-medium text-[14px] text-navy"
+                  style={{ borderTop: "1px solid #E7EEF6" }}
+                >
+                  {label}
+                </span>
+                <span
+                  className="px-2 py-3 flex items-center justify-center text-center font-body font-normal text-[13.5px] text-ink-soft"
+                  style={{ borderTop: "1px solid #E7EEF6" }}
+                >
+                  {free === false ? <X size={16} color="#B9CBDD" aria-label="No" /> : free}
+                </span>
+                <span
+                  className="px-2 py-3 flex items-center justify-center text-center font-body font-medium text-[13.5px] text-navy"
+                  style={{
+                    borderTop: "1px solid #E7EEF6",
+                    backgroundColor: "#EDF6FE",
+                    // The tint runs to the bottom edge, so the column reads as
+                    // one thing rather than four stacked cells.
+                    borderBottomRightRadius: i === COMPARISON.length - 1 ? 15 : undefined,
+                  }}
+                >
+                  {pro === true ? <Check size={16} color="#2578C2" aria-label="Yes" /> : pro}
+                </span>
+              </Fragment>
+            ))}
+          </div>
         </div>
       </div>
 

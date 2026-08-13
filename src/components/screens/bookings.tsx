@@ -357,8 +357,9 @@ export function MyBookings({
                   >
                     <div className="flex items-center justify-between gap-3">
                       <div className="min-w-0">
-                        <p className="font-body font-medium text-[14.5px] text-navy truncate">
-                          {booking.spaceName} · {booking.roomType}
+                        {/* Same truncation as the upcoming card above, same cut. */}
+                        <p className="font-body font-medium text-[15px] text-navy truncate">
+                          {booking.spaceName}
                         </p>
                         <p className="font-body font-normal text-[13.5px] text-ink-faint">
                           {sessionDate(booking.startsAt, booking.timeZone)}
@@ -449,8 +450,15 @@ function UpcomingBooking({
           <Calendar size={18} color="rgba(255,255,255,0.92)" />
         </div>
         <div className="flex-1 min-w-0">
+          {/*
+            The room type came off the end of this line, which meant a name
+            like "Reformer Hit · Movement Studio" truncated mid-word and cost
+            the half somebody recognises. The tile to the left is already
+            coloured and iconed by category, so the words were repeating a
+            picture at the price of the name.
+          */}
           <p className="font-body font-medium text-[15px] text-navy truncate">
-            {booking.spaceName} · {booking.roomType}
+            {booking.spaceName}
           </p>
           <p className="font-body font-normal text-[14px] mt-0.5 text-ink-soft">
             {sessionDate(booking.startsAt, booking.timeZone)} ·{" "}
@@ -501,8 +509,19 @@ function UpcomingBooking({
                 <SpaceDirections access={access} showMap />
               </div>
             ) : (
-              <p className="font-body font-normal text-[14px] leading-relaxed mt-3 text-ink-soft">
-                The address appears a day before your session.
+              <p className="font-body font-normal text-[13.5px] leading-relaxed mt-3 text-ink-soft">
+                {/*
+                  This said the address appears a day before the session, and
+                  it stopped being true in 0032 — the address is on the listing
+                  from the moment the room is published, because these are
+                  retail studios whose address is on their own website. The
+                  screen was describing a restriction that had been removed,
+                  sending somebody away to wait for something already in front
+                  of them.
+
+                  What is still held back is the part that gets you inside.
+                */}
+                Entry instructions appear a day before your session.
               </p>
             )}
 
@@ -546,8 +565,8 @@ function UpcomingBooking({
                 learns about a fee from their bank statement instead of us.
               */}
               {freeToCancel
-                ? `More than 24 hours away — cancel now and ${formatCents(earlyCancellationRefundCents(booking.totalCents))} comes back to your card, usually within a few working days. The ${formatCents(cancellationCostCents(booking.totalCents))} card fee is kept by the payment network and cannot be returned.`
-                : `Less than 24 hours away. Cancelling now, ${formatCents(booking.totalCents)} is not refunded — the studio kept the hour free for you.`}
+                ? `Cancel now and ${formatCents(earlyCancellationRefundCents(booking.totalCents))} comes back, in a few working days. The ${formatCents(cancellationCostCents(booking.totalCents))} card fee is kept either way.`
+                : `Cancel now and none of the ${formatCents(booking.totalCents)} comes back — the studio held the hour for you.`}
             </p>
           </div>
 

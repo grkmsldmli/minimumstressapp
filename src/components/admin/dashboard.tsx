@@ -382,6 +382,27 @@ export function AdminDashboard() {
                       {item.returning ? "back for review" : "new"}
                     </span>
                   </div>
+
+                  {/*
+                    What the operator is actually being asked to look at. The
+                    badge says a listing came back; this says why, which is the
+                    part that decides where to look — a studio that moved across
+                    town needs its new address checked against a lease, and one
+                    that changed its room type does not.
+                  */}
+                  {item.changed && (
+                    <p
+                      className="font-body font-medium text-[11px] mt-1"
+                      style={{ color: "#E8A33D" }}
+                    >
+                      {item.changed} changed
+                    </p>
+                  )}
+                  {item.previousAddress && (
+                    <p className="font-body font-light text-[11px]" style={{ color: MUTED }}>
+                      was: {item.previousAddress}
+                    </p>
+                  )}
                   <p className="font-body font-light text-[11px] mt-0.5" style={{ color: MUTED }}>
                     {item.hostEmail ?? "unknown host"} · lease {item.subleaseState} · insurance{" "}
                     {item.insuranceState}

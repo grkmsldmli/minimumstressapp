@@ -2,7 +2,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { PGlite } from "@electric-sql/pglite";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 /**
  * Exercises the RLS policies as real users rather than asserting they exist.
@@ -1405,5 +1405,114 @@ describe("two studios on the same platform", () => {
   it("shows a second host's live room to somebody browsing", async () => {
     const rooms = await asAnon<{ name: string }>(`select name from spaces_public order by name`);
     expect(rooms.map((r) => r.name)).toContain("Cedar Room");
+  });
+});
+
+/**
+ * Why a listing is waiting, recorded where it starts waiting.
+ *
+ * 0019 already knew — `moved` is four comparisons — and threw it away, so the
+ * queue showed a card with a name and an address and no way to tell what the
+ * operator was being asked to look at. A studio that moved across town needs
+ * its new address checked against a lease; one that changed its room type does
+ * not.
+ */
+describe("what sent a listing back for review", () => {
+  const reasonFor = async (id: string) =>
+    (
+      await asUser<{ review_reason: string | null; previous_address_line: string | null }>(
+        HOST,
+        `select review_reason, previous_address_line from spaces where id = '${id}'`,
+      )
+    )[0];
+
+  beforeEach(async () => {
+    await db.exec(
+      `update spaces set status = 'active', sublease_doc_state = 'verified',
+         sublease_doc_reviewed_at = now(), review_reason = null,
+         previous_address_line = null, address_line = '9 Hidden Way'
+       where id = '${PENDING_SPACE}'`,
+    );
+  });
+
+  it("names the address, and keeps where it was", async () => {
+    await asUser(
+      HOST,
+      `update spaces set address_line = '31 Moved Street' where id = '${PENDING_SPACE}'`,
+    );
+
+    const row = await reasonFor(PENDING_SPACE);
+    expect(row.review_reason).toBe("address");
+    expect(row.previous_address_line).toBe("9 Hidden Way");
+  });
+
+  /** Dragging the pin moves the room. "lat changed" is a number, not a place. */
+  it("calls a moved pin an address change", async () => {
+    await asUser(HOST, `update spaces set lat = 37.5, lng = -122.3 where id = '${PENDING_SPACE}'`);
+
+    expect((await reasonFor(PENDING_SPACE)).review_reason).toBe("address");
+  });
+
+  it("names the room type, and leaves the address history alone", async () => {
+    // Not 'spirit': that is what this fixture already is, and setting a column
+    // to what it holds is not a change — the first version of this test set it
+    // and then asserted the trigger had noticed.
+    await asUser(HOST, `update spaces set category = 'physical' where id = '${PENDING_SPACE}'`);
+
+    const row = await reasonFor(PENDING_SPACE);
+    expect(row.review_reason).toBe("room type");
+    // Overwriting this on a room-type edit would leave the operator comparing
+    // an address against itself.
+    expect(row.previous_address_line).toBeNull();
+  });
+
+  it("lists both when both moved", async () => {
+    await asUser(
+      HOST,
+      `update spaces set address_line = '7 Both Road', category = 'traditional'
+         where id = '${PENDING_SPACE}'`,
+    );
+
+    expect((await reasonFor(PENDING_SPACE)).review_reason).toBe("address, room type");
+  });
+
+  it("names a replaced sublease document", async () => {
+    await asUser(
+      HOST,
+      `update spaces set sublease_doc_path = 'space/y/new.pdf' where id = '${PENDING_SPACE}'`,
+    );
+
+    expect((await reasonFor(PENDING_SPACE)).review_reason).toBe("sublease document");
+  });
+
+  /**
+   * The note belongs to the review it was raised for. A listing live for a
+   * month should not still carry the reason from the last time it moved.
+   */
+  it("clears the note when the listing goes live again", async () => {
+    await asUser(
+      HOST,
+      `update spaces set address_line = '2 Cleared Lane' where id = '${PENDING_SPACE}'`,
+    );
+    expect((await reasonFor(PENDING_SPACE)).review_reason).toBe("address");
+
+    // Staff approving, as the service role — which the trigger does not run for.
+    await db.exec(
+      `update spaces set status = 'active', sublease_doc_state = 'verified',
+         sublease_doc_reviewed_at = now(), review_reason = null,
+         previous_address_line = null
+       where id = '${PENDING_SPACE}'`,
+    );
+
+    const row = await reasonFor(PENDING_SPACE);
+    expect(row.review_reason).toBeNull();
+    expect(row.previous_address_line).toBeNull();
+  });
+
+  /** A host who could set this could describe a move as a typo. */
+  it("does not let a host write the reason themselves", async () => {
+    await expect(
+      asUser(HOST, `update spaces set review_reason = 'nothing' where id = '${PENDING_SPACE}'`),
+    ).rejects.toThrow(/permission denied/i);
   });
 });

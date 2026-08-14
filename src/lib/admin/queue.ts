@@ -157,6 +157,14 @@ export interface ReviewReason {
   hostEmail: string | null;
   /** New, or previously live and sent back by an edit. */
   returning: boolean;
+  /**
+   * Which fields sent it back — "address", "room type", "sublease document",
+   * or several. Null for a listing that has never been live, and for the ones
+   * that went pending before 0040 started recording it.
+   */
+  changed: string | null;
+  /** Where it was, when the address is what moved. The reviewer's comparison. */
+  previousAddress: string | null;
   subleaseState: string;
   insuranceState: string;
   /** Staff's own words on a rejection. */
@@ -402,7 +410,7 @@ export async function loadQueue(admin: SupabaseClient): Promise<AdminQueue> {
     admin
       .from("spaces")
       .select(
-        "id, host_id, name, status, created_at, category, hourly_rate_cents, address_line, description, entrance_access, restroom_access, sublease_doc_state, insurance_doc_state, doc_review_note, updated_at",
+        "id, host_id, name, status, created_at, category, hourly_rate_cents, address_line, description, entrance_access, restroom_access, sublease_doc_state, insurance_doc_state, doc_review_note, review_reason, previous_address_line, updated_at",
       ),
 
     /**
@@ -741,6 +749,8 @@ export async function loadQueue(admin: SupabaseClient): Promise<AdminQueue> {
         // An hour, so saving a typo minutes after listing does not read as a
         // listing coming back from being live.
         returning: updated - created > 60 * 60 * 1000,
+        changed: (space.review_reason as string) || null,
+        previousAddress: (space.previous_address_line as string) || null,
         subleaseState: (space.sublease_doc_state as string) ?? "pending",
         insuranceState: (space.insurance_doc_state as string) ?? "pending",
         note: (space.doc_review_note as string) ?? null,

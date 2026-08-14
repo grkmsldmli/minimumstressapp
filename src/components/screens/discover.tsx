@@ -198,7 +198,7 @@ export function Discover({
             after the code stopped delivering it.
           */}
           <span className="font-body font-normal text-[13.5px] text-white/70">
-            More sessions at once, {PRO_BOOKING_HORIZON_DAYS} days ahead, with{" "}
+            More sessions, {PRO_BOOKING_HORIZON_DAYS} days ahead, with{" "}
             <span className="font-medium text-sky-soft">Pro</span>
           </span>
           <span className="flex items-center gap-0.5 font-body text-[15px] font-medium text-white shrink-0">

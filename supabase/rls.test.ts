@@ -291,6 +291,86 @@ describe("the access code is withheld, not merely hidden", () => {
 
     expect(booking.revealed_access_code).toBeNull();
   });
+
+  /**
+   * A cancelled session is not one to walk into.
+   *
+   * The view asked only who was asking and whether the reveal time had passed,
+   * and cancelBooking never cleared the code — so a booking cancelled after
+   * the reveal kept a working door code indefinitely, and a host cancelling on
+   * somebody left it with them.
+   */
+  it.each([
+    ["cancelled_by_practitioner", "practitioner"],
+    ["cancelled_by_host", "host"],
+  ])("takes the code back when the booking is %s", async (status, by) => {
+      // bookings_cancellation_consistent wants all three together, which is
+      // the constraint doing its job: a cancelled row with no hand on it.
+      await db.exec(
+        `update bookings set status = '${status}', cancelled_at = now(), cancelled_by = '${by}'`,
+      );
+
+      const [booking] = await asUser<{ revealed_access_code: string | null }>(
+        PRACTITIONER,
+        `select revealed_access_code from bookings_with_access_code`,
+      );
+
+      expect(booking.revealed_access_code).toBeNull();
+
+      await db.exec(
+        `update bookings set status = 'upcoming', cancelled_at = null, cancelled_by = null`,
+      );
+  });
+
+  /**
+   * A held hour is not a booking. An abandoned checkout sits at 'upcoming'
+   * until the sweep reaches it, and it was being handed a code for a room
+   * nobody had paid for.
+   */
+  it("withholds the code from an hour that was never paid for", async () => {
+    await db.exec(`update bookings set captured_at = null`);
+
+    const [booking] = await asUser<{ revealed_access_code: string | null }>(
+      PRACTITIONER,
+      `select revealed_access_code from bookings_with_access_code`,
+    );
+
+    expect(booking.revealed_access_code).toBeNull();
+
+    await db.exec(`update bookings set captured_at = now() - interval '1 hour'`);
+  });
+});
+
+/**
+ * The address, the entry instructions and how the door works.
+ *
+ * Status and the 24-hour window were already checked here, which is why
+ * cancelling took these away. Payment was not, so an abandoned checkout could
+ * read its way into the building while it waited to be swept.
+ */
+describe("entry instructions need a paid booking", () => {
+  const details = (user: string) =>
+    asUser<{ entry_instructions: string }>(
+      user,
+      `select entry_instructions from space_access_details('${SPACE}')`,
+    );
+
+  it("gives them to the practitioner who paid", async () => {
+    const rows = await details(PRACTITIONER);
+    expect(rows[0]?.entry_instructions).toMatch(/blue door/i);
+  });
+
+  it("withholds them from an hour that was never paid for", async () => {
+    await db.exec(`update bookings set captured_at = null`);
+
+    expect(await details(PRACTITIONER)).toHaveLength(0);
+
+    await db.exec(`update bookings set captured_at = now() - interval '1 hour'`);
+  });
+
+  it("withholds them from somebody with no booking at all", async () => {
+    expect(await details(STRANGER)).toHaveLength(0);
+  });
 });
 
 describe("credit balances are per-practitioner", () => {
@@ -1131,11 +1211,13 @@ describe("when the address is released", () => {
       insert into bookings (
         space_id, practitioner_id, starts_at, ends_at, is_instant, was_pro,
         host_rate_cents, service_fee_cents, instant_fee_cents, pro_discount_cents,
-        credit_applied_cents, total_cents, platform_cents, access_code
+        credit_applied_cents, total_cents, platform_cents, access_code, captured_at
       ) values (
         '${FAR_SPACE}', '${PRACTITIONER}',
         now() + interval '5 days', now() + interval '5 days 1 hour',
-        false, false, 4000, 800, 0, 0, 0, 4800, 800, '9911'
+        -- captured_at is what separates a booking from a held hour, and this
+        -- fixture is testing what a paying practitioner may see.
+        false, false, 4000, 800, 0, 0, 0, 4800, 800, '9911', now()
       );
     `);
   });

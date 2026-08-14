@@ -313,13 +313,27 @@ async function reportWhatIsWaiting(now: Date): Promise<{ waiting: number }> {
 
   const admin = supabaseAdmin();
 
-  const [unpayable, disputes, escalations, listings, changes, failed] = await Promise.all([
+  /*
+   * Every predicate here is the one the staff screen already uses, copied
+   * rather than reinvented. The first version of this guessed four of the six
+   * column names and every guess was wrong — which a count query reports as
+   * zero, so the alerting would have stayed silent about exactly the things it
+   * was built to raise. A monitor that fails quietly is worse than none.
+   */
+  const [unpayable, refunds, claims, escalations, listings, changes, failed] = await Promise.all([
     admin
       .from("profiles")
       .select("id", { count: "exact", head: true })
       .eq("account_type", "host")
-      .or("stripe_connect_account_id.is.null,stripe_charges_enabled.eq.false"),
-    admin.from("refund_requests").select("id", { count: "exact", head: true }).eq("state", "open"),
+      .or("stripe_connect_account_id.is.null,stripe_connect_charges_enabled.is.false"),
+    admin
+      .from("refund_requests")
+      .select("id", { count: "exact", head: true })
+      .in("state", ["awaiting_host", "awaiting_staff"]),
+    admin
+      .from("studio_claims")
+      .select("id", { count: "exact", head: true })
+      .in("state", ["awaiting_practitioner", "awaiting_staff"]),
     admin
       .from("review_escalations")
       .select("id", { count: "exact", head: true })
@@ -328,13 +342,19 @@ async function reportWhatIsWaiting(now: Date): Promise<{ waiting: number }> {
     admin
       .from("account_type_change_requests")
       .select("id", { count: "exact", head: true })
-      .eq("state", "pending"),
-    admin.from("notifications").select("id", { count: "exact", head: true }).eq("state", "failed"),
+      .eq("state", "open"),
+    // Tried, unsent, and carrying an error — the same three conditions the
+    // staff screen calls a failed notification.
+    admin
+      .from("notifications")
+      .select("id", { count: "exact", head: true })
+      .is("sent_at", null)
+      .not("last_error", "is", null),
   ]);
 
   const items = waitingOn({
     unpayableHosts: unpayable.count ?? 0,
-    openDisputes: disputes.count ?? 0,
+    openDisputes: (refunds.count ?? 0) + (claims.count ?? 0),
     escalations: escalations.count ?? 0,
     pendingListings: listings.count ?? 0,
     accountChangeRequests: changes.count ?? 0,

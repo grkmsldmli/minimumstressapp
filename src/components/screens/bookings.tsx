@@ -27,7 +27,7 @@ import {
   formatCents,
   isFreeCancellation,
 } from "@/lib/money";
-import type { Standing } from "@/lib/reliability";
+import { LATE_CANCELLATION_HOURS, type Standing } from "@/lib/reliability";
 import { REFUND_WINDOW_DAYS, canRequestRefund } from "@/lib/refunds";
 import { sessionDate, sessionTime, sessionWeekday } from "@/lib/when";
 
@@ -116,11 +116,23 @@ export function Confirmed({
             }}
           >
             <span className="text-left">
+              {/*
+                "Skip this fee with Pro" was offered directly under an instant
+                fee somebody had just paid, and Pro does not skip it —
+                quote() charges it to everyone, deliberately. Selling a
+                subscription on the fee it does not remove is the worst
+                version of this mistake: it is read at the moment the fee is
+                on screen.
+
+                What Pro does do for somebody who has just booked is give
+                them the whole amount back if they change their mind in time.
+              */}
               <span className="block font-body font-medium text-[15px] text-coral-soft">
-                Skip this fee with Pro
+                Change your mind for nothing, with Pro
               </span>
               <span className="block font-body font-normal text-[13.5px] text-white/50 mt-0.5">
-                {formatCents(PRO_PRICE_CENTS)}/mo · unlimited instant booking
+                {formatCents(PRO_PRICE_CENTS)}/mo · cancel {LATE_CANCELLATION_HOURS}h ahead and
+                the card fee comes back too
               </span>
             </span>
             <ChevronRight size={16} color="#F2A79E" />

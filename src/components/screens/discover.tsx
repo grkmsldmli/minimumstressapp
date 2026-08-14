@@ -32,7 +32,7 @@ import { BookAgain } from "@/components/book-again";
 import { BrowseMap } from "@/components/browse-map";
 import { TiltCard } from "@/components/primitives";
 import type { PublicSpace } from "@/lib/domain";
-import { formatCents, quote } from "@/lib/money";
+import { PRO_BOOKING_HORIZON_DAYS, formatCents, quote } from "@/lib/money";
 import { CATEGORIES, type CategoryKey, roomTypeFor, specialtiesFor } from "@/lib/taxonomy";
 
 type Filter = CategoryKey | "all";
@@ -190,8 +190,15 @@ export function Discover({
           className="flex items-center justify-between px-6 py-2.5 press shrink-0"
           style={{ backgroundColor: "#16304E" }}
         >
+          {/*
+            This said "book instantly, no extra fee". Pro has never waived the
+            instant fee — quote() charges it to everyone and says why: a fee
+            waived per booking is unbounded against a fixed subscription, and
+            it was tried and taken back out. The benefit stayed on the banner
+            after the code stopped delivering it.
+          */}
           <span className="font-body font-normal text-[13.5px] text-white/70">
-            Book instantly, no extra fee, with{" "}
+            More sessions at once, {PRO_BOOKING_HORIZON_DAYS} days ahead, with{" "}
             <span className="font-medium text-sky-soft">Pro</span>
           </span>
           <span className="flex items-center gap-0.5 font-body text-[15px] font-medium text-white shrink-0">

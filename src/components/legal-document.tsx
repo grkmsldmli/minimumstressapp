@@ -2,7 +2,7 @@ import Link from "next/link";
 
 import { APP_URL, BRAND, LEGAL_ENTITY, SUPPORT_EMAIL } from "@/lib/company";
 import { type LegalScope, sectionsFor } from "@/lib/legal-text";
-import { TERMS_VERSION } from "@/lib/terms";
+import { TERMS_VERSION, effectiveDateLabel } from "@/lib/terms";
 
 /**
  * The published version of the terms, as a document rather than a screen.
@@ -81,7 +81,8 @@ export function LegalDocument({
             the same reason company.ts exists as a single constant.
           */}
           <p className="font-body font-normal text-[13.5px] leading-relaxed text-ink-soft">
-            {title} for {BRAND}, operated by {LEGAL_ENTITY}. Version {TERMS_VERSION}.
+            {title} for {BRAND}, operated by {LEGAL_ENTITY}. Version {TERMS_VERSION}, in effect
+            since {effectiveDateLabel()}.
           </p>
           <p className="font-body font-normal text-[13.5px] leading-relaxed text-ink-soft mt-2">
             Questions about this document go to{" "}

@@ -66,3 +66,42 @@ describe("the published legal text", () => {
     expect(everything).toContain("not our worker");
   });
 });
+
+/**
+ * The disclosures a privacy policy is judged on.
+ *
+ * These were absent: no effective date, no named processors, no retention, no
+ * rights, nothing about children. A policy without them reads as a summary of
+ * intentions, and the company is a California LLC taking payments.
+ *
+ * Asserted as presence rather than wording, so the text can be improved
+ * without the suite arguing about prose — but a section deleted wholesale
+ * fails, which is the mistake worth catching.
+ */
+describe("what the privacy policy has to cover", () => {
+  const privacy = sectionsFor("privacy")
+    .flatMap((s) => s.points)
+    .join(" ")
+    .toLowerCase();
+
+  it.each([
+    ["the processors it sends data to", ["stripe", "supabase", "resend", "maptiler"]],
+    ["how long things are kept", ["delete your account", "as long as the law requires"]],
+    ["the rights somebody has", ["ask what we hold", "correct it", "45 days"]],
+    ["that it is not for children", ["under 18"]],
+    ["that nothing is sold", ["do not sell"]],
+  ])("says %s", (_, phrases) => {
+    for (const phrase of phrases) expect(privacy).toContain(phrase);
+  });
+
+  /**
+   * Named rather than gestured at. "Trusted partners" is not a disclosure, and
+   * a processor that is configured but switched off is worth saying so that
+   * turning it on is a change to this text rather than a quiet extension of
+   * who has somebody's number.
+   */
+  it("names the processor that is configured and unused", () => {
+    expect(privacy).toContain("twilio");
+    expect(privacy).toMatch(/twilio[^.]*not switched on|not switched on[^.]*twilio/);
+  });
+});

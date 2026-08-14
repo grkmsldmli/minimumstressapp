@@ -17,6 +17,28 @@
  */
 export const TERMS_VERSION = 1;
 
+/**
+ * When the current text took effect.
+ *
+ * Beside the version rather than in the page that prints it, so the two move
+ * together: a version raised without a date is a document that cannot say when
+ * it changed, and a date without a version is one nobody can prove they saw.
+ *
+ * Raise both when the terms change in a way that changes what somebody is
+ * agreeing to.
+ */
+export const TERMS_EFFECTIVE = new Date("2026-08-13T00:00:00Z");
+
+/** "13 August 2026" — for the footer of a published document. */
+export function effectiveDateLabel(): string {
+  return TERMS_EFFECTIVE.toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
 /** True when this account has accepted the terms as they currently stand. */
 export function hasAcceptedTerms(accepted: { version: number | null }): boolean {
   return accepted.version !== null && accepted.version >= TERMS_VERSION;

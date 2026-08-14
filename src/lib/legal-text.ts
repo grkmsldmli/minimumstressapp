@@ -73,14 +73,77 @@ export const SECTIONS: readonly LegalSection[] = [
   },
   {
     key: "privacy",
-    title: "Privacy Policy",
+    title: "What we collect",
     scope: "privacy",
     points: [
-      "We collect what is needed to match and pay you: identity, contact details, listing information, and any documents you upload.",
-      "Card details are handled by Stripe. We never see or store a card number.",
-      "A space's entry instructions and door code are released to the practitioner who booked it, shortly before the session, and to nobody else. The address itself is shown on the listing.",
-      "Verification documents are visible only to us, for review. They are never shown publicly or to the other side of a booking.",
-      "You can ask us to delete your data at any time.",
+      "Your account: email address, and a name and photograph if you add one. A phone number only if you give us one for notifications.",
+      "Your listings or bookings: what you wrote about a room, its address, its hours, and the sessions booked on it.",
+      "Documents you upload: proof you may sublicense a space, insurance certificates, and any certificate a practitioner chooses to keep on file.",
+      "Messages you send through the app, with phone numbers and email addresses removed automatically before they are stored.",
+      "An emergency contact, if you give us one.",
+      "Card details are handled by Stripe and never reach us. We hold the identifiers Stripe gives us so we can charge and pay the right accounts.",
+    ],
+  },
+  {
+    /*
+     * Named, because "trusted partners" is not a disclosure. Every one of
+     * these is in the code and can be checked: stripe/, notify/transports.ts,
+     * geocode-google.ts, map-tiles.ts, supabase/. Twilio is listed as unused
+     * rather than left out, so that turning it on is a change to this text
+     * rather than a quiet extension of who has your number.
+     */
+    key: "processors",
+    title: "Who else handles it",
+    scope: "privacy",
+    points: [
+      "Supabase stores the database, the uploaded files, and the sign-in session. Vercel serves the app.",
+      "Stripe takes payments, holds card details, and pays hosts. Their own privacy policy governs what they hold.",
+      "Resend sends the emails — booking confirmations, codes, and the rest.",
+      "Google Places resolves an address while it is being typed. The lookup happens on our server, so the half-typed address does not leave your device for Google directly.",
+      "MapTiler serves the map images. It receives the tiles being requested, which is roughly the area on screen, not who is looking.",
+      "Signing in with Google or Microsoft tells us your email address and name, and tells them that you signed in here.",
+      "Twilio is configured for emergency SMS and is not switched on. Nothing is sent to them today.",
+      "We do not sell or share personal information, and we run no advertising or cross-site tracking.",
+    ],
+  },
+  {
+    key: "keeping",
+    title: "How long we keep it",
+    scope: "privacy",
+    points: [
+      "You can delete your account from your profile whenever you have no sessions still ahead of you.",
+      "Deleting removes you: your documents, your photograph, your profile, and your sign-in.",
+      "It does not remove a completed booking. That is a financial record belonging to two people, and erasing it would take a host's own income history with it.",
+      "Reviews are detached from your name rather than deleted, because a room's rating is partly what everybody else wrote.",
+      "Records we must keep for tax and accounting are kept for as long as the law requires, and no longer.",
+    ],
+  },
+  {
+    /*
+     * California, because that is where the company is and where the first
+     * rooms are. Written as what somebody does rather than as a citation: a
+     * right nobody can find the door to is not a right.
+     */
+    key: "rights",
+    title: "Your rights",
+    scope: "privacy",
+    points: [
+      "You can ask what we hold about you, ask for a copy, ask us to correct it, or ask us to delete it.",
+      "Write to us and we will answer within 45 days. We will not ask you for anything beyond what is needed to check it is you.",
+      "Using any of these will never cost you anything, and will never change the price you are shown or the rooms you can book.",
+      "We do not sell personal information and we do not share it for cross-context advertising, so there is nothing here to opt out of.",
+      "If you think we have handled something badly, tell us first — and you may also complain to the California Attorney General.",
+    ],
+  },
+  {
+    key: "security-and-age",
+    title: "Security, and who this is for",
+    scope: "privacy",
+    points: [
+      "Data is encrypted in transit and at rest by our hosting and payment providers. Access to documents is restricted to the people reviewing them.",
+      "No system is perfect. If a breach affects you, we will tell you.",
+      "Minimum Stress is for adults. It is not for anyone under 18, we do not knowingly collect anything from a child, and we delete it if we find we have.",
+      "If we change this policy in a way that changes what we do with your information, we will tell you before it takes effect rather than after.",
     ],
   },
   {

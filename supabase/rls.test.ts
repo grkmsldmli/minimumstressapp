@@ -24,6 +24,24 @@ const STRANGER = "33333333-3333-3333-3333-333333333333";
 const SPACE = "44444444-4444-4444-4444-444444444444";
 const PENDING_SPACE = "55555555-5555-5555-5555-555555555555";
 
+/**
+ * A second studio owner, with a live room and money of their own.
+ *
+ * Every two-party test until now ran HOST against PRACTITIONER or against
+ * STRANGER, and a stranger is the easy adversary: they hold nothing, so any
+ * policy that checks anything at all stops them. A rival host is the hard one.
+ * They legitimately reach every host surface — host_bookings(), their own
+ * spaces, their own earnings — so a leak here comes from a function that
+ * forgot to scope by owner rather than from a missing policy.
+ *
+ * It is also the shape the product is about to take. Everything has been
+ * exercised with one room owned by one person.
+ */
+// Deliberately outside the digit runs: the blocks further down declare
+// their own fixtures locally, and 6666/8888 are already taken there.
+const RIVAL_HOST = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const RIVAL_SPACE = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+
 let db: PGlite;
 
 /**
@@ -84,12 +102,14 @@ beforeAll(async () => {
     insert into auth.users (id, email) values
       ('${HOST}', 'host@example.com'),
       ('${PRACTITIONER}', 'practitioner@example.com'),
-      ('${STRANGER}', 'stranger@example.com');
+      ('${STRANGER}', 'stranger@example.com'),
+      ('${RIVAL_HOST}', 'rival@example.com');
 
     insert into profiles (id, display_name, stripe_customer_id) values
       ('${HOST}', 'Willow Studio', 'cus_host'),
       ('${PRACTITIONER}', 'Elena R.', 'cus_prac'),
-      ('${STRANGER}', 'Nosy Parker', 'cus_stranger');
+      ('${STRANGER}', 'Nosy Parker', 'cus_stranger'),
+      ('${RIVAL_HOST}', 'Cedar Rooms', 'cus_rival');
 
     -- A live listing carries a verified lease, which 0018 now enforces on the
     -- row. Seeding one without it used to be possible and is the exact state
@@ -104,7 +124,10 @@ beforeAll(async () => {
        'space/x/lease.pdf', now(), 'verified', now()),
       ('${PENDING_SPACE}', '${HOST}', 'Not Yet Live', 'spirit', 2600, 6, 'lockbox',
        'Lockbox under the bench', '9 Hidden Way', 'pending',
-       'space/y/lease.pdf', now(), 'pending', null);
+       'space/y/lease.pdf', now(), 'pending', null),
+      ('${RIVAL_SPACE}', '${RIVAL_HOST}', 'Cedar Room', 'social', 5200, 4, 'greeter',
+       'Ring the bell marked 3C', '40 Cedar Street', 'active',
+       'space/r/lease.pdf', now(), 'verified', now());
 
     -- One paid booking for PRACTITIONER, already past its reveal time.
     -- captured_at is what makes it a booking rather than a held hour, which
@@ -1268,5 +1291,119 @@ describe("when the address is released", () => {
       `select address_line from space_access_details('${FAR_SPACE}')`,
     );
     expect(found).toHaveLength(0);
+  });
+});
+
+/**
+ * Two studios on the platform at once.
+ *
+ * Everything above tests one owner against a practitioner or against a
+ * stranger who holds nothing. This is the case the product is about to become:
+ * a second host, with their own live room and their own money, reaching every
+ * host surface legitimately. A leak here would not come from a missing policy
+ * — it would come from a function that scoped by "is a host" rather than by
+ * "is this host".
+ */
+describe("two studios on the same platform", () => {
+  beforeAll(async () => {
+    await db.exec(`
+      insert into bookings (
+        space_id, practitioner_id, starts_at, ends_at, is_instant, was_pro,
+        host_rate_cents, service_fee_cents, instant_fee_cents, pro_discount_cents,
+        credit_applied_cents, total_cents, platform_cents, access_code, captured_at
+      ) values (
+        '${RIVAL_SPACE}', '${PRACTITIONER}',
+        now() + interval '3 days', now() + interval '3 days 1 hour',
+        false, false, 5200, 1040, 0, 0, 0, 6240, 1040, '7777', now()
+      );
+    `);
+  });
+
+  /*
+   * Asserted as isolation rather than by name. Earlier blocks rename and
+   * re-review the first studio as part of what they test, so anything keyed to
+   * "Willow" here passes or fails on test order rather than on the policy.
+   */
+  it("shows each host only the sessions in their own rooms", async () => {
+    const mine = await asUser<{ space_id: string }>(HOST, `select space_id from host_bookings()`);
+    const theirs = await asUser<{ space_id: string }>(
+      RIVAL_HOST,
+      `select space_id from host_bookings()`,
+    );
+
+    expect(theirs).toHaveLength(1);
+    expect(theirs[0].space_id).toBe(RIVAL_SPACE);
+    expect(mine.some((b) => b.space_id === RIVAL_SPACE)).toBe(false);
+  });
+
+  /** What a rival charges is theirs; what they earned is nobody else's. */
+  it("keeps one host's money out of the other's reach", async () => {
+    const rows = await asUser<{ host_rate_cents: number }>(
+      RIVAL_HOST,
+      `select host_rate_cents from bookings`,
+    );
+
+    expect(rows.every((r) => r.host_rate_cents === 5200)).toBe(true);
+  });
+
+  it("refuses to let a host edit somebody else's listing", async () => {
+    await asUser(
+      RIVAL_HOST,
+      `update spaces set hourly_rate_cents = 100 where id = '${SPACE}'`,
+    );
+
+    const [space] = await asUser<{ hourly_rate_cents: number }>(
+      HOST,
+      `select hourly_rate_cents from spaces where id = '${SPACE}'`,
+    );
+
+    // Not an error — the policy makes the row invisible, so the update matches
+    // nothing. The rate is what matters, and it did not move.
+    expect(space.hourly_rate_cents).not.toBe(100);
+  });
+
+  it("refuses to let a host take somebody else's listing down", async () => {
+    await asUser(RIVAL_HOST, `delete from spaces where id = '${SPACE}'`);
+
+    const [still] = await asUser(HOST, `select id from spaces where id = '${SPACE}'`);
+    expect(still).toBeDefined();
+  });
+
+  /**
+   * The rival owns a room the practitioner has booked, which is exactly the
+   * position from which a nosy host would try to read the other booking.
+   */
+  it("keeps a rival host out of the entry instructions of a room they do not own", async () => {
+    const found = await asUser(
+      RIVAL_HOST,
+      `select entry_instructions from space_access_details('${SPACE}')`,
+    );
+
+    expect(found).toEqual([]);
+  });
+
+  it("never hands a rival host an access code", async () => {
+    const rows = await asUser<{ revealed_access_code: string | null }>(
+      RIVAL_HOST,
+      `select revealed_access_code from bookings_with_access_code`,
+    );
+
+    expect(rows.every((r) => r.revealed_access_code === null)).toBe(true);
+  });
+
+  it("keeps messages inside the booking they belong to", async () => {
+    const rows = await asUser(RIVAL_HOST, `select id from messages`);
+    expect(rows).toEqual([]);
+  });
+
+  /**
+   * A live room is public whoever owns it, which is the one thing two studios
+   * should share. Only the rival's is named: the first studio is deliberately
+   * pushed back to pending by the editing tests above, which is itself correct
+   * behaviour and would make an assertion about it a test of test order.
+   */
+  it("shows a second host's live room to somebody browsing", async () => {
+    const rooms = await asAnon<{ name: string }>(`select name from spaces_public order by name`);
+    expect(rooms.map((r) => r.name)).toContain("Cedar Room");
   });
 });

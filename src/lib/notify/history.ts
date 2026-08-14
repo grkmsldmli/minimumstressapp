@@ -26,6 +26,9 @@ export interface NotificationEntry {
 }
 
 const LABELS: Record<NotificationKind, string> = {
+  // Staff-only, and never shown in anybody's notification list — it is
+  // here because the map must cover every kind.
+  staff_waiting: "Something is waiting on the team",
   booking_confirmed: "Your booking was confirmed",
   host_new_booking: "Somebody booked your space",
   access_code_ready: "Your door code was released",

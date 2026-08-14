@@ -1,9 +1,12 @@
 import type { NextRequest } from "next/server";
 
 import { abandonedBefore } from "@/lib/abandoned";
+import { safetyRecipient } from "@/lib/admin/access";
+import { subjectFor, waitingOn, waitingSignature } from "@/lib/admin/attention";
 import { notifyAccessCodesReady, rebuildPending } from "@/lib/notify/for-booking";
-import { retryPending } from "@/lib/notify/send";
+import { notify, retryPending } from "@/lib/notify/send";
 import { payHost, settle } from "@/lib/stripe/client";
+import { siteUrl } from "@/lib/site-url";
 import { supabaseAdmin } from "@/lib/supabase/server";
 
 /**
@@ -60,6 +63,7 @@ export async function GET(request: NextRequest): Promise<Response> {
     const released = await releaseAbandonedCheckouts(now);
     const announced = await announceAccessCodes(now);
     const retried = await retryFailedNotifications();
+    const waiting = await reportWhatIsWaiting(now);
 
     return Response.json({
       ranAt: now.toISOString(),
@@ -67,6 +71,7 @@ export async function GET(request: NextRequest): Promise<Response> {
       ...released,
       ...announced,
       ...retried,
+      ...waiting,
     });
   } catch (error) {
     // Supabase rejects with a plain object rather than an Error, so the default
@@ -286,4 +291,78 @@ async function retryFailedNotifications(): Promise<{ notificationsSent: number }
     console.error("Notification retries failed:", describe(error));
     return { notificationsSent: 0 };
   }
+}
+
+/**
+ * Tells the operator what is waiting on them, when they are not looking.
+ *
+ * The staff screen already shows every one of these and shows them well. It
+ * cannot reach anybody, though — it is a page, and a page has to be opened.
+ * Two events sent mail before this and the rest waited for somebody to happen
+ * to look, which holds right up until a host is standing in a studio they
+ * opened for a session we cannot pay them for.
+ *
+ * Last in the run on purpose. Everything above changes what is waiting —
+ * paying a host clears an unpayable one, retrying a notification clears a
+ * failed one — so counting first would report a queue the same run had already
+ * emptied.
+ */
+async function reportWhatIsWaiting(now: Date): Promise<{ waiting: number }> {
+  const to = safetyRecipient();
+  if (!to) return { waiting: 0 };
+
+  const admin = supabaseAdmin();
+
+  const [unpayable, disputes, escalations, listings, changes, failed] = await Promise.all([
+    admin
+      .from("profiles")
+      .select("id", { count: "exact", head: true })
+      .eq("account_type", "host")
+      .or("stripe_connect_account_id.is.null,stripe_charges_enabled.eq.false"),
+    admin.from("refund_requests").select("id", { count: "exact", head: true }).eq("state", "open"),
+    admin
+      .from("review_escalations")
+      .select("id", { count: "exact", head: true })
+      .is("resolved_at", null),
+    admin.from("spaces").select("id", { count: "exact", head: true }).eq("status", "pending"),
+    admin
+      .from("account_type_change_requests")
+      .select("id", { count: "exact", head: true })
+      .eq("state", "pending"),
+    admin.from("notifications").select("id", { count: "exact", head: true }).eq("state", "failed"),
+  ]);
+
+  const items = waitingOn({
+    unpayableHosts: unpayable.count ?? 0,
+    openDisputes: disputes.count ?? 0,
+    escalations: escalations.count ?? 0,
+    pendingListings: listings.count ?? 0,
+    accountChangeRequests: changes.count ?? 0,
+    failedNotifications: failed.count ?? 0,
+  });
+
+  if (items.length === 0) return { waiting: 0 };
+
+  await notify({
+    kind: "staff_waiting",
+    // Not a user row: the operator is an address in ADMIN_EMAILS, and there
+    // is no account to carry preferences. Alert switches would not apply to a
+    // queue anyway — it is the person who runs the place.
+    recipient: { userId: "staff", email: to },
+    /*
+     * The fingerprint is the subject id, which is what makes the dedupe do the
+     * right thing on its own: an unchanged queue produces the same key and the
+     * second send is dropped, anything new changes it and gets through, and the
+     * date inside it raises a queue nobody has dealt with again tomorrow rather
+     * than once and never.
+     */
+    subjectId: waitingSignature(items, now),
+    context: {
+      summary: subjectFor(items),
+      items: items.map((item) => `  • ${item.line}`).join("\n"),
+      queueUrl: `${siteUrl()}/admin`,
+    },
+  });
+
+  return { waiting: items.length };
 }

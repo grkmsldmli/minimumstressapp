@@ -34,6 +34,7 @@ export const NOTIFICATION_KINDS = [
   "refund_taken_back",
   "claim_filed",
   "claim_decided",
+  "staff_waiting",
 ] as const;
 
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
@@ -57,6 +58,14 @@ export interface Message {
 export interface MessageContext {
   /** Who is being written to, for the greeting. */
   name?: string;
+  /*
+   * The staff digest. Pre-composed by the caller, because deciding what is
+   * worth an interruption is a rule with its own tests — see admin/attention.ts
+   * — and this file's job is wording, not judgement.
+   */
+  summary?: string;
+  items?: string;
+  queueUrl?: string;
   spaceName?: string;
   /** Pre-formatted in the recipient's own timezone by the caller. */
   when?: string;
@@ -460,6 +469,31 @@ export function render(kind: NotificationKind, context: MessageContext): Message
         sms: null,
       };
     }
+
+    /**
+     * What is waiting on the operator, when the operator is not looking.
+     *
+     * Everything here is already on the staff screen and shown well. The screen
+     * cannot reach anybody, though — it is a page, and a page has to be opened.
+     * Until this existed, two events sent mail and the rest waited for somebody
+     * to happen to look, which is fine right up until a host is standing in a
+     * studio they opened for a session we cannot pay them for.
+     *
+     * Deliberately one message rather than six. Six arriving together is noise,
+     * and noise gets filtered, which is the same as silence but harder to
+     * notice.
+     */
+    case "staff_waiting":
+      return {
+        subject: String(context.summary ?? "Something is waiting on you"),
+        body: lines(
+          "Waiting on a decision:",
+          String(context.items ?? ""),
+          `The queue is at ${context.queueUrl ?? "/admin"}.`,
+          SIGN_OFF,
+        ),
+        sms: null,
+      };
 
     /** Money the host has earned and cannot receive. Nobody finds out unless we say. */
     case "payout_failed":

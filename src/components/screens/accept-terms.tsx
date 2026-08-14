@@ -73,20 +73,27 @@ export function AcceptTerms({
           ))}
         </div>
 
-        <button
-          type="button"
-          onClick={onReadFull}
-          className="font-body text-[13.5px] mt-5 press text-sky-soft"
-        >
-          Read the full terms and privacy policy →
-        </button>
-
         {error && (
           <p className="font-body font-normal text-[13.5px] mt-4 text-coral-soft">{error}</p>
         )}
       </div>
 
       <div className="relative z-10 px-8 pb-9 shrink-0">
+        {/*
+          The way to the full text sits with the button, not below the cards.
+          It was at the end of a scrolling list while "I agree" stayed on
+          screen throughout — so agreeing was easier to reach than reading,
+          which is the wrong way round on the one screen whose whole purpose is
+          that somebody saw this before they accepted it.
+        */}
+        <button
+          type="button"
+          onClick={onReadFull}
+          className="font-body text-[13.5px] mb-4 press text-sky-soft"
+        >
+          Read the full terms and privacy policy →
+        </button>
+
         <PrimaryButton onClick={() => void accept()} disabled={saving}>
           {saving ? "One moment…" : "I agree — continue"}
         </PrimaryButton>

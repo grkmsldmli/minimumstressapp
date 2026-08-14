@@ -350,7 +350,7 @@ export function SpaceDetail({
               {space.addressLine ?? space.area ?? "Address on request"}
             </p>
             <p className="font-body font-normal text-[13.5px] leading-relaxed mt-0.5 text-ink-soft">
-              Entry instructions and your door code arrive 30 minutes before you start.
+              Entry instructions arrive a day before, your door code half an hour before.
             </p>
           </div>
         </div>

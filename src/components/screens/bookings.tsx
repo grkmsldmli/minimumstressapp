@@ -274,9 +274,17 @@ function AccessPanel({
           Said, rather than left as an absence. The address is on the listing
           from the start; what appears here is the way in, and it appears when
           it is useful rather than when it is booked.
+
+          Two lead times, because there are two things. The instructions open a
+          day ahead — `space_access_details` gates on `starts_at - now() < 24
+          hours` — and the code half an hour ahead, on ACCESS_CODE_LEAD_MS.
+          This line claimed thirty minutes for both, which is the same screen
+          promising something later than it arrives and, a screen away in
+          MyBookings, contradicting itself.
         */
         <p className="font-body font-normal text-[14px] leading-relaxed text-white/65">
-          Entry instructions and your door code appear here 30 minutes before you start.
+          Entry instructions appear here a day before, and your door code half an hour before you
+          start.
         </p>
       )}
     </div>

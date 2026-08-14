@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   CLAIM_CAP_CENTS,
+  claimBlockedBecause,
+  explainClaimBlock,
   CLAIM_TYPES,
   CLAIM_WINDOW_HOURS,
   CLEANING_FEE_CENTS,
@@ -158,5 +160,55 @@ describe("the claim types themselves", () => {
   it("prices the repeatable ones and assesses the rest", () => {
     expect(claimType("cleaning").fixedCents).toBe(CLEANING_FEE_CENTS);
     expect(claimType("damage").fixedCents).toBeNull();
+  });
+});
+
+/**
+ * Whether there is a session here to claim against at all.
+ *
+ * The payment test used to read `stripe_payment_intent_id`, which is written
+ * when the row is created and stays there after the sweep cancels the intent.
+ * So an abandoned checkout — an hour nobody paid for and nobody entered —
+ * passed it, and a practitioner could be told they had damaged a room they had
+ * never been inside. No money would have moved, because Stripe refuses a
+ * cancelled intent, but that is the wrong place to be caught.
+ */
+describe("whether a booking can be claimed against", () => {
+  const paid = { status: "completed", capturedAt: new Date("2026-08-20T10:00:00Z") };
+
+  it("allows a completed session that was paid for", () => {
+    expect(claimBlockedBecause(paid)).toBeNull();
+  });
+
+  /**
+   * A cancelled session can still be claimed against — a host who cleaned up
+   * after a no-show is out the same money as one who cleaned up after a guest.
+   */
+  it.each(["cancelled_by_practitioner", "cancelled_by_host"])(
+    "allows a paid booking that was %s",
+    (status) => {
+      expect(claimBlockedBecause({ ...paid, status })).toBeNull();
+    },
+  );
+
+  it("refuses a session that has not happened", () => {
+    expect(claimBlockedBecause({ ...paid, status: "upcoming" })).toBe("not_yet");
+  });
+
+  it("refuses an hour that was never paid for", () => {
+    expect(claimBlockedBecause({ ...paid, capturedAt: null })).toBe("never_paid");
+  });
+
+  /** The abandoned checkout exactly: reaped to cancelled, never captured. */
+  it("refuses an abandoned checkout the sweep has cancelled", () => {
+    expect(
+      claimBlockedBecause({ status: "cancelled_by_practitioner", capturedAt: null }),
+    ).toBe("never_paid");
+  });
+
+  it("says why, in words a host can act on", () => {
+    expect(explainClaimBlock("not_yet").message).toMatch(/has not happened/i);
+    expect(explainClaimBlock("never_paid").message).toMatch(/never paid/i);
+    expect(explainClaimBlock("never_paid").status).toBe(409);
   });
 });

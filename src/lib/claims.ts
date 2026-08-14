@@ -200,3 +200,42 @@ export function routeClaim(context: ClaimContext): ClaimRoute {
 
   return { kind: "assess", because: "A person reads both accounts and puts a number on it." };
 }
+
+/**
+ * Whether there is a session here to claim against at all.
+ *
+ * Kept with the rules rather than in the service, so it can be tested without
+ * a query builder — the same split booking-plan.ts makes, and for the same
+ * reason: the plumbing is thin and this is where the money is.
+ *
+ * The payment test used to read `stripe_payment_intent_id`, which is written
+ * when the row is created and stays there whatever happens next. An abandoned
+ * checkout keeps its intent id after the sweep cancels the intent, so a host
+ * could open a damage claim against an hour nobody paid for and nobody
+ * attended — no money would move, because Stripe refuses a cancelled intent,
+ * but a practitioner would be told they had damaged a room they never entered.
+ *
+ * `captured_at` is the column that means money was taken.
+ */
+export type ClaimBlock = "not_yet" | "never_paid";
+
+export function claimBlockedBecause(booking: {
+  status: string;
+  capturedAt: Date | null;
+}): ClaimBlock | null {
+  if (booking.status !== "completed" && !booking.status.startsWith("cancelled")) {
+    return "not_yet";
+  }
+  if (booking.capturedAt === null) return "never_paid";
+  return null;
+}
+
+/** What to tell the host, kept beside the reason it is being said. */
+export function explainClaimBlock(block: ClaimBlock): { message: string; status: number } {
+  return block === "not_yet"
+    ? { message: "That session has not happened yet", status: 409 }
+    : {
+        message: "That booking was never paid for, so there is no card to charge",
+        status: 409,
+      };
+}

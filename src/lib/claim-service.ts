@@ -2,7 +2,14 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { type ClaimKind, claimType, overstayCents, routeClaim } from "./claims";
+import {
+  type ClaimKind,
+  claimBlockedBecause,
+  claimType,
+  explainClaimBlock,
+  overstayCents,
+  routeClaim,
+} from "./claims";
 import { notifyClaimDecided, notifyClaimFiled } from "./notify/for-claim";
 import { chargeForClaim } from "./stripe/client";
 
@@ -34,6 +41,7 @@ interface BookingRow {
   space_id: string;
   status: string;
   ends_at: string;
+  captured_at: string | null;
   host_rate_cents: number;
   stripe_payment_intent_id: string | null;
   spaces: { host_id: string; hourly_rate_cents: number };
@@ -43,7 +51,7 @@ async function loadBooking(admin: SupabaseClient, bookingId: string): Promise<Bo
   const { data, error } = await admin
     .from("bookings")
     .select(
-      "id, practitioner_id, space_id, status, ends_at, host_rate_cents, stripe_payment_intent_id, spaces!inner(host_id, hourly_rate_cents)",
+      "id, practitioner_id, space_id, status, ends_at, captured_at, host_rate_cents, stripe_payment_intent_id, spaces!inner(host_id, hourly_rate_cents)",
     )
     .eq("id", bookingId)
     .maybeSingle();
@@ -80,11 +88,22 @@ export async function fileClaim(
   // Checked, not trusted: an id in a URL says nothing about who owns the room.
   if (booking.spaces.host_id !== hostId) throw new ClaimError("No such booking", 404);
 
-  if (booking.status !== "completed" && !booking.status.startsWith("cancelled")) {
-    throw new ClaimError("That session has not happened yet", 409);
+  /*
+   * Both refusals come from claims.ts, so they can be tested without a query
+   * builder. The payment one used to read `stripe_payment_intent_id`, which is
+   * written when the row is created and survives the sweep that cancels the
+   * intent — so an abandoned hour passed it.
+   */
+  const blocked = claimBlockedBecause({
+    status: booking.status,
+    capturedAt: booking.captured_at ? new Date(booking.captured_at) : null,
+  });
+  if (blocked) {
+    const { message, status } = explainClaimBlock(blocked);
+    throw new ClaimError(message, status);
   }
   if (!booking.stripe_payment_intent_id) {
-    throw new ClaimError("That booking was never paid, so there is no card to charge", 409);
+    throw new ClaimError("That booking has no card on it to charge", 409);
   }
 
   const sessionEnd = new Date(booking.ends_at);

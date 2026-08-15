@@ -338,7 +338,7 @@ export function ProScreen({
           eight Tuesdays booked eight times.
         */}
         <p className="font-display italic font-semibold text-[21px] leading-snug text-center text-navy mt-9">
-          Give yourself <span className="text-sky-text">room to work.</span>
+          Get <span className="text-sky-text">Pro Advantages</span>
         </p>
       </div>
 

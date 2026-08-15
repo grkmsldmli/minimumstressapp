@@ -422,19 +422,32 @@ export function PractitionerProfile({
         </div>
 
         <GroupLabel>Notifications</GroupLabel>
-        <div className="flex flex-col gap-2.5">
-          <SettingToggle
-            label="Booking reminders"
-            sub="Entry code and session reminders"
-            on={profile.notifyBookings}
-            onToggle={() => onUpdate({ notifyBookings: !profile.notifyBookings })}
-          />
-          <SettingToggle
-            label="Offers"
-            sub="Pro deals and occasional updates"
-            on={profile.notifyOffers}
-            onToggle={() => onUpdate({ notifyOffers: !profile.notifyOffers })}
-          />
+        {/*
+          Two switches stood here and neither did what it said.
+          "Booking reminders" wrote `notify_bookings`, which is the host
+          preference — the one that silences "somebody booked your space". A
+          practitioner turning it off changed nothing about their own mail, and
+          somebody who is both would have silenced their studio alerts from the
+          wrong screen without being told. Its own subtitle promised control
+          over the entry code, which is never withheld: see SILENCEABLE, where
+          the line is drawn at anything carrying a door code or a change to
+          somebody's day.
+          "Offers" wrote a column nothing reads. There is no offers message and
+          no send that consults it — the same fault this file's own comment
+          records as a bug, left in place for one more switch.
+          Nothing a practitioner receives is optional, because all of it is
+          about a session they paid for. So the section says that instead of
+          offering a choice that does not exist. When there is marketing to
+          send, the switch comes back with a sender that honours it.
+        */}
+        <div
+          className="rounded-2xl p-4"
+          style={{ backgroundColor: "#F4F8FC", border: "1px solid #E7EEF6" }}
+        >
+          <p className="font-body font-normal text-[15px] leading-relaxed text-ink-muted">
+            We email you about your own sessions — confirmations, your entry code, and anything
+            that changes. Nothing else, and no marketing.
+          </p>
         </div>
 
         <div className="mt-6">

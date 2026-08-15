@@ -48,6 +48,25 @@ export async function handled(work: () => Promise<Response>): Promise<Response> 
       return jsonError((error as Error).message, status);
     }
     console.error("Unhandled route error:", error);
-    return jsonError("Something went wrong on our end", 500);
+    return jsonError(`Something went wrong on our end${because(error)}`, 500);
   }
+}
+
+/**
+ * The real reason, outside production only.
+ *
+ * The blanket message above is right for the public internet and useless to
+ * whoever is testing: a bare 500 in the console names no route, no call and no
+ * cause, so finding out what broke means reading a server log in a terminal
+ * nobody has open. Everything it withholds is already on the same laptop as
+ * the screen the failure appeared on.
+ *
+ * Guarded on NODE_ENV rather than a flag somebody could set by mistake, and
+ * Next sets that to "production" for `next build` and `next start` without
+ * being asked.
+ */
+function because(error: unknown): string {
+  if (process.env.NODE_ENV === "production") return "";
+  const detail = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+  return ` — ${detail}`;
 }

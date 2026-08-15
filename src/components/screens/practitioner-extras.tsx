@@ -330,6 +330,16 @@ export function ProScreen({
           </div>
         </div>
 
+        {/*
+          One line in the room the table left, in the display face the app
+          keeps for what it wants somebody to feel rather than parse. Not an
+          explanation — the table is the explanation — and the benefit it names
+          is the one nothing else here sells: a term booked once, instead of
+          eight Tuesdays booked eight times.
+        */}
+        <p className="font-display italic font-semibold text-[21px] leading-snug text-center text-navy mt-9">
+          Book the term, <span className="text-sky-text">not the week.</span>
+        </p>
       </div>
 
       <div className="px-6 pb-7 shrink-0">

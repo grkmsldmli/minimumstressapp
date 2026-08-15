@@ -72,6 +72,42 @@ export async function readPayoutStatus(accountId: string): Promise<PayoutStatus>
   });
 }
 
+/**
+ * Is this a stored account id our key can still act on?
+ *
+ * A connected account belongs to the platform key that created it. Rotate to a
+ * different Stripe account — or have the platform's access revoked — and every
+ * id written before that becomes unusable: Stripe answers "the provided key
+ * does not have access to account acct_…", and it answers that to the payout
+ * link, the onboarding link and the balance alike.
+ *
+ * That is worse than it sounds, because onboarding reuses the stored id. Both
+ * ways back are shut at once and the host cannot be paid at all, while the
+ * settings screen goes on saying "Stripe · connected".
+ *
+ * Only a definite no counts. A network failure or an outage is not an answer
+ * about the account, and treating one as if it were would throw away a good
+ * id over a dropped connection.
+ */
+export async function accountIsReachable(accountId: string): Promise<boolean> {
+  try {
+    await stripe().accounts.retrieve(accountId);
+    return true;
+  } catch (error) {
+    if (isMissingAccount(error)) return false;
+    throw error;
+  }
+}
+
+function isMissingAccount(error: unknown): boolean {
+  const { type, code } = error as { type?: string; code?: string };
+  return (
+    type === "StripePermissionError" ||
+    code === "resource_missing" ||
+    code === "account_invalid"
+  );
+}
+
 /** A one-time link into Stripe's hosted onboarding. Expires quickly by design. */
 export async function createOnboardingLink(
   accountId: string,

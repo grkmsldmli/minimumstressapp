@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 
 import { LIMITS, check, identify, tooManyRequests } from "@/lib/api/rate-limit";
 import { handled, jsonError, requireUser } from "@/lib/api/session";
-import { createAccountUpdateLink } from "@/lib/stripe/client";
+import { accountIsReachable, createAccountUpdateLink } from "@/lib/stripe/client";
 import { supabaseAdmin } from "@/lib/supabase/server";
 
 /**
@@ -41,6 +41,20 @@ export async function POST(request: NextRequest): Promise<Response> {
     // answer is to finish onboarding rather than to try this again.
     if (!profile?.stripe_connect_account_id) {
       return jsonError("There is no payout account to open yet", 409);
+    }
+
+    /*
+     * An id from before a key rotation is not an account we can open. Said as
+     * something the host can act on, because there is an action: onboarding
+     * replaces the dead id, and the button for it is on the same screen. This
+     * used to reach Stripe, fail, and arrive as a bare 500 — handled() looks
+     * for `status` on a thrown error and Stripe carries `statusCode`.
+     */
+    if (!(await accountIsReachable(profile.stripe_connect_account_id))) {
+      return jsonError(
+        "We can't reach your payout account. Set up payouts again to reconnect it.",
+        409,
+      );
     }
 
     const origin = request.nextUrl.origin;

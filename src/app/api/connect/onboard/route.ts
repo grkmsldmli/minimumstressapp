@@ -2,7 +2,11 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { LIMITS, check, identify, tooManyRequests } from "@/lib/api/rate-limit";
 import { handled, requireUser } from "@/lib/api/session";
-import { createConnectedAccount, createOnboardingLink } from "@/lib/stripe/client";
+import {
+  accountIsReachable,
+  createConnectedAccount,
+  createOnboardingLink,
+} from "@/lib/stripe/client";
 import { supabaseAdmin } from "@/lib/supabase/server";
 
 /**
@@ -32,9 +36,32 @@ async function linkFor(request: NextRequest, userId: string, email: string | nul
   // verification the host already completed on the first.
   let accountId = profile?.stripe_connect_account_id ?? null;
 
+  /*
+   * Unless it is an id this key cannot act on, which is not an account so much
+   * as a dead pointer: no link can be built from it and no money can move
+   * through it. Reusing it shut the only two ways back at once — this route
+   * and the payout screen both failed on the same call — so a host whose id
+   * predated a key rotation could never be paid, while the settings screen
+   * went on saying "Stripe · connected".
+   *
+   * Dropping it costs whatever verification was done on the old account, which
+   * is already lost: it belongs to a Stripe account we can no longer see.
+   */
+  if (accountId && !(await accountIsReachable(accountId))) accountId = null;
+
   if (!accountId) {
     accountId = await createConnectedAccount(email);
-    await admin.from("profiles").upsert({ id: userId, stripe_connect_account_id: accountId });
+    /*
+     * charges_enabled goes back to false with it. It is set by the
+     * account.updated webhook once Stripe says payouts genuinely work, and
+     * leaving the old account's true behind would tell this host they were
+     * ready to be paid through an account that does not yet exist for them.
+     */
+    await admin.from("profiles").upsert({
+      id: userId,
+      stripe_connect_account_id: accountId,
+      stripe_connect_charges_enabled: false,
+    });
   }
 
   const origin = request.nextUrl.origin;

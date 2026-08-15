@@ -932,13 +932,36 @@ export function HostProfile({
           )}
 
           {payoutError && (
-            <p
-              className="font-body font-normal text-[14px] leading-relaxed rounded-xl p-3"
-              style={{ backgroundColor: "#FEF2F0", border: "1px solid #F5C4BC", color: "#7A4A42" }}
+            <div
+              className="rounded-xl p-3"
+              style={{ backgroundColor: "#FEF2F0", border: "1px solid #F5C4BC" }}
               role="alert"
             >
-              {payoutError}
-            </p>
+              <p
+                className="font-body font-normal text-[14px] leading-relaxed"
+                style={{ color: "#7A4A42" }}
+              >
+                {payoutError}
+              </p>
+
+              {/*
+                A way out, on the screen the failure appeared on. Some of these
+                are only fixed by onboarding again — an account id written
+                before a key rotation cannot be opened, and the row above still
+                says "connected" because our own column still says so. Without
+                this the host reads a refusal and has nothing to press.
+              */}
+              {profile.stripeConnected && (
+                <button
+                  type="button"
+                  onClick={goToStripe(onConnectPayouts)}
+                  className="w-full mt-2.5 py-2.5 rounded-lg font-body font-medium text-[14.5px] text-white press"
+                  style={{ backgroundColor: "#2578C2" }}
+                >
+                  Set up payouts again
+                </button>
+              )}
+            </div>
           )}
 
           {/* The Standard-vs-Instant choice the brief calls for. */}

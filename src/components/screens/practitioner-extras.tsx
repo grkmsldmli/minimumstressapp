@@ -207,7 +207,7 @@ const COMPARISON: { label: string; free: string | false; pro: string | true }[] 
      * is stated in full.
      */
     label: "Cancel 24h+",
-    free: "Partial",
+    free: "Minus fee",
     pro: "Full",
   },
 ];
@@ -339,6 +339,17 @@ export function ProScreen({
         <p className="font-body font-normal text-[14px] leading-relaxed mt-5 text-center text-ink-soft">
           Pro buys room on the calendar: more sessions at once, further ahead, and a whole term
           in one go.
+        </p>
+
+        {/*
+          "Partial" said how much came back and never what was missing, which
+          is the half somebody wants: the shortfall is the card network's
+          processing fee, not ours, and we do not get it either. Too long for a
+          column this narrow, so the cell says which fee and this says whose.
+        */}
+        <p className="font-body font-normal text-[13.5px] leading-relaxed mt-3 text-center text-ink-faint">
+          The fee is what the card network charges to process a payment. It keeps that whether or
+          not the session goes ahead.
         </p>
       </div>
 

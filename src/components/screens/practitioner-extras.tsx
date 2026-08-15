@@ -169,7 +169,7 @@ export function InsuranceUpload({
  */
 const COMPARISON: { label: string; free: string | false; pro: string | true }[] = [
   {
-    label: "Sessions",
+    label: "Sessions at once",
     free: String(MAX_UPCOMING_BOOKINGS_FREE),
     pro: "Unlimited",
   },
@@ -179,7 +179,7 @@ const COMPARISON: { label: string; free: string | false; pro: string | true }[] 
     pro: `${PRO_BOOKING_HORIZON_DAYS} days`,
   },
   {
-    label: "Weekly series",
+    label: "Book weeks at once",
     free: false,
     pro: true,
   },
@@ -190,7 +190,7 @@ const COMPARISON: { label: string; free: string | false; pro: string | true }[] 
      * share sheet does the sending — which is why this can be a Pro line
      * without becoming a line about collecting somebody's number.
      */
-    label: "Send to client",
+    label: "Send details to your client",
     free: false,
     pro: true,
   },
@@ -206,7 +206,7 @@ const COMPARISON: { label: string; free: string | false; pro: string | true }[] 
      * card network's processing fee, not ours — belongs in the terms, where it
      * is stated in full.
      */
-    label: "Cancel 24h+",
+    label: "Cancel 24h ahead",
     free: "Minus fee",
     pro: "Full",
   },
@@ -287,7 +287,7 @@ export function ProScreen({
             heights and the table looking like a mistake rather than a
             comparison.
           */}
-          <div className="grid" style={{ gridTemplateColumns: "1.5fr 1fr 1fr" }}>
+          <div className="grid" style={{ gridTemplateColumns: "1.75fr 0.9fr 0.9fr" }}>
             <span />
             <span className="py-2.5 text-center font-body font-medium text-[13.5px] text-ink-soft">
               Free
@@ -302,7 +302,7 @@ export function ProScreen({
             {COMPARISON.map(({ label, free, pro }, i) => (
               <Fragment key={label}>
                 <span
-                  className="px-3 py-3 font-body font-medium text-[14px] text-navy"
+                  className="px-3 py-3 flex items-center font-body font-medium text-[14px] leading-snug text-navy"
                   style={{ borderTop: "1px solid #E7EEF6" }}
                 >
                   {label}

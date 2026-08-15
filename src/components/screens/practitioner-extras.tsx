@@ -338,7 +338,7 @@ export function ProScreen({
           eight Tuesdays booked eight times.
         */}
         <p className="font-display italic font-semibold text-[21px] leading-snug text-center text-navy mt-9">
-          Book the term, <span className="text-sky-text">not the week.</span>
+          Give yourself <span className="text-sky-text">room to work.</span>
         </p>
       </div>
 

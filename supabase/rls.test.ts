@@ -515,8 +515,15 @@ describe("profiles keep their payment identifiers to themselves", () => {
   });
 
   it("never exposes the platform's cut to a host", async () => {
-    // Hosts see earnings, never a percentage. Keeping the fee columns out of
-    // the signature means even a careless `select *` cannot leak them.
+    /*
+     * Hosts see earnings, never a percentage. Keeping the fee columns out of
+     * the signature means even a careless `select *` cannot leak them.
+     *
+     * The list is exact rather than a check for absent names, so adding any
+     * column to this function has to come past this test. `host_paid_at` did:
+     * it says when a transfer landed, which is the host's own money and their
+     * own question, and carries no amount at all.
+     */
     const [row] = await asUser<Record<string, unknown>>(HOST, `select * from host_bookings()`);
 
     expect(Object.keys(row)).toEqual([
@@ -528,7 +535,21 @@ describe("profiles keep their payment identifiers to themselves", () => {
       "net_cents",
       "practitioner_name",
       "practitioner_avatar_path",
+      "host_paid_at",
     ]);
+  });
+
+  /** The new column is a time, and a time cannot carry an amount. */
+  it("says when a payout landed without saying what the platform kept", async () => {
+    const [row] = await asUser<Record<string, unknown>>(
+      HOST,
+      `select * from host_bookings()`,
+    );
+
+    expect(row).toHaveProperty("host_paid_at");
+    for (const leak of ["platform_cents", "service_fee_cents", "total_cents", "instant_fee_cents"]) {
+      expect(Object.keys(row)).not.toContain(leak);
+    }
   });
 
   it("drops a host from public view once they have no live listing", async () => {

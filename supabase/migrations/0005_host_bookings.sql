@@ -15,7 +15,12 @@
 -- and leaving those columns out means a careless `select *` on the client
 -- cannot leak them.
 
-create or replace function host_bookings()
+-- Dropped first for the same reason 0038 and 0042 do: apply.sql re-runs every
+-- migration in order, 0042 changes this function's return type, and a replace
+-- cannot change one. Without this the second pass stops here.
+drop function if exists host_bookings();
+
+create function host_bookings()
 returns table (
   booking_id uuid,
   space_id uuid,

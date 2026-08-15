@@ -178,6 +178,7 @@ export class SupabaseRepository implements Repository {
       searchPostcode: data?.search_postcode ?? null,
       termsVersion: data?.terms_version ?? null,
       termsAcceptedAt: data?.terms_accepted_at ? new Date(data.terms_accepted_at) : null,
+      milestonesSeen: (data?.milestones_seen as string[] | null) ?? [],
       // Read back only for its owner — this query runs as the signed-in user,
       // and no policy lets anyone select another person's profile row.
       emergencyContact: {
@@ -216,6 +217,9 @@ export class SupabaseRepository implements Repository {
      * server clock, so a client cannot record that somebody agreed last year.
      */
     if (patch.termsVersion !== undefined) row.terms_version = patch.termsVersion;
+    // Dismissing a card is the person's own action, and nothing downstream
+    // reads this for money or access.
+    if (patch.milestonesSeen !== undefined) row.milestones_seen = patch.milestonesSeen;
 
     // isPro and stripeConnected are absent on purpose: both are set by webhooks
     // after money or verification actually clears, never by the client asking.
@@ -1276,6 +1280,7 @@ export class SupabaseRepository implements Repository {
         starts_at: string;
         ends_at: string;
         status: BookingStatus;
+        host_paid_at: string | null;
         net_cents: number;
         practitioner_name: string | null;
       }): HostBooking => ({
@@ -1287,6 +1292,7 @@ export class SupabaseRepository implements Repository {
         endsAt: new Date(row.ends_at),
         status: row.status,
         netCents: row.net_cents,
+        hostPaidAt: row.host_paid_at ? new Date(row.host_paid_at) : null,
       }),
     );
   }

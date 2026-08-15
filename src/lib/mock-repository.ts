@@ -266,6 +266,7 @@ export class MockRepository implements Repository {
     searchPostcode: null,
     termsVersion: null,
     termsAcceptedAt: null,
+    milestonesSeen: [],
   };
 
   private publicSpaces: PublicSpace[] = [];
@@ -812,6 +813,8 @@ export class MockRepository implements Repository {
       endsAt: new Date(startsAt.getTime() + SESSION_MINUTES * 60 * 1000),
       status: "upcoming",
       netCents: space.hourlyRateCents,
+      // Nothing is settled before the session has happened.
+      hostPaidAt: null,
     };
 
     this.hostBookings.push(booking);

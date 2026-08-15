@@ -21,6 +21,7 @@ import { DeleteAccount } from "@/components/delete-account";
 import { DocumentStatus } from "@/components/document-status";
 import { EmergencyContactCard } from "@/components/emergency-contact";
 import { BadgeCard } from "@/components/badge-card";
+import { MilestoneCard } from "@/components/milestone-card";
 import { Ambient, Headline, LogoBadge } from "@/components/brand";
 import { PrimaryButton } from "@/components/primitives";
 import { StandingNotice } from "@/components/standing-notice";
@@ -30,6 +31,7 @@ import type { HostBooking, HostSpace, Profile } from "@/lib/domain";
 import { formatCents } from "@/lib/money";
 import { PAYOUT_DELAY_DAYS, describeSpeed } from "@/lib/payouts";
 import type { Standing } from "@/lib/reliability";
+import type { MilestoneKey } from "@/lib/milestones";
 import { claimWindowEndsAt } from "@/lib/claims";
 import { listingGaps } from "@/lib/listing-quality";
 import { FALLBACK_ZONE, zoneAbbreviation } from "@/lib/timezone";
@@ -742,6 +744,8 @@ export function HostProfile({
   onBack,
   onUpdate,
   sessions,
+  milestones,
+  milestoneTotal,
   onDeleteAccount,
   onPickAvatar,
   onGoLegal,
@@ -756,6 +760,10 @@ export function HostProfile({
   onUpdate: (patch: Partial<Profile>) => Promise<unknown>;
   /** Completed, paid sessions. Drives the badges and nothing else. */
   sessions: number;
+  /** The moments reached so far, counted in app.tsx from bookings and payouts. */
+  milestones: MilestoneKey[];
+  /** What the empty hours earned, or null before there is anything to say. */
+  milestoneTotal: string | null;
   /** Irreversible, and the screen says so before it runs. */
   onDeleteAccount: () => Promise<void>;
   /** Uploads the picture and resolves once it is stored, not once it is shown. */
@@ -926,7 +934,13 @@ export function HostProfile({
           <ProfileRow icon={LogOut} label="Log out" onClick={onSignOut} danger />
         </div>
 
-        <div className="mt-6">
+        <div className="mt-6 flex flex-col gap-2.5">
+          {/*
+            Above the badges, because these are the ones somebody can actually
+            reach this year. badge-card holds itself back until twenty-five
+            sessions and starts counting at a hundred.
+          */}
+          <MilestoneCard party="host" earned={milestones} total={milestoneTotal} />
           <BadgeCard party="host" sessions={sessions} />
         </div>
 

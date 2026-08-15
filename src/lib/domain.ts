@@ -77,6 +77,14 @@ export interface Profile {
   searchPostcode: string | null;
   termsVersion: number | null;
   termsAcceptedAt: Date | null;
+  /**
+   * Milestone keys already shown, so the one full-screen moment appears once.
+   *
+   * Only "have they seen it" — whether a milestone is *earned* is derived from
+   * bookings, reviews and payouts every time it is asked, so it cannot drift
+   * from what actually happened or be granted by writing a row.
+   */
+  milestonesSeen: string[];
 }
 
 export interface SpaceMedia {
@@ -374,6 +382,13 @@ export interface HostBooking {
   status: BookingStatus;
   /** Exactly the host's rate. The platform's cut is not theirs to see. */
   netCents: number;
+  /**
+   * When the transfer reached their bank. Null until it has.
+   *
+   * Not "when it will be" — a session is settled or it is not, and a host
+   * checking last week wants the difference.
+   */
+  hostPaidAt: Date | null;
 }
 
 /** One message on a booking's thread, as its two participants see it. */

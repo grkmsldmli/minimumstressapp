@@ -18,6 +18,7 @@ import { AccountChange } from "@/components/account-change";
 import { DeleteAccount } from "@/components/delete-account";
 import { EmergencyContactCard } from "@/components/emergency-contact";
 import { BadgeCard } from "@/components/badge-card";
+import { MilestoneCard } from "@/components/milestone-card";
 import { Ambient, BreathingLogo, Headline } from "@/components/brand";
 import { ConfettiBurst, PrimaryButton, Toggle } from "@/components/primitives";
 import { SavedCard } from "@/components/saved-card";
@@ -25,6 +26,7 @@ import { StandingNotice } from "@/components/standing-notice";
 import { AvatarUpload, DocumentUpload } from "@/components/uploads";
 import type { AccountType, Profile } from "@/lib/domain";
 import type { Standing } from "@/lib/reliability";
+import type { MilestoneKey } from "@/lib/milestones";
 import {
   BOOKING_HORIZON_DAYS,
   MAX_UPCOMING_BOOKINGS_FREE,
@@ -365,6 +367,8 @@ export function ProScreen({
 
 export function PractitionerProfile({
   profile,
+  milestones,
+  milestoneTotal,
   bookingsCount,
   standing,
   onBack,
@@ -380,6 +384,10 @@ export function PractitionerProfile({
   onSignOut,
 }: {
   profile: Profile;
+  /** The moments reached so far, counted in app.tsx from bookings. */
+  milestones: MilestoneKey[];
+  /** What they have held, never what they spent. See milestones.ts. */
+  milestoneTotal: string | null;
   bookingsCount: number;
   standing: Standing;
   onBack: () => void;
@@ -489,6 +497,7 @@ export function PractitionerProfile({
         </div>
 
         <div className="mt-6">
+          <MilestoneCard party="practitioner" earned={milestones} total={milestoneTotal} />
           <BadgeCard party="practitioner" sessions={sessions} />
         </div>
 

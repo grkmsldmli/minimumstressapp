@@ -21,7 +21,16 @@
 -- because money did arrive, and a host's history should not lose a session
 -- that happened.
 
-create or replace function host_bookings()
+/*
+ * Dropped first, because apply.sql re-runs every migration in order and 0042
+ * changes this function's return type. Without the drop, the second pass
+ * reaches this statement with the newer signature already in place and stops
+ * at "cannot change return type of existing function" — which is what the
+ * idempotency test catches.
+ */
+drop function if exists host_bookings();
+
+create function host_bookings()
 returns table (
   booking_id uuid,
   space_id uuid,

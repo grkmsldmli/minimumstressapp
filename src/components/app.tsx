@@ -14,6 +14,15 @@ import type {
 } from "@/lib/domain";
 import { errorMessage } from "@/lib/error-message";
 import { delayFor, isTransient } from "@/lib/transient";
+import { hostFactsFrom, practitionerFactsFrom } from "@/lib/milestone-facts";
+import {
+  celebrationDue,
+  earnedByHost,
+  earnedByPractitioner,
+  hostTotal,
+  practitionerTotal,
+} from "@/lib/milestones";
+import { MilestoneMoment } from "@/components/milestone-moment";
 import { type CancellationEvent, standingFor } from "@/lib/reliability";
 import type { LocationChoice } from "@/components/location-prompt";
 import { supabaseBackendEnabled } from "@/lib/repository-factory";
@@ -672,6 +681,39 @@ export function App() {
   const hostStanding = standingFor("host", cancellations, now);
 
   /**
+   * The moments each side has reached, counted here because this is the only
+   * place holding both sides' rows.
+   *
+   * Derived every render rather than stored. What gets stored is narrower —
+   * which ones have been *shown* — so a milestone can never be granted by
+   * writing a row, and can never drift from the bookings it is counted from.
+   */
+  const hostFacts = hostFactsFrom({
+    spaces: mySpaces,
+    bookings: hostBookings,
+    payoutsReceived: hostBookings.filter((b) => b.hostPaidAt !== null).length,
+  });
+  const practitionerFacts = practitionerFactsFrom({
+    bookings,
+    // Reviews written about the practitioner. Not yet surfaced anywhere, so
+    // the milestone waits rather than firing on a number we do not have.
+    reviewsReceived: 0,
+  });
+
+  const hostMilestones = earnedByHost(hostFacts);
+  const practitionerMilestones = earnedByPractitioner(practitionerFacts);
+
+  /*
+   * One interruption, and only for the side this account is. Somebody who
+   * has switched sides should not be stopped by a moment the other one
+   * crossed.
+   */
+  const dueMilestone = celebrationDue(
+    profile.accountType === "host" ? hostMilestones : practitionerMilestones,
+    profile.milestonesSeen,
+  );
+
+  /**
    * A host with no listings goes straight to AddSpace.
    *
    * The brief is explicit that they should never meet an empty dashboard
@@ -719,6 +761,32 @@ export function App() {
       <AcceptTerms
         onAccept={() => mutate(() => repo.updateProfile({ termsVersion: TERMS_VERSION }))}
         onReadFull={() => go("legal")}
+      />
+    );
+  }
+
+  /**
+   * The first session, said before anything else.
+   *
+   * After the terms, because nothing should come between somebody and the
+   * agreement they have not made yet, and before the ordinary screens because
+   * a moment shown three taps later is not a moment.
+   *
+   * Exactly one milestone reaches here — see `celebrate` in milestones.ts.
+   * Dismissing writes the key, so it appears once; whether it was earned is
+   * derived from bookings every time and never stored.
+   */
+  if (dueMilestone) {
+    return (
+      <MilestoneMoment
+        milestone={dueMilestone}
+        onDone={() =>
+          mutate(() =>
+            repo.updateProfile({
+              milestonesSeen: [...profile.milestonesSeen, dueMilestone.key],
+            }),
+          )
+        }
       />
     );
   }
@@ -1190,6 +1258,8 @@ export function App() {
       return (
         <PractitionerProfile
           profile={profile}
+          milestones={practitionerMilestones}
+          milestoneTotal={practitionerTotal(practitionerFacts)}
           sessions={sessions}
           onDeleteAccount={deleteAccount}
           bookingsCount={bookings.length}
@@ -1287,6 +1357,8 @@ export function App() {
       return (
         <HostProfile
           profile={profile}
+          milestones={hostMilestones}
+          milestoneTotal={hostTotal(hostFacts)}
           sessions={sessions}
           onDeleteAccount={deleteAccount}
           spaces={mySpaces}

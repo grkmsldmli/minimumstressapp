@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 
 /**
- * The three actions that used to lie when they failed.
+ * The actions that used to lie when they failed.
  *
- * Each one fired its request and then told the person it had worked, without
+ * Each fired its request and then told the person it had worked, without
  * waiting to find out. On a good network that is invisible; on a bad one it
- * produced the worst thing this app can produce, which is somebody acting on
+ * produces the worst thing this app can do, which is somebody acting on
  * something that did not happen:
  *
  *   - a practitioner who believes a session is cancelled does not turn up, is
@@ -13,14 +13,20 @@
  *   - a host who believes their hours saved leaves a room open on times it was
  *     never given, or shut on times it was;
  *   - somebody who believes they bought Pro is congratulated for a card that
- *     was declined.
+ *     was declined;
+ *   - a name that did not save stays in the field, so what is on screen and
+ *     what is stored are two different names.
+ *
+ * And one that failed the other way: the milestone screen renders in front of
+ * everything, so a write that did not land meant "Thanks" did nothing at all
+ * and a congratulation locked somebody out of their own account.
  *
  * These assert the failure is visible and the claim is not made. They exist
- * because all three shipped, and the reason all three shipped is that nothing
- * in the suite could press a button. The fixtures come from MockRepository
- * rather than being written out here, so a change to the domain breaks these
- * at the type level instead of leaving them passing against a shape the app
- * no longer uses.
+ * because all of it shipped, and the reason it shipped is that nothing in the
+ * suite could press a button. The fixtures come from MockRepository rather
+ * than being written out here, so a change to the domain breaks these at the
+ * type level instead of leaving them passing against a shape the app no
+ * longer uses.
  */
 
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -28,7 +34,9 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { MyBookings } from "@/components/screens/bookings";
 import { EditAvailability } from "@/components/screens/host";
-import { ProScreen } from "@/components/screens/practitioner-extras";
+import { ProScreen, ProfileHeader } from "@/components/screens/practitioner-extras";
+import { MilestoneMoment } from "@/components/milestone-moment";
+import { MILESTONES } from "@/lib/milestones";
 import type { Booking, HostSpace } from "@/lib/domain";
 import { MockRepository } from "@/lib/mock-repository";
 import { standingFor } from "@/lib/reliability";
@@ -167,6 +175,80 @@ describe("hours that do not save", () => {
 
     await waitFor(() => expect(saveButton().textContent).toMatch(/saved/i));
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+});
+
+describe("a profile edit that does not save", () => {
+  const nameField = () => screen.getByLabelText("Your name") as HTMLInputElement;
+
+  it("puts the name back rather than showing one that was not stored", async () => {
+    render(
+      <ProfileHeader
+        onBack={() => {}}
+        avatarUrl={null}
+        onPickAvatar={vi.fn().mockResolvedValue(undefined)}
+        name="Ada"
+        onName={vi.fn().mockRejectedValue(new Error("That name did not save"))}
+        sub="2 bookings so far"
+      />,
+    );
+
+    fireEvent.change(nameField(), { target: { value: "Grace" } });
+    fireEvent.blur(nameField());
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("That name did not save");
+    // What is on screen and what is in the database are never two names.
+    expect(nameField().value).toBe("Ada");
+  });
+
+  it("keeps a saved name", async () => {
+    const onName = vi.fn().mockResolvedValue(undefined);
+    render(
+      <ProfileHeader
+        onBack={() => {}}
+        avatarUrl={null}
+        onPickAvatar={vi.fn().mockResolvedValue(undefined)}
+        name="Ada"
+        onName={onName}
+        sub="2 bookings so far"
+      />,
+    );
+
+    fireEvent.change(nameField(), { target: { value: "Grace" } });
+    fireEvent.blur(nameField());
+
+    await waitFor(() => expect(onName).toHaveBeenCalledWith("Grace"));
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(nameField().value).toBe("Grace");
+  });
+});
+
+describe("a milestone whose dismissal is not recorded", () => {
+  it("still lets somebody into their account", async () => {
+    /*
+     * This screen renders in front of the whole app. Before, a failed write
+     * meant "Thanks" did nothing at all, and a congratulation locked somebody
+     * out of the account it was congratulating them on.
+     */
+    const onDone = vi.fn().mockRejectedValue(new Error("Network is down"));
+    const seen: string[] = [];
+
+    render(
+      <MilestoneMoment
+        milestone={MILESTONES[0]}
+        onDone={() => {
+          seen.push(MILESTONES[0].key);
+          return onDone();
+        }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /thanks/i }));
+
+    // The dismissal is local and unconditional; the write is the part allowed
+    // to fail. app.tsx holds the same key in dismissedMilestones.
+    await waitFor(() => expect(seen).toEqual([MILESTONES[0].key]));
   });
 });
 

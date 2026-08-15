@@ -594,9 +594,11 @@ export function ProfileHeader({
 }: {
   onBack: () => void;
   avatarUrl: string | null;
-  onPickAvatar: (file: File) => void;
+  /** Rejects when the picture does not upload. */
+  onPickAvatar: (file: File) => Promise<unknown>;
   name: string;
-  onName: (name: string) => void;
+  /** Rejects when the name does not save. */
+  onName: (name: string) => Promise<unknown>;
   sub: string;
   /** Which half of the marketplace this account is. */
   accountType?: AccountType | null;
@@ -612,6 +614,12 @@ export function ProfileHeader({
    */
   const [draft, setDraft] = useState(name);
   const saved = useRef(name);
+  /*
+   * Both writes used to float. A name typed on a dropped connection stayed in
+   * the field, looking saved, until a refresh replaced it with the old one;
+   * a picture that failed to upload left the old avatar with no explanation.
+   */
+  const [failed, setFailed] = useState<string | null>(null);
 
   // Follows the profile when it changes from somewhere else, without
   // overwriting what is being typed right now.
@@ -625,8 +633,16 @@ export function ProfileHeader({
   const commit = () => {
     const value = draft.trim();
     if (value === saved.current) return;
+    const previous = saved.current;
     saved.current = value;
-    onName(value);
+    setFailed(null);
+    void onName(value).catch((cause) => {
+      // Put the field back to what is actually stored, so what is on screen
+      // and what is in the database are never two different names.
+      saved.current = previous;
+      setDraft(previous);
+      setFailed(errorMessage(cause, "That name did not save."));
+    });
   };
 
   return (
@@ -650,7 +666,15 @@ export function ProfileHeader({
         landed on this centred column, so Back silently did nothing.
       */}
       <div className="relative z-10 pt-2 flex flex-col items-center">
-        <AvatarUpload photoUrl={avatarUrl} onPick={onPickAvatar} />
+        <AvatarUpload
+          photoUrl={avatarUrl}
+          onPick={(file) => {
+            setFailed(null);
+            void onPickAvatar(file).catch((cause) =>
+              setFailed(errorMessage(cause, "That picture did not upload.")),
+            );
+          }}
+        />
         <input
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
@@ -667,6 +691,11 @@ export function ProfileHeader({
             width: 190,
           }}
         />
+        {failed && (
+          <p className="font-body font-normal text-[13.5px] mt-2 text-coral-soft" role="alert">
+            {failed}
+          </p>
+        )}
         <p className="font-body font-normal text-[13.5px] text-white/55 mt-2">{sub}</p>
         {accountType && (
           <div className="mt-2.5">

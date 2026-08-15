@@ -21,6 +21,7 @@ import {
   earnedByPractitioner,
   hostTotal,
   practitionerTotal,
+  type MilestoneKey,
 } from "@/lib/milestones";
 import { MilestoneMoment } from "@/components/milestone-moment";
 import { type CancellationEvent, standingFor } from "@/lib/reliability";
@@ -111,6 +112,8 @@ export function App() {
   const [authError, setAuthError] = useState<string | null>(null);
   const [roleError, setRoleError] = useState<string | null>(null);
   const [bookingError, setBookingError] = useState<string | null>(null);
+  /** Milestones dismissed this session, whether or not the server took it. */
+  const [dismissedMilestones, setDismissedMilestones] = useState<MilestoneKey[]>([]);
   /** What a term booking did, including the weeks it could not take. */
   const [bookingNotice, setBookingNotice] = useState<string | null>(null);
   const [seriesSkipped, setSeriesSkipped] = useState<{ startsAt: string; because: string }[]>([]);
@@ -713,7 +716,12 @@ export function App() {
    */
   const dueMilestone = celebrationDue(
     profile.accountType === "host" ? hostMilestones : practitionerMilestones,
-    profile.milestonesSeen,
+    // Dismissed here as well as on the server, because this screen renders in
+    // front of the whole app. If the write that records it fails and nothing
+    // local remembers the tap, "Thanks" does nothing and somebody is shut out
+    // of their own account by a congratulation. Seeing it once more on the
+    // next visit is the cheaper of the two failures by a long way.
+    [...profile.milestonesSeen, ...dismissedMilestones],
   );
 
   /**
@@ -783,13 +791,17 @@ export function App() {
     return (
       <MilestoneMoment
         milestone={dueMilestone}
-        onDone={() =>
-          mutate(() =>
+        onDone={() => {
+          setDismissedMilestones((seen) => [...seen, dueMilestone.key]);
+          // Swallowed on purpose, and only here: the screen has already been
+          // dismissed above, so the whole consequence of a failed write is
+          // seeing this once more later. There is nothing to tell anybody.
+          void mutate(() =>
             repo.updateProfile({
               milestonesSeen: [...profile.milestonesSeen, dueMilestone.key],
             }),
-          )
-        }
+          ).catch(() => {});
+        }}
       />
     );
   }

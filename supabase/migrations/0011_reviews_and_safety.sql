@@ -117,10 +117,27 @@ alter table profiles
   add column if not exists emergency_contact_phone text,
   add column if not exists emergency_contact_relationship text;
 
+/*
+ * `not valid`, which here means "do not check the rows already in the table".
+ *
+ * 0021 removes this constraint on purpose: it rejected "0533 395 5823" and
+ * "(415) 555-0134", which is how people actually write a partner's number, and
+ * a validator that refuses the real answer gets an empty field instead of a
+ * better one.
+ *
+ * But apply.sql re-runs every migration in order, so this statement meets a
+ * database where somebody has since saved exactly such a number — and aborted
+ * the whole script on a rule the very next migrations repeal. Without `not
+ * valid` the file stops here forever, and every later migration with it.
+ *
+ * New rows are still checked while the constraint exists, which is all it was
+ * ever for on a fresh database, where the table is empty anyway.
+ */
 do $$
 begin
   alter table profiles add constraint profiles_emergency_phone_is_e164
-    check (emergency_contact_phone is null or emergency_contact_phone ~ '^\+[1-9][0-9]{6,14}$');
+    check (emergency_contact_phone is null or emergency_contact_phone ~ '^\+[1-9][0-9]{6,14}$')
+    not valid;
 exception
   when duplicate_object then null;
 end $$;

@@ -78,6 +78,48 @@ describe("migrations apply cleanly", () => {
     }
   }, 60_000);
 
+  /**
+   * The second run, against a database somebody has been using.
+   *
+   * The test above re-applies the script to an empty database, which is not
+   * the case that breaks. This one puts in the rows a real account produces
+   * first, and it reproduces a failure that stopped the live project dead:
+   * 0011 adds a strict E.164 check on the emergency contact number, 0021
+   * repeals it because it rejected "0533 395 5823" and every other way a
+   * person writes a partner's number — and on the second pass 0011 met a row
+   * saved under the newer rule and aborted the entire file, taking every
+   * migration after it down too.
+   *
+   * The general shape is worth guarding, not just this constraint: any rule a
+   * later migration repeals will meet data that predates its repeal, and the
+   * script has to survive that.
+   */
+  it("survives a second run against rows a real account would have", async () => {
+    const fresh = new PGlite();
+    try {
+      await fresh.exec(read(STUBS));
+      for (const migration of MIGRATIONS) await fresh.exec(read(migration));
+
+      const person = "11111111-1111-1111-1111-111111111111";
+      await fresh.exec(`insert into auth.users (id) values ('${person}')`);
+      await fresh.exec(
+        `insert into profiles (id, emergency_contact_name, emergency_contact_phone)
+         values ('${person}', 'Partner', '0533 395 5823')`,
+      );
+
+      for (const migration of MIGRATIONS) await fresh.exec(read(migration));
+
+      const [row] = (
+        await fresh.query<{ emergency_contact_phone: string }>(
+          `select emergency_contact_phone from profiles where id = '${person}'`,
+        )
+      ).rows;
+      expect(row.emergency_contact_phone).toBe("0533 395 5823");
+    } finally {
+      await fresh.close();
+    }
+  }, 60_000);
+
   it("creates every table the app expects", async () => {
     const found = await rows<{ table_name: string }>(
       `select table_name from information_schema.tables

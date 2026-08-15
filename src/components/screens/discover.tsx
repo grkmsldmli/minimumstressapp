@@ -200,7 +200,32 @@ export function Discover({
           <span className="font-body font-normal text-[13.5px] text-white/70">
             Unlimited sessions, {PRO_BOOKING_HORIZON_DAYS} days ahead
           </span>
-          <span className="flex items-center gap-0.5 font-body text-[15px] font-medium text-white shrink-0">
+          {/*
+            The half of this row that is a button should look like one.
+            "Go Pro" was white on navy at the same weight as the sentence
+            beside it, so the strip read as a notice somebody had left there
+            rather than something to press. Blue is the colour every other
+            action in the app uses, and the pill is what separates the offer
+            from the way to take it.
+          */}
+          <span
+            className="flex items-center gap-0.5 font-body text-[13.5px] font-semibold shrink-0 px-3 py-1 rounded-full"
+            style={{
+              /*
+               * sky-cta rather than the brand blue, which is the distinction
+               * globals.css draws and contrast.test.ts pins: #3b9be8 is for
+               * filling and drawing, and carries white lettering at 2.98 —
+               * under the line for text this size. This one clears it at 4.62.
+               *
+               * The ring is because sky-cta sits at 2.90 against the navy
+               * strip, just under the 3:1 a control's own edge wants. A pill
+               * that needs looking for is not a button.
+               */
+              backgroundColor: "#2578C2",
+              color: "#fff",
+              border: "1px solid rgba(255,255,255,0.28)",
+            }}
+          >
             Go Pro <ChevronRight size={12} />
           </span>
         </button>

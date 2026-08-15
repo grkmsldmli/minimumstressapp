@@ -525,6 +525,8 @@ export function App() {
             setAuthError(null);
 
             if (!onSupabase) {
+              // Mock mode only, against an in-memory repository that cannot
+              // reject. The real sign-in above this reports its own failures.
               void mutate(() => repo.updateProfile({ email: value }));
               go("auth-verify");
               return;
@@ -551,6 +553,7 @@ export function App() {
             if (!onSupabase) {
               const label = provider === "apple" ? "Apple ID" : "Google account";
               setEmail(label);
+              // Mock mode only — see the note on the email branch above.
               void mutate(() => repo.updateProfile({ email: label }));
               go("role");
               return;
@@ -835,7 +838,13 @@ export function App() {
           onChangePostcode={() => {
             setNearbyOrder(null);
             setDistanceLabels({});
-            void mutate(() => repo.updateProfile({ searchPostcode: null }));
+            setLocationError(null);
+            // Failing quietly here left the prompt on screen over a postcode
+            // that was still stored, so the next visit silently sorted by an
+            // area somebody thought they had cleared.
+            void mutate(() => repo.updateProfile({ searchPostcode: null })).catch((cause) =>
+              setLocationError(errorMessage(cause, "We couldn't clear that. Try again.")),
+            );
           }}
           nearbyOrder={nearbyOrder}
           onChooseLocation={(choice) => void chooseLocation(choice)}
@@ -946,10 +955,11 @@ export function App() {
       return (
         <InsuranceUpload
           initialDocName={profile.insuranceDocName}
-          onContinue={(docName) => {
-            void mutate(() => repo.updateProfile({ insuranceDocName: docName }));
-            go("discover");
-          }}
+          onContinue={(docName) =>
+            mutate(() => repo.updateProfile({ insuranceDocName: docName })).then(() =>
+              go("discover"),
+            )
+          }
         />
       );
 
@@ -1238,7 +1248,7 @@ export function App() {
           onGoPro={() => go("pro")}
           standing={practitionerStanding}
           onBack={back}
-          onCancel={(id) => void mutate(() => repo.cancelBooking(id, "practitioner"))}
+          onCancel={(id) => mutate(() => repo.cancelBooking(id, "practitioner"))}
           onReview={(id) => {
             setReviewing({ bookingId: id, role: "practitioner" });
             go("review");
@@ -1292,7 +1302,7 @@ export function App() {
         <ProScreen
           isPro={profile.isPro}
           onBack={back}
-          onSubscribe={() => void mutate(() => repo.startProSubscription())}
+          onSubscribe={() => mutate(() => repo.startProSubscription())}
         />
       );
 
@@ -1315,7 +1325,7 @@ export function App() {
           space={editingSpace}
           onBack={() => go("host")}
           onSave={(blocks) =>
-            void mutate(() => repo.updateSpaceAvailability(editingSpace.id, blocks))
+            mutate(() => repo.updateSpaceAvailability(editingSpace.id, blocks))
           }
         />
       );

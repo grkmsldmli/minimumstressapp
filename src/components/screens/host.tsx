@@ -509,10 +509,13 @@ export function EditAvailability({
 }: {
   space: HostSpace;
   onBack: () => void;
-  onSave: (blocks: AvailabilityBlock[]) => void;
+  /** Rejects when the hours do not save, so this screen does not claim they did. */
+  onSave: (blocks: AvailabilityBlock[]) => Promise<unknown>;
 }) {
   const [blocks, setBlocks] = useState<AvailabilityBlock[]>(space.availability);
   const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   return (
     <div className="h-full flex flex-col screen-in bg-white">
@@ -548,14 +551,38 @@ export function EditAvailability({
       </div>
 
       <div className="px-6 pt-3 pb-6 shrink-0" style={{ borderTop: "1px solid #F0ECE0" }}>
+        {/*
+          It said "Saved" and left, without waiting to find out. A host who
+          lost their connection mid-tap watched the word appear, went back, and
+          believed their room was open on hours it had never been given.
+        */}
+        {saveError && (
+          <p
+            className="font-body font-normal text-[14px] leading-relaxed mb-3 rounded-xl p-3"
+            style={{ backgroundColor: "#FEF2F0", border: "1px solid #F5C4BC", color: "#7A4A42" }}
+            role="alert"
+          >
+            {saveError}
+          </p>
+        )}
+
         <PrimaryButton
+          disabled={saving}
           onClick={() => {
-            onSave(blocks);
-            setSaved(true);
-            setTimeout(onBack, 700);
+            setSaveError(null);
+            setSaving(true);
+            void onSave(blocks)
+              .then(() => {
+                setSaved(true);
+                setTimeout(onBack, 700);
+              })
+              .catch((cause) =>
+                setSaveError(errorMessage(cause, "Those hours did not save. Try again.")),
+              )
+              .finally(() => setSaving(false));
           }}
         >
-          {saved ? "Saved" : "Save hours"}
+          {saving ? "Saving…" : saved ? "Saved" : "Save hours"}
         </PrimaryButton>
       </div>
     </div>

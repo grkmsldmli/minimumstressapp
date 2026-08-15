@@ -25,6 +25,7 @@ import { SavedCard } from "@/components/saved-card";
 import { StandingNotice } from "@/components/standing-notice";
 import { AvatarUpload, DocumentUpload } from "@/components/uploads";
 import type { AccountType, Profile } from "@/lib/domain";
+import { errorMessage } from "@/lib/error-message";
 import type { Standing } from "@/lib/reliability";
 import type { MilestoneKey } from "@/lib/milestones";
 import {
@@ -46,12 +47,21 @@ export function InsuranceUpload({
   onBack,
   initialDocName,
 }: {
-  onContinue: (docName: string | null) => void;
+  /** Rejects when the record does not save, so this screen does not move on. */
+  onContinue: (docName: string | null) => Promise<unknown>;
   onBack?: () => void;
   initialDocName: string | null;
 }) {
   const [file, setFile] = useState<File | null>(null);
   const existingName = file?.name ?? initialDocName;
+  const [saving, setSaving] = useState(false);
+  /*
+   * This screen used to record the policy and move on in the same breath. A
+   * practitioner whose upload failed was carried into the app believing their
+   * certificate was on file — which is the one thing here they would be asked
+   * to produce if anything ever went wrong in a room.
+   */
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   return (
     <NavyScreen>
@@ -129,8 +139,29 @@ export function InsuranceUpload({
       </div>
 
       <div className="relative z-10 px-8 pb-9">
-        <PrimaryButton onClick={() => onContinue(existingName)}>
-          {existingName ? "Continue" : "Skip for now"}
+        {saveError && (
+          <p
+            className="font-body font-normal text-[14px] leading-relaxed mb-3 rounded-xl p-3"
+            style={{ backgroundColor: "rgba(242,105,92,0.14)", color: "#F2A79E" }}
+            role="alert"
+          >
+            {saveError}
+          </p>
+        )}
+
+        <PrimaryButton
+          disabled={saving}
+          onClick={() => {
+            setSaveError(null);
+            setSaving(true);
+            void onContinue(existingName)
+              .catch((cause) =>
+                setSaveError(errorMessage(cause, "That did not save. Try again.")),
+              )
+              .finally(() => setSaving(false));
+          }}
+        >
+          {saving ? "One moment…" : existingName ? "Continue" : "Skip for now"}
         </PrimaryButton>
       </div>
     </NavyScreen>
@@ -221,9 +252,19 @@ export function ProScreen({
 }: {
   isPro: boolean;
   onBack: () => void;
-  onSubscribe: () => void;
+  /** Rejects when the subscription does not go through, so this screen can say so. */
+  onSubscribe: () => Promise<unknown>;
 }) {
   const [justSubscribed, setJustSubscribed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  /*
+   * The button used to fire the subscription and show the success screen in
+   * the same breath, without waiting for either answer. So a card that was
+   * declined, or a network that dropped, still produced "You're Pro." —
+   * somebody was told they had bought something they had not, on the one
+   * screen in the app where that is a payment.
+   */
+  const [failed, setFailed] = useState<string | null>(null);
 
   if (justSubscribed || isPro) {
     return (
@@ -345,13 +386,30 @@ export function ProScreen({
       </div>
 
       <div className="px-6 pb-7 shrink-0">
+        {failed && (
+          <p
+            className="font-body font-normal text-[14px] leading-relaxed mb-3 rounded-xl p-3"
+            style={{ backgroundColor: "#FEF2F0", border: "1px solid #F5C4BC", color: "#7A4A42" }}
+            role="alert"
+          >
+            {failed}
+          </p>
+        )}
+
         <PrimaryButton
+          disabled={busy}
           onClick={() => {
-            onSubscribe();
-            setJustSubscribed(true);
+            setFailed(null);
+            setBusy(true);
+            void onSubscribe()
+              .then(() => setJustSubscribed(true))
+              .catch((cause) =>
+                setFailed(errorMessage(cause, "That did not go through. Nothing was charged.")),
+              )
+              .finally(() => setBusy(false));
           }}
         >
-          Start Pro — {formatCents(PRO_PRICE_CENTS)}/mo
+          {busy ? "One moment…" : `Start Pro — ${formatCents(PRO_PRICE_CENTS)}/mo`}
         </PrimaryButton>
         <p className="text-center font-body font-normal text-[13.5px] mt-2.5 text-ink-faint">
           Cancel anytime.

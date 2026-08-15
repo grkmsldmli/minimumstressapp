@@ -19,6 +19,7 @@ import { ConfettiBurst } from "@/components/primitives";
 import { SpaceDirections } from "@/components/space-directions";
 import { CancellationConsequence } from "@/components/standing-notice";
 import type { Booking, SpaceAccessDetails } from "@/lib/domain";
+import { errorMessage } from "@/lib/error-message";
 import { shareTextFor } from "@/lib/share-session";
 import {
   PRO_PRICE_CENTS,
@@ -372,7 +373,8 @@ export function MyBookings({
   onGoPro: () => void;
   standing: Standing;
   onBack: () => void;
-  onCancel: (id: string) => void;
+  /** Rejects when the cancellation does not go through, so the card can say so. */
+  onCancel: (id: string) => Promise<unknown>;
   /** Offered on a finished session that has not been reviewed yet. */
   onReview?: (id: string) => void;
   /** Absent for a host, who asks through a claim rather than a refund. */
@@ -435,10 +437,7 @@ export function MyBookings({
               open={openId === booking.id}
               onToggle={() => setOpenId(openId === booking.id ? null : booking.id)}
               onMessage={onMessage ? () => onMessage(booking.id) : undefined}
-              onCancel={() => {
-                onCancel(booking.id);
-                setOpenId(null);
-              }}
+              onCancel={() => onCancel(booking.id).then(() => setOpenId(null))}
             />
           ))}
         </div>
@@ -534,7 +533,8 @@ function UpcomingBooking({
   standing: Standing;
   open: boolean;
   onToggle: () => void;
-  onCancel: () => void;
+  /** Rejects on failure; the card stays open and shows why. */
+  onCancel: () => Promise<unknown>;
   onMessage?: () => void;
   /**
    * From the public listing, not from `access`.
@@ -554,6 +554,8 @@ function UpcomingBooking({
   // which meant cancellation was always free and the rule never bound.
   const freeToCancel = isFreeCancellation(booking.startsAt, now);
   const codeReady = Boolean(booking.revealedAccessCode);
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
 
   return (
     <div
@@ -707,13 +709,40 @@ function UpcomingBooking({
           */}
           {!freeToCancel && <CancellationConsequence party="practitioner" standing={standing} />}
 
+          {/*
+            This used to fire and close the panel without waiting. A failed
+            cancellation looked exactly like a successful one — and the person
+            who believed it then did not turn up, was charged in full, and had
+            the no-show counted against their standing.
+          */}
+          {cancelError && (
+            <p
+              className="font-body font-normal text-[14px] leading-relaxed mt-3 rounded-xl p-3"
+              style={{ backgroundColor: "#FEF2F0", border: "1px solid #F5C4BC", color: "#7A4A42" }}
+              role="alert"
+            >
+              {cancelError}
+            </p>
+          )}
+
           <button
             type="button"
-            onClick={onCancel}
-            className="w-full py-3 rounded-xl font-body font-medium text-[14.5px] press bg-white text-danger mt-3"
+            disabled={cancelling}
+            onClick={() => {
+              setCancelError(null);
+              setCancelling(true);
+              void onCancel()
+                .catch((cause) =>
+                  setCancelError(
+                    errorMessage(cause, "This booking was not cancelled. Nothing has changed."),
+                  ),
+                )
+                .finally(() => setCancelling(false));
+            }}
+            className="w-full py-3 rounded-xl font-body font-medium text-[14.5px] press bg-white text-danger mt-3 disabled:opacity-60"
             style={{ border: "1px solid #F5C4BC" }}
           >
-            Cancel booking
+            {cancelling ? "Cancelling…" : "Cancel booking"}
           </button>
 
         </div>

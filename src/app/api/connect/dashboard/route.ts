@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 
 import { LIMITS, check, identify, tooManyRequests } from "@/lib/api/rate-limit";
 import { handled, jsonError, requireUser } from "@/lib/api/session";
-import { accountIsReachable, createAccountUpdateLink } from "@/lib/stripe/client";
+import { accountIsReachable, createPayoutSettingsLink } from "@/lib/stripe/client";
 import { supabaseAdmin } from "@/lib/supabase/server";
 
 /**
@@ -59,7 +59,7 @@ export async function POST(request: NextRequest): Promise<Response> {
 
     const origin = request.nextUrl.origin;
     return Response.json({
-      url: await createAccountUpdateLink(
+      url: await createPayoutSettingsLink(
         profile.stripe_connect_account_id,
         `${origin}/host/payouts/done`,
         // Same as onboarding: an expired link has to start again rather than

@@ -15,6 +15,9 @@ export type SpaceStatus = "pending" | "active" | "delisted";
 export type MediaKind = "image" | "video";
 export type PayoutSchedule = "standard" | "instant";
 
+/** No account yet · submitted and waiting on Stripe · money can arrive. */
+export type PayoutSetup = "not_started" | "in_review" | "ready";
+
 /**
  * Which side of the marketplace an account is, chosen once at sign-up.
  *
@@ -53,7 +56,16 @@ export interface Profile {
   isPro: boolean;
   insuranceDocName: string | null;
   payoutSchedule: PayoutSchedule;
-  stripeConnected: boolean;
+  /**
+   * Where payout setup actually stands.
+   *
+   * This was a boolean, which had no room for the state Stripe leaves a host
+   * in for hours: the form is submitted, "we'll review your application" is
+   * the last thing they were told, and nothing has been enabled yet. Connected
+   * was a lie and not-set-up read as though the submission had been lost, so
+   * the honest answer was missing in both directions.
+   */
+  payoutSetup: PayoutSetup;
   notifyBookings: boolean;
   notifyPayouts: boolean;
   notifyOffers: boolean;

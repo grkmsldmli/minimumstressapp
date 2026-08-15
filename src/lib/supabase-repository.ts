@@ -21,6 +21,7 @@
  * routes in the Stripe milestone; until then they throw rather than pretend.
  */
 
+import { payoutSetupFrom } from "./payout-setup";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { errorMessage } from "./error-message";
@@ -170,7 +171,10 @@ export class SupabaseRepository implements Repository {
       isPro: data?.is_pro ?? false,
       insuranceDocName: data?.insurance_doc_path ?? null,
       payoutSchedule: data?.payout_schedule ?? "standard",
-      stripeConnected: data?.stripe_connect_charges_enabled ?? false,
+      payoutSetup: payoutSetupFrom({
+        stripe_connect_account_id: data?.stripe_connect_account_id ?? null,
+        stripe_connect_charges_enabled: data?.stripe_connect_charges_enabled ?? false,
+      }),
       notifyBookings: data?.notify_bookings ?? true,
       notifyPayouts: data?.notify_payouts ?? true,
       notifyOffers: data?.notify_offers ?? false,

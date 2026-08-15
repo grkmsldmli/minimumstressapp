@@ -257,7 +257,7 @@ export class MockRepository implements Repository {
     isPro: false,
     insuranceDocName: null,
     payoutSchedule: "standard",
-    stripeConnected: false,
+    payoutSetup: "not_started",
     notifyBookings: true,
     notifyPayouts: true,
     notifyOffers: false,
@@ -367,7 +367,7 @@ export class MockRepository implements Repository {
    * their listing takes bookings for money that can never reach them.
    */
   async connectPayouts(): Promise<Profile> {
-    this.profile = { ...this.profile, stripeConnected: true };
+    this.profile = { ...this.profile, payoutSetup: "ready" };
     return { ...this.profile };
   }
 

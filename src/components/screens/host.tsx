@@ -888,7 +888,7 @@ export function HostProfile({
           <GroupLabel>Payouts</GroupLabel>
         </div>
         <div className="flex flex-col gap-2.5">
-          {profile.stripeConnected ? (
+          {profile.payoutSetup === "ready" ? (
             /*
               Tappable, because onboarding was otherwise a one-way door. A
               bank account that changes, or a detail Stripe starts asking for
@@ -900,6 +900,40 @@ export function HostProfile({
               value="Stripe · connected"
               onClick={goToStripe(onOpenPayoutDashboard)}
             />
+          ) : profile.payoutSetup === "in_review" ? (
+            /*
+              The hours between submitting the form and Stripe enabling the
+              account. "We'll review your application" is the last thing the
+              host was told, and this screen answered it with "Payouts not set
+              up" and a button to start again — which reads as though the
+              submission had been lost, and invites them to redo it.
+
+              Still tappable: the same link reopens what they filled in, which
+              is where Stripe asks for anything more it wants.
+            */
+            <div
+              className="rounded-xl p-4"
+              style={{ backgroundColor: "#F4F8FC", border: "1px solid #D6E6F5" }}
+            >
+              <div className="flex items-center gap-2">
+                <ShieldCheck size={15} color="#2578C2" />
+                <span className="font-body font-medium text-[14.5px] text-navy">
+                  Stripe is checking your details
+                </span>
+              </div>
+              <p className="font-body font-normal text-[14px] leading-relaxed mt-1.5 text-ink-soft">
+                Usually minutes, sometimes a day or two. We&apos;ll write the moment payouts are
+                live — nothing needs doing until then, and your space can keep taking bookings.
+              </p>
+              <button
+                type="button"
+                onClick={goToStripe(onOpenPayoutDashboard)}
+                className="w-full mt-3 py-2.5 rounded-lg font-body font-medium text-[14.5px] press bg-white text-sky-text"
+                style={{ border: "1px solid #D6E6F5" }}
+              >
+                View what you submitted
+              </button>
+            </div>
           ) : (
             /*
               Not a settings row. Without this a host can take bookings and
@@ -951,7 +985,7 @@ export function HostProfile({
                 says "connected" because our own column still says so. Without
                 this the host reads a refusal and has nothing to press.
               */}
-              {profile.stripeConnected && (
+              {profile.payoutSetup !== "not_started" && (
                 <button
                   type="button"
                   onClick={goToStripe(onConnectPayouts)}

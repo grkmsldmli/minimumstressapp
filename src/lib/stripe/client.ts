@@ -140,6 +140,46 @@ export async function createOnboardingLink(
  *
  * Single-use and short-lived either way, so it is fetched at the tap.
  */
+export async function createPayoutSettingsLink(
+  accountId: string,
+  returnUrl: string,
+  refreshUrl: string,
+): Promise<string> {
+  /*
+   * Which link works is a fact about the account, not a preference of ours,
+   * and it is not the same fact in every environment.
+   *
+   * `accounts.create({ type: "express" })` does not always resolve to the same
+   * thing: against one platform key it came back with
+   * `controller.stripe_dashboard.type: "none"` — no dashboard of its own, so
+   * `createLoginLink` is refused outright and `account_update` is the way in.
+   * Against another it comes back a true Express account, where exactly the
+   * reverse holds. Hard-coding either one leaves a host permanently unable to
+   * open their own payout settings, on whichever half of the estate got the
+   * other shape, with nothing on screen to say why.
+   *
+   * So ask the account, and try the other one if the answer was wrong. Two
+   * calls on a path that runs once per tap is not worth a mystery.
+   */
+  const account = await stripe().accounts.retrieve(accountId);
+  const dashboard = account.controller?.stripe_dashboard?.type;
+  const hasOwnDashboard =
+    dashboard === "express" || (dashboard === undefined && account.type === "express");
+
+  const loginLink = async () => (await stripe().accounts.createLoginLink(accountId)).url;
+  const updateLink = () => createAccountUpdateLink(accountId, returnUrl, refreshUrl);
+
+  const [first, second] = hasOwnDashboard ? [loginLink, updateLink] : [updateLink, loginLink];
+  try {
+    return await first();
+  } catch (error) {
+    // Only the refusal is worth a second attempt. A dead account or a bad key
+    // will refuse both, and trying twice only doubles the wait before saying so.
+    if (isMissingAccount(error)) throw error;
+    return await second();
+  }
+}
+
 export async function createAccountUpdateLink(
   accountId: string,
   returnUrl: string,

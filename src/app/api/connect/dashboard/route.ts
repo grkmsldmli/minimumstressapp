@@ -23,7 +23,11 @@ export async function POST(request: NextRequest): Promise<Response> {
     const auth = await requireUser();
     if ("response" in auth) return auth.response;
 
-    const limited = check("connect", identify(request, auth.user.id), LIMITS.connect);
+    const limited = check(
+      "payout-dashboard",
+      identify(request, auth.user.id),
+      LIMITS.payoutDashboard,
+    );
     if (!limited.ok) return tooManyRequests(limited);
 
     const admin = supabaseAdmin();

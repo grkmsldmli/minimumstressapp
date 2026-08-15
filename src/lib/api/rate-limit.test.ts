@@ -106,6 +106,29 @@ describe("tooManyRequests", () => {
     const response = tooManyRequests({ ok: false, remaining: 0, retryAfter: 0 });
     expect(response.headers.get("Retry-After")).toBe("1");
   });
+
+  /*
+   * The body is what a person reads. It used to say only "please slow down",
+   * which is a telling-off that leaves them guessing whether to wait a second
+   * or give up on the feature — and it was read by a host who had been shut
+   * out of their own bank details.
+   */
+  it("puts the wait in the message, in words rather than a bare number", async () => {
+    const cases: [number, string][] = [
+      [1, "a few seconds"],
+      [5, "a few seconds"],
+      [42, "42 seconds"],
+      [60, "a minute"],
+      [150, "3 minutes"],
+    ];
+
+    for (const [retryAfter, expected] of cases) {
+      const body = (await tooManyRequests({ ok: false, remaining: 0, retryAfter }).json()) as {
+        error: string;
+      };
+      expect(body.error, `retryAfter ${retryAfter}`).toContain(expected);
+    }
+  });
 });
 
 describe("the configured limits", () => {

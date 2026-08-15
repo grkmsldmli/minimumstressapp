@@ -88,6 +88,17 @@ export const LIMITS = {
   connect: { limit: 5, windowMs: 60_000 },
 
   /**
+   * Opening the payout account that is already connected.
+   *
+   * Kept apart from onboarding, which it used to share. This is a button on
+   * the host's own settings screen, and a button whose failure mode is a
+   * blank-looking tap gets tapped again — three of those and a host was locked
+   * out of their own bank details for a minute. The call behind it is one
+   * cheap Stripe request, so the ceiling only has to stop a script.
+   */
+  payoutDashboard: { limit: 15, windowMs: 60_000 },
+
+  /**
    * Reading or removing the saved card. Read on opening a settings panel,
    * removed once — a rate a person cannot reach and a script hits immediately.
    */
@@ -172,10 +183,24 @@ export function identify(request: Request, userId?: string | null): string {
   return `ip:${ip || "unknown"}`;
 }
 
+/**
+ * How long to wait, written the way somebody would say it.
+ *
+ * The Retry-After header carries this for machines, and the body used to say
+ * only "please slow down" — which reads as a telling-off and leaves the person
+ * guessing whether to try again in a second or give up on the feature.
+ */
+function waitFor(seconds: number): string {
+  if (seconds <= 5) return "a few seconds";
+  if (seconds < 60) return `${seconds} seconds`;
+  const minutes = Math.ceil(seconds / 60);
+  return minutes === 1 ? "a minute" : `${minutes} minutes`;
+}
+
 /** The 429 a caller gets, with the header that tells them when to come back. */
 export function tooManyRequests(result: RateLimitResult): Response {
   return Response.json(
-    { error: "Too many requests — please slow down." },
+    { error: `Too many tries just now — try again in ${waitFor(Math.max(1, result.retryAfter))}.` },
     {
       status: 429,
       headers: {

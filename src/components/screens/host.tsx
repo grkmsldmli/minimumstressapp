@@ -812,11 +812,23 @@ export function HostProfile({
    * on the screen it was started from.
    */
   const [payoutError, setPayoutError] = useState<string | null>(null);
+  /*
+   * One trip at a time. Building the link is a round trip to Stripe, and until
+   * the browser starts leaving there is nothing on screen to show for the tap
+   * — so it gets tapped again, and again, and each one was another request.
+   * That is how a host reached a rate limit meant to stop scripts, and then
+   * could not open their own bank details at all.
+   */
+  const [leaving, setLeaving] = useState(false);
   const goToStripe = (action: () => Promise<unknown>) => () => {
+    if (leaving) return;
     setPayoutError(null);
-    void action().catch((cause) =>
-      setPayoutError(errorMessage(cause, "Could not reach Stripe. Try again in a moment.")),
-    );
+    setLeaving(true);
+    void action()
+      .catch((cause) => {
+        setPayoutError(errorMessage(cause, "Could not reach Stripe. Try again in a moment."));
+      })
+      .finally(() => setLeaving(false));
   };
 
   // Priced against a real listing where there is one, so the instant-payout

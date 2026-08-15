@@ -307,25 +307,33 @@ export class SupabaseRepository implements Repository {
   }
 
   /**
-   * Opened in a new tab rather than by replacing this one.
+   * The same tab, like every other trip to Stripe from here.
    *
-   * Stripe's dashboard is somewhere a host goes to check something and come
-   * back; navigating away would drop them out of the app to do it, and the
-   * link is single-use, so the back button would land on a dead one.
+   * This opened a blank tab first — the trick that keeps a popup blocker quiet
+   * while a request is in flight — and set its location once the link arrived.
+   * With `noopener` that cannot work: the browser withholds the handle to the
+   * new window precisely so the opened page cannot reach back through it, and
+   * the assignment lands on nothing. What a host got was a second tab reading
+   * about:blank, permanently, with no error anywhere because the caller threw
+   * the promise away.
+   *
+   * There is no popup to protect. The link carries a return_url back to
+   * /host/payouts/done, so Stripe brings them home — the same way onboarding
+   * has always worked, a few lines up.
    */
   async openPayoutDashboard(): Promise<void> {
-    const opened = window.open("", "_blank", "noopener");
-
     const response = await fetch("/api/connect/dashboard", { method: "POST" });
     if (!response.ok) {
-      opened?.close();
       const { error } = await response.json().catch(() => ({ error: null }));
       throw new Error(error ?? "Could not open your payout account");
     }
 
     const { url } = (await response.json()) as { url: string };
-    if (opened) opened.location.href = url;
-    else window.location.href = url;
+    // A 200 carrying no link is still a failure, and silence here is what put
+    // somebody on a blank page in the first place.
+    if (!url) throw new Error("Stripe did not return a link to open");
+
+    window.location.href = url;
   }
 
   async signOut(): Promise<void> {

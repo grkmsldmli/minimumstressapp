@@ -28,6 +28,7 @@ import { StandingNotice } from "@/components/standing-notice";
 import { WeekSchedule } from "@/components/week-schedule";
 import type { AvailabilityBlock } from "@/lib/availability";
 import type { HostBooking, HostSpace, Profile } from "@/lib/domain";
+import { errorMessage } from "@/lib/error-message";
 import { formatCents } from "@/lib/money";
 import { PAYOUT_DELAY_DAYS, describeSpeed } from "@/lib/payouts";
 import type { Standing } from "@/lib/reliability";
@@ -769,12 +770,27 @@ export function HostProfile({
   /** Uploads the picture and resolves once it is stored, not once it is shown. */
   onPickAvatar: (file: File) => Promise<unknown>;
   onGoLegal: () => void;
-  onConnectPayouts: () => void;
-  onOpenPayoutDashboard: () => void;
+  /** Rejects when Stripe cannot be reached, so the screen can say so. */
+  onConnectPayouts: () => Promise<unknown>;
+  onOpenPayoutDashboard: () => Promise<unknown>;
   onSignOut: () => void;
 }) {
   const activeCount = spaces.filter((s) => s.status === "active").length;
   const pendingCount = spaces.filter((s) => s.status === "pending").length;
+
+  /*
+   * Both payout actions leave for Stripe, and both used to fail in silence:
+   * the caller discarded the promise, so a host tapping "Payout method" got a
+   * blank tab and no reason for it. A trip that does not happen has to say so
+   * on the screen it was started from.
+   */
+  const [payoutError, setPayoutError] = useState<string | null>(null);
+  const goToStripe = (action: () => Promise<unknown>) => () => {
+    setPayoutError(null);
+    void action().catch((cause) =>
+      setPayoutError(errorMessage(cause, "Could not reach Stripe. Try again in a moment.")),
+    );
+  };
 
   // Priced against a real listing where there is one, so the instant-payout
   // figure is the host's own money rather than a generic example.
@@ -843,7 +859,7 @@ export function HostProfile({
               icon={ShieldCheck}
               label="Payout method"
               value="Stripe · connected"
-              onClick={onOpenPayoutDashboard}
+              onClick={goToStripe(onOpenPayoutDashboard)}
             />
           ) : (
             /*
@@ -867,13 +883,23 @@ export function HostProfile({
               </p>
               <button
                 type="button"
-                onClick={onConnectPayouts}
+                onClick={goToStripe(onConnectPayouts)}
                 className="w-full mt-3 py-3 rounded-xl font-body font-medium text-[15px] text-white press"
                 style={{ backgroundColor: "#2578C2" }}
               >
                 Set up payouts
               </button>
             </div>
+          )}
+
+          {payoutError && (
+            <p
+              className="font-body font-normal text-[14px] leading-relaxed rounded-xl p-3"
+              style={{ backgroundColor: "#FEF2F0", border: "1px solid #F5C4BC", color: "#7A4A42" }}
+              role="alert"
+            >
+              {payoutError}
+            </p>
           )}
 
           {/* The Standard-vs-Instant choice the brief calls for. */}

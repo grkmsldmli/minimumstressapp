@@ -1367,8 +1367,8 @@ export function App() {
           onUpdate={(patch) => mutate(() => repo.updateProfile(patch))}
           onPickAvatar={(file) => mutate(() => repo.uploadAvatar(file))}
           onGoLegal={() => go("legal")}
-          onConnectPayouts={() => void mutate(() => repo.connectPayouts())}
-          onOpenPayoutDashboard={() => void repo.openPayoutDashboard()}
+          onConnectPayouts={() => mutate(() => repo.connectPayouts())}
+          onOpenPayoutDashboard={() => repo.openPayoutDashboard()}
           onSignOut={signOut}
         />
       );

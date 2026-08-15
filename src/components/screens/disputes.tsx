@@ -35,7 +35,19 @@ export function Disputes({
 
   return (
     <div className="h-full flex flex-col bg-white screen-in">
-      <div className="px-6 pt-8 pb-6 relative rounded-b-[30px] overflow-hidden shrink-0">
+      <div
+        /*
+         * The gradient this header always needed.
+         *
+         * The block carried a `light` headline and a white-on-white back button
+         * over no background at all, so on this screen "Sorted"/the title was
+         * white text on white and only the blue accent word could be read. The
+         * arrow was a ghost. Three screens shared the fault and all three are in
+         * the money flow, which is the worst place to lose a way back.
+         */
+        className="px-6 pt-8 pb-6 relative rounded-b-[30px] overflow-hidden shrink-0"
+        style={{ background: "radial-gradient(140% 120% at 15% 0%, #1E4066 0%, #16304E 85%)" }}
+      >
         <Ambient />
         <button
           type="button"

@@ -799,12 +799,26 @@ export function HostProfile({
             on={profile.notifyBookings}
             onToggle={() => onUpdate({ notifyBookings: !profile.notifyBookings })}
           />
-          <SettingToggle
-            label="Payout alerts"
-            sub="When money lands in your account"
-            on={profile.notifyPayouts}
-            onToggle={() => onUpdate({ notifyPayouts: !profile.notifyPayouts })}
-          />
+          {/*
+            "Payout alerts — when money lands in your account" stood here and
+            switched nothing off. SILENCEABLE maps it to `host_payout_sent`,
+            which is not a kind anybody sends: it appears in that map and
+            nowhere else in the app. There is no arriving-money email to
+            silence, so the switch was reporting a preference about a message
+            that does not exist.
+            The only payout mail a host gets is payout_failed — money stuck at
+            their bank, which nobody should be able to hide from themselves.
+            The switch above is real and gates host_new_booking.
+          */}
+          <div
+            className="rounded-2xl p-4"
+            style={{ backgroundColor: "#F4F8FC", border: "1px solid #E7EEF6" }}
+          >
+            <p className="font-body font-normal text-[15px] leading-relaxed text-ink-muted">
+              We always write if a payout cannot reach your bank, or if a session is cancelled.
+              Those are not optional.
+            </p>
+          </div>
         </div>
 
         <div className="mt-6">

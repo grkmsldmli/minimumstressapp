@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { NOTIFICATION_KINDS } from "./messages";
+import type { Recipient } from "./send";
 import { hasOptedOut } from "./for-booking";
 
 /**
@@ -19,20 +20,26 @@ import { hasOptedOut } from "./for-booking";
  * nothing reads. This pins the rule underneath so the next switch has to face
  * it.
  */
-const recipient = (over: Record<string, unknown> = {}) => ({
-  id: "u1",
+/** Somebody who has turned off everything the profile screens offer. */
+const recipient = (over: Partial<Recipient> = {}): Recipient => ({
+  userId: "u1",
   name: "Sam",
   email: "sam@example.com",
   phone: null,
   wantsBookingAlerts: false,
   wantsPayoutAlerts: false,
   ...over,
-}) as Parameters<typeof hasOptedOut>[0];
+});
 
-/** Everything a person is told about their own session, and about money. */
-const NEVER_SILENCEABLE = NOTIFICATION_KINDS.filter(
-  (kind) => kind !== "host_new_booking" && kind !== "host_payout_sent",
-);
+/**
+ * Everything a person is told about their own session, and about money.
+ *
+ * `host_new_booking` is the only kind SILENCEABLE actually reaches. Its other
+ * entry, `host_payout_sent`, is not a notification anybody sends — which is
+ * why it cannot be subtracted here, and why the host's "Payout alerts" switch
+ * had nothing to switch.
+ */
+const NEVER_SILENCEABLE = NOTIFICATION_KINDS.filter((kind) => kind !== "host_new_booking");
 
 describe("what a switch may stop", () => {
   it("lets a host mute the booking nudge", () => {

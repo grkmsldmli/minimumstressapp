@@ -1,3 +1,5 @@
+import { SECTIONS } from "./legal-text";
+
 /**
  * The terms, and which version of them somebody agreed to.
  *
@@ -16,6 +18,42 @@
  * liability, a change to money or cancellation: raise it.
  */
 export const TERMS_VERSION = 1;
+
+/**
+ * A fingerprint of the exact words a version stands for.
+ *
+ * The record of an acceptance stores a number. That is enough to ask "did they
+ * agree", and not enough to answer the question that actually gets asked in a
+ * dispute: agree to *what*. The text lives in code, so producing what version 1
+ * said means going through git history and trusting that nobody edited it
+ * without raising the number — which is precisely the mistake this guards.
+ *
+ * So the words are hashed, and the hash for the current version is pinned in
+ * terms.test.ts. Editing the text without raising TERMS_VERSION now fails the
+ * suite rather than silently rewriting what a thousand stored acceptances mean.
+ *
+ * FNV-1a, not SHA. This detects change; it is not a cryptographic commitment
+ * against a determined forger, and nothing here pretends otherwise. What makes
+ * it evidence is that it is checked in CI against a number in a committed file,
+ * not the strength of the function.
+ */
+export function digestOf(text: string): string {
+  // FNV-1a over 32 bits, in the integer arithmetic geo.ts already uses for
+  // its own mixing. BigInt would read more plainly and is not available at
+  // this compile target.
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
+/** The fingerprint of the text TERMS_VERSION currently stands for. */
+export function termsDigest(): string {
+  return digestOf(SECTIONS.flatMap((section) => [section.title, ...section.points]).join("\n"));
+}
+
 
 /**
  * When the current text took effect.

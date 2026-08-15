@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { ACCEPTANCE_POINTS, TERMS_VERSION, hasAcceptedTerms } from "./terms";
+import { ACCEPTANCE_POINTS, TERMS_VERSION, digestOf, hasAcceptedTerms, termsDigest } from "./terms";
 
 /**
  * The commercial point of all this: "it was in the terms" is worth very little
@@ -81,5 +81,81 @@ describe("what somebody is agreeing to", () => {
     for (const phrase of ["we can only", "we would rather", "we invented", "we believe"]) {
       expect(all, phrase).not.toContain(phrase);
     }
+  });
+});
+
+/**
+ * What version 1 actually says, pinned.
+ *
+ * An acceptance stores a number. That answers "did they agree" and not the
+ * question a dispute asks, which is agree to *what* — the text lives in code,
+ * so producing it means trusting that nobody edited the words without raising
+ * the number. This is the check that makes that trust unnecessary.
+ *
+ * If this fails you have changed the binding text. Two honest ways out:
+ *
+ *   - The change alters what somebody is agreeing to — a new obligation, a new
+ *     liability, anything about money or cancellation. Raise TERMS_VERSION and
+ *     update the digest. Everyone is asked again, which is the point.
+ *   - It is a typo, punctuation, or a clearer phrasing of the same duty. Leave
+ *     the version and update the digest here, deliberately, having decided
+ *     that.
+ *
+ * What must not happen is the digest being updated without that decision being
+ * made, which is why it is a constant in a committed file and not computed.
+ */
+describe("the words a version stands for", () => {
+  /**
+   * One line per version, appended and never edited.
+   *
+   * A stored acceptance holds a number. That answers "did they agree" and not
+   * the question a dispute asks, which is agree to *what* — the text lives in
+   * code, so producing what version 1 said means trusting that nobody changed
+   * the words without raising the number.
+   *
+   * This is the record that makes the trust unnecessary, and it accumulates
+   * rather than being overwritten: when TERMS_VERSION goes to 2, add a line.
+   * The old one stays, so the repository permanently states which words each
+   * version stood for, and git can produce them.
+   */
+  const DIGESTS: Record<number, string> = {
+    1: "338e9ed4",
+  };
+
+  it("still says what the current version said", () => {
+    expect(DIGESTS[TERMS_VERSION]).toBeDefined();
+    expect(termsDigest()).toBe(DIGESTS[TERMS_VERSION]);
+  });
+
+  /**
+   * If this fails you have changed the binding text. Two honest ways out:
+   *
+   *   - It changes what somebody is agreeing to — a new obligation, a new
+   *     liability, anything about money or cancellation. Raise TERMS_VERSION
+   *     and add a line above. Everyone is asked again, which is the point.
+   *   - It is a typo or a clearer phrasing of the same duty. Update this
+   *     version's digest, having decided that it is one.
+   *
+   * What must not happen is the number being updated without that decision,
+   * which is why it is a constant in a committed file rather than computed.
+   */
+  it("keeps a line for every version ever issued", () => {
+    for (let version = 1; version <= TERMS_VERSION; version++) {
+      expect(DIGESTS[version], `version ${version} has no recorded digest`).toMatch(/^[0-9a-f]{8}$/);
+    }
+  });
+
+  it("changes the moment a single word does", () => {
+    expect(digestOf("These terms are between you and us.")).not.toBe(
+      digestOf("These terms are between you and them."),
+    );
+  });
+
+  it("gives the same text the same fingerprint every time", () => {
+    expect(digestOf("a booking is a booking")).toBe(digestOf("a booking is a booking"));
+  });
+
+  it("notices a clause being removed", () => {
+    expect(digestOf("One. Two. Three.")).not.toBe(digestOf("One. Two."));
   });
 });

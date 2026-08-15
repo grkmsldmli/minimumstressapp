@@ -169,7 +169,7 @@ export function InsuranceUpload({
  */
 const COMPARISON: { label: string; free: string | false; pro: string | true }[] = [
   {
-    label: "Sessions at once",
+    label: "Sessions",
     free: String(MAX_UPCOMING_BOOKINGS_FREE),
     pro: "Unlimited",
   },

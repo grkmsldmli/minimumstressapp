@@ -55,7 +55,7 @@ export const TOOLS: Tool[] = [
       "Whether your sleep is restoring you, across five dimensions — not just how many hours.",
     kind: "assessment",
     minutes: "3 minutes",
-    live: false,
+    live: true,
   },
   {
     slug: "cortisol-assessment",

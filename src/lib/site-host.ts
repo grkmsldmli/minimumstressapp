@@ -44,6 +44,24 @@ export function isSiteHost(host: string | null): boolean {
 }
 
 /**
+ * A request for a file rather than for a page.
+ *
+ * Everything in `public/` is served from the root of the deployment and is not
+ * under `/site`, so rewriting these turns every photograph on the content site
+ * into a 404 — which is exactly what happened: the homepage's own images were
+ * reachable on the app host and missing on the site they belong to. It went
+ * unnoticed for a while because `next/image` fetches through `/_next/image`,
+ * which was already excluded, so the page looked right while every direct link
+ * to a file — an OpenGraph preview, a share card, `robots.txt` — was broken.
+ *
+ * A dot in the last segment is the test. Routes here are words and slashes;
+ * files carry an extension. It is the same rule Next's own matcher uses.
+ */
+function isFileRequest(pathname: string): boolean {
+  return pathname.slice(pathname.lastIndexOf("/")).includes(".");
+}
+
+/**
  * Paths that belong to the deployment rather than to either site.
  *
  * API routes, the auth callback and Next's own assets answer the same way on
@@ -55,7 +73,6 @@ export function isSharedPath(pathname: string): boolean {
     pathname.startsWith("/api/") ||
     pathname.startsWith("/auth/") ||
     pathname.startsWith("/_next/") ||
-    pathname === "/manifest.webmanifest" ||
-    pathname === "/favicon.ico"
+    isFileRequest(pathname)
   );
 }

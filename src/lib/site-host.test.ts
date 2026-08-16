@@ -76,4 +76,28 @@ describe("isSharedPath", () => {
     expect(isSharedPath("/apiary")).toBe(false);
     expect(isSharedPath("/authors")).toBe(false);
   });
+
+  /*
+   * Everything in public/ is served from the root and is not under /site, so
+   * rewriting a file request is a 404. The homepage's own photographs were
+   * missing on the site they belong to while loading fine on the app — hidden
+   * for a while because next/image fetches through /_next/image, which was
+   * already excluded. The picture appeared; only the direct links were broken.
+   */
+  it("leaves files in public/ alone", () => {
+    expect(isSharedPath("/photos/room-treatment.webp")).toBe(true);
+    expect(isSharedPath("/manifest.webmanifest")).toBe(true);
+    expect(isSharedPath("/favicon.ico")).toBe(true);
+    expect(isSharedPath("/robots.txt")).toBe(true);
+    expect(isSharedPath("/icon-512.png")).toBe(true);
+  });
+
+  /*
+   * Only the last segment decides. A dot earlier in the path is not a file, or
+   * an article under a versioned prefix would stop being a page.
+   */
+  it("reads only the last segment for an extension", () => {
+    expect(isSharedPath("/v1.2/articles")).toBe(false);
+    expect(isSharedPath("/tools/burnout-test")).toBe(false);
+  });
 });

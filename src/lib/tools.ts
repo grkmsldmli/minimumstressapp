@@ -54,7 +54,7 @@ export const TOOLS: Tool[] = [
       "nervous-system-assessment",
       "stress-recovery-assessment",
     ],
-    live: false,
+    live: true,
   },
   {
     slug: "sleep-score",

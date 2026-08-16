@@ -21,8 +21,8 @@ import { type Tool, liveToolsOfKind } from "@/lib/tools";
 export const metadata: Metadata = {
   title: "Free wellness tools",
   description:
-    "Six free tools: three assessments that score what you tell us about your week, and " +
-    "three calculators that answer instantly. No account, no charge.",
+    "Free assessments and calculators that answer on the screen — no email, no account, " +
+    "and nothing stored.",
 };
 
 export default function ToolsPage() {
@@ -49,7 +49,7 @@ export default function ToolsPage() {
 
         <Group
           title="Assessments"
-          note="You answer, we score it, and the full result comes by email."
+          note="Twelve or so questions, scored on the screen. Nothing is stored."
           tools={liveToolsOfKind("assessment")}
         />
 

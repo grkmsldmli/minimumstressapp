@@ -39,9 +39,19 @@ const HERO: Slide[] = [
     alt: "A treatment room with a made table and a window onto trees.",
   },
   {
+    src: "/photos/moment-arriving.webp",
+    label: "Let yourself in",
+    alt: "A practitioner with a mat over her shoulder opening a keypad door onto a pilates studio.",
+  },
+  {
     src: "/photos/room-studio.webp",
     label: "Movement studio",
     alt: "A movement studio with mats, bolsters and a mirror.",
+  },
+  {
+    src: "/photos/moment-booking.webp",
+    label: "Book the hour",
+    alt: "A practitioner checking her phone beside a made treatment table.",
   },
   {
     src: "/photos/room-consulting.webp",

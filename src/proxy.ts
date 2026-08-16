@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { TILE_ORIGIN } from "@/lib/map-tiles";
+import { isSharedPath, isSiteHost } from "@/lib/site-host";
 
 /**
  * The content security policy, built per request so it can carry a nonce.
@@ -102,7 +103,25 @@ export function proxy(request: NextRequest): NextResponse {
   headers.set("x-nonce", nonce);
   headers.set("Content-Security-Policy", csp);
 
-  const response = NextResponse.next({ request: { headers } });
+  /*
+   * Two sites, one deployment, told apart by the hostname.
+   *
+   * minimumstress.com is rewritten into `/site`, so its pages are written at
+   * the path a reader sees — `/articles`, not `/site/articles` — and no link
+   * on either side has to know which host it is being rendered for. A rewrite
+   * rather than a redirect: the address bar keeps the real URL.
+   *
+   * The app keeps the root of minimumstress.app, which is why nothing about
+   * it moves and no sign-in or OAuth callback changes.
+   */
+  const { pathname } = request.nextUrl;
+  const response =
+    isSiteHost(request.headers.get("host")) && !isSharedPath(pathname)
+      ? NextResponse.rewrite(new URL(`/site${pathname}`, request.url), {
+          request: { headers },
+        })
+      : NextResponse.next({ request: { headers } });
+
   response.headers.set("Content-Security-Policy", csp);
   return response;
 }

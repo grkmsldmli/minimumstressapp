@@ -81,7 +81,7 @@ export default function ForHostsPage() {
           <div className="overflow-hidden rounded-3xl">
             <Image
               src="/photos/practitioner-setting-up.webp"
-              alt="A practitioner laying folded towels on a treatment table before a session."
+              alt="A practitioner smoothing a sheet over a massage table, in a wide room with a mat and cushions at the far end."
               width={1672}
               height={941}
               priority

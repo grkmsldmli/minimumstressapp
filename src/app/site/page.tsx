@@ -28,7 +28,7 @@ export const metadata: Metadata = {
 const STRIP = [
   {
     src: "/photos/room-consulting.webp",
-    alt: "A consulting room with two armchairs and a low table by a window.",
+    alt: "A consulting room with two wooden-framed chairs facing each other over a low table, and a window onto trees.",
   },
   {
     src: "/photos/room-studio.webp",

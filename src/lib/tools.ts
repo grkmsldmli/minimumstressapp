@@ -97,7 +97,7 @@ export const TOOLS: Tool[] = [
     blurb: "What your habits add up to in years, across a seven-dimension longevity model.",
     kind: "assessment",
     minutes: "5 minutes",
-    live: false,
+    live: true,
   },
   {
     slug: "bmi-calculator",

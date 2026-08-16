@@ -1,5 +1,4 @@
 import { APP_URL } from "./company";
-import { TOOLS } from "./tools";
 
 /**
  * Where every Shopify URL goes once the apex moves here.
@@ -18,6 +17,11 @@ import { TOOLS } from "./tools";
  * is a worse answer than saying it is gone. See `GONE` below.
  */
 
+import { TOOLS } from "./tools";
+
+/** Their slugs, which the new pages keep. */
+const TOOL_SLUGS = new Set(TOOLS.map((tool) => tool.slug));
+
 /** Shopify's own paths, which are not ours. */
 const SHOPIFY_PREFIXES = ["/collections/", "/products/", "/cart", "/checkout", "/account"];
 
@@ -35,23 +39,6 @@ export function isGone(pathname: string): boolean {
   return SHOPIFY_PREFIXES.some(
     (prefix) => pathname === prefix.replace(/\/$/, "") || pathname.startsWith(prefix),
   );
-}
-
-/**
- * The twelve tool pages, folded onto the six that replaced them.
- *
- * Generated from the tool list rather than typed out again, so a tool that is
- * renamed or merged later cannot leave a redirect pointing at nothing.
- */
-function toolRedirects(): Record<string, string> {
-  const map: Record<string, string> = {};
-  for (const tool of TOOLS) {
-    for (const page of tool.replaces) {
-      map[`/pages/${page}`] = `/tools/${tool.slug}`;
-    }
-  }
-  map["/pages/wellness-hub"] = "/tools";
-  return map;
 }
 
 /**
@@ -94,6 +81,8 @@ const PAGE_REDIRECTS: Record<string, string> = {
   "/pages/wellness-brief": "/articles",
 
   // Shopify's blog paths. Both indexes land on the one list that replaces them.
+  "/pages/wellness-hub": "/tools",
+
   "/blogs/wellness": "/articles",
   "/blogs/general-info": "/articles",
 };
@@ -113,5 +102,13 @@ export function destinationFor(pathname: string): string | null {
   const article = path.match(/^\/blogs\/[^/]+\/(.+)$/);
   if (article) return `/articles/${article[1]}`;
 
-  return toolRedirects()[path] ?? PAGE_REDIRECTS[path] ?? null;
+  /*
+   * The tools keep their own slugs, so /pages/burnout-test is simply
+   * /burnout-test here — nothing was renamed and nothing was merged, and the
+   * only thing that changed is Shopify's /pages prefix.
+   */
+  const toolPage = path.match(/^\/pages\/(.+)$/);
+  if (toolPage && TOOL_SLUGS.has(toolPage[1])) return `/tools/${toolPage[1]}`;
+
+  return PAGE_REDIRECTS[path] ?? null;
 }

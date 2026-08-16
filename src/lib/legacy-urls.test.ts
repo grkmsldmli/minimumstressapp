@@ -42,26 +42,19 @@ describe("tool pages", () => {
     }
   });
 
-  /** And nothing claims to replace a page that was never there. */
-  it("does not carry redirects for pages that never existed", () => {
-    const claimed = TOOLS.flatMap((tool) => tool.replaces);
-    for (const page of claimed) {
-      expect(SHOPIFY_TOOL_PAGES, page).toContain(page);
+  /*
+   * Nothing was renamed and nothing was merged, so each one lands on its own
+   * slug. All that changed is Shopify's /pages prefix.
+   */
+  it("keeps every tool at its own name", () => {
+    for (const page of SHOPIFY_TOOL_PAGES) {
+      expect(destinationFor(`/pages/${page}`), page).toBe(`/tools/${page}`);
     }
   });
 
-  /** The four stress tests were merged; all four keep working. */
-  it("folds the merged assessments onto the one that replaced them", () => {
-    expect(destinationFor("/pages/burnout-test")).toBe("/tools/stress-load");
-    expect(destinationFor("/pages/cortisol-assessment")).toBe("/tools/stress-load");
-    expect(destinationFor("/pages/nervous-system-assessment")).toBe("/tools/stress-load");
-    expect(destinationFor("/pages/stress-recovery-assessment")).toBe("/tools/stress-load");
-  });
-
-  it("keeps the renamed ones reachable under their old address", () => {
-    expect(destinationFor("/pages/biological-age-calculator")).toBe("/tools/lifestyle-age");
-    expect(destinationFor("/pages/bmi-calculator")).toBe("/tools/bmi");
-    expect(destinationFor("/pages/tdee-calculator")).toBe("/tools/energy-needs");
+  /** And the list here is the list the site actually has. */
+  it("matches the tools the site defines", () => {
+    expect(TOOLS.map((tool) => tool.slug).sort()).toEqual([...SHOPIFY_TOOL_PAGES].sort());
   });
 
   it("sends the hub to the hub", () => {

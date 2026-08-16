@@ -1,105 +1,126 @@
 /**
- * The free tools, and which ones survived.
+ * The tools, as they exist on the site being moved.
  *
- * The Shopify site carried twelve. Four of them — a burnout test, a cortisol
- * assessment, a nervous-system assessment and a stress-recovery assessment —
- * asked the same person the same questions about the same week and returned
- * four differently-worded versions of one answer. Two more, gut and
- * inflammation, overlapped almost as heavily. Twelve tests is not a library;
- * it reads as a content farm, and it is six more things to keep correct.
+ * Eleven of them, under the slugs and names they already have. An earlier
+ * version of this file merged them down to six and renamed two, which was not
+ * a call to make on somebody else's behalf: the names are indexed, they are
+ * what people have linked to, and the questions behind them were written by
+ * the person whose site this is.
  *
- * So: six. Three that measure something with arithmetic, three that score what
- * somebody tells us about their own week.
- *
- * Two were also renamed. "Cortisol Assessment" and "Biological Age" both name
- * a measurement neither one takes — one is a questionnaire, the other is a
- * lifestyle estimate — and the FTC treats the impression an advert leaves as a
- * claim to be substantiated, whether or not the words are there. The tools are
- * unchanged; they now say what they actually do.
+ * Keeping the slugs also means most of these need no redirect at all — the
+ * address a reader has works because it is still the address.
  */
 
 export type ToolKind = "assessment" | "calculator";
 
 export interface Tool {
+  /** The Shopify page slug, kept. */
   slug: string;
   name: string;
-  /** One line, on the card. Says what the person gets, not how it works. */
+  /** One line, on the card. */
   blurb: string;
   kind: ToolKind;
   /** Roughly how long it takes, as somebody would say it out loud. */
   minutes: string;
-  /** Which of the old Shopify pages fold into this one, for the redirects. */
-  replaces: string[];
   /**
    * Whether the page behind it exists yet.
    *
-   * The hub shows live tools only. A card that opens a 404 costs more trust
-   * than a shorter list costs interest, and "coming soon" on six cards reads
-   * as a site that is not finished — which it would be.
+   * The hub lists live tools only. A card that opens a 404 costs more trust
+   * than a shorter list costs interest.
    */
   live: boolean;
 }
 
 export const TOOLS: Tool[] = [
   {
-    slug: "stress-load",
-    name: "Stress Load Check",
-    blurb:
-      "Where the pressure is actually landing — sleep, body, mood, or the hours themselves — and what to change first.",
+    slug: "burnout-test",
+    name: "Burnout Test",
+    blurb: "Ten questions from a rotating pool, and where you sit between recovering and burnt out.",
     kind: "assessment",
-    minutes: "4 minutes",
-    replaces: [
-      "burnout-test",
-      "cortisol-assessment",
-      "nervous-system-assessment",
-      "stress-recovery-assessment",
-    ],
-    live: true,
+    minutes: "2 minutes",
+    live: false,
+  },
+  {
+    slug: "nervous-system-assessment",
+    name: "Nervous System Assessment",
+    blurb: "Whether your system is regulated or reactive, across three dimensions.",
+    kind: "assessment",
+    minutes: "3 minutes",
+    live: false,
   },
   {
     slug: "sleep-score",
     name: "Sleep Score",
-    blurb: "Whether your sleep is restoring you, across five dimensions — not just how many hours.",
+    blurb:
+      "Whether your sleep is restoring you, across five dimensions — not just how many hours.",
     kind: "assessment",
     minutes: "3 minutes",
-    replaces: ["sleep-score"],
-    live: true,
-  },
-  {
-    slug: "lifestyle-age",
-    name: "Lifestyle Age Estimate",
-    blurb:
-      "What your daily habits add up to, expressed in years — sleep, movement, food, recovery, and connection.",
-    kind: "assessment",
-    minutes: "5 minutes",
-    replaces: ["biological-age-calculator", "gut-health-score", "inflammation-score"],
     live: false,
   },
   {
-    slug: "bmi",
+    slug: "cortisol-assessment",
+    name: "Cortisol Assessment",
+    blurb:
+      "Your stress pattern across five dimensions, from morning activation to lifestyle load.",
+    kind: "assessment",
+    minutes: "4 minutes",
+    live: false,
+  },
+  {
+    slug: "stress-recovery-assessment",
+    name: "Stress Recovery Assessment",
+    blurb: "How well you come back down after pressure, and what is getting in the way.",
+    kind: "assessment",
+    minutes: "4 minutes",
+    live: false,
+  },
+  {
+    slug: "gut-health-score",
+    name: "Gut Health Score",
+    blurb:
+      "Digestion, microbiome diversity, the gut-brain axis, inflammation signals and daily habits.",
+    kind: "assessment",
+    minutes: "4 minutes",
+    live: false,
+  },
+  {
+    slug: "inflammation-score",
+    name: "Inflammation Score",
+    blurb: "Your inflammatory load across diet, symptoms, metabolism, lifestyle and recovery.",
+    kind: "assessment",
+    minutes: "4 minutes",
+    live: false,
+  },
+  {
+    slug: "biological-age-calculator",
+    name: "Biological Age Calculator",
+    blurb: "What your habits add up to in years, across a seven-dimension longevity model.",
+    kind: "assessment",
+    minutes: "5 minutes",
+    live: false,
+  },
+  {
+    slug: "bmi-calculator",
     name: "BMI Calculator",
     blurb: "Your BMI, and an honest account of what the number can and cannot tell you.",
     kind: "calculator",
     minutes: "Instant",
-    replaces: ["bmi-calculator"],
     live: true,
   },
   {
-    slug: "body-fat",
-    name: "Body Fat Estimate",
-    blurb: "Lean mass and fat mass from tape measurements, which BMI cannot separate.",
+    slug: "body-fat-calculator",
+    name: "Body Fat Calculator",
+    blurb: "Body fat percentage, lean mass and fat mass from tape measurements.",
     kind: "calculator",
     minutes: "Instant",
-    replaces: ["body-fat-calculator"],
     live: false,
   },
   {
-    slug: "energy-needs",
-    name: "Daily Energy Needs",
-    blurb: "How much your body uses in a day, from the Mifflin-St Jeor equation.",
+    slug: "tdee-calculator",
+    name: "TDEE Calculator",
+    blurb: "Your total daily energy expenditure, and the macros that follow from your goal.",
     kind: "calculator",
     minutes: "Instant",
-    replaces: ["tdee-calculator"],
     live: false,
   },
 ];
@@ -111,15 +132,4 @@ export function liveToolsOfKind(kind: ToolKind): Tool[] {
 
 export function toolBySlug(slug: string): Tool | undefined {
   return TOOLS.find((tool) => tool.slug === slug);
-}
-
-/**
- * Where an old Shopify tool URL should land.
- *
- * Every one of the twelve keeps working. Four of them now arrive at the same
- * place, which is the point — somebody who bookmarked the burnout test is not
- * sent to a 404 because we merged it.
- */
-export function toolForLegacyPage(page: string): Tool | undefined {
-  return TOOLS.find((tool) => tool.replaces.includes(page));
 }

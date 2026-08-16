@@ -2,6 +2,7 @@ import Image from "next/image";
 import type { Metadata } from "next";
 
 import { SiteFooter, SiteHeader } from "@/components/site/chrome";
+import { SpaceCarousel, type Slide } from "@/components/site/space-carousel";
 import { APP_URL, BRAND } from "@/lib/company";
 
 /**
@@ -24,6 +25,35 @@ export const metadata: Metadata = {
     "Rent a private space by the hour for therapy, coaching, movement, or bodywork — " +
     "or list the space you already have. No lease, no deposit.",
 };
+
+/**
+ * The hero, which moves.
+ *
+ * Labelled the way a listing is labelled inside the app, so the marketing site
+ * and the product read as one thing rather than two.
+ */
+const HERO: Slide[] = [
+  {
+    src: "/photos/room-treatment.webp",
+    label: "Treatment room",
+    alt: "A treatment room with a made table and a window onto trees.",
+  },
+  {
+    src: "/photos/room-studio.webp",
+    label: "Movement studio",
+    alt: "A movement studio with mats, bolsters and a mirror.",
+  },
+  {
+    src: "/photos/room-consulting.webp",
+    label: "Consulting space",
+    alt: "A consulting room with two wooden-framed chairs facing each other over a low table.",
+  },
+  {
+    src: "/photos/room-open-plan.webp",
+    label: "Open space",
+    alt: "An open room with a treatment table at one end and a mat at the other.",
+  },
+];
 
 const STRIP = [
   {
@@ -97,17 +127,7 @@ function Hero() {
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-3xl">
-        <Image
-          src="/photos/room-treatment.webp"
-          alt="A treatment room with a made table and a window onto trees."
-          width={1672}
-          height={941}
-          priority
-          sizes="(min-width: 1024px) 55vw, 100vw"
-          className="h-full w-full object-cover"
-        />
-      </div>
+      <SpaceCarousel slides={HERO} />
     </section>
   );
 }

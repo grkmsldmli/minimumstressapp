@@ -15,7 +15,7 @@
  * Recognition only, and that is a deliberate line rather than a first version.
  * badges.ts records what happened when tiers carried real benefits: a longer
  * window, a waived fee, a faster payout. Every one became a rule to reason
- * about while somebody was trying to book a room, and none of them made the
+ * about while somebody was trying to book a space, and none of them made the
  * marketplace work better. Nothing here changes a price, a limit or a queue
  * position.
  *
@@ -28,7 +28,7 @@
  * counts the practice they have held.
  *
  * The practitioner's equivalent of a first payout is the first time they book
- * the same room twice. That is when somebody stops shopping and starts having
+ * the same space twice. That is when somebody stops shopping and starts having
  * a routine — the behaviour rebook.ts was built around and the one Pro sells.
  */
 
@@ -60,7 +60,7 @@ export interface Milestone {
    *
    * Exactly one per side. If everything is a celebration then nothing is, and
    * the first session is the one where something actually happened: a stranger
-   * came, the room worked, nothing broke.
+   * came, the space worked, nothing broke.
    */
   celebrate: boolean;
 }
@@ -69,29 +69,29 @@ export const MILESTONES: readonly Milestone[] = [
   {
     key: "host_listed",
     party: "host",
-    title: "Your room is live",
-    meaning: "It is on the map, and practitioners can find it.",
+    title: "Your space is live",
+    meaning: "It is on the map. Practitioners can find it now.",
     celebrate: false,
   },
   {
     key: "host_first_booking",
     party: "host",
-    title: "Somebody chose your room",
-    meaning: "Out of every room they could have booked, they picked yours.",
+    title: "Somebody chose your space",
+    meaning: "Out of everything they could have booked, they picked yours.",
     celebrate: false,
   },
   {
     key: "host_first_session",
     party: "host",
     title: "Your first session happened",
-    meaning: "Somebody practised in your room, and the hour paid for itself.",
+    meaning: "Somebody worked in your space, and the hour paid for itself.",
     celebrate: true,
   },
   {
     key: "host_first_review",
     party: "host",
     title: "Your first review",
-    meaning: "Somebody wrote down what it was like to work in your room.",
+    meaning: "Somebody wrote down what it was like to work there.",
     celebrate: false,
   },
   {
@@ -110,14 +110,14 @@ export const MILESTONES: readonly Milestone[] = [
     key: "host_ten_sessions",
     party: "host",
     title: "Ten sessions hosted",
-    meaning: "Not a coincidence any more. Your room is part of how people work.",
+    meaning: "Not luck any more. Your space is part of how people work.",
     celebrate: false,
   },
 
   {
     key: "pro_first_booking",
     party: "practitioner",
-    title: "Your first room is booked",
+    title: "Your first space is booked",
     meaning: "An hour is yours, and nobody else can take it.",
     celebrate: false,
   },
@@ -125,33 +125,33 @@ export const MILESTONES: readonly Milestone[] = [
     key: "pro_first_session",
     party: "practitioner",
     title: "You held your first session",
-    meaning: "You worked without a lease, in a room that was ready for you.",
+    meaning: "No lease, and the space was ready for you.",
     celebrate: true,
   },
   {
     key: "pro_first_review",
     party: "practitioner",
     title: "Your first review",
-    meaning: "A studio wrote down what it was like to have you in their room.",
+    meaning: "A host wrote down what it was like to have you there.",
     celebrate: false,
   },
   {
     /*
      * A practitioner's own version of the payout: the moment they stop
-     * searching. Going back to the same room is the difference between finding
+     * searching. Going back to the same space is the difference between finding
      * space and having a place to work.
      */
     key: "pro_first_repeat",
     party: "practitioner",
     title: "You went back",
-    meaning: "The same room, twice. That is a routine rather than a search.",
+    meaning: "The same space, twice. That is a routine, not a search.",
     celebrate: false,
   },
   {
     key: "pro_ten_sessions",
     party: "practitioner",
     title: "Ten sessions held",
-    meaning: "Ten hours of practice, in rooms you did not have to rent by the year.",
+    meaning: "Ten hours of work, in spaces you never had to lease.",
     celebrate: false,
   },
 ];

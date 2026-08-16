@@ -39,7 +39,7 @@ export function SiteHeader({ width = "wide" }: { width?: Width }) {
           width={321}
           height={120}
           priority
-          className="h-8 w-auto"
+          className="h-10 w-auto sm:h-11"
         />
       </Link>
 

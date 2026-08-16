@@ -113,7 +113,7 @@ export const TOOLS: Tool[] = [
     blurb: "Body fat percentage, lean mass and fat mass from tape measurements.",
     kind: "calculator",
     minutes: "Instant",
-    live: false,
+    live: true,
   },
   {
     slug: "tdee-calculator",
@@ -121,7 +121,7 @@ export const TOOLS: Tool[] = [
     blurb: "Your total daily energy expenditure, and the macros that follow from your goal.",
     kind: "calculator",
     minutes: "Instant",
-    live: false,
+    live: true,
   },
 ];
 

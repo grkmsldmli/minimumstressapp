@@ -23,7 +23,7 @@ import { APP_URL, LEGAL_ENTITY, SUPPORT_EMAIL } from "@/lib/company";
 export const metadata: Metadata = {
   title: "About",
   description:
-    "Minimum Stress is the booking layer between practitioners who need a private room by " +
+    "Minimum Stress is the booking layer between practitioners who need a private space by " +
     "the hour and hosts with space already sitting empty. Operated by Minimum Stress " +
     "Consulting Services LLC in California.",
 };
@@ -62,13 +62,13 @@ export default function AboutPage() {
           </p>
 
           <p>
-            Practitioners can book private wellness rooms by the hour. Hosts can earn from space
+            Practitioners can book private wellness spaces by the hour. Hosts can earn from space
             they already have. The price, time and rules are agreed before anyone arrives.
           </p>
 
           <p>
             We are not a clinic. We are not trying to be the wellness brand in the room. We are
-            the booking layer in the middle — the part that handles the room, the schedule, the
+            the booking layer in the middle — the part that handles the space, the schedule, the
             payment and the access details, then gets out of the way.
           </p>
         </div>
@@ -96,14 +96,14 @@ export default function AboutPage() {
             className="rounded-full px-7 py-3.5 text-[15px] font-medium text-white"
             style={{ backgroundColor: "#0F2F55" }}
           >
-            Find a room
+            Find a space
           </a>
           <Link
             href="/for-hosts"
             className="rounded-full border px-7 py-3.5 text-[15px] font-medium"
             style={{ borderColor: "#d9e2ec", color: "#0F2F55" }}
           >
-            List a room
+            List a space
           </Link>
         </div>
       </main>

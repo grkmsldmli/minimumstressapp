@@ -16,16 +16,16 @@ import { APP_URL, BRAND } from "@/lib/company";
  */
 
 export const metadata: Metadata = {
-  title: "List your room",
+  title: "List your space",
   description:
-    "If you have a treatment room, a studio, or a spare consulting room, the hours you are " +
+    "If you have a treatment room, a studio, or a spare consulting space, the hours you are " +
     "not in it can earn. You set the rate and the hours.",
 };
 
 const STEPS = [
   {
     n: "01",
-    title: "List the room",
+    title: "List the space",
     body: "Photographs, the address, your rate, and the hours you are happy for it to be used. About ten minutes.",
   },
   {
@@ -59,12 +59,12 @@ export default function ForHostsPage() {
               The hours you are
               <br />
               <em className="italic" style={{ color: "#0EA5E9" }}>
-                not in the room.
+                not using it.
               </em>
             </h1>
 
             <p className="mt-6 max-w-md text-[16.5px] leading-[1.75]" style={{ color: "#5f6673" }}>
-              A treatment room, a studio, a spare consulting room — if you are already paying for
+              A treatment room, a studio, a spare consulting space — if you are already paying for
               it, the hours you do not use are worth something. You set the rate and the hours,
               and nobody arrives outside them.
             </p>
@@ -74,7 +74,7 @@ export default function ForHostsPage() {
               className="mt-8 inline-block rounded-full px-7 py-3.5 text-[15px] font-medium text-white"
               style={{ backgroundColor: "#0F2F55" }}
             >
-              List your room
+              List your space
             </a>
           </div>
 
@@ -128,7 +128,7 @@ export default function ForHostsPage() {
           <dl className="mt-8 space-y-7 text-[15.5px] leading-[1.8]" style={{ color: "#5f6673" }}>
             <div>
               <dt className="font-medium" style={{ color: "#0F2F55" }}>
-                Who is coming into my room?
+                Who is coming into my space?
               </dt>
               <dd className="mt-1">
                 Practitioners who have accepted the terms and confirmed they carry their own
@@ -148,10 +148,10 @@ export default function ForHostsPage() {
 
             <div>
               <dt className="font-medium" style={{ color: "#0F2F55" }}>
-                Can somebody book when I am using the room?
+                Can somebody book when I am using it?
               </dt>
               <dd className="mt-1">
-                No. The room is only bookable inside the hours you set, and you can change them
+                No. It is only bookable inside the hours you set, and you can change them
                 whenever you like.
               </dd>
             </div>
@@ -172,7 +172,7 @@ export default function ForHostsPage() {
             className="mt-10 inline-block rounded-full px-7 py-3.5 text-[15px] font-medium text-white"
             style={{ backgroundColor: "#0F2F55" }}
           >
-            List your room
+            List your space
           </a>
         </section>
       </main>

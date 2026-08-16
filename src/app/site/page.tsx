@@ -19,10 +19,10 @@ import { APP_URL, BRAND } from "@/lib/company";
  */
 
 export const metadata: Metadata = {
-  title: "Private rooms by the hour",
+  title: "Private wellness space by the hour",
   description:
-    "Rent a private room by the hour for therapy, coaching, movement, or bodywork — " +
-    "or list the room you already have. No lease, no deposit.",
+    "Rent a private space by the hour for therapy, coaching, movement, or bodywork — " +
+    "or list the space you already have. No lease, no deposit.",
 };
 
 const STRIP = [
@@ -67,7 +67,7 @@ function Hero() {
           className="text-[42px] leading-[1.06] sm:text-[54px]"
           style={{ fontFamily: "var(--font-dm-serif)", color: "#0F2F55" }}
         >
-          A private room,
+          A private space,
           <br />
           <em className="italic" style={{ color: "#0EA5E9" }}>
             by the hour.
@@ -75,7 +75,7 @@ function Hero() {
         </h1>
 
         <p className="mt-6 max-w-sm text-[17px] leading-[1.7]" style={{ color: "#5f6673" }}>
-          Therapists, coaches and movement teachers book rooms by the hour from people who
+          Therapists, coaches and movement teachers book space by the hour from people who
           already have the space. No lease. No deposit. No month you did not use.
         </p>
 
@@ -92,7 +92,7 @@ function Hero() {
             className="rounded-full border px-7 py-3.5 text-[15px] font-medium"
             style={{ borderColor: "#d9e2ec", color: "#0F2F55" }}
           >
-            I have a room
+            I have a space
           </a>
         </div>
       </div>
@@ -136,7 +136,7 @@ function Strip() {
         ))}
       </div>
       <p className="mt-5 text-[15px] leading-[1.7]" style={{ color: "#5f6673" }}>
-        Treatment rooms, consulting rooms and studios across California — with the street, the
+        Treatment rooms, studios and consulting spaces across California — with the street, the
         hours and the whole price on every listing.
       </p>
     </section>
@@ -157,7 +157,7 @@ function BothSides() {
             className="text-[24px] leading-snug"
             style={{ fontFamily: "var(--font-dm-serif)", color: "#0F2F55" }}
           >
-            Need a room
+            Need a space
           </h2>
           <p className="mt-3 text-[15.5px] leading-[1.75]" style={{ color: "#5f6673" }}>
             Book the hour, pay the price you were shown, and let yourself in — the door code
@@ -170,7 +170,7 @@ function BothSides() {
             className="text-[24px] leading-snug"
             style={{ fontFamily: "var(--font-dm-serif)", color: "#0F2F55" }}
           >
-            Have a room
+            Have a space
           </h2>
           <p className="mt-3 text-[15.5px] leading-[1.75]" style={{ color: "#5f6673" }}>
             Set your rate and your hours, and the empty ones start earning. Everyone who books

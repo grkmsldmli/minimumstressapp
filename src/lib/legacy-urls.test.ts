@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { APP_URL } from "./company";
 import { destinationFor, isGone } from "./legacy-urls";
 import { TOOLS } from "./tools";
 
@@ -96,10 +97,16 @@ describe("articles", () => {
 });
 
 describe("policy and company pages", () => {
-  it("lands the legal ones on the copies that are actually agreed to", () => {
-    expect(destinationFor("/pages/privacy-policy")).toBe("/privacy");
-    expect(destinationFor("/pages/terms-of-service")).toBe("/terms");
-    expect(destinationFor("/pages/cookie-policy")).toBe("/privacy");
+  /*
+   * These leave the origin on purpose. The terms are agreed to in the app and
+   * the accepted version is recorded there; a second copy on the content site
+   * is a second contract that can drift from the one people signed.
+   */
+  it("sends the legal ones across to the app, where they are agreed to", () => {
+    expect(destinationFor("/pages/privacy-policy")).toBe(`${APP_URL}/privacy`);
+    expect(destinationFor("/pages/terms-of-service")).toBe(`${APP_URL}/terms`);
+    expect(destinationFor("/pages/cookie-policy")).toBe(`${APP_URL}/privacy`);
+    expect(destinationFor("/pages/wellness-disclaimer")).toBe(`${APP_URL}/terms`);
   });
 
   it("sends both application forms to the one page that replaces them", () => {

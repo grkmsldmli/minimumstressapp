@@ -1,3 +1,4 @@
+import { APP_URL } from "./company";
 import { TOOLS } from "./tools";
 
 /**
@@ -72,12 +73,20 @@ const PAGE_REDIRECTS: Record<string, string> = {
   "/pages/application-form": "/for-hosts",
   "/pages/partner-with-us": "/for-hosts",
 
-  "/pages/privacy-policy": "/privacy",
-  "/pages/cookie-policy": "/privacy",
-  "/pages/data-sharing-opt-out": "/privacy",
-  "/pages/terms-of-service": "/terms",
-  "/pages/wellness-disclaimer": "/terms",
-  "/pages/consent-form": "/terms",
+  /*
+   * Across to the app, which is where these actually live.
+   *
+   * They are agreed to there, and the version somebody accepted is recorded
+   * against their account there. A second copy on this side would be a second
+   * contract that can drift from the one people signed — so the redirect
+   * leaves the origin rather than pretending the page is here.
+   */
+  "/pages/privacy-policy": `${APP_URL}/privacy`,
+  "/pages/cookie-policy": `${APP_URL}/privacy`,
+  "/pages/data-sharing-opt-out": `${APP_URL}/privacy`,
+  "/pages/terms-of-service": `${APP_URL}/terms`,
+  "/pages/wellness-disclaimer": `${APP_URL}/terms`,
+  "/pages/consent-form": `${APP_URL}/terms`,
 
   // A shop's returns policy, on a site that will not be selling anything.
   "/pages/returns-exchanges": "/about",

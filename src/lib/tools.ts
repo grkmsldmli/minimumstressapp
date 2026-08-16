@@ -64,7 +64,7 @@ export const TOOLS: Tool[] = [
       "Your stress pattern across five dimensions, from morning activation to lifestyle load.",
     kind: "assessment",
     minutes: "4 minutes",
-    live: false,
+    live: true,
   },
   {
     slug: "stress-recovery-assessment",
@@ -81,7 +81,7 @@ export const TOOLS: Tool[] = [
       "Digestion, microbiome diversity, the gut-brain axis, inflammation signals and daily habits.",
     kind: "assessment",
     minutes: "4 minutes",
-    live: false,
+    live: true,
   },
   {
     slug: "inflammation-score",
@@ -89,7 +89,7 @@ export const TOOLS: Tool[] = [
     blurb: "Your inflammatory load across diet, symptoms, metabolism, lifestyle and recovery.",
     kind: "assessment",
     minutes: "4 minutes",
-    live: false,
+    live: true,
   },
   {
     slug: "biological-age-calculator",

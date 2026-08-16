@@ -38,7 +38,7 @@ export const TOOLS: Tool[] = [
     blurb: "Ten questions from a rotating pool, and where you sit between recovering and burnt out.",
     kind: "assessment",
     minutes: "2 minutes",
-    live: false,
+    live: true,
   },
   {
     slug: "nervous-system-assessment",

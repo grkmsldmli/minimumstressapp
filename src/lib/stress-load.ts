@@ -20,17 +20,11 @@
  * questions can honestly do.
  */
 
-export type Dimension = "sleep" | "body" | "mind" | "load";
+import type { Assessment, Question } from "./assessment";
 
-export interface Question {
-  id: string;
-  dimension: Dimension;
-  text: string;
-  /** Best first. Scored 3, 2, 1, 0 by position. */
-  options: [string, string, string, string];
-}
+export type StressDimension = "sleep" | "body" | "mind" | "load";
 
-export const DIMENSIONS: Record<Dimension, { label: string; meaning: string }> = {
+const dimensions: Record<StressDimension, { label: string; meaning: string }> = {
   sleep: {
     label: "Sleep",
     meaning: "Whether the night is repairing what the day costs.",
@@ -49,7 +43,7 @@ export const DIMENSIONS: Record<Dimension, { label: string; meaning: string }> =
   },
 };
 
-export const QUESTIONS: Question[] = [
+const questions: Question<StressDimension>[] = [
   {
     id: "sleep-onset",
     dimension: "sleep",
@@ -184,94 +178,6 @@ export const QUESTIONS: Question[] = [
   },
 ];
 
-/** Answers by question id, each the index of the option chosen. */
-export type Answers = Record<string, number>;
-
-export type Band = "steady" | "carrying" | "low" | "depleted";
-
-export interface StressResult {
-  /** 0–100, higher is better, the same direction as every tool on the site. */
-  score: number;
-  band: Band;
-  /** Per dimension, also 0–100. */
-  dimensions: Record<Dimension, number>;
-  /** The thinnest one — where a change is worth the most. Ties break in order. */
-  weakest: Dimension;
-}
-
-const PER_QUESTION_MAX = 3;
-
-function percent(points: number, questions: number): number {
-  return Math.round((points / (questions * PER_QUESTION_MAX)) * 100);
-}
-
-/** True once every question has an answer, which is what enables the result. */
-export function isComplete(answers: Answers): boolean {
-  return QUESTIONS.every((question) => answers[question.id] !== undefined);
-}
-
-export function bandFor(score: number): Band {
-  if (score >= 75) return "steady";
-  if (score >= 50) return "carrying";
-  if (score >= 25) return "low";
-  return "depleted";
-}
-
-export function scoreAnswers(answers: Answers): StressResult {
-  const points: Record<Dimension, number> = { sleep: 0, body: 0, mind: 0, load: 0 };
-  const counts: Record<Dimension, number> = { sleep: 0, body: 0, mind: 0, load: 0 };
-
-  for (const question of QUESTIONS) {
-    const chosen = answers[question.id];
-    if (chosen === undefined) continue;
-    // Options are written best-first, so the score is the distance from the
-    // worst answer rather than the index itself.
-    points[question.dimension] += PER_QUESTION_MAX - chosen;
-    counts[question.dimension] += 1;
-  }
-
-  const dimensions = {
-    sleep: percent(points.sleep, counts.sleep || 1),
-    body: percent(points.body, counts.body || 1),
-    mind: percent(points.mind, counts.mind || 1),
-    load: percent(points.load, counts.load || 1),
-  };
-
-  const total = Object.values(points).reduce((sum, value) => sum + value, 0);
-  const answered = Object.values(counts).reduce((sum, value) => sum + value, 0);
-  const score = percent(total, answered || 1);
-
-  const order: Dimension[] = ["sleep", "body", "mind", "load"];
-  const weakest = order.reduce((worst, next) =>
-    dimensions[next] < dimensions[worst] ? next : worst,
-  );
-
-  return { score, band: bandWith(score, dimensions[weakest]), dimensions, weakest };
-}
-
-const BANDS: Band[] = ["depleted", "low", "carrying", "steady"];
-
-/**
- * The headline band, held down by the worst dimension.
- *
- * A mean hides a collapse. Somebody who answered the worst possible option to
- * all three sleep questions and the best to everything else averages 75, and
- * an average alone would tell them they are "holding up" — while they are
- * describing a week with no sleep in it at all. That is the single most
- * misleading thing a tool like this can do, because it is exactly the person
- * who needs to be told otherwise.
- *
- * So the overall band can sit at most one step above the weakest dimension's
- * own band. One step rather than none: three strong areas genuinely are worth
- * something, and pinning the whole result to the worst answer would make the
- * other nine questions decorative.
- */
-function bandWith(score: number, weakestScore: number): Band {
-  const overall = BANDS.indexOf(bandFor(score));
-  const ceiling = BANDS.indexOf(bandFor(weakestScore)) + 1;
-  return BANDS[Math.min(overall, ceiling)];
-}
-
 /**
  * What each band is told.
  *
@@ -281,33 +187,37 @@ function bandWith(score: number, weakestScore: number): Band {
  * somebody is not the same as informing them, and a questionnaire has not
  * earned that tone.
  */
-export const BAND_COPY: Record<Band, { label: string; body: string }> = {
-  steady: {
-    label: "Holding up",
-    body: "Your answers describe a week you are getting through with something left over. That is worth protecting — most of what goes wrong here goes wrong slowly, and it is easier to keep a good pattern than to rebuild one.",
-  },
-  carrying: {
-    label: "Carrying it",
-    body: "You are managing, but it is costing more than it should. This is the ordinary middle: nothing has broken, and the margin has gone. Usually one thing is doing most of the damage rather than everything at once.",
-  },
-  low: {
-    label: "Running low",
-    body: "Your answers point to a stretch that has gone on long enough to show. Sleep, patience, and energy tend to go together, and pulling one back up often takes some weight off the others.",
-  },
-  depleted: {
-    label: "Running on empty",
-    body: "This reads like a load carried well past the point it should have been put down. That is not a character failing and it is not fixed by trying harder. If this has been the shape of things for a while, it is worth saying out loud to a doctor or someone who can help.",
-  },
-};
+export const stressLoad: Assessment<StressDimension> = {
+  dimensions,
+  questions,
 
-/** One concrete thing, for whichever dimension came out thinnest. */
-export const FIRST_STEP: Record<Dimension, string> = {
-  sleep:
-    "Pick a wake time and keep it, including at the weekend, and get daylight in the first hour. Sleep is the one that pulls the others up with it, and a fixed wake time moves it faster than a fixed bedtime.",
-  body:
-    "Give your body twenty minutes a day of something unhurried — a walk, stretching, anything that is not exercise you have to win at. Tension leaves through movement more reliably than through rest.",
-  mind:
-    "Put a fixed gap between finishing and everything else: a walk home, a shower, ten minutes on a step outside. The mind does not switch off on command, but it will follow a routine.",
-  load:
-    "Find one thing this week to take off the list rather than reschedule. Nothing else on this page works while the load itself keeps growing.",
+  band: {
+    steady: {
+      label: "Holding up",
+      body: "Your answers describe a week you are getting through with something left over. That is worth protecting — most of what goes wrong here goes wrong slowly, and it is easier to keep a good pattern than to rebuild one.",
+    },
+    carrying: {
+      label: "Carrying it",
+      body: "You are managing, but it is costing more than it should. This is the ordinary middle: nothing has broken, and the margin has gone. Usually one thing is doing most of the damage rather than everything at once.",
+    },
+    low: {
+      label: "Running low",
+      body: "Your answers point to a stretch that has gone on long enough to show. Sleep, patience, and energy tend to go together, and pulling one back up often takes some weight off the others.",
+    },
+    depleted: {
+      label: "Running on empty",
+      body: "This reads like a load carried well past the point it should have been put down. That is not a character failing and it is not fixed by trying harder. If this has been the shape of things for a while, it is worth saying out loud to a doctor or someone who can help.",
+    },
+  },
+
+  firstStep: {
+    sleep:
+      "Pick a wake time and keep it, including at the weekend, and get daylight in the first hour. Sleep is the one that pulls the others up with it, and a fixed wake time moves it faster than a fixed bedtime.",
+    body:
+      "Give your body twenty minutes a day of something unhurried — a walk, stretching, anything that is not exercise you have to win at. Tension leaves through movement more reliably than through rest.",
+    mind:
+      "Put a fixed gap between finishing and everything else: a walk home, a shower, ten minutes on a step outside. The mind does not switch off on command, but it will follow a routine.",
+    load:
+      "Find one thing this week to take off the list rather than reschedule. Nothing else on this page works while the load itself keeps growing.",
+  },
 };

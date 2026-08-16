@@ -2,8 +2,9 @@ import Link from "next/link";
 import type { Metadata } from "next";
 
 import { SiteFooter, SiteHeader } from "@/components/site/chrome";
-import { StressLoadTool } from "@/components/site/stress-load-tool";
+import { AssessmentTool } from "@/components/site/assessment-tool";
 import { BRAND } from "@/lib/company";
+import { stressLoad } from "@/lib/stress-load";
 
 export const metadata: Metadata = {
   title: "Stress Load Check",
@@ -50,7 +51,7 @@ export default function StressLoadPage() {
         </p>
 
         <div className="mt-12">
-          <StressLoadTool />
+          <AssessmentTool assessment={stressLoad} />
         </div>
 
         <p

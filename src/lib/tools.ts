@@ -63,7 +63,7 @@ export const TOOLS: Tool[] = [
     kind: "assessment",
     minutes: "3 minutes",
     replaces: ["sleep-score"],
-    live: false,
+    live: true,
   },
   {
     slug: "lifestyle-age",

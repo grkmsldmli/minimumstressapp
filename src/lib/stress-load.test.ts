@@ -1,16 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  type Answers,
-  type Dimension,
-  BAND_COPY,
-  DIMENSIONS,
-  FIRST_STEP,
-  QUESTIONS,
-  bandFor,
-  isComplete,
-  scoreAnswers,
-} from "./stress-load";
+import { type Answers, bandFor, isComplete, score } from "./assessment";
+import { type StressDimension, stressLoad } from "./stress-load";
+
+const QUESTIONS = stressLoad.questions;
+const DIMENSIONS = stressLoad.dimensions;
+const BAND_COPY = stressLoad.band;
+const FIRST_STEP = stressLoad.firstStep;
+
+const scoreAnswers = (answers: Answers) => score(stressLoad, answers);
 
 /** Every question answered with the same option index. */
 function allAt(index: number): Answers {
@@ -19,7 +17,7 @@ function allAt(index: number): Answers {
 
 describe("the question set", () => {
   it("covers four dimensions evenly", () => {
-    const counts = new Map<Dimension, number>();
+    const counts = new Map<StressDimension, number>();
     for (const question of QUESTIONS) {
       counts.set(question.dimension, (counts.get(question.dimension) ?? 0) + 1);
     }
@@ -37,7 +35,7 @@ describe("the question set", () => {
 
   /** Copy exists for every band and every dimension, or a result renders blank. */
   it("has wording for everything it can return", () => {
-    for (const dimension of Object.keys(DIMENSIONS) as Dimension[]) {
+    for (const dimension of Object.keys(DIMENSIONS) as StressDimension[]) {
       expect(FIRST_STEP[dimension], dimension).toBeTruthy();
     }
     for (const band of ["steady", "carrying", "low", "depleted"] as const) {
@@ -130,9 +128,9 @@ describe("scoring", () => {
   });
 
   it("knows when the set is finished", () => {
-    expect(isComplete({})).toBe(false);
-    expect(isComplete({ [QUESTIONS[0].id]: 0 })).toBe(false);
-    expect(isComplete(allAt(2))).toBe(true);
+    expect(isComplete(stressLoad, {})).toBe(false);
+    expect(isComplete(stressLoad, { [QUESTIONS[0].id]: 0 })).toBe(false);
+    expect(isComplete(stressLoad, allAt(2))).toBe(true);
   });
 });
 

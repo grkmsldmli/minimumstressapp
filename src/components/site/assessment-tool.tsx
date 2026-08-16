@@ -4,29 +4,24 @@ import { useState } from "react";
 
 import {
   type Answers,
-  type Dimension,
-  type StressResult,
-  BAND_COPY,
-  DIMENSIONS,
-  FIRST_STEP,
-  QUESTIONS,
+  type Assessment,
+  type Result,
   isComplete,
-  scoreAnswers,
-} from "@/lib/stress-load";
+  score,
+} from "@/lib/assessment";
 
 /**
- * Twelve questions on one page, and the result underneath.
+ * The form every questionnaire on the site uses.
  *
- * Two things the version this replaces did, which are not repeated here.
+ * Two things the Shopify versions did, which are not repeated.
  *
- * It showed one question at a time behind a progress bar, which makes twelve
- * questions feel like an exam and hides how much is left. They are all here;
- * somebody can see the whole thing before starting and answer in any order.
+ * They showed one question at a time behind a progress bar, which turns twelve
+ * questions into an exam and hides how much is left. They are all here, in any
+ * order somebody likes.
  *
- * And it held the result behind an email field — you finished the work, and
- * then had to pay with your address to see it. The result appears the moment
- * the last question is answered. Sending it to yourself is offered afterwards,
- * as a thing you might want rather than a toll.
+ * And they held the result behind an email field — you did the work, then paid
+ * with your address to see it. The score appears the moment the last question
+ * is answered, and keeps tracking if you go back and change one.
  */
 
 const BAND_COLOUR = {
@@ -36,30 +31,30 @@ const BAND_COLOUR = {
   depleted: "#C0392B",
 } as const;
 
-export function StressLoadTool() {
+export function AssessmentTool<D extends string>({
+  assessment,
+}: {
+  assessment: Assessment<D>;
+}) {
   const [answers, setAnswers] = useState<Answers>({});
-  const [result, setResult] = useState<StressResult | null>(null);
+  const [result, setResult] = useState<Result<D> | null>(null);
 
   const answered = Object.keys(answers).length;
-  const ready = isComplete(answers);
+  const total = assessment.questions.length;
 
   /*
    * The functional updater, not a spread of the value this render captured.
    *
-   * Written the other way, every click in a single tick starts from the same
-   * stale `answers` and overwrites the one before it — twelve taps landed one
-   * answer. It looks fine when a person clicks slowly enough for a render to
-   * land between taps, which is most of the time, and loses answers silently
-   * for anybody moving fast on a phone. Silently is the part that matters:
-   * nothing appears wrong until the count at the bottom does not add up.
+   * Written the other way, every click within one tick starts from the same
+   * stale answers and overwrites the one before it — twelve taps landed one
+   * answer. It looks correct whenever a render lands between taps, which is
+   * most of the time, and loses answers silently for anybody moving quickly on
+   * a phone. Silently is the part that matters.
    */
   const choose = (id: string, index: number) => {
     setAnswers((previous) => {
       const next = { ...previous, [id]: index };
-      // Once every question has an answer the result tracks changes live, so
-      // going back to reconsider one shows what it did rather than hiding it
-      // behind the button again.
-      setResult(isComplete(next) ? scoreAnswers(next) : null);
+      setResult(isComplete(assessment, next) ? score(assessment, next) : null);
       return next;
     });
   };
@@ -67,10 +62,10 @@ export function StressLoadTool() {
   return (
     <div>
       <ol className="space-y-9">
-        {QUESTIONS.map((question, index) => (
+        {assessment.questions.map((question, index) => (
           <li key={question.id}>
             <p className="text-[11px] uppercase tracking-[0.14em]" style={{ color: "#0EA5E9" }}>
-              {index + 1} of {QUESTIONS.length} · {DIMENSIONS[question.dimension].label}
+              {index + 1} of {total} · {assessment.dimensions[question.dimension].label}
             </p>
 
             <p
@@ -92,11 +87,7 @@ export function StressLoadTool() {
                     className="block w-full rounded-xl px-4 py-3 text-left text-[15px] leading-snug"
                     style={
                       chosen
-                        ? {
-                            border: "1px solid #0EA5E9",
-                            backgroundColor: "#f0f9ff",
-                            color: "#0F2F55",
-                          }
+                        ? { border: "1px solid #0EA5E9", backgroundColor: "#f0f9ff", color: "#0F2F55" }
                         : { border: "1px solid #e7eef6", color: "#5f6673" }
                     }
                   >
@@ -109,28 +100,30 @@ export function StressLoadTool() {
         ))}
       </ol>
 
-      {!ready && (
+      {!result && (
         <p className="mt-8 text-[14.5px]" style={{ color: "#8a94a3" }} aria-live="polite">
-          {answered} of {QUESTIONS.length} answered. The result appears when they all are.
+          {answered} of {total} answered. The result appears when they all are.
         </p>
       )}
 
-      {result && <Result result={result} />}
+      {result && <ResultPanel assessment={assessment} result={result} />}
     </div>
   );
 }
 
-function Result({ result }: { result: StressResult }) {
-  const copy = BAND_COPY[result.band];
+function ResultPanel<D extends string>({
+  assessment,
+  result,
+}: {
+  assessment: Assessment<D>;
+  result: Result<D>;
+}) {
+  const copy = assessment.band[result.band];
   const colour = BAND_COLOUR[result.band];
-  const order: Dimension[] = ["sleep", "body", "mind", "load"];
+  const order = Object.keys(assessment.dimensions) as D[];
 
   return (
-    <div
-      className="mt-10 rounded-2xl p-7"
-      style={{ border: "1px solid #e7eef6" }}
-      aria-live="polite"
-    >
+    <div className="mt-10 rounded-2xl p-7" style={{ border: "1px solid #e7eef6" }} aria-live="polite">
       <div className="flex flex-wrap items-baseline gap-x-4">
         <span
           className="text-[52px] leading-none"
@@ -151,20 +144,25 @@ function Result({ result }: { result: StressResult }) {
         {order.map((dimension) => (
           <div key={dimension}>
             <div className="flex items-baseline justify-between text-[14px]">
-              <span style={{ color: "#0F2F55" }}>{DIMENSIONS[dimension].label}</span>
+              <span style={{ color: "#0F2F55" }}>{assessment.dimensions[dimension].label}</span>
               <span style={{ color: "#8a94a3" }}>{result.dimensions[dimension]}</span>
             </div>
-            <div className="mt-1.5 h-2 overflow-hidden rounded-full" style={{ backgroundColor: "#eef2f6" }}>
+            <div
+              className="mt-1.5 h-2 overflow-hidden rounded-full"
+              style={{ backgroundColor: "#eef2f6" }}
+            >
               <div
                 className="h-full rounded-full"
                 style={{
                   width: `${result.dimensions[dimension]}%`,
+                  // The weakest one is picked out, because it is the one the
+                  // advice underneath is about.
                   backgroundColor: dimension === result.weakest ? colour : "#c9d6e3",
                 }}
               />
             </div>
             <p className="mt-1 text-[13px]" style={{ color: "#8a94a3" }}>
-              {DIMENSIONS[dimension].meaning}
+              {assessment.dimensions[dimension].meaning}
             </p>
           </div>
         ))}
@@ -172,10 +170,10 @@ function Result({ result }: { result: StressResult }) {
 
       <div className="mt-8 rounded-xl p-5" style={{ backgroundColor: "#f8fbfd" }}>
         <p className="text-[14px] font-medium" style={{ color: "#0F2F55" }}>
-          Where to start: {DIMENSIONS[result.weakest].label.toLowerCase()}
+          Where to start: {assessment.dimensions[result.weakest].label.toLowerCase()}
         </p>
         <p className="mt-1.5 text-[14.5px] leading-[1.75]" style={{ color: "#5f6673" }}>
-          {FIRST_STEP[result.weakest]}
+          {assessment.firstStep[result.weakest]}
         </p>
       </div>
     </div>

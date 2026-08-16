@@ -1,7 +1,8 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 
-import { APP_URL, BRAND } from "@/lib/company";
+import { SiteFooter, SiteHeader } from "@/components/site/chrome";
+import { BRAND } from "@/lib/company";
 import { type Tool, liveToolsOfKind } from "@/lib/tools";
 
 /**
@@ -27,18 +28,7 @@ export const metadata: Metadata = {
 export default function ToolsPage() {
   return (
     <>
-      <header className="mx-auto flex max-w-5xl items-center justify-between px-6 py-6">
-        <Link href="/" className="text-[19px]" style={{ fontFamily: "var(--font-dm-serif)", color: "#0F2F55" }}>
-          {BRAND}
-        </Link>
-        <a
-          href={APP_URL}
-          className="rounded-full px-5 py-2.5 text-[14px] font-medium text-white"
-          style={{ backgroundColor: "#0F2F55" }}
-        >
-          Open the app
-        </a>
-      </header>
+      <SiteHeader />
 
       <main className="mx-auto max-w-5xl px-6 pb-24 pt-6">
         <h1
@@ -71,6 +61,8 @@ export default function ToolsPage() {
 
         <Disclaimer />
       </main>
+
+      <SiteFooter />
     </>
   );
 }

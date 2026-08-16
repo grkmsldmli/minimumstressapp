@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { TILE_ORIGIN } from "@/lib/map-tiles";
+import { destinationFor, isGone } from "@/lib/legacy-urls";
 import { isSharedPath, isSiteHost } from "@/lib/site-host";
 
 /**
@@ -115,8 +116,49 @@ export function proxy(request: NextRequest): NextResponse {
    * it moves and no sign-in or OAuth callback changes.
    */
   const { pathname } = request.nextUrl;
+  const onSite = isSiteHost(request.headers.get("host"));
+
+  /*
+   * The addresses Shopify is answering today.
+   *
+   * Around forty-five of them resolve, and whatever ranking they carry took a
+   * year of writing to earn and is gone in a week if they start returning 404
+   * — a search engine drops a page long before anybody notices, and the
+   * position cannot be asked for back. A permanent redirect hands the ranking
+   * to the page that replaced it.
+   *
+   * Only on the content host. `/pages/faq` on the app is not a Shopify page;
+   * it is a path that does not exist, and should say so.
+   */
+  if (onSite) {
+    const destination = destinationFor(pathname);
+    if (destination) {
+      const moved = NextResponse.redirect(new URL(destination, request.url), 308);
+      moved.headers.set("Content-Security-Policy", csp);
+      return moved;
+    }
+
+    /*
+     * The shop, which is not moving anywhere.
+     *
+     * 410 tells a search engine to drop the page and stop coming back; 404
+     * only says "maybe later" and wastes months of crawls. Redirecting a
+     * discontinued product to the homepage would be worse than either — it
+     * claims the homepage is the product, and drops somebody hunting for an
+     * item onto a page about renting rooms.
+     */
+    if (isGone(pathname)) {
+      const gone = new NextResponse("This page has been removed.", {
+        status: 410,
+        headers: { "Content-Type": "text/plain; charset=utf-8" },
+      });
+      gone.headers.set("Content-Security-Policy", csp);
+      return gone;
+    }
+  }
+
   const response =
-    isSiteHost(request.headers.get("host")) && !isSharedPath(pathname)
+    onSite && !isSharedPath(pathname)
       ? NextResponse.rewrite(new URL(`/site${pathname}`, request.url), {
           request: { headers },
         })

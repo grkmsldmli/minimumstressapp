@@ -2,7 +2,8 @@ import Link from "next/link";
 import type { Metadata } from "next";
 
 import { BmiTool } from "@/components/site/bmi-tool";
-import { APP_URL, BRAND } from "@/lib/company";
+import { SiteFooter, SiteHeader } from "@/components/site/chrome";
+import { BRAND } from "@/lib/company";
 
 export const metadata: Metadata = {
   title: "BMI Calculator",
@@ -14,22 +15,7 @@ export const metadata: Metadata = {
 export default function BmiPage() {
   return (
     <>
-      <header className="mx-auto flex max-w-3xl items-center justify-between px-6 py-6">
-        <Link
-          href="/"
-          className="text-[19px]"
-          style={{ fontFamily: "var(--font-dm-serif)", color: "#0F2F55" }}
-        >
-          {BRAND}
-        </Link>
-        <a
-          href={APP_URL}
-          className="rounded-full px-5 py-2.5 text-[14px] font-medium text-white"
-          style={{ backgroundColor: "#0F2F55" }}
-        >
-          Open the app
-        </a>
-      </header>
+      <SiteHeader width="narrow" />
 
       <main className="mx-auto max-w-3xl px-6 pb-24 pt-4">
         <Link href="/tools" className="text-[14px]" style={{ color: "#0EA5E9" }}>
@@ -73,6 +59,8 @@ export default function BmiPage() {
           your weight means for your health, that is a conversation with a doctor.
         </p>
       </main>
+
+      <SiteFooter width="narrow" />
     </>
   );
 }

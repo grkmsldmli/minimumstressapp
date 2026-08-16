@@ -1,21 +1,31 @@
+import Link from "next/link";
 import type { Metadata } from "next";
 
 import { SiteFooter, SiteHeader } from "@/components/site/chrome";
-import { APP_URL, BRAND, LEGAL_ENTITY, SUPPORT_EMAIL } from "@/lib/company";
+import { APP_URL, LEGAL_ENTITY, SUPPORT_EMAIL } from "@/lib/company";
 
 /**
  * Who this is, in the fewest words that are true.
  *
- * The Shopify version of this page was three screens about wellness
- * philosophy. Somebody opening an about page wants to know who they would be
- * handing money to and whether the company is real, so that is what it
- * answers: the registered name, where it operates, what it sells, and an
- * address that reaches a person.
+ * The words are the owner's, and they are better than the ones they replaced:
+ * "we are the booking layer in the middle" says in seven words what a
+ * paragraph of mine was circling.
+ *
+ * The title is the one thing deliberately not taken as given. The proposed one
+ * was "Private Wellness Space by the Hour | Minimum Stress | Book Now", which
+ * is already the app's own title at minimumstress.app. Two pages we own,
+ * competing for the same phrase, means a search engine picks one and buries
+ * the other — and the one it buries would probably be the app, which is the
+ * thing that takes bookings. This page answers "who are these people", so that
+ * is what it is titled.
  */
 
 export const metadata: Metadata = {
   title: "About",
-  description: `${BRAND} rents private rooms by the hour to wellness practitioners in California.`,
+  description:
+    "Minimum Stress is the booking layer between practitioners who need a private room by " +
+    "the hour and hosts with space already sitting empty. Operated by Minimum Stress " +
+    "Consulting Services LLC in California.",
 };
 
 export default function AboutPage() {
@@ -23,50 +33,60 @@ export default function AboutPage() {
     <>
       <SiteHeader width="narrow" />
 
-      <main className="mx-auto max-w-3xl px-6 pb-24 pt-6">
+      <main className="mx-auto max-w-2xl px-6 pb-24 pt-6">
         <h1
-          className="text-[38px] leading-[1.1] sm:text-[44px]"
+          className="text-[36px] leading-[1.12] sm:text-[42px]"
           style={{ fontFamily: "var(--font-dm-serif)", color: "#0F2F55" }}
         >
-          A room, an hour,
+          Wellness work
           <br />
           <em className="italic" style={{ color: "#0EA5E9" }}>
-            and a fair price for both.
+            needs space.
           </em>
         </h1>
 
         <div className="mt-8 space-y-5 text-[16.5px] leading-[1.85]" style={{ color: "#5f6673" }}>
           <p>
-            Most people who do this work for themselves face the same problem. A studio lease
-            costs the same in a quiet month as a busy one, and the alternative — seeing clients
-            at home, or in a café — is not a real alternative for anyone whose work needs a door
-            that closes.
+            A quiet room. A door that closes. A clean setup. A place where a practitioner can meet
+            a client without signing a lease or turning a living room into a studio.
           </p>
 
           <p>
-            Meanwhile the rooms already exist. Treatment rooms sit empty three days a week.
-            Studios are dark every weekday morning. Somebody is already paying for that space.
+            At the same time, many rooms are already sitting unused. Treatment rooms, studios,
+            offices and private spaces often have empty hours during the week, even while someone
+            is still paying rent for them.
+          </p>
+
+          <p className="text-[19px]" style={{ color: "#0F2F55" }}>
+            Minimum Stress connects those two sides.
           </p>
 
           <p>
-            So {BRAND} does one thing: it lets a practitioner book one of those rooms for one
-            hour, at a price both sides agreed to before anybody arrives. We are not a clinic and
-            we are not a wellness brand. We are the part in the middle that handles the booking,
-            the money and the door code, and then gets out of the way.
+            Practitioners can book private wellness rooms by the hour. Hosts can earn from space
+            they already have. The price, time and rules are agreed before anyone arrives.
           </p>
 
-          {/*
-            Said plainly because it is the thing that decides whether somebody
-            trusts a payment page. A company that will not say who it is or
-            where to write has already answered the question.
-          */}
           <p>
-            The company is <strong style={{ color: "#0F2F55" }}>{LEGAL_ENTITY}</strong>, and it
-            operates in California. If something is wrong, or you want to ask a person, write to{" "}
+            We are not a clinic. We are not trying to be the wellness brand in the room. We are
+            the booking layer in the middle — the part that handles the room, the schedule, the
+            payment and the access details, then gets out of the way.
+          </p>
+        </div>
+
+        <div
+          className="mt-10 rounded-2xl p-6 text-[15px] leading-[1.8]"
+          style={{ backgroundColor: "#f8fbfd", border: "1px solid #e7eef6", color: "#5f6673" }}
+        >
+          <p>
+            Minimum Stress is operated by{" "}
+            <strong style={{ color: "#0F2F55" }}>{LEGAL_ENTITY}</strong> in California.
+          </p>
+          <p className="mt-2">
+            If something needs a human, email{" "}
             <a href={`mailto:${SUPPORT_EMAIL}`} style={{ color: "#0EA5E9" }}>
               {SUPPORT_EMAIL}
-            </a>{" "}
-            — it reaches us, not a queue.
+            </a>
+            .
           </p>
         </div>
 
@@ -78,13 +98,13 @@ export default function AboutPage() {
           >
             Find a room
           </a>
-          <a
+          <Link
             href="/for-hosts"
             className="rounded-full border px-7 py-3.5 text-[15px] font-medium"
             style={{ borderColor: "#d9e2ec", color: "#0F2F55" }}
           >
             List a room
-          </a>
+          </Link>
         </div>
       </main>
 

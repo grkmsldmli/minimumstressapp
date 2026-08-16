@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 
+import { useRevealOnce } from "@/components/site/use-reveal";
+
 import {
   type BurnoutQuestion,
   type BurnoutResult,
@@ -42,6 +44,7 @@ export function BurnoutTool() {
   const [questions, setQuestions] = useState<BurnoutQuestion[] | null>(null);
   const [answers, setAnswers] = useState<Record<number, number>>({});
   const [result, setResult] = useState<BurnoutResult | null>(null);
+  const reveal = useRevealOnce();
 
   if (!questions) {
     return (
@@ -67,11 +70,13 @@ export function BurnoutTool() {
       const next = { ...previous, [index]: option };
       const done = questions.every((_, position) => next[position] !== undefined);
       setResult(done ? scoreBurnout(questions, next) : null);
+      if (done) reveal.reveal();
       return next;
     });
   };
 
   const restart = () => {
+    reveal.reset();
     setQuestions(drawQuestions());
     setAnswers({});
     setResult(null);
@@ -126,18 +131,26 @@ export function BurnoutTool() {
         </p>
       )}
 
-      {result && <Result result={result} onRestart={restart} />}
+      {result && <Result result={result} onRestart={restart} panelRef={reveal.ref} />}
     </div>
   );
 }
 
-function Result({ result, onRestart }: { result: BurnoutResult; onRestart: () => void }) {
+function Result({
+  result,
+  onRestart,
+  panelRef,
+}: {
+  result: BurnoutResult;
+  onRestart: () => void;
+  panelRef: (node: HTMLElement | null) => void;
+}) {
   const profile = PROFILES[result.level];
   const colour = LEVEL_COLOUR[result.level];
   const shown = result.ranked.slice(0, categoriesToShow(result.level));
 
   return (
-    <div className="mt-10" aria-live="polite">
+    <div ref={panelRef} className="mt-10" aria-live="polite">
       <div className="rounded-2xl p-7" style={{ border: "1px solid #e7eef6" }}>
         <div className="flex flex-wrap items-baseline gap-x-4">
           <span

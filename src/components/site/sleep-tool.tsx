@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 
+import { useRevealOnce } from "@/components/site/use-reveal";
+
 import {
   SLEEP_BANDS,
   SLEEP_DIMENSIONS,
@@ -36,6 +38,7 @@ export function SleepTool() {
   const [questions, setQuestions] = useState<SleepQuestion[] | null>(null);
   const [answers, setAnswers] = useState<Record<number, number>>({});
   const [result, setResult] = useState<SleepResult | null>(null);
+  const reveal = useRevealOnce();
 
   if (!questions) {
     return (
@@ -60,11 +63,13 @@ export function SleepTool() {
       const next = { ...previous, [index]: option };
       const done = questions.every((_, position) => next[position] !== undefined);
       setResult(done ? scoreSleep(questions, next) : null);
+      if (done) reveal.reveal();
       return next;
     });
   };
 
   const restart = () => {
+    reveal.reset();
     setQuestions(drawSleepQuestions());
     setAnswers({});
     setResult(null);
@@ -117,17 +122,25 @@ export function SleepTool() {
         </p>
       )}
 
-      {result && <Result result={result} onRestart={restart} />}
+      {result && <Result result={result} onRestart={restart} panelRef={reveal.ref} />}
     </div>
   );
 }
 
-function Result({ result, onRestart }: { result: SleepResult; onRestart: () => void }) {
+function Result({
+  result,
+  onRestart,
+  panelRef,
+}: {
+  result: SleepResult;
+  onRestart: () => void;
+  panelRef: (node: HTMLElement | null) => void;
+}) {
   const band = SLEEP_BANDS[result.type];
   const colour = TYPE_COLOUR[result.type];
 
   return (
-    <div className="mt-10" aria-live="polite">
+    <div ref={panelRef} className="mt-10" aria-live="polite">
       <div className="rounded-2xl p-7" style={{ border: "1px solid #e7eef6" }}>
         <div className="flex flex-wrap items-baseline gap-x-4">
           <span

@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { COLOUR, TYPE } from "@/lib/site-theme";
 import { SPACE_TYPES } from "@/lib/space-types";
 
 /**
@@ -40,19 +41,23 @@ export function SpaceSearch() {
   return (
     <form
       onSubmit={submit}
-      className="mt-8 rounded-2xl p-4 sm:p-5"
-      style={{ backgroundColor: "#ffffff", border: "1px solid #e7eef6", boxShadow: "0 6px 24px rgba(15,47,85,.06)" }}
+      className="mt-9 rounded-2xl p-5 sm:p-6"
+      style={{
+        backgroundColor: COLOUR.page,
+        border: `1px solid ${COLOUR.line}`,
+        boxShadow: "0 18px 44px -22px rgba(15,47,85,.35)",
+      }}
     >
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="block">
-          <span className="block text-[11px] uppercase tracking-[0.1em]" style={{ color: "#8a94a3" }}>
+          <span className={TYPE.eyebrow} style={{ color: COLOUR.muted }}>
             What kind of space?
           </span>
           <select
             value={type}
             onChange={(event) => setType(event.target.value)}
-            className="mt-1.5 w-full rounded-xl bg-white px-3.5 py-3 text-[15px] outline-none"
-            style={{ border: "1px solid #e7eef6", color: "#0F2F55" }}
+            className="mt-2 w-full rounded-xl bg-white px-4 py-3.5 text-[17px] outline-none"
+            style={{ border: `1px solid ${COLOUR.line}`, color: COLOUR.ink }}
           >
             <option value="">Any space</option>
             {SPACE_TYPES.map((space) => (
@@ -64,7 +69,7 @@ export function SpaceSearch() {
         </label>
 
         <label className="block">
-          <span className="block text-[11px] uppercase tracking-[0.1em]" style={{ color: "#8a94a3" }}>
+          <span className={TYPE.eyebrow} style={{ color: COLOUR.muted }}>
             Where?
           </span>
           <input
@@ -72,16 +77,16 @@ export function SpaceSearch() {
             onChange={(event) => setWhere(event.target.value)}
             placeholder="San Mateo, CA"
             autoComplete="address-level2"
-            className="mt-1.5 w-full rounded-xl bg-white px-3.5 py-3 text-[15px] outline-none"
-            style={{ border: "1px solid #e7eef6", color: "#0F2F55" }}
+            className="mt-2 w-full rounded-xl bg-white px-4 py-3.5 text-[17px] outline-none"
+            style={{ border: `1px solid ${COLOUR.line}`, color: COLOUR.ink }}
           />
         </label>
       </div>
 
       <button
         type="submit"
-        className="mt-3 w-full rounded-xl px-6 py-3.5 text-[15px] font-medium text-white sm:w-auto sm:px-8"
-        style={{ backgroundColor: "#0F2F55" }}
+        className="mt-4 w-full rounded-xl px-6 py-4 text-[16px] font-medium text-white transition-transform duration-200 hover:-translate-y-0.5 sm:w-auto sm:px-10"
+        style={{ backgroundColor: COLOUR.ink }}
       >
         Find spaces
       </button>

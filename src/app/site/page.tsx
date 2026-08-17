@@ -120,10 +120,35 @@ const GROUPS = CATEGORIES.map((category) => ({
   gradient: category.gradient,
 }));
 
+/**
+ * The three steps, each with the fact somebody actually wants underneath it.
+ *
+ * They were three titles and three sentences, which is a diagram of a
+ * marketplace rather than an answer about this one. The `detail` line is the
+ * question a person is really asking at that step — when am I charged, when do
+ * I get in, do I have to sign up to look — and each is checked rather than
+ * written: the card is charged at booking (0030) and the code appears
+ * twenty-four hours ahead (0039).
+ */
 const STEPS = [
-  { n: "1", title: "Search", body: "The kind of room you need, in the town you work in." },
-  { n: "2", title: "Book", body: "Pick the hours. You pay the price on the listing, and nothing else." },
-  { n: "3", title: "Work", body: "Let yourself in with the code, and see your own clients." },
+  {
+    n: "1",
+    title: "Search",
+    body: "The kind of room you need, in the town you work in.",
+    detail: "Looking is open. An account is for booking, not for browsing.",
+  },
+  {
+    n: "2",
+    title: "Book",
+    body: "Pick the hours. You pay the price on the listing, and nothing else.",
+    detail: "Your card is charged when you book, not on the day.",
+  },
+  {
+    n: "3",
+    title: "Work",
+    body: "Let yourself in with the code, and see your own clients.",
+    detail: "The door code appears 24 hours before your hour.",
+  },
 ];
 
 const TRUST = [
@@ -266,26 +291,65 @@ function HowItWorks() {
   return (
     <section className="border-y py-20" style={{ borderColor: COLOUR.line, backgroundColor: COLOUR.wash }}>
       <div className="mx-auto max-w-6xl px-6">
+        {/*
+          The heading had the left third of a wide page and nothing beside it.
+          Pairing it with the one sentence that frames the three steps fills the
+          row and earns its space — the alternative was more air.
+        */}
         <Reveal>
-          <h2 className={TYPE.h2} style={{ fontFamily: "var(--font-dm-serif)", color: COLOUR.ink }}>
-            Space when you need it.
-          </h2>
+          <div className="grid gap-6 lg:grid-cols-[1fr_1fr] lg:gap-16">
+            <h2 className={TYPE.h2} style={{ fontFamily: "var(--font-dm-serif)", color: COLOUR.ink }}>
+              Space when you need it.
+            </h2>
+            <p className={`max-w-md lg:pt-2 ${TYPE.body}`} style={{ color: COLOUR.body }}>
+              No viewing, no negotiation, no deposit held for a year. From finding a room to
+              being in it is three steps and about five minutes.
+            </p>
+          </div>
         </Reveal>
 
-        <div className="mt-10 grid gap-10 sm:grid-cols-3">
+        <div className="mt-14 grid gap-12 sm:grid-cols-3 sm:gap-8">
           {STEPS.map((step, index) => (
-            <Reveal key={step.n} delay={index * 90}>
+            <Reveal key={step.n} delay={index * 110} className="relative">
+              {/*
+                A rule from this number to the next, so the three read as one
+                sequence rather than three facts standing near each other.
+
+                One segment per step rather than a single line across the row,
+                which is what this was first: a line inset from the container's
+                edges ran three hundred pixels past the last circle into empty
+                space, and sat eighteen pixels above the numbers because the
+                container's top is not the circles' top. Anchoring each segment
+                to its own step makes both exact and keeps them exact — the
+                negative right offset is the grid gap, so the segment ends
+                precisely where the next column, and therefore the next circle,
+                begins.
+              */}
+              {index < STEPS.length - 1 && (
+                <span
+                  aria-hidden
+                  className="absolute left-[52px] top-[22px] hidden h-px sm:block"
+                  style={{ right: "-2rem", backgroundColor: COLOUR.line }}
+                />
+              )}
+
               <span
-                className="flex h-11 w-11 items-center justify-center rounded-full text-[17px] font-medium text-white"
+                className="relative flex h-11 w-11 items-center justify-center rounded-full text-[17px] font-medium text-white"
                 style={{ backgroundColor: COLOUR.accent }}
               >
                 {step.n}
               </span>
-              <h3 className={`mt-4 ${TYPE.h3}`} style={{ color: COLOUR.ink }}>
+              <h3 className={`mt-5 ${TYPE.h3}`} style={{ color: COLOUR.ink }}>
                 {step.title}
               </h3>
               <p className={`mt-2 ${TYPE.body}`} style={{ color: COLOUR.body }}>
                 {step.body}
+              </p>
+              <p
+                className={`mt-3 border-t pt-3 ${TYPE.small}`}
+                style={{ color: COLOUR.muted, borderColor: COLOUR.line }}
+              >
+                {step.detail}
               </p>
             </Reveal>
           ))}

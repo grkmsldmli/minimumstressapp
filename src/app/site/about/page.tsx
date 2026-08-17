@@ -166,26 +166,49 @@ export default function AboutPage() {
         >
           <div className="mx-auto max-w-6xl px-6">
             <Reveal>
-              <div className="max-w-3xl">
-                <h2
-                  className={TYPE.h2}
-                  style={{ fontFamily: "var(--font-dm-serif)", color: COLOUR.ink }}
+              <div className="grid items-center gap-10 lg:grid-cols-[1.15fr_1fr] lg:gap-14">
+                <div>
+                  <h2
+                    className={TYPE.h2}
+                    style={{ fontFamily: "var(--font-dm-serif)", color: COLOUR.ink }}
+                  >
+                    We provide the space between the two sides.
+                  </h2>
+                  <p className={`mt-5 ${TYPE.body}`} style={{ color: COLOUR.body }}>
+                    Practitioners bring their work and their clients. Hosts provide the room.
+                    Minimum Stress handles discovery, booking, scheduling, payment and the access
+                    details, so both sides can get on with the part that is theirs.
+                  </p>
+                  <p className={`mt-4 ${TYPE.small}`} style={{ color: COLOUR.muted }}>
+                    Minimum Stress does not provide practitioner services. Every professional here
+                    works independently and is responsible for their own practice.
+                  </p>
+                </div>
+
+                {/*
+                  The only picture on the site showing the thing being
+                  described rather than the room it happens in — and it is the
+                  real screen, down to "incl. fees" and "No reviews yet". A
+                  mocked-up interface here would be the one image a reader can
+                  check against the product in one tap.
+                */}
+                <div
+                  className="overflow-hidden rounded-3xl"
+                  style={{ border: `1px solid ${COLOUR.line}` }}
                 >
-                  We provide the space between the two sides.
-                </h2>
-                <p className={`mt-5 ${TYPE.body}`} style={{ color: COLOUR.body }}>
-                  Practitioners bring their work and their clients. Hosts provide the room. Minimum
-                  Stress handles discovery, booking, scheduling, payment and the access details, so
-                  both sides can get on with the part that is theirs.
-                </p>
-                <p className={`mt-4 ${TYPE.small}`} style={{ color: COLOUR.muted }}>
-                  Minimum Stress does not provide practitioner services. Every professional here
-                  works independently and is responsible for their own practice.
-                </p>
+                  <Image
+                    src="/photos/app-in-hand.webp"
+                    alt="A hand holding a phone showing the app: a search for a room, and a movement studio listed at $54.00 an hour including fees."
+                    width={1448}
+                    height={1086}
+                    sizes="(min-width: 1024px) 30rem, 100vw"
+                    className="h-full w-full object-cover"
+                  />
+                </div>
               </div>
             </Reveal>
 
-            <div className="mt-12 grid gap-10 sm:grid-cols-2">
+            <div className="mt-14 grid gap-10 sm:grid-cols-2">
               {FLOWS.map((flow, index) => (
                 <Reveal key={flow.who} delay={index * 110}>
                   <div>

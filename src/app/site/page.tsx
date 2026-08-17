@@ -72,6 +72,11 @@ const HERO: Slide[] = [
     alt: "A practitioner checking her phone beside a made treatment table.",
   },
   {
+    src: "/photos/moment-choosing.webp",
+    label: "Find a room",
+    alt: "A practitioner sitting with her phone, choosing a room, with a reformer studio behind her.",
+  },
+  {
     src: "/photos/room-consulting.webp",
     label: "Consulting space",
     alt: "A consulting room with two wooden-framed chairs facing each other over a low table.",
@@ -494,21 +499,40 @@ function Recurring() {
             className="block h-1.5 w-full"
             style={{ background: `linear-gradient(90deg, ${COLOUR.accent}, ${COLOUR.ink})` }}
           />
-          <div className="p-8 sm:p-12">
-            <h2 className={TYPE.h2} style={{ fontFamily: "var(--font-dm-serif)", color: COLOUR.ink }}>
-              Need the same room every week?
-            </h2>
-            <p className={`mt-5 max-w-2xl ${TYPE.body}`} style={{ color: COLOUR.body }}>
-              Book a run of weeks at once, at the same hour, in the same room. Your clients get a
-              time they can count on and you still have not signed anything.
-            </p>
-            <Link
-              href="/spaces"
-              className={`mt-6 inline-block font-medium ${TYPE.body} underline underline-offset-4`}
-              style={{ color: COLOUR.link }}
-            >
-              Find a room for a weekly slot →
-            </Link>
+          <div className="grid items-center lg:grid-cols-[1fr_1fr]">
+            <div className="p-8 sm:p-12">
+              <h2
+                className={TYPE.h2}
+                style={{ fontFamily: "var(--font-dm-serif)", color: COLOUR.ink }}
+              >
+                Need the same room every week?
+              </h2>
+              <p className={`mt-5 ${TYPE.body}`} style={{ color: COLOUR.body }}>
+                Book a run of weeks at once, at the same hour, in the same room. Your clients get
+                a time they can count on and you still have not signed anything.
+              </p>
+              <Link
+                href="/spaces"
+                className={`mt-6 inline-block font-medium ${TYPE.body} underline underline-offset-4`}
+                style={{ color: COLOUR.link }}
+              >
+                Find a room for a weekly slot →
+              </Link>
+            </div>
+
+            {/*
+              A class already sitting in a room somebody booked by the hour,
+              with the phone that booked it in the frame. It is the argument
+              this section is making rather than a picture beside it.
+            */}
+            <Image
+              src="/photos/moment-class.webp"
+              alt="Four people sitting on mats in a bright studio, with a phone on a bench in the foreground showing the room they are in."
+              width={1448}
+              height={1086}
+              sizes="(min-width: 1024px) 36rem, 100vw"
+              className="h-full w-full object-cover"
+            />
           </div>
         </div>
       </Reveal>

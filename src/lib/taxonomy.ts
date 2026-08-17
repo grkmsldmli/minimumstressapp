@@ -1,6 +1,31 @@
 /**
- * The four categories from the Provider Application form. Locked by the brief:
- * one category, one room type, no others.
+ * The four kinds of room, which is not the same as four kinds of practitioner.
+ *
+ * These came off the old Provider Application form and classified the person:
+ * Physical Activity, Traditional Medicine, Coaching & Personal Support, Mind &
+ * Spirit. That was the right axis for a directory of practitioners and is the
+ * wrong one for a marketplace whose unit is a room — somebody arriving here is
+ * not asking "what am I", they are asking "where can I work on Tuesday", and a
+ * naturopath and a masseur want the same room while a naturopath running a
+ * consultation wants a different one.
+ *
+ * So the labels now describe the space. The keys are unchanged, because the
+ * four map onto each other one for one — physical is still where movement
+ * happens, spirit is still where sitting happens — which meant the concept
+ * could change without touching the `space_category` enum, the stored rows or
+ * anything that reads them.
+ *
+ * Four, and staying four. Ten top-level categories in a marketplace this size
+ * would be eight empty shelves and a confused visitor. The finer question —
+ * pilates or yoga, massage or acupuncture — is `suitable_for` on the listing
+ * (see lib/space-types), which is also what the URLs are built from. Four for
+ * navigation, ten for search.
+ *
+ * The line between Consultation and Holistic is the room, not the trade. The
+ * same Ayurvedic practitioner needs a Consultation Room to talk to somebody
+ * and a Holistic Practice Room to treat them, and the physical difference —
+ * two chairs, or a couch and a sink — is the one a person booking actually
+ * cares about.
  *
  * Deliberately free of icon or React imports so server-side validation can use
  * it without pulling the icon library into a server bundle. The icon mapping
@@ -12,11 +37,11 @@ export type CategoryKey = (typeof CATEGORY_KEYS)[number];
 
 export interface Category {
   key: CategoryKey;
-  /** Full name, as it appears on the Provider Application form. */
+  /** Full name, as it appears in navigation and on the listing form. */
   label: string;
   /** Short form for chips and filters, where the full name will not fit. */
   shortLabel: string;
-  /** The single room type this category maps to. */
+  /** What one room of this kind is called, singular — the badge on a listing. */
   roomType: string;
   specialties: readonly string[];
   /** Gradient stops used for cards, tiles, and map pins. */
@@ -26,40 +51,60 @@ export interface Category {
 export const CATEGORIES: readonly Category[] = [
   {
     key: "physical",
-    label: "Physical Activity",
-    shortLabel: "Physical Activity",
+    label: "Movement Studios",
+    shortLabel: "Movement",
     roomType: "Movement Studio",
-    specialties: ["Yoga", "Pilates", "Tai Chi", "Qigong", "Mobility", "Stretching"],
+    specialties: ["Pilates", "Yoga", "Tai Chi", "Qigong", "Mobility", "Stretching"],
     gradient: ["#3B9BE8", "#16304E"],
   },
   {
     key: "traditional",
-    label: "Traditional Medicine & Natural Wellness",
-    shortLabel: "Traditional Medicine",
+    // Hands-on work, which is a room with a couch and a sink rather than a
+    // room with two chairs. The trade does not decide this; the treatment does.
+    label: "Holistic Practice Rooms",
+    shortLabel: "Holistic",
     roomType: "Treatment Room",
     specialties: [
+      "Massage",
       "Ayurveda",
       "Naturopathic",
-      "Herbal",
+      "Acupuncture",
       "Aromatherapy",
-      "Holistic Wellness",
+      "Reiki",
+      "Skincare",
     ],
     gradient: ["#5FA876", "#12332A"],
   },
   {
     key: "social",
-    label: "Coaching & Personal Support",
-    shortLabel: "Social Wellness",
+    // Where somebody sits down and talks. A coach, a nutritionist and an
+    // Ayurvedic practitioner taking a history all need the same room.
+    label: "Consultation & Coaching Rooms",
+    shortLabel: "Consultation",
     roomType: "Consultation Room",
-    specialties: ["Life Coach", "Relationship Coach", "Mindfulness Coach", "Career Coach"],
+    specialties: [
+      "Life Coach",
+      "Relationship Coach",
+      "Career Coach",
+      "Financial Wellness",
+      "Nutrition",
+      "Herbalism",
+      "Mindfulness Coach",
+    ],
     gradient: ["#7FB4E8", "#1C2B4E"],
   },
   {
     key: "spirit",
-    label: "Mind & Spirit",
-    shortLabel: "Mind & Spirit",
+    label: "Meditation & Breathwork Spaces",
+    shortLabel: "Meditation",
     roomType: "Meditation Room",
-    specialties: ["Meditation", "Breathwork", "Reiki", "Guided Visualization"],
+    specialties: [
+      "Meditation",
+      "Mindfulness",
+      "Breathwork",
+      "Guided Visualization",
+      "Spiritual Coaching",
+    ],
     gradient: ["#8E7FE8", "#241C4E"],
   },
 ] as const;

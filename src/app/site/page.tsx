@@ -7,6 +7,7 @@ import { SpaceCarousel, type Slide } from "@/components/site/space-carousel";
 import { SpaceSearch } from "@/components/site/space-search";
 import { APP_URL, BRAND } from "@/lib/company";
 import { COLOUR, TYPE } from "@/lib/site-theme";
+import { CATEGORIES, type CategoryKey } from "@/lib/taxonomy";
 
 /**
  * A marketplace homepage that is also legible.
@@ -76,39 +77,47 @@ const HERO: Slide[] = [
   },
 ];
 
+/** What each of the four is for, in one line a stranger can act on. */
+const BLURBS: Record<CategoryKey, string> = {
+  physical: "Floor to move on — reformers, mats and mirrors, by the hour.",
+  traditional: "Hands-on rooms with a couch and a sink, for treatment work.",
+  social: "A private room with two chairs, for seeing one person at a time.",
+  spirit: "Still, quiet rooms for sitting, breathwork and guided practice.",
+};
+
 /**
- * The four groups, carrying the gradients from lib/taxonomy.
+ * The use each category opens on: the one sharing its room type's name.
  *
- * Those were written for the app's cards and map pins and had never appeared
- * on this side, which is why the site read as grey: the brand had colour and
- * the marketing pages were not using any of it.
+ * A category is not a `suitable_for` slug, and the search takes slugs — so
+ * rather than teach the search a second vocabulary, each card opens the
+ * broadest use inside it.
  */
-const GROUPS = [
-  {
-    title: "Private rooms",
-    body: "For consultations, coaching and seeing one person at a time.",
-    type: "consultation-room",
-    gradient: ["#7FB4E8", "#1C2B4E"],
-  },
-  {
-    title: "Treatment rooms",
-    body: "A couch, a sink and a door that locks — for hands-on work.",
-    type: "treatment-room",
-    gradient: ["#5FA876", "#12332A"],
-  },
-  {
-    title: "Pilates & movement",
-    body: "Reformers, mirrors and floor enough to work on.",
-    type: "pilates-studio",
-    gradient: ["#3B9BE8", "#16304E"],
-  },
-  {
-    title: "Yoga & meditation",
-    body: "Quiet rooms for classes and for sitting.",
-    type: "yoga-studio",
-    gradient: ["#8E7FE8", "#241C4E"],
-  },
-] as const;
+const GENERIC_USE: Record<CategoryKey, string> = {
+  physical: "movement-studio",
+  traditional: "treatment-room",
+  social: "consultation-room",
+  spirit: "meditation-room",
+};
+
+/**
+ * The four, taken from lib/taxonomy rather than written out again here.
+ *
+ * They used to be four groupings invented for this page, which drifted from
+ * the four the app actually organises itself by the moment either changed.
+ * Now the homepage says what the product says.
+ *
+ * Each links to the search on its own generic use — the one whose name matches
+ * the room type — so "Holistic Practice Rooms" opens treatment rooms rather
+ * than a category the search does not understand. The finer uses under it
+ * (massage, acupuncture, skincare) are reached from there.
+ */
+const GROUPS = CATEGORIES.map((category) => ({
+  key: category.key,
+  title: category.label,
+  body: BLURBS[category.key],
+  type: GENERIC_USE[category.key],
+  gradient: category.gradient,
+}));
 
 const STEPS = [
   { n: "1", title: "Search", body: "The kind of room you need, in the town you work in." },
@@ -212,7 +221,7 @@ function Groups() {
 
       <div className="mt-7 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {GROUPS.map((group, index) => (
-          <Reveal key={group.type} delay={index * 70}>
+          <Reveal key={group.key} delay={index * 70}>
             <Link
               href={`/spaces?type=${group.type}`}
               className="group block h-full overflow-hidden rounded-2xl transition-transform duration-300 hover:-translate-y-1"

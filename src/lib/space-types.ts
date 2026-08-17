@@ -111,7 +111,14 @@ export const SPACE_TYPES: readonly SpaceType[] = [
     slug: "reiki-room",
     label: "Reiki Room",
     plural: "Reiki Rooms",
-    category: "spirit",
+    /*
+     * Holistic rather than Meditation, which is the categories' own new rule
+     * applied honestly: the client lies on a table for an hour, so the room
+     * needed is the one massage needs — a couch, warmth, a door that locks —
+     * and not a floor to sit on. It sat under Mind & Spirit while the
+     * categories described the practitioner rather than the room.
+     */
+    category: "traditional",
     blurb: "Private, quiet and warm, for energy work by the hour.",
   },
 ] as const;

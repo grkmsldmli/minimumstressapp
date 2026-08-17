@@ -37,8 +37,18 @@ export const COLOUR = {
    * 2.8:1, which is fine behind white text and unreadable as text on white.
    */
   accent: "#0EA5E9",
-  /** Pale sky, for text on the navy ground. 8.1:1 against it. */
+  /** Pale sky, for a heading or an accent on the navy ground. 8.1:1 against it. */
   onDark: "#7DD3FC",
+  /**
+   * The two greys that work on navy, measured the same way as the light ones.
+   *
+   * The footer moved onto the dark ground and reaching for rgba(255,255,255,…)
+   * is how a dark surface ends up with text at 3:1 — an alpha is a guess, and
+   * the number it produces depends on what is behind it. These are opaque and
+   * checked: 9.1 and 7.1 against #0F2F55.
+   */
+  onDarkBody: "#C7D6E6",
+  onDarkMuted: "#A9BED3",
 
   /** Grounds. */
   page: "#ffffff",

@@ -96,6 +96,12 @@ export function SiteHeader({ width = "wide" }: { width?: Width }) {
  * "Recurring bookings" were already sections of the homepage and the host FAQ
  * was already a section of /for-hosts.
  *
+ * It sits on the navy, which is where this brand's footer has always been. It
+ * also finishes the job the alternating grounds do further up: the site ends
+ * rather than trailing off into the same white it started in. Text on it is
+ * opaque and measured rather than white at some alpha — an alpha is a guess
+ * whose real contrast depends on what is behind it, and nothing checks it.
+ *
  * Three are still deliberately missing. A Cancellation Policy, a Refund Policy
  * and a Wellness Disclaimer all live inside the terms already, and three
  * labels pointing at one page is three ways of saying Terms. Partnerships is
@@ -157,7 +163,7 @@ function Column({
 }) {
   return (
     <div>
-      <h2 className={TYPE.eyebrow} style={{ color: COLOUR.ink }}>
+      <h2 className={TYPE.eyebrow} style={{ color: COLOUR.onDark }}>
         {title}
       </h2>
       <ul className="mt-4 space-y-2.5">
@@ -174,7 +180,10 @@ function Column({
 /** A Link for our own paths, a plain anchor for the app and for mailto. */
 function FooterLink({ href, children }: { href: string; children: React.ReactNode }) {
   const className = "hover:underline";
-  const style = { color: COLOUR.muted };
+  // Opaque rather than a white at some alpha. An alpha is a guess whose real
+  // contrast depends on what is behind it; this one is measured against the
+  // navy in site-theme.test.ts.
+  const style = { color: COLOUR.onDarkBody };
 
   return href.startsWith("/") ? (
     <Link href={href} className={className} style={style}>
@@ -189,7 +198,7 @@ function FooterLink({ href, children }: { href: string; children: React.ReactNod
 
 export function SiteFooter({ width = "wide" }: { width?: Width }) {
   return (
-    <footer className="border-t pt-14 pb-10" style={{ borderColor: COLOUR.line }}>
+    <footer className="pt-16 pb-10 text-white" style={{ backgroundColor: COLOUR.dark }}>
       <div className={`mx-auto ${MAX[width]} px-6`}>
         <div className={`grid gap-10 sm:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1fr_1fr_1fr] ${TYPE.small}`}>
           <div>
@@ -200,14 +209,14 @@ export function SiteFooter({ width = "wide" }: { width?: Width }) {
               height={120}
               className="h-11 w-auto"
             />
-            <p className="mt-4 max-w-xs" style={{ color: COLOUR.body }}>
+            <p className="mt-5 max-w-xs" style={{ color: COLOUR.onDarkBody }}>
               Wellness spaces, by the hour. Private rooms for people who work for themselves —
               book only the hours you need.
             </p>
             <a
               href={`mailto:${SUPPORT_EMAIL}`}
-              className="mt-4 inline-block hover:underline"
-              style={{ color: COLOUR.link }}
+              className="mt-5 inline-block font-medium underline underline-offset-4"
+              style={{ color: COLOUR.onDark }}
             >
               {SUPPORT_EMAIL}
             </a>
@@ -217,7 +226,7 @@ export function SiteFooter({ width = "wide" }: { width?: Width }) {
           <Column title="Practitioners" links={FOR_PRACTITIONERS} />
 
           <div>
-            <h2 className={TYPE.eyebrow} style={{ color: COLOUR.ink }}>
+            <h2 className={TYPE.eyebrow} style={{ color: COLOUR.onDark }}>
               Hosts
             </h2>
             <ul className="mt-4 space-y-2.5">
@@ -232,7 +241,7 @@ export function SiteFooter({ width = "wide" }: { width?: Width }) {
                 somebody with a spare room into a listing.
               */}
               <li className="pt-1">
-                <Link href="/rent-out-your" className="font-medium hover:underline" style={{ color: COLOUR.link }}>
+                <Link href="/rent-out-your" className="font-medium hover:underline" style={{ color: COLOUR.onDark }}>
                   See what your space could earn →
                 </Link>
               </li>
@@ -243,8 +252,8 @@ export function SiteFooter({ width = "wide" }: { width?: Width }) {
         </div>
 
         <div
-          className="mt-12 flex flex-wrap items-center justify-between gap-4 border-t pt-6"
-          style={{ borderColor: COLOUR.line, color: COLOUR.muted }}
+          className="mt-14 flex flex-wrap items-center justify-between gap-4 border-t pt-7"
+          style={{ borderColor: "rgba(255,255,255,.16)", color: COLOUR.onDarkMuted }}
         >
           {/*
             The registered name, not the brand. "Minimum Stress LLC" is not the

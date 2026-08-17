@@ -59,9 +59,24 @@ describe("text on a light ground", () => {
 });
 
 describe("text on the dark ground", () => {
-  it("clears AA in white and in pale sky", () => {
-    expect(contrast(COLOUR.page, COLOUR.dark)).toBeGreaterThanOrEqual(4.5);
-    expect(contrast(COLOUR.onDark, COLOUR.dark)).toBeGreaterThanOrEqual(4.5);
+  /*
+   * The footer sits here, which is what made these worth pinning. Reaching for
+   * rgba(255,255,255,0.6) is how a dark surface ends up with text at 3:1: an
+   * alpha is a guess whose result depends on whatever is behind it, and
+   * nothing checks it. These are opaque and measured.
+   */
+  it.each([
+    ["white", COLOUR.page],
+    ["pale sky", COLOUR.onDark],
+    ["body", COLOUR.onDarkBody],
+    ["muted", COLOUR.onDarkMuted],
+  ])("%s clears AA on navy", (_name, colour) => {
+    expect(contrast(colour, COLOUR.dark)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  /** And the dark ground is genuinely dark, not a mid blue that fails both ways. */
+  it("is dark enough to carry white text", () => {
+    expect(contrast(COLOUR.page, COLOUR.dark)).toBeGreaterThanOrEqual(10);
   });
 });
 

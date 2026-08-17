@@ -3,7 +3,9 @@
 import { useState } from "react";
 
 import { MeasureField } from "@/components/site/measure-field";
-import { useRevealOnce } from "@/components/site/use-reveal";
+import { ResultActions } from "@/components/site/result-actions";
+import { CountUp, ResultReveal } from "@/components/site/result-reveal";
+import { StepFlow, type StepQuestion } from "@/components/site/step-flow";
 import {
   type BioAnswers,
   type BioResult,
@@ -16,7 +18,6 @@ import {
   isBioComplete,
   narrativeFor,
   scoreBioAge,
-  totalQuestions,
 } from "@/lib/assessments/bio-age";
 
 /**
@@ -31,143 +32,110 @@ export function BioAgeTool() {
   const [age, setAge] = useState("");
   const [answers, setAnswers] = useState<BioAnswers>({});
   const [result, setResult] = useState<BioResult | null>(null);
-  const reveal = useRevealOnce();
+  /** Bumped to remount the flow, which resets its step. */
+  const [run, setRun] = useState(0);
+  /** False until the age is in and the questions have been started. */
+  const [ready, setReady] = useState(false);
 
-  const total = totalQuestions();
-  const answered = Object.keys(answers).length;
+  const years = Number(age);
+  const validAge = Boolean(years) && years >= MIN_AGE && years <= MAX_AGE;
 
-  const settle = (nextAnswers: BioAnswers, nextAge: string) => {
-    if (isBioComplete(nextAnswers, nextAge)) {
-      setResult(scoreBioAge(nextAnswers, Number(nextAge)));
-      reveal.reveal();
-    } else {
-      setResult(null);
-    }
-  };
-
-  const choose = (key: string, option: number) => {
+  /*
+   * The functional updater, not a spread of the value this render captured.
+   * The other way two answers in one tick both start from the same object and
+   * the second overwrites the first.
+   */
+  const answer = (key: string, option: number) => {
     setAnswers((previous) => {
       const next = { ...previous, [key]: option };
-      settle(next, age);
+      if (isBioComplete(next, age)) setResult(scoreBioAge(next, years));
       return next;
     });
   };
 
-  const onAge = (value: string) => {
-    setAge(value);
-    settle(answers, value);
+  const restart = () => {
+    setAnswers({});
+    setResult(null);
+    setReady(false);
+    setRun((n) => n + 1);
+    window.scrollTo({ top: 0 });
   };
 
-  return (
-    <div>
-      <div className="max-w-[200px]">
-        <MeasureField
-          label="Your age"
-          unit="yrs"
-          value={age}
-          onChange={onAge}
-          placeholder="32"
-          hint={`Between ${MIN_AGE} and ${MAX_AGE}. Everything else is measured against it.`}
-        />
+  const steps: StepQuestion[] = BIO_SECTIONS.flatMap((section) =>
+    section.questions.map((question, index) => ({
+      id: answerKey(section.key, index),
+      eyebrow: section.title,
+      text: question.text,
+      options: question.opts,
+    })),
+  );
+
+  /*
+   * The age is asked before the questions rather than inside them.
+   *
+   * Every answer that follows is measured against it, and a flow that reached
+   * it at question eleven would have somebody answering ten things before
+   * finding out the number they came for needs one more.
+   */
+  if (!ready) {
+    return (
+      <div>
+        <div className="max-w-[220px]">
+          <MeasureField
+            label="Your age"
+            unit="yrs"
+            value={age}
+            onChange={setAge}
+            placeholder="32"
+            hint={`Between ${MIN_AGE} and ${MAX_AGE}. Everything else is measured against it.`}
+          />
+        </div>
+
+        <button
+          type="button"
+          disabled={!validAge}
+          onClick={() => setReady(true)}
+          className="mt-6 rounded-full px-8 py-3.5 text-[15px] font-medium text-white disabled:opacity-40"
+          style={{ backgroundColor: "#1a2744" }}
+        >
+          Begin the assessment
+        </button>
       </div>
+    );
+  }
 
-      {BIO_SECTIONS.map((section, sectionIndex) => (
-        <section key={section.key} className="mt-14">
-          <p className="text-[11px] uppercase tracking-[0.14em]" style={{ color: "#BA7517" }}>
-            Dimension {sectionIndex + 1} of {BIO_SECTIONS.length}
-          </p>
-          <h2
-            className="mt-1.5 text-[24px] leading-snug"
-            style={{ fontFamily: "var(--font-dm-serif)", color: "#1a2744" }}
-          >
-            {section.title}
-          </h2>
-          <p className="mt-1.5 text-[14.5px] leading-[1.7]" style={{ color: "#8a94a3" }}>
-            {section.sub}
-          </p>
-
-          <ol className="mt-6 space-y-7">
-            {section.questions.map((question, index) => {
-              const key = answerKey(section.key, index);
-              return (
-                <li key={key}>
-                  <p className="text-[16px] leading-snug" style={{ color: "#1a2744" }}>
-                    {question.text}
-                  </p>
-                  <div className="mt-3 space-y-2">
-                    {question.opts.map((option, optionIndex) => {
-                      const chosen = answers[key] === optionIndex;
-                      return (
-                        <button
-                          key={option}
-                          type="button"
-                          onClick={() => choose(key, optionIndex)}
-                          aria-pressed={chosen}
-                          className="block w-full rounded-xl px-4 py-3 text-left text-[15px] leading-snug"
-                          style={
-                            chosen
-                              ? { border: "1px solid #EF9F27", backgroundColor: "#fdf8ee", color: "#1a2744" }
-                              : { border: "1px solid #e7eef6", color: "#5f6673" }
-                          }
-                        >
-                          {option}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </li>
-              );
-            })}
-          </ol>
-        </section>
-      ))}
-
-      {!result && (
-        <p className="mt-10 text-[14.5px]" style={{ color: "#8a94a3" }} aria-live="polite">
-          {answered} of {total} answered
-          {age ? "" : ", and your age is still needed"}.
-        </p>
-      )}
-
+  return (
+    <StepFlow
+      key={run}
+      questions={steps}
+      answers={answers}
+      onAnswer={answer}
+      onFinish={() => {}}
+      accent="#EF9F27"
+    >
       {result && (
-        <Result
-          result={result}
-          panelRef={reveal.ref}
-          onRestart={() => {
-            setAnswers({});
-            setResult(null);
-            reveal.reset();
-            window.scrollTo({ top: 0 });
-          }}
-        />
+        <ResultReveal>
+          <Result result={result} onRestart={restart} />
+        </ResultReveal>
       )}
-    </div>
+    </StepFlow>
   );
 }
 
-function Result({
-  result,
-  panelRef,
-  onRestart,
-}: {
-  result: BioResult;
-  panelRef: (node: HTMLElement | null) => void;
-  onRestart: () => void;
-}) {
+function Result({ result, onRestart }: { result: BioResult; onRestart: () => void }) {
   const narrative = narrativeFor(result.difference);
   const colour =
     result.difference <= -3 ? "#1D9E75" : result.difference <= 3 ? "#EF9F27" : "#C0392B";
 
   return (
-    <div ref={panelRef} className="mt-12" aria-live="polite">
+    <div aria-live="polite">
       <div className="rounded-2xl p-7" style={{ border: "1px solid #e7eef6" }}>
         <div className="flex flex-wrap items-baseline gap-x-4">
-          <span
+          <CountUp
+            to={result.biological}
             className="text-[56px] leading-none"
             style={{ fontFamily: "var(--font-dm-serif)", color: colour }}
-          >
-            {result.biological}
-          </span>
+          />
           <span className="text-[15px]" style={{ color: "#8a94a3" }}>
             against {result.chronological} on the calendar
           </span>
@@ -240,10 +208,23 @@ function Result({
         </p>
       </div>
 
+      <ResultActions
+        accent="#1a2744"
+        result={{
+          toolName: "Biological Age Calculator",
+          score: String(result.biological),
+          band: narrativeFor(result.difference).badge,
+          summary: narrativeFor(result.difference).headline,
+          breakdown: BIO_DELTAS.map(
+            ({ key }) => `${BIO_COPY[key].short}: ${result.dimensions[key]}`,
+          ),
+        }}
+      />
+
       <button
         type="button"
         onClick={onRestart}
-        className="mt-6 w-full rounded-xl py-3 text-[14px]"
+        className="mt-3 w-full rounded-xl py-3 text-[14px]"
         style={{ border: "1px solid #e7eef6", color: "#5f6673" }}
       >
         Start again

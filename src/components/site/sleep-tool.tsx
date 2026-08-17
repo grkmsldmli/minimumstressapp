@@ -2,7 +2,9 @@
 
 import { useState } from "react";
 
-import { useRevealOnce } from "@/components/site/use-reveal";
+import { ResultActions } from "@/components/site/result-actions";
+import { CountUp, ResultReveal } from "@/components/site/result-reveal";
+import { StepFlow, type StepQuestion } from "@/components/site/step-flow";
 
 import {
   SLEEP_BANDS,
@@ -38,7 +40,8 @@ export function SleepTool() {
   const [questions, setQuestions] = useState<SleepQuestion[] | null>(null);
   const [answers, setAnswers] = useState<Record<number, number>>({});
   const [result, setResult] = useState<SleepResult | null>(null);
-  const reveal = useRevealOnce();
+  /** Bumped to remount the flow, which resets its step. */
+  const [run, setRun] = useState(0);
 
   if (!questions) {
     return (
@@ -63,92 +66,54 @@ export function SleepTool() {
       const next = { ...previous, [index]: option };
       const done = questions.every((_, position) => next[position] !== undefined);
       setResult(done ? scoreSleep(questions, next) : null);
-      if (done) reveal.reveal();
       return next;
     });
   };
 
   const restart = () => {
-    reveal.reset();
+    setRun((n) => n + 1);
     setQuestions(drawSleepQuestions());
     setAnswers({});
     setResult(null);
   };
 
+  const steps: StepQuestion[] = questions.map((question, index) => ({
+    id: String(index),
+    text: question.q,
+    options: question.opts,
+  }));
+
   return (
-    <div>
-      <ol className="space-y-9">
-        {questions.map((question, index) => (
-          <li key={question.q}>
-            <p className="text-[11px] uppercase tracking-[0.14em]" style={{ color: "#3B6FD4" }}>
-              {index + 1} of {questions.length}
-            </p>
-
-            <p
-              className="mt-2 text-[19px] leading-snug"
-              style={{ fontFamily: "var(--font-dm-serif)", color: "#1a2744" }}
-            >
-              {question.q}
-            </p>
-
-            <div className="mt-3 space-y-2">
-              {question.opts.map((option, optionIndex) => {
-                const chosen = answers[index] === optionIndex;
-                return (
-                  <button
-                    key={option}
-                    type="button"
-                    onClick={() => choose(index, optionIndex)}
-                    aria-pressed={chosen}
-                    className="block w-full rounded-xl px-4 py-3 text-left text-[15px] leading-snug"
-                    style={
-                      chosen
-                        ? { border: "1px solid #3B6FD4", backgroundColor: "#f0f4ff", color: "#1a2744" }
-                        : { border: "1px solid #e7eef6", color: "#5f6673" }
-                    }
-                  >
-                    {option}
-                  </button>
-                );
-              })}
-            </div>
-          </li>
-        ))}
-      </ol>
-
-      {!result && (
-        <p className="mt-8 text-[14.5px]" style={{ color: "#8a94a3" }} aria-live="polite">
-          {Object.keys(answers).length} of {questions.length} answered.
-        </p>
+    <StepFlow
+      key={run}
+      questions={steps}
+      answers={answers}
+      onAnswer={(id, option) => choose(Number(id), option)}
+      onFinish={() => {}}
+      accent="#3B6FD4"
+    >
+      {result && (
+        <ResultReveal>
+          <Result result={result} onRestart={restart} />
+        </ResultReveal>
       )}
-
-      {result && <Result result={result} onRestart={restart} panelRef={reveal.ref} />}
-    </div>
+    </StepFlow>
   );
 }
 
-function Result({
-  result,
-  onRestart,
-  panelRef,
-}: {
-  result: SleepResult;
-  onRestart: () => void;
-  panelRef: (node: HTMLElement | null) => void;
-}) {
+function Result({ result, onRestart }: { result: SleepResult; onRestart: () => void }) {
   const band = SLEEP_BANDS[result.type];
   const colour = TYPE_COLOUR[result.type];
 
   return (
-    <div ref={panelRef} className="mt-10" aria-live="polite">
+    <div aria-live="polite">
       <div className="rounded-2xl p-7" style={{ border: "1px solid #e7eef6" }}>
         <div className="flex flex-wrap items-baseline gap-x-4">
-          <span
+          <CountUp
+            to={result.overall}
             className="text-[52px] leading-none"
             style={{ fontFamily: "var(--font-dm-serif)", color: colour }}
-          >
-            {result.overall}
-          </span>
+          />
           <span className="text-[17px]" style={{ color: "#1a2744" }}>
             {band.label}
           </span>
@@ -208,10 +173,21 @@ function Result({
         )}
       </div>
 
+      <ResultActions
+        accent="#1a2744"
+        result={{
+          toolName: "Sleep Score",
+          score: String(result.overall),
+          band: band.label,
+          summary: band.desc,
+          breakdown: ORDER.map((key) => `${SLEEP_DIMENSIONS[key]}: ${result.dimensions[key]}`),
+        }}
+      />
+
       <button
         type="button"
         onClick={onRestart}
-        className="mt-6 w-full rounded-xl py-3 text-[14px]"
+        className="mt-3 w-full rounded-xl py-3 text-[14px]"
         style={{ border: "1px solid #e7eef6", color: "#5f6673" }}
       >
         Take it again — twelve different questions

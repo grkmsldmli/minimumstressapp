@@ -201,13 +201,25 @@ export const config = {
      * Everything except static assets and the image optimiser. Those are
      * served straight from the CDN and carry no scripts, so running this on
      * them costs an invocation and buys nothing.
+     *
+     * Prefetches are NOT excluded, and that exclusion is what this comment is
+     * really about. The stock matcher skips middleware when the router is
+     * prefetching, on the reasoning that a prefetch is only a warm-up and not
+     * worth an invocation. That is true when middleware only sets headers. It
+     * is false here, because this middleware decides *which page a URL is*:
+     * /about is the content site's page on minimumstress.com and the app's
+     * page on minimumstress.app, and the rewrite is the only thing that knows.
+     *
+     * Skipped on the prefetch, the router fetched /about with no rewrite, got
+     * the app's page, and cached it. Clicking About then rendered the app's
+     * About inside the content site — while a hard reload, which carries no
+     * prefetch header and so did run this, showed the right one. A bug that
+     * appears only when you arrive by clicking and vanishes the moment you
+     * reload is one nobody can report and nobody can find.
+     *
+     * So it runs on every request that can turn into a page, including the
+     * ones the router makes on its own.
      */
-    {
-      source: "/((?!_next/static|_next/image|favicon.ico).*)",
-      missing: [
-        { type: "header", key: "next-router-prefetch" },
-        { type: "header", key: "purpose", value: "prefetch" },
-      ],
-    },
+    "/((?!_next/static|_next/image|favicon.ico).*)",
   ],
 };

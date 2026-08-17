@@ -11,12 +11,16 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
  * ships a policy that silently blocks its own images.
  */
 let proxy: (request: NextRequest) => { headers: Headers };
+let config: { matcher: (string | { source: string; missing?: unknown[] })[] };
 
 const SUPABASE = "https://abcdefgh.supabase.co";
 
 beforeAll(async () => {
   process.env.NEXT_PUBLIC_SUPABASE_URL = SUPABASE;
-  ({ proxy } = (await import("./proxy")) as unknown as { proxy: typeof proxy });
+  ({ proxy, config } = (await import("./proxy")) as unknown as {
+    proxy: typeof proxy;
+    config: typeof config;
+  });
 });
 
 /**
@@ -195,6 +199,38 @@ describe("the content site gets its own policy", () => {
   it("keeps the rest of the policy the same on both hosts", () => {
     for (const directive of ["frame-ancestors", "object-src", "base-uri", "form-action"]) {
       expect(site().get(directive), directive).toBe(policy().get(directive));
+    }
+  });
+});
+
+/**
+ * Which requests the rewrite runs on, which is all of them.
+ *
+ * The stock matcher skips middleware while the router is prefetching, on the
+ * reasoning that a prefetch is a warm-up not worth an invocation. That holds
+ * when middleware sets headers. It does not hold here, because this middleware
+ * decides which page a URL *is*: /about is the content site's page on
+ * minimumstress.com and the app's page on minimumstress.app.
+ *
+ * Skipped on the prefetch, the router fetched /about unrewritten, got the
+ * app's page and cached it — so clicking About rendered the app's About inside
+ * the content site, while a hard reload showed the right one. A bug that only
+ * appears when you arrive by clicking, and vanishes when you reload, is one
+ * nobody can report and nobody can find.
+ */
+describe("what the middleware runs on", () => {
+  it("never excludes a prefetch", () => {
+    for (const entry of config.matcher) {
+      if (typeof entry === "string") continue;
+      expect(entry.missing, JSON.stringify(entry)).toBeUndefined();
+    }
+  });
+
+  it("still leaves the CDN's own paths alone", () => {
+    const first = config.matcher[0];
+    const source = typeof first === "string" ? first : first.source;
+    for (const skipped of ["_next/static", "_next/image", "favicon.ico"]) {
+      expect(source).toContain(skipped);
     }
   });
 });

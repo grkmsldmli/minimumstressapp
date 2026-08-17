@@ -69,6 +69,18 @@ export const LIMITS = {
   toolResultPerAddress: { limit: 6, windowMs: 3_600_000 },
 
   /**
+   * Saying what you were looking for when nothing came back.
+   *
+   * No sign-in, by design — asking somebody to make an account before telling
+   * us what they wanted would collect almost nothing, which is the whole point
+   * of having it. That means it is open, and the abuse worth stopping is not
+   * one person searching twice but a script filling the demand numbers with a
+   * town it wants a host recruited in. Ten an hour is far more than anybody
+   * looking for a room will send and far below anything worth automating.
+   */
+  spaceRequest: { limit: 10, windowMs: 3_600_000 },
+
+  /**
    * Address lookup. Debounced at 300ms and only while a host types an address,
    * so a real session is a handful of calls; this allows an order of magnitude
    * more before saying no.

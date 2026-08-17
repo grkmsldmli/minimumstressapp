@@ -90,7 +90,7 @@ describe("migrations apply cleanly", () => {
         `select table_name from information_schema.tables
          where table_schema = 'public' and table_type = 'BASE TABLE'`,
       );
-      expect(tables.rows).toHaveLength(13);
+      expect(tables.rows).toHaveLength(14);
     } finally {
       await fresh.close();
     }
@@ -157,6 +157,10 @@ describe("migrations apply cleanly", () => {
       "review_escalations",
       "reviews",
       "space_media",
+      // What somebody searched for when nothing came back — see 0044. Insert
+      // only: there is no select policy at all, so not even a signed-in
+      // account can read a row.
+      "space_requests",
       "spaces",
       "studio_claims",
     ]);
@@ -369,6 +373,13 @@ describe("private columns stay out of the public views", () => {
        */
       "city_inventory",
       "city_type_inventory",
+      /*
+       * The demand counts. Public because a host is shown them, and safe to
+       * be public because it is counts: no email, no id, no row. The table
+       * underneath is readable by nobody, which is the point of the view
+       * existing at all.
+       */
+      "space_demand",
     ];
 
     /**

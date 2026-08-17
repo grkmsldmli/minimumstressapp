@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { Suspense } from "react";
 
 import { SiteFooter, SiteHeader } from "@/components/site/chrome";
+import { RequestSpace } from "@/components/site/request-space";
 import { NothingYet, SearchedFor } from "@/components/site/searched-for";
 import { WEBSITE } from "@/lib/company";
 import { cityPath, indexableCity } from "@/lib/directory";
@@ -110,6 +111,16 @@ export default async function SpacesIndex() {
               The rooms come from people who already have one. If you know a studio with quiet
               hours, that is where the first ones will come from.
             </p>
+
+            {/*
+              The only thing an empty marketplace can still do with somebody
+              who came looking: take the request. It is prefilled from the
+              search that got here, and it is what a host is eventually shown
+              as a reason to list.
+            */}
+            <Suspense fallback={null}>
+              <RequestSpace />
+            </Suspense>
 
             <div
               className="mt-8 rounded-2xl p-6"

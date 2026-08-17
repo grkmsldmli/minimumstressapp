@@ -1537,3 +1537,96 @@ describe("what sent a listing back for review", () => {
     ).rejects.toThrow(/permission denied/i);
   });
 });
+
+/**
+ * What people searched for, which nobody may read.
+ *
+ * This table is the one place on the site holding "who is looking for what,
+ * where, and here is their email". It is useful to us and would be a gift to
+ * anybody else, so the whole design is: anyone may write a row, nobody may
+ * read one. There is no select policy at all — not a narrow one, not one
+ * scoped to the author, none — and these tests exist because a policy added
+ * later in good faith would be invisible in review and would open the list.
+ */
+describe("what people searched for stays private", () => {
+  it("lets a stranger say what they were looking for", async () => {
+    await expect(
+      asAnon(`
+        insert into space_requests (space_type, looking_in, email)
+        values ('massage-room', 'San Mateo', 'somebody@example.com')
+      `),
+    ).resolves.toBeDefined();
+  });
+
+  it("lets them say it without leaving an address", async () => {
+    await expect(
+      asAnon(`insert into space_requests (space_type, looking_in) values (null, 'Belmont')`),
+    ).resolves.toBeDefined();
+  });
+
+  /*
+   * The whole point, and it refuses harder than expected.
+   *
+   * A table with row-level security and no matching policy returns no rows,
+   * which would have been enough. This does not even get that far: there is no
+   * SELECT grant, so the query is refused outright. Asserted as a rejection
+   * rather than as an empty result, because those are different guarantees and
+   * the stronger one is the one that is actually true — an empty array would
+   * also be what a policy that quietly stopped matching returns.
+   */
+  it("does not let a stranger read a single row", async () => {
+    await expect(asAnon(`select * from space_requests`)).rejects.toThrow(/permission denied/i);
+  });
+
+  /*
+   * And neither can somebody with an account. There is no version of this
+   * where a signed-in host gets to page through who has been looking.
+   */
+  it("does not let a signed-in account read them either", async () => {
+    await expect(asUser(HOST, `select * from space_requests`)).rejects.toThrow(
+      /permission denied/i,
+    );
+  });
+
+  it("never exposes an address through the counts", async () => {
+    const columns = await asAnon(`select * from space_demand limit 1`);
+    const names = columns.length > 0 ? Object.keys(columns[0]) : [];
+    expect(names).not.toContain("email");
+    expect(names).not.toContain("id");
+  });
+
+  /*
+   * Three, the same floor the city pages use. One search is not demand — it is
+   * one person, and quoting it to a host both overstates the case and
+   * describes an individual more precisely than a count should.
+   */
+  it("says nothing until enough people have asked", async () => {
+    const quiet = await asAnon(
+      `select * from space_demand where looking_in = 'San Mateo'`,
+    );
+    expect(quiet).toEqual([]);
+
+    for (let i = 0; i < 2; i++) {
+      await asAnon(
+        `insert into space_requests (space_type, looking_in) values ('massage-room', 'San Mateo')`,
+      );
+    }
+
+    const [loud] = await asAnon<{ request_count: number }>(
+      `select request_count from space_demand where looking_in = 'San Mateo'`,
+    );
+    expect(loud.request_count).toBe(3);
+  });
+
+  it("refuses a use that is not one of ours", async () => {
+    await expect(
+      asAnon(`insert into space_requests (space_type, looking_in) values ('therapy-office', 'Belmont')`),
+    ).rejects.toThrow();
+  });
+
+  it("refuses an essay in place of a town", async () => {
+    await expect(
+      asAnon(`insert into space_requests (looking_in) values (repeat('x', 200))`),
+    ).rejects.toThrow();
+  });
+});

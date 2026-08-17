@@ -101,8 +101,9 @@ export default function AboutPage() {
 
         {/*
           The picture breaks the wall of text, and it is the argument rather
-          than decoration: somebody letting themselves into a room that is
-          theirs for the next hour.
+          than decoration: a practitioner with a client in a room that is
+          neither of theirs, and the app that found it lying on the table.
+          Both halves of the sentence above it, in one frame.
         */}
         <Reveal>
           <div className="mx-auto max-w-6xl px-6">
@@ -111,13 +112,13 @@ export default function AboutPage() {
               style={{ border: `1px solid ${COLOUR.line}` }}
             >
               <Image
-                src="/photos/moment-arriving.webp"
-                alt="A practitioner with a mat over her shoulder opening a keypad door onto a studio."
+                src="/photos/moment-practice.webp"
+                alt="A practitioner talking with a client in a bright room with a treatment table and a reformer, and a phone on the table in front of them showing rooms to book."
                 width={1672}
                 height={941}
                 priority
                 sizes="(min-width: 1152px) 72rem, 100vw"
-                className="aspect-[21/9] h-full w-full object-cover"
+                className="aspect-[21/9] h-full w-full object-cover object-center"
               />
             </div>
           </div>

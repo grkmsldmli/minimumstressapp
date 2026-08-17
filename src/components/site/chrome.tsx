@@ -1,7 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 
-import { APP_URL, BRAND, LEGAL_ENTITY, SUPPORT_EMAIL } from "@/lib/company";
+import { APP_URL, BRAND, INSTAGRAM_URL, LEGAL_ENTITY, SUPPORT_EMAIL } from "@/lib/company";
 import { COLOUR, TYPE } from "@/lib/site-theme";
 
 /**
@@ -179,6 +179,36 @@ function Column({
   );
 }
 
+/**
+ * The Instagram glyph, drawn here rather than imported.
+ *
+ * Lucide dropped its brand icons — trademarks are not theirs to redistribute —
+ * so the alternative was a second icon package for one mark. It is a rounded
+ * square, a circle and a dot; `currentColor` so it takes the colour of the
+ * link it sits in, and hidden from a screen reader because the word beside it
+ * already says what it is.
+ */
+function InstagramGlyph() {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+      focusable="false"
+    >
+      <rect x="2" y="2" width="20" height="20" rx="5" />
+      <circle cx="12" cy="12" r="4" />
+      <circle cx="17.5" cy="6.5" r="1.1" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
 /** A Link for our own paths, a plain anchor for the app and for mailto. */
 function FooterLink({ href, children }: { href: string; children: React.ReactNode }) {
   const className = "hover:underline";
@@ -221,6 +251,22 @@ export function SiteFooter() {
               style={{ color: COLOUR.onDark }}
             >
               {SUPPORT_EMAIL}
+            </a>
+
+            {/*
+              A new tab, because it leaves the site — and rel="noreferrer"
+              with it, which is not superstition: a target="_blank" link hands
+              the opened page a handle on this one unless it is told not to.
+            */}
+            <a
+              href={INSTAGRAM_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-4 flex items-center gap-2.5 hover:underline"
+              style={{ color: COLOUR.onDarkBody }}
+            >
+              <InstagramGlyph />
+              Instagram
             </a>
           </div>
 

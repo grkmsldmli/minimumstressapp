@@ -30,6 +30,14 @@ export const BRAND = "Minimum Stress";
 /** Where a person writes when something is wrong. */
 export const SUPPORT_EMAIL = "info@minimumstress.com";
 
+/**
+ * The one social account, named here rather than typed into a page.
+ *
+ * A handle in the markup is a handle nobody updates when it changes, and this
+ * is the sort of link that is only ever noticed once it is dead.
+ */
+export const INSTAGRAM_URL = "https://www.instagram.com/minimumstressofficial/";
+
 /** The marketing site. Not the source of the in-app terms — those are here. */
 export const WEBSITE = "https://minimumstress.com";
 

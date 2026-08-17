@@ -22,6 +22,16 @@ import { TOOLS } from "./tools";
 /** Their slugs, which the new pages keep. */
 const TOOL_SLUGS = new Set(TOOLS.map((tool) => tool.slug));
 
+/**
+ * The two tools that have no page to send anybody to.
+ *
+ * The nervous-system assessment shipped on Shopify with no script at all, so
+ * its Begin button has never done anything, and no source for the
+ * stress-recovery one exists to port. Both addresses are in the sitemap and
+ * will be asked for, so both go to the hub.
+ */
+const WITHOUT_A_PAGE = new Set(["nervous-system-assessment", "stress-recovery-assessment"]);
+
 /** Shopify's own paths, which are not ours. */
 const SHOPIFY_PREFIXES = ["/collections/", "/products/", "/cart", "/checkout", "/account"];
 
@@ -99,15 +109,29 @@ const PAGE_REDIRECTS: Record<string, string> = {
 export function destinationFor(pathname: string): string | null {
   const path = pathname.replace(/\/+$/, "") || "/";
 
-  const article = path.match(/^\/blogs\/[^/]+\/(.+)$/);
-  if (article) return `/articles/${article[1]}`;
+  /*
+   * Every article lands on the index for now, not on its own page.
+   *
+   * One-to-one is what these should be, and the slug is already carried
+   * through to make that a one-line change. But the fifteen posts still live
+   * in Shopify and cannot be invented here, so pointing at a page that does
+   * not exist would trade a redirect for a 404 — which is the thing this file
+   * exists to prevent. The index says plainly that the writing is being moved.
+   */
+  if (/^\/blogs\/[^/]+\/.+$/.test(path)) return "/articles";
 
   /*
    * The tools keep their own slugs, so /pages/burnout-test is simply
    * /burnout-test here — nothing was renamed and nothing was merged, and the
    * only thing that changed is Shopify's /pages prefix.
+   *
+   * Except the two with nothing behind them. The nervous-system assessment
+   * shipped on Shopify with no script at all — its Begin button has never done
+   * anything — and no file for the stress-recovery one exists to port. They
+   * land on the hub, where somebody gets the nine that work instead of a 404.
    */
   const toolPage = path.match(/^\/pages\/(.+)$/);
+  if (toolPage && WITHOUT_A_PAGE.has(toolPage[1])) return "/tools";
   if (toolPage && TOOL_SLUGS.has(toolPage[1])) return `/tools/${toolPage[1]}`;
 
   return PAGE_REDIRECTS[path] ?? null;

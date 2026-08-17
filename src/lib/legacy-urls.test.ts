@@ -42,12 +42,21 @@ describe("tool pages", () => {
     }
   });
 
-  /*
-   * Nothing was renamed and nothing was merged, so each one lands on its own
-   * slug. All that changed is Shopify's /pages prefix.
+  /**
+   * The two with nothing behind them, which land on the hub instead.
+   *
+   * The nervous-system assessment shipped on Shopify with no script at all —
+   * its Begin button has never done anything — and no file for the
+   * stress-recovery one exists to port.
    */
-  it("keeps every tool at its own name", () => {
-    for (const page of SHOPIFY_TOOL_PAGES) {
+  const WITHOUT_A_PAGE = ["nervous-system-assessment", "stress-recovery-assessment"];
+
+  /*
+   * Nothing was renamed and nothing was merged, so each of the rest lands on
+   * its own slug. All that changed is Shopify's /pages prefix.
+   */
+  it("keeps every tool that has a page at its own name", () => {
+    for (const page of SHOPIFY_TOOL_PAGES.filter((p) => !WITHOUT_A_PAGE.includes(p))) {
       expect(destinationFor(`/pages/${page}`), page).toBe(`/tools/${page}`);
     }
   });
@@ -60,6 +69,16 @@ describe("tool pages", () => {
   it("sends the hub to the hub", () => {
     expect(destinationFor("/pages/wellness-hub")).toBe("/tools");
   });
+
+  /*
+   * Two tools have no page to go to: the nervous-system assessment shipped
+   * with no script at all, and no file for the stress-recovery one exists.
+   * Both land on the hub rather than on a 404.
+   */
+  it("sends the two that were never built to the hub", () => {
+    expect(destinationFor("/pages/nervous-system-assessment")).toBe("/tools");
+    expect(destinationFor("/pages/stress-recovery-assessment")).toBe("/tools");
+  });
 });
 
 describe("articles", () => {
@@ -68,12 +87,16 @@ describe("articles", () => {
    * the part worth keeping, so this is a pattern rather than a list of fifteen
    * that somebody has to remember to extend.
    */
-  it("keeps the slug and drops the blog it happened to sit in", () => {
-    expect(destinationFor("/blogs/wellness/why-you-cant-switch-off")).toBe(
-      "/articles/why-you-cant-switch-off",
-    );
+  /*
+   * The index rather than a page each, until the posts themselves are out of
+   * Shopify. One-to-one is the right answer and the slug is already parsed for
+   * it, but sending somebody to an article that does not exist trades a
+   * redirect for a 404 — which is what this file is for.
+   */
+  it("lands every article on the index while the writing is still in Shopify", () => {
+    expect(destinationFor("/blogs/wellness/why-you-cant-switch-off")).toBe("/articles");
     expect(destinationFor("/blogs/general-info/scientific-methods-to-reduce-stress")).toBe(
-      "/articles/scientific-methods-to-reduce-stress",
+      "/articles",
     );
   });
 
@@ -83,9 +106,7 @@ describe("articles", () => {
   });
 
   it("ignores a trailing slash", () => {
-    expect(destinationFor("/blogs/wellness/the-burnout-you-dont-see-coming/")).toBe(
-      "/articles/the-burnout-you-dont-see-coming",
-    );
+    expect(destinationFor("/blogs/wellness/the-burnout-you-dont-see-coming/")).toBe("/articles");
   });
 });
 

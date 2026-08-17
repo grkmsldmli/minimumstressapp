@@ -518,3 +518,45 @@ body {
     transition: none !important;
   }
 }
+
+/*
+ * The step flow's entry animation.
+ *
+ * Here rather than in a <style> tag inside the component: that ships a style
+ * block on every render and repeats it once per instance on the page. Two
+ * directions, because a question arriving when you go back should come from
+ * the side you came from — an animation that always runs the same way makes
+ * Back feel like Next.
+ *
+ * Both are opted into from the component only when the reader has not asked
+ * for reduced motion.
+ */
+@keyframes step-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes step-in-back {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.step-in {
+  animation: step-in 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.step-in-back {
+  animation: step-in-back 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}

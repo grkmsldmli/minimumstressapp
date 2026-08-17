@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 
-import { useRevealOnce } from "@/components/site/use-reveal";
-
+import { ResultActions } from "@/components/site/result-actions";
+import { StepFlow, type StepQuestion } from "@/components/site/step-flow";
 import {
   type SectionAnswers,
   type SectionedAssessment,
@@ -12,18 +12,19 @@ import {
   isComplete,
   scoreSectioned,
 } from "@/lib/sectioned";
+import { toolBySlug } from "@/lib/tools";
 
 /**
- * The form the three sectioned assessments share.
+ * The three sectioned assessments, asked one question at a time.
  *
- * All five sections are on the page. The originals showed one at a time behind
- * a progress bar and a Continue button, which turns fifteen questions into a
- * form to be got through and hides how much is left.
+ * The five sections are flattened into one run. Somebody working through this
+ * does not care that question eight begins a new section — they care how many
+ * are left — so the section name rides along as an eyebrow and the count runs
+ * straight through to fifteen.
  *
- * And the result is not held behind an email field. On the original you
- * answered everything, and then had to hand over an address before you were
- * shown anything — the address went to Klaviyo first and the score appeared
- * after. It appears here when the last question is answered.
+ * The result is not held behind an email field, which is what the pages this
+ * replaces did: the address went to Klaviyo and the score appeared afterwards.
+ * Here it appears on the last answer, and the email is an offer underneath it.
  */
 
 /** Green when the number is good news, amber in the middle, red at the end. */
@@ -33,149 +34,71 @@ function colourFor(percent: number, higherIsBetter: boolean): string {
   return good ? "#1D9E75" : bad ? "#C0392B" : "#E8A020";
 }
 
-export function SectionedTool({
-  assessment,
-}: {
-  assessment: SectionedAssessment;
-}) {
+export function SectionedTool({ assessment }: { assessment: SectionedAssessment }) {
   const [answers, setAnswers] = useState<SectionAnswers>({});
   const [result, setResult] = useState<SectionedResult | null>(null);
-  const reveal = useRevealOnce();
+  /** Bumped to remount the flow, which is how starting again resets its step. */
+  const [run, setRun] = useState(0);
 
-  const total = assessment.sections.reduce((n, s) => n + s.questions.length, 0);
-  const answered = Object.keys(answers).length;
+  const steps: StepQuestion[] = assessment.sections.flatMap((section) =>
+    section.questions.map((question, index) => ({
+      id: answerKey(section.key, index),
+      eyebrow: section.title,
+      text: question.text,
+      options: question.opts,
+    })),
+  );
 
   /*
    * The functional updater, not a spread of the value this render captured.
-   * The other way, every click within a tick starts from the same stale answers
-   * and overwrites the one before it — which loses answers silently for anybody
-   * moving quickly on a phone.
+   * The other way, two answers inside one tick both start from the same object
+   * and the second overwrites the first — which loses answers silently for
+   * anybody moving quickly.
    */
-  const choose = (key: string, option: number) => {
+  const answer = (id: string, option: number) => {
     setAnswers((previous) => {
-      const next = { ...previous, [key]: option };
-      const done = isComplete(assessment, next);
-      setResult(done ? scoreSectioned(assessment, next) : null);
-      if (done) reveal.reveal();
+      const next = { ...previous, [id]: option };
+      if (isComplete(assessment, next)) setResult(scoreSectioned(assessment, next));
       return next;
     });
   };
 
+  const restart = () => {
+    setAnswers({});
+    setResult(null);
+    setRun((n) => n + 1);
+    window.scrollTo({ top: 0 });
+  };
+
   return (
-    <div>
-      {assessment.sections.map((section, sectionIndex) => (
-        <section
-          key={section.key}
-          className={sectionIndex === 0 ? "" : "mt-14"}
-        >
-          <p
-            className="text-[11px] uppercase tracking-[0.14em]"
-            style={{ color: "#0EA5E9" }}
-          >
-            Section {sectionIndex + 1} of {assessment.sections.length}
-          </p>
-          <h2
-            className="mt-1.5 text-[24px] leading-snug"
-            style={{ fontFamily: "var(--font-dm-serif)", color: "#1a2744" }}
-          >
-            {section.title}
-          </h2>
-          <p
-            className="mt-1.5 text-[14.5px] leading-[1.7]"
-            style={{ color: "#8a94a3" }}
-          >
-            {section.sub}
-          </p>
-
-          <ol className="mt-6 space-y-7">
-            {section.questions.map((question, index) => {
-              const key = answerKey(section.key, index);
-              return (
-                <li key={key}>
-                  <p
-                    className="text-[16px] leading-snug"
-                    style={{ color: "#1a2744" }}
-                  >
-                    {question.text}
-                  </p>
-                  <div className="mt-3 space-y-2">
-                    {question.opts.map((option, optionIndex) => {
-                      const chosen = answers[key] === optionIndex;
-                      return (
-                        <button
-                          key={option}
-                          type="button"
-                          onClick={() => choose(key, optionIndex)}
-                          aria-pressed={chosen}
-                          className="block w-full rounded-xl px-4 py-3 text-left text-[15px] leading-snug"
-                          style={
-                            chosen
-                              ? {
-                                  border: "1px solid #0EA5E9",
-                                  backgroundColor: "#f0f9ff",
-                                  color: "#1a2744",
-                                }
-                              : {
-                                  border: "1px solid #e7eef6",
-                                  color: "#5f6673",
-                                }
-                          }
-                        >
-                          {option}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </li>
-              );
-            })}
-          </ol>
-        </section>
-      ))}
-
-      {!result && (
-        <p
-          className="mt-10 text-[14.5px]"
-          style={{ color: "#8a94a3" }}
-          aria-live="polite"
-        >
-          {answered} of {total} answered. The result appears when they all are.
-        </p>
-      )}
-
-      {result && (
-        <Result
-          assessment={assessment}
-          result={result}
-          panelRef={reveal.ref}
-          onRestart={() => {
-            setAnswers({});
-            setResult(null);
-            reveal.reset();
-            window.scrollTo({ top: 0 });
-          }}
-        />
-      )}
-    </div>
+    <StepFlow
+      key={run}
+      questions={steps}
+      answers={answers}
+      onAnswer={answer}
+      onFinish={() => {}}
+      accent="#0EA5E9"
+    >
+      {result && <Result assessment={assessment} result={result} onRestart={restart} />}
+    </StepFlow>
   );
 }
 
 function Result({
   assessment,
   result,
-  panelRef,
   onRestart,
 }: {
   assessment: SectionedAssessment;
   result: SectionedResult;
-  panelRef: (node: HTMLElement | null) => void;
   onRestart: () => void;
 }) {
   const band = assessment.bands[result.band];
   const colour = colourFor(result.overall, assessment.higherIsBetter);
+  const name = toolBySlug(assessment.slug)?.name ?? "Your result";
 
   return (
-    <div ref={panelRef} className="mt-12" aria-live="polite">
+    <div aria-live="polite">
       <div className="rounded-2xl p-7" style={{ border: "1px solid #e7eef6" }}>
         <div className="flex flex-wrap items-baseline gap-x-4">
           <span
@@ -185,11 +108,11 @@ function Result({
             {result.overall}
           </span>
           {/*
-          The band name always sits beside the number. These three do not agree
-          on which direction is good — a bare 68 is a high cortisol load on one
-          and a healthy gut on another — and nobody should have to remember
-          which page they are on to read their own result.
-        */}
+            The band name always sits beside the number. These three do not
+            agree on which direction is good — a bare 68 is a high cortisol
+            load on one and a healthy gut on another — and nobody should have
+            to remember which page they are on to read their own result.
+          */}
           <span className="text-[17px]" style={{ color: "#1a2744" }}>
             {band.label}
           </span>
@@ -201,10 +124,7 @@ function Result({
         >
           {band.title}
         </h3>
-        <p
-          className="mt-3 text-[15.5px] leading-[1.8]"
-          style={{ color: "#5f6673" }}
-        >
+        <p className="mt-3 text-[15.5px] leading-[1.8]" style={{ color: "#5f6673" }}>
           {band.desc}
         </p>
 
@@ -225,10 +145,7 @@ function Result({
                     className="h-full rounded-full"
                     style={{
                       width: `${value}%`,
-                      backgroundColor: colourFor(
-                        value,
-                        assessment.higherIsBetter,
-                      ),
+                      backgroundColor: colourFor(value, assessment.higherIsBetter),
                     }}
                   />
                 </div>
@@ -238,10 +155,7 @@ function Result({
         </div>
 
         {band.insights.length > 0 && (
-          <div
-            className="mt-8 rounded-xl p-5"
-            style={{ backgroundColor: "#f8fbfd" }}
-          >
+          <div className="mt-8 rounded-xl p-5" style={{ backgroundColor: "#f8fbfd" }}>
             <p className="text-[14px] font-medium" style={{ color: "#1a2744" }}>
               What this means
             </p>
@@ -264,16 +178,23 @@ function Result({
         )}
       </div>
 
-      {/*
-        The other two assessments have had this since they were built and these
-        three did not, so finishing one of them was a dead end — the only way
-        to try again was a page reload, and a reload on a form is a coin toss
-        over whether the browser keeps the answers.
-      */}
+      <ResultActions
+        accent="#0F2F55"
+        result={{
+          toolName: name,
+          score: String(result.overall),
+          band: band.label,
+          summary: band.desc,
+          breakdown: assessment.sections.map(
+            (section) => `${section.title}: ${result.sections[section.key]}`,
+          ),
+        }}
+      />
+
       <button
         type="button"
         onClick={onRestart}
-        className="mt-6 w-full rounded-xl py-3 text-[14px]"
+        className="mt-3 w-full rounded-xl py-3 text-[14px]"
         style={{ border: "1px solid #e7eef6", color: "#5f6673" }}
       >
         Start again

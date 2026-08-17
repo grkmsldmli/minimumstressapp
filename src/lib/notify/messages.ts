@@ -53,6 +53,20 @@ export interface Message {
    * explanation is an advantage rather than a cost.
    */
   sms: string | null;
+
+  /**
+   * A ready-made HTML body, for the few messages that are laid out rather than
+   * written.
+   *
+   * Everything the app sends is a paragraph or two, and `toHtml` wrapping the
+   * plain text is the right answer for those — one body to keep correct, and
+   * no chance of the two versions drifting. A tool result is a score, a band
+   * and a breakdown, which is a table, so it brings its own.
+   *
+   * Optional on purpose: absent means the text is the message, which is what
+   * every existing kind wants.
+   */
+  html?: string;
 }
 
 export interface MessageContext {

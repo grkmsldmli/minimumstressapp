@@ -51,6 +51,24 @@ export interface RateLimit {
  */
 export const LIMITS = {
   /**
+   * Emailing somebody their own tool result.
+   *
+   * No sign-in stands in front of this, so it is the one endpoint here that a
+   * stranger can make send mail. Six an hour is more than anybody taking these
+   * for themselves will ever need and far below anything worth automating.
+   */
+  toolResult: { limit: 6, windowMs: 3_600_000 },
+
+  /**
+   * And the same ceiling per destination address.
+   *
+   * Counting only by caller lets one machine work through a list of addresses;
+   * counting only by address lets many machines bury one inbox. They are the
+   * same abuse from two directions, so both are counted.
+   */
+  toolResultPerAddress: { limit: 6, windowMs: 3_600_000 },
+
+  /**
    * Address lookup. Debounced at 300ms and only while a host types an address,
    * so a real session is a handful of calls; this allows an order of magnitude
    * more before saying no.

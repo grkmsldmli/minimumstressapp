@@ -2,7 +2,9 @@
 
 import { useState } from "react";
 
-import { useRevealOnce } from "@/components/site/use-reveal";
+import { ResultActions } from "@/components/site/result-actions";
+import { CountUp, ResultReveal } from "@/components/site/result-reveal";
+import { StepFlow, type StepQuestion } from "@/components/site/step-flow";
 
 import {
   type BurnoutQuestion,
@@ -44,7 +46,8 @@ export function BurnoutTool() {
   const [questions, setQuestions] = useState<BurnoutQuestion[] | null>(null);
   const [answers, setAnswers] = useState<Record<number, number>>({});
   const [result, setResult] = useState<BurnoutResult | null>(null);
-  const reveal = useRevealOnce();
+  /** Bumped to remount the flow, which resets its step. */
+  const [run, setRun] = useState(0);
 
   if (!questions) {
     return (
@@ -70,95 +73,55 @@ export function BurnoutTool() {
       const next = { ...previous, [index]: option };
       const done = questions.every((_, position) => next[position] !== undefined);
       setResult(done ? scoreBurnout(questions, next) : null);
-      if (done) reveal.reveal();
       return next;
     });
   };
 
   const restart = () => {
-    reveal.reset();
+    setRun((n) => n + 1);
     setQuestions(drawQuestions());
     setAnswers({});
     setResult(null);
   };
 
-  const answered = Object.keys(answers).length;
+  const steps: StepQuestion[] = questions.map((question, index) => ({
+    id: String(index),
+    text: question.q,
+    options: question.opts,
+  }));
 
   return (
-    <div>
-      <ol className="space-y-9">
-        {questions.map((question, index) => (
-          <li key={question.q}>
-            <p className="text-[11px] uppercase tracking-[0.14em]" style={{ color: "#1D9E75" }}>
-              {index + 1} of {questions.length}
-            </p>
-
-            <p
-              className="mt-2 text-[19px] leading-snug"
-              style={{ fontFamily: "var(--font-dm-serif)", color: "#1a2744" }}
-            >
-              {question.q}
-            </p>
-
-            <div className="mt-3 space-y-2">
-              {question.opts.map((option, optionIndex) => {
-                const chosen = answers[index] === optionIndex;
-                return (
-                  <button
-                    key={option}
-                    type="button"
-                    onClick={() => choose(index, optionIndex)}
-                    aria-pressed={chosen}
-                    className="block w-full rounded-xl px-4 py-3 text-left text-[15px] leading-snug"
-                    style={
-                      chosen
-                        ? { border: "1px solid #1D9E75", backgroundColor: "#f0faf6", color: "#1a2744" }
-                        : { border: "1px solid #e7eef6", color: "#5f6673" }
-                    }
-                  >
-                    {option}
-                  </button>
-                );
-              })}
-            </div>
-          </li>
-        ))}
-      </ol>
-
-      {!result && (
-        <p className="mt-8 text-[14.5px]" style={{ color: "#8a94a3" }} aria-live="polite">
-          {answered} of {questions.length} answered.
-        </p>
+    <StepFlow
+      key={run}
+      questions={steps}
+      answers={Object.fromEntries(Object.entries(answers).map(([k, v]) => [k, v]))}
+      onAnswer={(id, option) => choose(Number(id), option)}
+      onFinish={() => {}}
+      accent="#1D9E75"
+    >
+      {result && (
+        <ResultReveal>
+          <Result result={result} onRestart={restart} />
+        </ResultReveal>
       )}
-
-      {result && <Result result={result} onRestart={restart} panelRef={reveal.ref} />}
-    </div>
+    </StepFlow>
   );
 }
 
-function Result({
-  result,
-  onRestart,
-  panelRef,
-}: {
-  result: BurnoutResult;
-  onRestart: () => void;
-  panelRef: (node: HTMLElement | null) => void;
-}) {
+function Result({ result, onRestart }: { result: BurnoutResult; onRestart: () => void }) {
   const profile = PROFILES[result.level];
   const colour = LEVEL_COLOUR[result.level];
   const shown = result.ranked.slice(0, categoriesToShow(result.level));
 
   return (
-    <div ref={panelRef} className="mt-10" aria-live="polite">
+    <div aria-live="polite">
       <div className="rounded-2xl p-7" style={{ border: "1px solid #e7eef6" }}>
         <div className="flex flex-wrap items-baseline gap-x-4">
-          <span
+          <CountUp
+            to={result.percent}
             className="text-[52px] leading-none"
             style={{ fontFamily: "var(--font-dm-serif)", color: colour }}
-          >
-            {result.percent}
-          </span>
+          />
           <span className="text-[17px]" style={{ color: "#1a2744" }}>
             {LEVEL_LABEL[result.level]}
           </span>
@@ -234,10 +197,20 @@ function Result({
         </div>
       ))}
 
+      <ResultActions
+        accent="#1a2744"
+        result={{
+          toolName: "Burnout Test",
+          score: String(result.percent),
+          band: LEVEL_LABEL[result.level],
+          summary: profile.scoreNote,
+        }}
+      />
+
       <button
         type="button"
         onClick={onRestart}
-        className="mt-6 w-full rounded-xl py-3 text-[14px]"
+        className="mt-3 w-full rounded-xl py-3 text-[14px]"
         style={{ border: "1px solid #e7eef6", color: "#5f6673" }}
       >
         Take it again — ten different questions

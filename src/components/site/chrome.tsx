@@ -120,32 +120,52 @@ const EXPLORE = [
   { label: "Meditation & breathwork spaces", href: "/spaces?type=meditation-room" },
 ];
 
-const FOR_PRACTITIONERS = [
-  { label: "How it works", href: "/#how-it-works" },
-  { label: "Browse spaces", href: "/spaces" },
-  { label: "Recurring bookings", href: "/#recurring" },
-  { label: "Pricing & fees", href: "/pricing" },
-  { label: "Questions", href: "/faq" },
-  /*
-   * The eleven wellness tools, kept and kept out of the way. They were the
-   * whole of the old site and they are not the product now — a footer is
-   * exactly where something like that should live.
-   */
-  { label: "Free tools", href: "/tools" },
-];
+/*
+ * The two sides, given the same shape.
+ *
+ * They had drifted into different columns for the same site: one had a
+ * "Questions" and the other a "Host FAQ", trust and safety appeared under
+ * hosts and not under practitioners, and only one of them ended in a
+ * highlighted action. A reader on the thinner side reads that as the side the
+ * company cares less about, and they are not wrong to.
+ *
+ * So both run the same way: the action, how it works, the recurring or
+ * earning question, pricing, trust, questions — and both end on the same
+ * emphasis.
+ */
+const FOR_PRACTITIONERS = {
+  links: [
+    { label: "Find a space", href: "/spaces" },
+    { label: "How it works", href: "/#how-it-works" },
+    { label: "Recurring bookings", href: "/#recurring" },
+    { label: "Pricing & fees", href: "/pricing" },
+    { label: "Trust & safety", href: "/trust" },
+    { label: "Questions", href: "/faq" },
+  ],
+  action: { label: "Browse every space →", href: "/spaces" },
+};
 
-const FOR_HOSTS = [
-  { label: "List your space", href: `${APP_URL}?list=1` },
-  { label: "How hosting works", href: "/for-hosts" },
-  { label: "Pricing & fees", href: "/pricing" },
-  { label: "Trust & safety", href: "/trust" },
-  { label: "Host FAQ", href: "/for-hosts#faq" },
-];
+const FOR_HOSTS = {
+  links: [
+    { label: "List your space", href: `${APP_URL}?list=1` },
+    { label: "How hosting works", href: "/for-hosts" },
+    { label: "What your space earns", href: "/rent-out-your" },
+    { label: "Pricing & fees", href: "/pricing" },
+    { label: "Trust & safety", href: "/trust" },
+    { label: "Host questions", href: "/for-hosts#faq" },
+  ],
+  action: { label: "See what your space could earn →", href: "/rent-out-your" },
+};
 
 const COMPANY = [
   { label: "About", href: "/about" },
   { label: "Contact", href: "/contact" },
-  { label: "Trust & safety", href: "/trust" },
+  /*
+   * The eleven wellness tools. They were the whole of the old site and belong
+   * to neither side of the marketplace, so they sit here rather than being
+   * counted as something practitioners get.
+   */
+  { label: "Free tools", href: "/tools" },
   { label: "Terms", href: `${APP_URL}/terms` },
   { label: "Privacy", href: `${APP_URL}/privacy` },
   /*
@@ -156,12 +176,17 @@ const COMPANY = [
   { label: "Your privacy choices", href: "/privacy-choices" },
 ];
 
+type Entry = { label: string; href: string };
+
 function Column({
   title,
   links,
+  action,
 }: {
   title: string;
-  links: { label: string; href: string }[];
+  links: Entry[];
+  /** The one link in the column worth more than the others, where there is one. */
+  action?: Entry;
 }) {
   return (
     <div>
@@ -174,6 +199,17 @@ function Column({
             <FooterLink href={link.href}>{link.label}</FooterLink>
           </li>
         ))}
+        {action && (
+          <li className="pt-2">
+            <Link
+              href={action.href}
+              className="font-medium hover:underline"
+              style={{ color: COLOUR.onDark }}
+            >
+              {action.label}
+            </Link>
+          </li>
+        )}
       </ul>
     </div>
   );
@@ -271,31 +307,8 @@ export function SiteFooter() {
           </div>
 
           <Column title="Explore" links={EXPLORE} />
-          <Column title="Practitioners" links={FOR_PRACTITIONERS} />
-
-          <div>
-            <h2 className={TYPE.eyebrow} style={{ color: COLOUR.onDark }}>
-              Hosts
-            </h2>
-            <ul className="mt-4 space-y-2.5">
-              {FOR_HOSTS.map((link) => (
-                <li key={link.href}>
-                  <FooterLink href={link.href}>{link.label}</FooterLink>
-                </li>
-              ))}
-              {/*
-                Given weight on purpose. It is the one link on this page that
-                answers a question with a number, and the number is what turns
-                somebody with a spare room into a listing.
-              */}
-              <li className="pt-1">
-                <Link href="/rent-out-your" className="font-medium hover:underline" style={{ color: COLOUR.onDark }}>
-                  See what your space could earn →
-                </Link>
-              </li>
-            </ul>
-          </div>
-
+          <Column title="Practitioners" {...FOR_PRACTITIONERS} />
+          <Column title="Hosts" {...FOR_HOSTS} />
           <Column title="Company" links={COMPANY} />
         </div>
 

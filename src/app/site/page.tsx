@@ -126,27 +126,27 @@ const GROUPS = CATEGORIES.map((category) => ({
 }));
 
 const STEPS = [
-  { n: "1", title: "Search", body: "The kind of room you need, in the town you work in." },
-  { n: "2", title: "Book", body: "Pick the hours. You pay the price on the listing, and nothing else." },
-  { n: "3", title: "Work", body: "Let yourself in with the code, and see your own clients." },
+  { n: "1", title: "Search", body: "Find a room near you, for the kind of work you do." },
+  { n: "2", title: "Book", body: "Choose your hours and pay the price on the listing." },
+  { n: "3", title: "Work", body: "Let yourself in and see your own clients." },
 ];
 
 const TRUST = [
   {
-    title: "The whole price, up front",
-    body: "The figure on the listing is the figure you pay. No booking fee revealed at checkout.",
+    title: "One price",
+    body: "What you see on the listing is what you pay. Nothing is added at checkout.",
   },
   {
-    title: "Only the hours you need",
-    body: "An hour is an hour. There is no minimum term and nothing to sign.",
+    title: "No minimum",
+    body: "Book one hour or twenty. There is no contract and nothing to sign.",
   },
   {
-    title: "Checked before it is listed",
-    body: "We look at the listing and the lease or ownership document before a room goes live.",
+    title: "Every room is checked",
+    body: "We review the listing and the lease before a room can be booked.",
   },
   {
-    title: "Cancel a day ahead",
-    body: "Cancel 24 hours before and the money comes back. Said plainly, on the listing.",
+    title: "Free cancellation",
+    body: "Cancel 24 hours ahead and you are not charged.",
   },
 ];
 
@@ -160,8 +160,8 @@ export default function SiteHome() {
         <Groups />
         <HowItWorks />
         <ForPractitioners />
-        <ForHosts />
         <Recurring />
+        <ForHosts />
         <Trust />
         <Install />
       </main>
@@ -197,8 +197,8 @@ function Hero() {
         </h1>
 
         <p className={`mt-6 max-w-lg ${TYPE.lead}`} style={{ color: COLOUR.body }}>
-          Treatment rooms, Pilates studios, private consulting rooms and movement space — for the
-          hours you need and not a month more. No lease. No deposit.
+          Treatment rooms, studios and private consulting rooms across the Bay Area. Book the
+          hours you need. No lease, no deposit.
         </p>
 
         <SpaceSearch />
@@ -283,11 +283,10 @@ function HowItWorks() {
         <Reveal>
           <div className="grid gap-6 lg:grid-cols-[1fr_1fr] lg:gap-16">
             <h2 className={TYPE.h2} style={{ fontFamily: "var(--font-dm-serif)", color: COLOUR.ink }}>
-              Space when you need it.
+              How it works.
             </h2>
             <p className={`max-w-md lg:pt-2 ${TYPE.body}`} style={{ color: COLOUR.body }}>
-              No viewing, no negotiation, no deposit held for a year. From finding a room to
-              being in it is three steps and about five minutes.
+              No viewings, no negotiation, no deposit. Three steps, about five minutes.
             </p>
           </div>
         </Reveal>
@@ -362,17 +361,16 @@ function ForPractitioners() {
               without the lease.
             </h2>
             <p className={`mt-5 ${TYPE.body}`} style={{ color: COLOUR.body }}>
-              Work for yourself without signing for a studio you use six hours a week. Book the
-              hour, pay the price you were shown, and let yourself in — the door code arrives the
-              day before.
+              You need a room a few hours a week, not a studio all year. Book the hours you
+              need, see your clients, and leave.
             </p>
 
             <ul className="mt-7 space-y-3">
               {[
-                "Book by the hour, or the same hour every week",
-                "Choose the town you actually work in",
-                "See your own clients, in your own way",
-                "Cancel 24 hours ahead and the money comes back",
+                "Book a single hour, or the same hour every week",
+                "Work in the town you already work in",
+                "Bring your own clients",
+                "Cancel 24 hours ahead, free",
               ].map((line) => (
                 <li key={line} className={`flex gap-3.5 ${TYPE.body}`} style={{ color: COLOUR.body }}>
                   <span
@@ -458,9 +456,8 @@ function ForHosts() {
                 Let the empty hours earn.
               </h2>
               <p className={`mt-5 ${TYPE.body}`} style={{ color: "rgba(255,255,255,.82)" }}>
-                Set your hours and your rate — and keep the rate. The fee is added on top and the
-                practitioner pays it, so what you charge is what reaches your bank after each
-                session.
+                You set the hours and the rate, and you keep the rate. Our fee is added on top
+                and paid by the practitioner. After each session the money goes to your bank.
               </p>
 
               <div className="mt-8 flex flex-wrap gap-3">
@@ -508,8 +505,8 @@ function Recurring() {
                 Need the same room every week?
               </h2>
               <p className={`mt-5 ${TYPE.body}`} style={{ color: COLOUR.body }}>
-                Book a run of weeks at once, at the same hour, in the same room. Your clients get
-                a time they can count on and you still have not signed anything.
+                Book several weeks at once — same room, same hour. Your clients get a regular
+                time and you still have no contract.
               </p>
               <Link
                 href="/spaces"
@@ -546,8 +543,7 @@ function Trust() {
       <div className="mx-auto max-w-6xl px-6">
         <Reveal>
           <h2 className={TYPE.h2} style={{ fontFamily: "var(--font-dm-serif)", color: COLOUR.ink }}>
-            Built for people who work
-            <br className="hidden sm:block" /> for themselves.
+            Why people book with us.
           </h2>
         </Reveal>
 

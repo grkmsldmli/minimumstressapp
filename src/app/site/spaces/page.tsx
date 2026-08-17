@@ -28,7 +28,7 @@ export const revalidate = 3600;
 export const metadata: Metadata = {
   title: "Wellness Spaces for Rent by the Hour",
   description:
-    "Treatment rooms, studios and private consulting space across the Bay Area, rented by " +
+    "Treatment rooms, studios and private consulting rooms across the Bay Area, rented by " +
     "the hour. No lease, no deposit.",
   alternates: { canonical: `${WEBSITE}/spaces` },
 };
@@ -62,8 +62,8 @@ export default async function SpacesIndex() {
           {listed.length > 0 ? (
             <>
               <p className="mt-5 text-[16.5px] leading-[1.75]" style={{ color: "#5f6673" }}>
-                Treatment rooms, studios and private consulting space, booked by the hour. No lease,
-                no deposit, and the price you see is the price you pay.
+                Treatment rooms, studios and private consulting rooms, booked by the hour. No
+                lease, no deposit, and the price you see is the price you pay.
               </p>
 
               <div className="mt-8 grid gap-3 sm:grid-cols-2">
@@ -109,8 +109,8 @@ export default async function SpacesIndex() {
                 marketplace, not their query.
               */}
               <p className="mt-3 text-[15px] leading-[1.75]" style={{ color: "#8a94a3" }}>
-                The rooms come from people who already have one. If you know a studio with quiet
-                hours, that is where the first ones will come from.
+                Every room here comes from someone who already had one. If you know a studio
+                with quiet hours, tell them about us.
               </p>
 
               {/*
@@ -131,9 +131,8 @@ export default async function SpacesIndex() {
                   Have a room that sits empty?
                 </h2>
                 <p className="mt-2 text-[15px] leading-[1.75]" style={{ color: "#5f6673" }}>
-                  A treatment room, a studio, a spare consulting space — the hours you are not in it
-                  can earn. You set the rate and you keep it; the fee is added on top and the
-                  practitioner pays it.
+                  A treatment room, a studio, a spare consulting room — the hours you are not
+                  using could be earning. You set the rate and keep all of it.
                 </p>
                 <Link
                   href="/rent-out-your"

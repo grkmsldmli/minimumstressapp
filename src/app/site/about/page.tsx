@@ -47,8 +47,8 @@ const SIDES = [
     who: "For practitioners",
     claim: "Work independently without carrying a full-time space.",
     body:
-      "A professional setting should not require a monthly lease. Book a private room or a " +
-      "studio for the hours you actually use, and bring your own clients to it.",
+      "You should not need a year-long lease to see clients properly. Book a private room or " +
+      "a studio for the hours you actually use, and bring your own people to it.",
     href: "/spaces",
     action: "Find a space",
   },
@@ -56,8 +56,8 @@ const SIDES = [
     who: "For hosts",
     claim: "Empty hours can become useful hours.",
     body:
-      "Studios, offices and treatment rooms sit unused for much of the week while somebody is " +
-      "still paying for them. You set the hours and the rate, and you keep the rate.",
+      "Most studios and treatment rooms sit empty half the week while someone keeps paying " +
+      "for them. You choose the hours, you set the rate, and you keep all of it.",
     href: "/rent-out-your",
     action: "See what it could earn",
   },
@@ -88,13 +88,13 @@ export default function AboutPage() {
             </h1>
 
             <p className={`mt-7 ${TYPE.lead}`} style={{ color: COLOUR.body }}>
-              Minimum Stress connects independent wellness professionals with private spaces they
-              can book by the hour — and helps the people who own those spaces earn from hours
-              that would otherwise sit unused.
+              We connect independent wellness professionals with private rooms they can book by
+              the hour, and help the people who own those rooms earn from the time they sit
+              empty.
             </p>
 
             <p className={`mt-4 ${TYPE.small}`} style={{ color: COLOUR.muted }}>
-              No lease. No long-term commitment. The space you need, for the hours you need it.
+              No lease. No commitment. Just the space you need, when you need it.
             </p>
           </div>
         </section>
@@ -175,13 +175,13 @@ export default function AboutPage() {
                     We provide the space between the two sides.
                   </h2>
                   <p className={`mt-5 ${TYPE.body}`} style={{ color: COLOUR.body }}>
-                    Practitioners bring their work and their clients. Hosts provide the room.
-                    Minimum Stress handles discovery, booking, scheduling, payment and the access
-                    details, so both sides can get on with the part that is theirs.
+                    Practitioners bring their work and their clients. Hosts provide the room. We
+                    handle the search, the booking, the schedule, the payment and getting you in
+                    — so both sides can get on with what they are actually good at.
                   </p>
                   <p className={`mt-4 ${TYPE.small}`} style={{ color: COLOUR.muted }}>
-                    Minimum Stress does not provide practitioner services. Every professional here
-                    works independently and is responsible for their own practice.
+                    We do not provide any practitioner service ourselves. Everyone here works
+                    independently and runs their own practice.
                   </p>
                 </div>
 

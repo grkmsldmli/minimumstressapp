@@ -34,8 +34,8 @@ export function SearchedFor() {
   return (
     <p className="mt-5 text-[16.5px] leading-[1.75]" style={{ color: "#5f6673" }}>
       No {type ? type.plural.toLowerCase() : "spaces"}
-      {where ? ` in ${where}` : ""} yet. Nothing at all is listed so far — we are opening in the
-      Bay Area first: San Francisco, the peninsula down to San Jose, and the East Bay.
+      {where ? ` in ${where}` : ""} yet. We are opening across the Bay Area first — San Francisco,
+      the peninsula down to San Jose, and the East Bay.
     </p>
   );
 }
@@ -51,8 +51,8 @@ export function SearchedFor() {
 export function NothingYet() {
   return (
     <p className="mt-5 text-[16.5px] leading-[1.75]" style={{ color: "#5f6673" }}>
-      Nothing is listed yet. We are opening in the Bay Area first — San Francisco, the peninsula
-      down to San Jose, and the East Bay.
+      Nothing is listed yet. We are opening across the Bay Area first — San Francisco, the
+      peninsula down to San Jose, and the East Bay.
     </p>
   );
 }

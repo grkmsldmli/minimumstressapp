@@ -28,17 +28,17 @@ const STEPS = [
   {
     n: "01",
     title: "List the space",
-    body: "Photographs, the address, your rate, and the hours you are happy for it to be used. About ten minutes.",
+    body: "Photographs, the address, your rate, and the hours you are happy to let it out. Takes about ten minutes.",
   },
   {
     n: "02",
     title: "We check it",
-    body: "We look at the listing and the lease or ownership document before it goes live. Usually a day.",
+    body: "We review your listing and your paperwork before it goes live. Usually within a day.",
   },
   {
     n: "03",
     title: "It earns",
-    body: "Bookings arrive only inside your hours. Stripe pays your bank after each session.",
+    body: "Bookings only ever land inside your hours, and Stripe pays your bank after each session.",
   },
 ];
 
@@ -66,9 +66,9 @@ export default function ForHostsPage() {
             </h1>
 
             <p className="mt-6 max-w-md text-[16.5px] leading-[1.75]" style={{ color: "#5f6673" }}>
-              A treatment room, a studio, a spare consulting space — if you are already paying for
-              it, the hours you do not use are worth something. You set the rate and the hours,
-              and nobody arrives outside them.
+              A treatment room, a studio, a spare consulting space — you are already paying
+              for it. Put the empty hours to work. You set the rate and the hours, and nobody
+              arrives outside them.
             </p>
 
             <a
@@ -132,8 +132,8 @@ export default function ForHostsPage() {
             What could your room earn?
           </h2>
           <p className="mt-3 max-w-2xl text-[15.5px] leading-[1.75]" style={{ color: "#5f6673" }}>
-            Put your own rate and your free hours in, and see the figure. You keep your rate — the
-            fee is added on top and the practitioner pays it.
+            Put in your rate and your free hours and see the number. You keep your rate in
+            full — our fee is added on top and paid by the practitioner.
           </p>
 
           <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -177,8 +177,8 @@ export default function ForHostsPage() {
                 Who is coming into my space?
               </dt>
               <dd className="mt-1">
-                Practitioners who have accepted the terms and confirmed they carry their own
-                insurance. You see who booked, and you can message them before the session.
+                Practitioners who have accepted the terms and confirmed their own insurance.
+                You can see who booked and message them before they arrive.
               </dd>
             </div>
 
@@ -187,8 +187,8 @@ export default function ForHostsPage() {
                 What if something is damaged?
               </dt>
               <dd className="mt-1">
-                You can raise a claim for 48 hours after a session, and we hold the payout while
-                it is open. Their insurance is the backstop, which is why we require it.
+                You have 48 hours after a session to tell us, and we hold the payout while we
+                look into it. Their insurance covers the rest, which is why we require it.
               </dd>
             </div>
 

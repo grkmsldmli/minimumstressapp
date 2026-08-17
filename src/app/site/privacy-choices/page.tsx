@@ -39,8 +39,8 @@ export default function PrivacyChoicesPage() {
   return (
     <PageShell
       eyebrow="Your privacy choices"
-      title={<>There is nothing here to opt out of.</>}
-      standfirst="Not as a figure of speech. We do not sell personal information and we do not share it for cross-context advertising, so the switch this page usually carries would not be connected to anything."
+      title={<>Nothing to opt out of.</>}
+      standfirst="We do not sell your information and we do not share it for advertising, so there is no switch here to turn off."
     >
       <Reveal>
         <div
@@ -48,34 +48,33 @@ export default function PrivacyChoicesPage() {
           style={{ backgroundColor: COLOUR.wash, border: `1px solid ${COLOUR.line}` }}
         >
           <p className={TYPE.body} style={{ color: COLOUR.body }}>
-            No sale of personal information. No sharing for cross-context behavioural advertising.
-            No advertising network, no cross-site tracking, and no profile built from where you
-            have been.
+            We never sell your personal information. We never share it for advertising. No
+            ad networks, no tracking across other sites, no profile of where you have been.
           </p>
           <p className={`mt-3 ${TYPE.small}`} style={{ color: COLOUR.muted }}>
-            This is the same commitment as the privacy policy in the app, which is the version that
-            binds us.
+            The privacy policy in the app makes the same commitment, and that is the version
+            that binds us.
           </p>
         </div>
       </Reveal>
 
       <Section title="What we do hold">
         <p>
-          What a booking needs, and not much beyond it: who you are, how to reach you, the sessions
-          you have booked or hosted, and what was paid. Card details are held by Stripe rather than
-          by us — we never see a full card number.
+          Only what a booking needs: who you are, how to reach you, the sessions you have
+          booked or hosted, and what was paid. Stripe holds your card details — we never see a
+          full card number.
         </p>
         <p>
-          A location, if you share one, is used once to sort the nearest rooms first. It is not
-          attached to your account and not kept after the request.
+          If you share your location, we use it once to put the nearest rooms first. It is
+          not saved to your account and not kept afterwards.
         </p>
       </Section>
 
       <Section title="What you can ask for">
         <p>
-          To see what we hold, to have it corrected, and to have your account deleted. In
-          California these are rights under the CCPA and we will not treat you differently for
-          using them; in practice we would do the same for anybody who asked from anywhere.
+          See what we hold, have it corrected, or have your account deleted. In California
+          these are your rights under the CCPA, and using them changes nothing about how we treat
+          you. We would do the same for anyone, anywhere.
         </p>
         <p>
           Write to{" "}
@@ -86,40 +85,37 @@ export default function PrivacyChoicesPage() {
           >
             {SUPPORT_EMAIL}
           </a>{" "}
-          from the address on the account. That is the whole process — there is no form and no
-          identity-verification vendor in between.
+          from the address on your account. That is the whole process — no forms, no
+          third-party identity checks.
         </p>
       </Section>
 
       <Section title="What deleting an account actually removes">
         <p>
-          This is worth being exact about, because &ldquo;we will delete your data&rdquo; is a
-          sentence almost nobody means literally.
+          Worth being exact about, because &ldquo;we delete your data&rdquo; is a sentence
+          almost nobody means literally.
         </p>
         <p>
-          <strong style={{ color: COLOUR.ink }}>Removed:</strong> your profile, your photograph,
-          the verification documents you uploaded, your listings, and your sign-in. Documents go
-          first, deliberately — they are the sensitive part, and a half-finished deletion should
-          not leave a lease on disk with the record of what it belonged to gone.
+          <strong style={{ color: COLOUR.ink }}>Deleted:</strong> your profile, your photograph,
+          the documents you uploaded, your listings and your sign-in. Documents go first, because
+          they are the sensitive part.
         </p>
         <p>
-          <strong style={{ color: COLOUR.ink }}>Kept:</strong> completed bookings, because a booking
-          is a financial record for two people and deleting yours would take a host&rsquo;s own
-          income history with it. Reviews stay too, with your name detached — a listing&rsquo;s
-          rating is partly other people&rsquo;s contribution, and one person leaving should not
-          rewrite what everybody else said.
+          <strong style={{ color: COLOUR.ink }}>Kept:</strong> completed bookings, because a
+          booking is a financial record for two people — deleting yours would erase a host&rsquo;s
+          income history too. Reviews stay with your name removed, so one person leaving does not
+          rewrite what everyone else said.
         </p>
         <p>
-          An account with sessions still ahead of it cannot be deleted until those are done or
-          cancelled. Somebody has arranged their day around them.
+          You cannot delete an account with sessions still ahead — someone has arranged
+          their day around them. Finish or cancel those first.
         </p>
       </Section>
 
       <Section title="Where the binding version lives">
         <p>
-          The privacy policy in the app is the authority, because that is where it is agreed to and
-          where the version you accepted is recorded against your account. A second copy out here
-          would be a second policy, free to drift from the one people actually signed.
+          The privacy policy in the app is the one that counts. That is where you agree to
+          it and where the version you accepted is recorded.
         </p>
         <p>
           <a

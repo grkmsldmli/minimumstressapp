@@ -14,22 +14,17 @@ import {
 import { COLOUR } from "@/lib/site-theme";
 
 /**
- * The questions, answered where somebody is asking them.
+ * Split by side, because nobody arrives with a general interest in the
+ * marketplace. They arrive as one of two people with about six questions.
  *
- * Split by side rather than by topic, because nobody arrives with a general
- * interest in the marketplace — they arrive as one of two people with about
- * six questions each, and a single list mixing "how do I get in" with "when am
- * I paid" makes both of them read half a page that is not for them.
- *
- * The numbers come from lib/money, so this page cannot drift from what the app
- * charges. That has happened to every FAQ ever written by hand.
+ * Numbers come from lib/money, so this cannot drift from what the app charges.
  */
 
 export const metadata: Metadata = {
   title: "Questions",
   description:
-    "How booking a room by the hour works, what it costs, when you get in, and how listing a " +
-    "space works from the other side.",
+    "How booking a room by the hour works, what it costs, how you get in, and how listing your " +
+    "own space works.",
   alternates: { canonical: `${WEBSITE}/faq` },
 };
 
@@ -52,93 +47,91 @@ export default function FaqPage() {
   return (
     <PageShell
       eyebrow="Questions"
-      title={<>The things worth asking first.</>}
-      standfirst="Booking a room is on the left of this page and letting one is on the right. Most people only need one half."
+      title={<>Everything you might ask.</>}
+      standfirst="Booking a room comes first, letting one comes second. Most people only need one half."
     >
       <Section title="Booking a room">
         <dl className="space-y-6">
-          <QA q="Do I need an account to look?">
-            No. Browsing is open — an account is for booking, because a booking takes a card and a
-            name.
-          </QA>
+          <QA q="Do I need an account to look?">No. You only need one to book.</QA>
+
           <QA q="What does it cost?">
-            The figure on the listing, and nothing else. The host&rsquo;s rate plus a{" "}
-            {FEE_PERCENT}% service fee, already included in what you see. A slot starting within
-            two hours adds {formatCents(INSTANT_FEE_CENTS)}. It is all set out on{" "}
-            <Inline href="/pricing">the pricing page</Inline>.
+            The price on the listing, and nothing more. That is the host&rsquo;s rate plus our{" "}
+            {FEE_PERCENT}% fee, already included. Booking something starting within two hours adds{" "}
+            {formatCents(INSTANT_FEE_CENTS)}. Full detail on{" "}
+            <Inline href="/pricing">pricing</Inline>.
           </QA>
+
           <QA q="How do I get in?">
-            The entry instructions and the door code appear {CANCEL_HOURS} hours before your
-            session, in the app, for a booking that is paid for. Most rooms are a keypad or a
-            lockbox; some hosts let you in themselves, and the listing says which.
+            Everything you need to enter appears in the app shortly before your session. The
+            listing tells you what kind of entry the room has.
           </QA>
+
           <QA q="Can I book the same hour every week?">
-            Yes — you can book a run of weeks at once, in the same room at the same hour. It is
-            the thing this is built for rather than a feature bolted on.
+            Yes. Book several weeks at once, same room and same time — ideal if your clients come
+            to you regularly.
           </QA>
+
           <QA q="How far ahead can I book?">
-            {BOOKING_HORIZON_DAYS} days, or {PRO_BOOKING_HORIZON_DAYS} with Pro. Fourteen shows
-            every slot in a weekly cycle twice over; thirty is room to plan a term.
+            {BOOKING_HORIZON_DAYS} days, or {PRO_BOOKING_HORIZON_DAYS} days with Pro.
           </QA>
-          <QA q="What if I have to cancel?">
-            More than {CANCEL_HOURS} hours ahead and the charge is voided — nothing reaches your
-            statement. Inside that window it stands, because the host held the hour open.
+
+          <QA q="What if I need to cancel?">
+            Cancel {CANCEL_HOURS} hours or more ahead and you are not charged. Inside that window
+            the booking stands, because the host kept the hour free for you.
           </QA>
+
           <QA q="Can I bring my own clients?">
-            That is the entire idea. You book the room; who you see in it and how you work is
-            yours.
+            Yes. The room is yours for the hour — your clients, your practice, your way of working.
           </QA>
         </dl>
       </Section>
 
-      <Section title="Letting a room">
+      <Section title="Listing your space">
         <dl className="space-y-6">
           <QA q="What do you take?">
-            Nothing from your rate. The {FEE_PERCENT}% is added on top and the practitioner pays
-            it, so what you set is what reaches your bank. Listing is free and there is no monthly
-            charge.
+            Nothing from your rate. Our {FEE_PERCENT}% is added on top and paid by the
+            practitioner, so what you set is what you receive. Listing is free.
           </QA>
+
           <QA q="When am I paid?">
-            After each session, to your bank through Stripe. Not on booking — the money is held
-            until the hour has actually happened.
+            After each session, straight to your bank through Stripe.
           </QA>
+
           <QA q="Who decides the hours?">
-            You do, and nothing outside them is bookable. A room closed before nine simply cannot
-            be booked before nine.
+            You do. Nothing outside the hours you choose can be booked.
           </QA>
-          <QA q="What do I have to provide?">
-            Photographs, the address, your rate, your hours, and a lease or ownership document
-            showing you may let the room. About ten minutes. We check the listing and the document
-            before it goes live — usually a day.
+
+          <QA q="What do I need to list?">
+            Photographs, the address, your rate, your hours, and a document showing you can let the
+            room. About ten minutes. We review it before it goes live, usually within a day.
           </QA>
+
           <QA q="Do I have to be there?">
-            No. Most hosts use a keypad or a lockbox and the code goes only to somebody who has
-            paid. If you would rather let people in yourself, set the room to that and it is only
-            bookable when you can.
+            Only if you want to be. If you would rather let people in yourself, set the room up
+            that way and it can only be booked when you are free.
           </QA>
-          <QA q="What if something is damaged?">
-            You can raise a claim for 48 hours after a session and we hold that payout while it is
-            open. Every practitioner confirms they carry their own insurance —{" "}
-            <Inline href="/trust">trust &amp; safety</Inline> sets out the whole of it.
+
+          <QA q="What if something gets damaged?">
+            You have 48 hours after a session to tell us, and we hold that payout while we look
+            into it. Every practitioner carries their own insurance. More on{" "}
+            <Inline href="/trust">trust &amp; safety</Inline>.
           </QA>
+
           <QA q="What could my room earn?">
-            Put your own rate and free hours into{" "}
-            <Inline href="/rent-out-your">the calculator</Inline> and it will tell you, using your
-            numbers rather than an average of somebody else&rsquo;s.
+            Put your rate and your free hours into{" "}
+            <Inline href="/rent-out-your">the calculator</Inline> and see.
           </QA>
         </dl>
       </Section>
 
-      <Section title="Still stuck">
+      <Section title="Still need help?">
         <p>
-          Write to us. There is no queue and no ticket number —{" "}
-          <Inline href="/contact">contact</Inline> has the address and what is worth putting in the
-          message.
+          Write to us — <Inline href="/contact">contact</Inline> has the address and what to
+          include.
         </p>
         <p>
-          {BRAND} is a booking platform: it does not own the rooms, and provides no medical or
-          health service. The full terms are{" "}
-          <Inline href={`${APP_URL}/terms`}>in the app</Inline>, where they are agreed to.
+          {BRAND} does not own the rooms and provides no medical or health service. Full terms are{" "}
+          <Inline href={`${APP_URL}/terms`}>in the app</Inline>.
         </p>
       </Section>
     </PageShell>

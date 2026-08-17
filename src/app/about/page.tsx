@@ -40,7 +40,7 @@ const STEPS = [
   },
   {
     title: "Let yourself in",
-    body: "The entry instructions and the door code are released to you 24 hours before your session, and to nobody else.",
+    body: "You get in on your own. What you need to do that reaches you shortly before your session, and nobody else.",
   },
   {
     title: "Both sides review",
@@ -151,9 +151,9 @@ export default function About() {
               The address is on the listing — it is already on a map and on the studio&rsquo;s own
               website, and hiding it left a practitioner booking an afternoon somewhere they could
               not place. How to get in is the part that is not public: the entry instructions and
-              any door code go only to whoever paid for that hour, 24 hours before it starts. Hosts
-              hand us a lease or ownership document before a room goes live; those are read by us
-              and shown to nobody.
+              anything else you need to get in goes only to whoever paid for that hour, shortly
+              before it starts. Hosts hand us a lease or ownership document before a room goes
+              live; those are read by us and shown to nobody.
             </p>
           </Section>
 

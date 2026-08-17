@@ -54,6 +54,33 @@ const DEV_EVAL = process.env.NODE_ENV === "development" ? " 'unsafe-eval'" : "";
 
 export function proxy(request: NextRequest): NextResponse {
   const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
+  const forSite = isSiteHost(request.headers.get("host"));
+
+  /**
+   * Two policies, because the two sites are rendered differently.
+   *
+   * A nonce has to be fresh on every request, which means the HTML carrying it
+   * has to be built on every request. The app is, so it gets the strict policy
+   * below and 'strict-dynamic' with it.
+   *
+   * The content site is prerendered at build time and served from the CDN —
+   * which is right for a marketing site, and completely incompatible with a
+   * nonce. Its script tags were built hours earlier and carry no nonce, while
+   * the header demanded one; 'strict-dynamic' then disables the 'self'
+   * allowlist that would otherwise have saved it. So every script on the
+   * content site was blocked. Not the carousel, not one tool — all of it: no
+   * assessment ran, no button did anything, and the pages looked completely
+   * normal while being completely inert.
+   *
+   * So the content site drops the nonce and allows its own origin. That is a
+   * weaker policy and an appropriate one: it is static HTML with no sign-in,
+   * no payment, and nothing user-submitted rendered back out, so there is no
+   * injection route for the nonce to close. The strict policy stays where the
+   * card details are.
+   */
+  const scriptSrc = forSite
+    ? `script-src 'self' 'unsafe-inline'${DEV_EVAL}`
+    : `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${DEV_EVAL} ${STRIPE}`;
 
   const csp = [
     `default-src 'self'`,
@@ -64,7 +91,7 @@ export function proxy(request: NextRequest): NextResponse {
     // overlay route that is the real risk.
     `style-src 'self' 'unsafe-inline'`,
 
-    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${DEV_EVAL} ${STRIPE}`,
+    scriptSrc,
 
     // `data:` covers inline SVG icons; `blob:` covers the local preview a host
     // sees before their photo has finished uploading.
@@ -116,7 +143,7 @@ export function proxy(request: NextRequest): NextResponse {
    * it moves and no sign-in or OAuth callback changes.
    */
   const { pathname } = request.nextUrl;
-  const onSite = isSiteHost(request.headers.get("host"));
+  const onSite = forSite;
 
   /*
    * The addresses Shopify is answering today.

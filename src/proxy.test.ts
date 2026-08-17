@@ -31,8 +31,15 @@ beforeAll(async () => {
  * browser would refuse to play it back from the bucket it had just been
  * stored in — falling through to `default-src 'self'` with nobody the wiser.
  */
-function policy(): Map<string, string> {
-  const response = proxy(new NextRequest("https://minimumstress.app/"));
+/*
+ * The Host header is set explicitly. NextRequest does not derive one from the
+ * URL it is constructed with, and the proxy decides which of the two sites it
+ * is serving by reading that header — so without it every test here would be
+ * silently testing the app.
+ */
+function policy(url = "https://minimumstress.app/"): Map<string, string> {
+  const host = new URL(url).host;
+  const response = proxy(new NextRequest(url, { headers: { host } }));
   const header = response.headers.get("content-security-policy") ?? "";
 
   return new Map(
@@ -135,5 +142,59 @@ describe("the eval exception", () => {
 
   it("still carries a nonce in development", async () => {
     expect(await scriptSrc("development")).toMatch(/'nonce-[A-Za-z0-9+/=]+'/);
+  });
+});
+
+/**
+ * The two policies, and why they are not the same.
+ *
+ * This shipped as one policy and took the whole content site down without
+ * looking like anything was wrong. A nonce has to be fresh per request, so the
+ * HTML carrying it has to be built per request — and the content site is
+ * prerendered at build time. Its script tags carried no nonce while the header
+ * demanded one, and 'strict-dynamic' disabled the 'self' allowlist that would
+ * otherwise have covered them. Every script was blocked: no carousel, no
+ * assessment, no button. The pages rendered perfectly and did nothing.
+ */
+describe("the content site gets its own policy", () => {
+  const site = () => policy("https://minimumstress.com/");
+
+  it("does not put a nonce on statically rendered pages", () => {
+    const scriptSrc = site().get("script-src") ?? "";
+    expect(scriptSrc).not.toContain("nonce-");
+  });
+
+  /*
+   * The one that actually broke it. With 'strict-dynamic' a browser ignores
+   * 'self' entirely, so prerendered script tags have nothing left to match.
+   */
+  it("does not use strict-dynamic, which would disable the allowlist", () => {
+    expect(site().get("script-src") ?? "").not.toContain("strict-dynamic");
+  });
+
+  it("allows its own scripts and its own inline bootstrap", () => {
+    const scriptSrc = site().get("script-src") ?? "";
+    expect(scriptSrc).toContain("'self'");
+    expect(scriptSrc).toContain("'unsafe-inline'");
+  });
+
+  /** Stripe is not on this side, so it is not named on this side. */
+  it("does not reach for Stripe", () => {
+    expect(site().get("script-src") ?? "").not.toContain("stripe.com");
+  });
+
+  /* The app is rendered per request, so it keeps the strict policy. */
+  it("leaves the app's policy strict", () => {
+    const scriptSrc = policy().get("script-src") ?? "";
+    expect(scriptSrc).toContain("nonce-");
+    expect(scriptSrc).toContain("strict-dynamic");
+    expect(scriptSrc).not.toContain("'unsafe-inline'");
+  });
+
+  /** Everything that is not about scripts stays identical on both. */
+  it("keeps the rest of the policy the same on both hosts", () => {
+    for (const directive of ["frame-ancestors", "object-src", "base-uri", "form-action"]) {
+      expect(site().get(directive), directive).toBe(policy().get(directive));
+    }
   });
 });

@@ -1,7 +1,9 @@
 import Link from "next/link";
 import type { Metadata } from "next";
+import { Suspense } from "react";
 
 import { SiteFooter, SiteHeader } from "@/components/site/chrome";
+import { NothingYet, SearchedFor } from "@/components/site/searched-for";
 import { WEBSITE } from "@/lib/company";
 import { cityPath, indexableCity } from "@/lib/directory";
 import { citiesWithSpaces } from "@/lib/directory-data";
@@ -89,9 +91,24 @@ export default async function SpacesIndex() {
            * would ever fill up.
            */
           <>
-            <p className="mt-5 text-[16.5px] leading-[1.75]" style={{ color: "#5f6673" }}>
-              Nothing is listed yet. We are opening in the Bay Area first — San Francisco, the
-              peninsula down to San Jose, and the East Bay.
+            {/*
+              The search, answered. Client-side: this page is cached, and a
+              server-rendered echo would show the first visitor's search to
+              everybody after them.
+            */}
+            <Suspense fallback={<NothingYet />}>
+              <SearchedFor />
+            </Suspense>
+
+            {/*
+              Said rather than left implied. Somebody who has just searched
+              deserves to know this is the whole answer and not a filter
+              hiding results — and that the reason is the state of the
+              marketplace, not their query.
+            */}
+            <p className="mt-3 text-[15px] leading-[1.75]" style={{ color: "#8a94a3" }}>
+              The rooms come from people who already have one. If you know a studio with quiet
+              hours, that is where the first ones will come from.
             </p>
 
             <div

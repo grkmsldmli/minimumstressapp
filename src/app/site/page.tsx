@@ -1,29 +1,45 @@
-import Image from "next/image";
+import Link from "next/link";
 import type { Metadata } from "next";
 
 import { SiteFooter, SiteHeader } from "@/components/site/chrome";
 import { SpaceCarousel, type Slide } from "@/components/site/space-carousel";
+import { SpaceSearch } from "@/components/site/space-search";
 import { APP_URL, BRAND } from "@/lib/company";
 
 /**
- * One page, and short.
+ * A marketplace homepage, which is a different thing from a brochure.
  *
- * The earlier draft had six sections, a four-photograph grid and a card for
- * every step. That is a brochure for a company with a sales team. This is one
- * product with one sentence behind it — a room, an hour, a price — and a
- * visitor decides on it in about fifteen seconds, so the page is built to be
- * read in that time and get out of the way.
+ * The earlier version was short and well written and read as a company
+ * describing itself: a headline, three photographs, two paragraphs, and an
+ * "install it on your phone" section taking up a third of the page. Nothing on
+ * it was wrong. What was missing was the product — a visitor could read the
+ * whole thing without once being offered the thing the site does, which is
+ * find a room in a town.
  *
- * The photographs carry what would otherwise be paragraphs. Three of them in a
- * row say "these are real rooms" faster and more honestly than a list of room
- * types, and cost the reader nothing.
+ * So the search comes first, and everything below it answers a question
+ * somebody has after seeing it: what kinds of room, how does this work, what
+ * is in it for me on each side, and can I have the same hour every week.
+ *
+ * Two things are deliberately not here, and both were asked for.
+ *
+ * There is no "spaces available near you" strip of real listings. There are no
+ * listings. A row of invented rooms is the single most damaging thing a
+ * marketplace homepage can do — it is checkable in one click, and the person
+ * who checks is exactly the practitioner we need. The section arrives when the
+ * rooms do.
+ *
+ * And the search does not pretend. It is a real search that leads to a real
+ * page, which today answers honestly that nothing is listed in that town yet.
+ * That is worth more than a box that quietly does nothing: it is the same
+ * affordance, it tells the truth, and the day there is inventory nothing here
+ * has to change.
  */
 
 export const metadata: Metadata = {
-  title: "Private wellness space by the hour",
+  title: "Wellness Spaces for Rent by the Hour",
   description:
-    "Rent a private space by the hour for therapy, coaching, movement, or bodywork — " +
-    "or list the space you already have. No lease, no deposit.",
+    "Treatment rooms, Pilates studios, private consulting rooms and movement space, rented " +
+    "by the hour. No lease, no deposit — or list the space you already have.",
 };
 
 /**
@@ -65,18 +81,66 @@ const HERO: Slide[] = [
   },
 ];
 
-const STRIP = [
+/**
+ * The four groups, in the words somebody searches with.
+ *
+ * Not the four categories the app organises itself by — nobody looks for a
+ * "movement studio" by that name. Each card points at the search it stands
+ * for, so the card and the box in the hero do the same thing.
+ */
+const GROUPS = [
   {
-    src: "/photos/room-consulting.webp",
-    alt: "A consulting room with two wooden-framed chairs facing each other over a low table, and a window onto trees.",
+    title: "Private rooms",
+    body: "For consultations, coaching and seeing one person at a time.",
+    type: "consultation-room",
   },
   {
-    src: "/photos/room-studio.webp",
-    alt: "A movement studio with mats, bolsters and a mirror.",
+    title: "Treatment rooms",
+    body: "A couch, a sink and a door that locks — for hands-on work.",
+    type: "treatment-room",
   },
   {
-    src: "/photos/room-open-plan.webp",
-    alt: "An open room with a treatment table at one end and a mat at the other.",
+    title: "Pilates & movement",
+    body: "Reformers, mirrors and floor enough to work on.",
+    type: "pilates-studio",
+  },
+  {
+    title: "Yoga & meditation",
+    body: "Quiet rooms for classes and for sitting.",
+    type: "yoga-studio",
+  },
+];
+
+const STEPS = [
+  { n: "1", title: "Search", body: "The kind of room you need, in the town you work in." },
+  { n: "2", title: "Book", body: "Pick the hours. You pay the price on the listing, and nothing else." },
+  { n: "3", title: "Work", body: "Let yourself in with the code, and see your own clients." },
+];
+
+/**
+ * What the site can honestly say about itself.
+ *
+ * Every line here is something the product does today. "Insurance on every
+ * booking" is not on this list, and neither is anything about how many rooms
+ * or hosts there are — a trust section that overstates is worse than none,
+ * because it is the section a careful reader checks first.
+ */
+const TRUST = [
+  {
+    title: "The whole price, up front",
+    body: "The figure on the listing is the figure you pay. No booking fee revealed at checkout.",
+  },
+  {
+    title: "Only the hours you need",
+    body: "An hour is an hour. There is no minimum term and nothing to sign.",
+  },
+  {
+    title: "Checked before it is listed",
+    body: "We look at the listing and the lease or ownership document before a room goes live.",
+  },
+  {
+    title: "Cancel a day ahead",
+    body: "Cancel 24 hours before and the money comes back. Said plainly, on the listing.",
   },
 ];
 
@@ -87,8 +151,12 @@ export default function SiteHome() {
 
       <main>
         <Hero />
-        <Strip />
-        <BothSides />
+        <Groups />
+        <HowItWorks />
+        <ForPractitioners />
+        <ForHosts />
+        <Recurring />
+        <Trust />
         <Install />
       </main>
 
@@ -101,39 +169,30 @@ export default function SiteHome() {
 
 function Hero() {
   return (
-    <section className="mx-auto grid max-w-5xl items-center gap-12 px-6 pb-16 pt-8 lg:grid-cols-[1fr_1.1fr] lg:pb-24">
+    <section className="mx-auto grid max-w-5xl items-center gap-12 px-6 pb-16 pt-8 lg:grid-cols-[1fr_1.1fr] lg:pb-20">
       <div>
         <h1
-          className="text-[42px] leading-[1.06] sm:text-[54px]"
+          className="text-[42px] leading-[1.06] sm:text-[52px]"
           style={{ fontFamily: "var(--font-dm-serif)", color: "#0F2F55" }}
         >
-          A private space,
+          Wellness spaces,
           <br />
           <em className="italic" style={{ color: "#0EA5E9" }}>
             by the hour.
           </em>
         </h1>
 
-        <p className="mt-6 max-w-sm text-[17px] leading-[1.7]" style={{ color: "#5f6673" }}>
-          Therapists, coaches and movement teachers book space by the hour from people who
-          already have the space. No lease. No deposit. No month you did not use.
+        <p className="mt-6 max-w-md text-[17px] leading-[1.7]" style={{ color: "#5f6673" }}>
+          Treatment rooms, Pilates studios, private consulting rooms and movement space — for
+          the hours you need and not a month more. No lease. No deposit.
         </p>
 
-        <div className="mt-8 flex flex-wrap gap-3">
-          <a
-            href={APP_URL}
-            className="rounded-full px-7 py-3.5 text-[15px] font-medium text-white"
-            style={{ backgroundColor: "#0F2F55" }}
-          >
-            Get the app
-          </a>
-          <a
-            href="#hosts"
-            className="rounded-full border px-7 py-3.5 text-[15px] font-medium"
-            style={{ borderColor: "#d9e2ec", color: "#0F2F55" }}
-          >
-            I have a space
-          </a>
+        <SpaceSearch />
+
+        <div className="mt-4">
+          <Link href="/rent-out-your" className="text-[15px]" style={{ color: "#0EA5E9" }}>
+            Have a space? See what it could earn →
+          </Link>
         </div>
       </div>
 
@@ -142,70 +201,169 @@ function Hero() {
   );
 }
 
-/**
- * Three rooms, no captions.
- *
- * This replaced a grid with a heading and a paragraph under each picture. The
- * pictures were already saying it.
- */
-function Strip() {
+/** The kinds of room, each one a search rather than a photograph. */
+function Groups() {
   return (
     <section className="mx-auto max-w-5xl px-6 pb-20">
-      <div className="grid gap-3 sm:grid-cols-3">
-        {STRIP.map((photo) => (
-          <div key={photo.src} className="overflow-hidden rounded-2xl">
-            <Image
-              src={photo.src}
-              alt={photo.alt}
-              width={1672}
-              height={941}
-              sizes="(min-width: 640px) 33vw, 100vw"
-              className="aspect-[4/3] h-full w-full object-cover"
-            />
-          </div>
+      <h2 className="text-[14px] font-medium" style={{ color: "#0F2F55" }}>
+        Explore by space
+      </h2>
+
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {GROUPS.map((group) => (
+          <Link
+            key={group.type}
+            href={`/spaces?type=${group.type}`}
+            className="rounded-2xl p-5"
+            style={{ border: "1px solid #e7eef6" }}
+          >
+            <span className="block text-[16px]" style={{ color: "#0F2F55" }}>
+              {group.title}
+            </span>
+            <span className="mt-1.5 block text-[13.5px] leading-[1.65]" style={{ color: "#8a94a3" }}>
+              {group.body}
+            </span>
+            <span className="mt-3 block text-[13.5px]" style={{ color: "#0EA5E9" }}>
+              Explore spaces →
+            </span>
+          </Link>
         ))}
       </div>
-      <p className="mt-5 text-[15px] leading-[1.7]" style={{ color: "#5f6673" }}>
-        Treatment rooms, studios and consulting spaces across California — with the street, the
-        hours and the whole price on every listing.
-      </p>
     </section>
   );
 }
 
-/** The two people who arrive here, side by side, four lines each. */
-function BothSides() {
+function HowItWorks() {
+  return (
+    <section className="border-y py-16" style={{ borderColor: "#eef2f6", backgroundColor: "#f8fbfd" }}>
+      <div className="mx-auto max-w-5xl px-6">
+        <h2
+          className="text-[28px] leading-tight"
+          style={{ fontFamily: "var(--font-dm-serif)", color: "#0F2F55" }}
+        >
+          Space when you need it.
+        </h2>
+
+        <div className="mt-8 grid gap-8 sm:grid-cols-3">
+          {STEPS.map((step) => (
+            <div key={step.n}>
+              <span
+                className="flex h-8 w-8 items-center justify-center rounded-full text-[14px] font-medium"
+                style={{ backgroundColor: "#e7f4fd", color: "#0EA5E9" }}
+              >
+                {step.n}
+              </span>
+              <h3 className="mt-3 text-[17px]" style={{ color: "#0F2F55" }}>
+                {step.title}
+              </h3>
+              <p className="mt-1.5 text-[15px] leading-[1.75]" style={{ color: "#5f6673" }}>
+                {step.body}
+              </p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function ForPractitioners() {
+  return (
+    <section className="mx-auto max-w-5xl px-6 py-16">
+      {/* One column with a measure on it, not a two-column grid with an empty
+          half — the list below reads badly at full page width. */}
+      <div className="max-w-2xl">
+        <div>
+          <p className="text-[11px] uppercase tracking-[0.18em]" style={{ color: "#0EA5E9" }}>
+            If you need a space
+          </p>
+          <h2
+            className="mt-3 text-[32px] leading-[1.15]"
+            style={{ fontFamily: "var(--font-dm-serif)", color: "#0F2F55" }}
+          >
+            A professional room,
+            <br />
+            without the lease.
+          </h2>
+          <p className="mt-5 text-[16px] leading-[1.8]" style={{ color: "#5f6673" }}>
+            Work for yourself without signing for a studio you use six hours a week. Book the
+            hour, pay the price you were shown, and let yourself in — the door code arrives the
+            day before.
+          </p>
+
+          <ul className="mt-6 space-y-2.5">
+            {[
+              "Book by the hour, or the same hour every week",
+              "Choose the town you actually work in",
+              "See your own clients, in your own way",
+              "Cancel 24 hours ahead and the money comes back",
+            ].map((line) => (
+              <li
+                key={line}
+                className="flex gap-3 text-[15.5px] leading-[1.7]"
+                style={{ color: "#5f6673" }}
+              >
+                <span
+                  className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full"
+                  style={{ backgroundColor: "#0EA5E9" }}
+                />
+                <span>{line}</span>
+              </li>
+            ))}
+          </ul>
+
+          <Link
+            href="/spaces"
+            className="mt-7 inline-block rounded-full px-7 py-3.5 text-[15px] font-medium text-white"
+            style={{ backgroundColor: "#0F2F55" }}
+          >
+            Find a space
+          </Link>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function ForHosts() {
   return (
     <section
       id="hosts"
       className="border-y py-16"
       style={{ borderColor: "#eef2f6", backgroundColor: "#f8fbfd" }}
     >
-      <div className="mx-auto grid max-w-5xl gap-12 px-6 sm:grid-cols-2">
-        <div>
-          <h2
-            className="text-[24px] leading-snug"
-            style={{ fontFamily: "var(--font-dm-serif)", color: "#0F2F55" }}
-          >
-            Need a space
-          </h2>
-          <p className="mt-3 text-[15.5px] leading-[1.75]" style={{ color: "#5f6673" }}>
-            Book the hour, pay the price you were shown, and let yourself in — the door code
-            arrives the day before. Cancel 24 hours ahead and the money comes back.
-          </p>
-        </div>
+      <div className="mx-auto max-w-5xl px-6">
+        <p className="text-[11px] uppercase tracking-[0.18em]" style={{ color: "#0EA5E9" }}>
+          If you have one
+        </p>
+        <h2
+          className="mt-3 text-[32px] leading-[1.15]"
+          style={{ fontFamily: "var(--font-dm-serif)", color: "#0F2F55" }}
+        >
+          Your space already exists.
+          <br />
+          Let the empty hours earn.
+        </h2>
+        <p className="mt-5 max-w-2xl text-[16px] leading-[1.8]" style={{ color: "#5f6673" }}>
+          Set your hours and your rate — and keep the rate. The fee is added on top and the
+          practitioner pays it, so what you charge is what reaches your bank after each session.
+        </p>
 
-        <div>
-          <h2
-            className="text-[24px] leading-snug"
-            style={{ fontFamily: "var(--font-dm-serif)", color: "#0F2F55" }}
+        <div className="mt-7 flex flex-wrap gap-3">
+          <Link
+            href="/rent-out-your"
+            className="rounded-full px-7 py-3.5 text-[15px] font-medium text-white"
+            style={{ backgroundColor: "#0F2F55" }}
           >
-            Have a space
-          </h2>
-          <p className="mt-3 text-[15.5px] leading-[1.75]" style={{ color: "#5f6673" }}>
-            Set your rate and your hours, and the empty ones start earning. Everyone who books
-            carries their own insurance. Paid to your bank after each session.
-          </p>
+            See what your space could earn
+          </Link>
+          <Link
+            href="/for-hosts"
+            className="rounded-full border px-7 py-3.5 text-[15px] font-medium"
+            style={{ borderColor: "#d9e2ec", color: "#0F2F55" }}
+          >
+            How hosting works
+          </Link>
         </div>
       </div>
     </section>
@@ -213,42 +371,90 @@ function BothSides() {
 }
 
 /**
- * How to put it on a phone, said honestly.
+ * The thing that makes this different from an event-space marketplace.
  *
- * There is no App Store or Play Store listing, so there are no store badges.
- * A badge that opens nothing would be the first promise this page makes and
- * the first one broken. It does install — it is a progressive web app, and
- * both platforms give it a home-screen icon and no browser bar — so the page
- * says which two taps do that.
+ * Peerspace and the rest are built around one-off bookings of somewhere
+ * unusual. A practitioner comes to the same room at the same hour every week
+ * for months, which is a different product — and it is already built, in
+ * lib/series.ts, so it is worth saying out loud rather than leaving somebody
+ * to discover on the booking screen.
+ */
+function Recurring() {
+  return (
+    <section className="mx-auto max-w-5xl px-6 py-16">
+      <div className="rounded-2xl p-8 sm:p-10" style={{ border: "1px solid #e7eef6" }}>
+        <h2
+          className="text-[28px] leading-tight"
+          style={{ fontFamily: "var(--font-dm-serif)", color: "#0F2F55" }}
+        >
+          Need the same room every week?
+        </h2>
+        <p className="mt-4 max-w-2xl text-[16px] leading-[1.8]" style={{ color: "#5f6673" }}>
+          Book a run of weeks at once, at the same hour, in the same room. Your clients get a
+          time they can count on and you still have not signed anything.
+        </p>
+        <Link href="/spaces" className="mt-5 inline-block text-[15px]" style={{ color: "#0EA5E9" }}>
+          Find a room for a weekly slot →
+        </Link>
+      </div>
+    </section>
+  );
+}
+
+function Trust() {
+  return (
+    <section className="border-t py-16" style={{ borderColor: "#eef2f6" }}>
+      <div className="mx-auto max-w-5xl px-6">
+        <h2
+          className="text-[28px] leading-tight"
+          style={{ fontFamily: "var(--font-dm-serif)", color: "#0F2F55" }}
+        >
+          Built for people who work for themselves.
+        </h2>
+
+        <div className="mt-8 grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
+          {TRUST.map((item) => (
+            <div key={item.title}>
+              <h3 className="text-[16px]" style={{ color: "#0F2F55" }}>
+                {item.title}
+              </h3>
+              <p className="mt-1.5 text-[14.5px] leading-[1.75]" style={{ color: "#5f6673" }}>
+                {item.body}
+              </p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/**
+ * How to put it on a phone, said honestly and said briefly.
+ *
+ * There is no App Store or Play Store listing, so there are no store badges. A
+ * badge that opens nothing would be a promise broken in the first second. It
+ * does install — it is a progressive web app — so this says the two taps that
+ * do it, in a band rather than in the full-height section it used to occupy.
+ * Installing is what somebody does after deciding, not instead of deciding.
  */
 function Install() {
   return (
-    <section className="py-20 text-white" style={{ backgroundColor: "#0F2F55" }}>
-      <div className="mx-auto max-w-2xl px-6 text-center">
-        <h2 className="text-[30px] leading-tight" style={{ fontFamily: "var(--font-dm-serif)" }}>
-          Put it on your phone.
-        </h2>
-        <p className="mt-4 text-[16px] leading-[1.8]" style={{ color: "rgba(255,255,255,.72)" }}>
-          No app store, nothing to download. It installs from the browser and sits on your home
-          screen like any other app.
-        </p>
-
-        <div className="mt-8 grid gap-3 text-left sm:grid-cols-2">
-          <p className="rounded-2xl p-5 text-[14px] leading-[1.7]" style={{ backgroundColor: "rgba(255,255,255,.07)" }}>
-            <strong className="block pb-1">iPhone</strong>
-            <span style={{ color: "rgba(255,255,255,.72)" }}>
-              Safari → Share → Add to Home Screen
-            </span>
-          </p>
-          <p className="rounded-2xl p-5 text-[14px] leading-[1.7]" style={{ backgroundColor: "rgba(255,255,255,.07)" }}>
-            <strong className="block pb-1">Android</strong>
-            <span style={{ color: "rgba(255,255,255,.72)" }}>Chrome → menu → Install app</span>
+    <section className="py-12 text-white" style={{ backgroundColor: "#0F2F55" }}>
+      <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-6 px-6">
+        <div>
+          <h2 className="text-[20px]" style={{ fontFamily: "var(--font-dm-serif)" }}>
+            Take {BRAND} with you.
+          </h2>
+          <p className="mt-1.5 text-[14.5px] leading-[1.7]" style={{ color: "rgba(255,255,255,.72)" }}>
+            No app store. iPhone: Safari → Share → Add to Home Screen. Android: Chrome → menu →
+            Install app.
           </p>
         </div>
 
         <a
           href={APP_URL}
-          className="mt-8 inline-block rounded-full bg-white px-8 py-3.5 text-[15px] font-medium"
+          className="rounded-full bg-white px-7 py-3 text-[15px] font-medium"
           style={{ color: "#0F2F55" }}
         >
           Open {BRAND}
@@ -257,4 +463,3 @@ function Install() {
     </section>
   );
 }
-

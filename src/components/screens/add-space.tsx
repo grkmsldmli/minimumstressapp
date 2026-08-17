@@ -51,6 +51,7 @@ import {
   type RestroomOption,
   formatBuffer,
 } from "@/lib/taxonomy";
+import { spaceTypesFor } from "@/lib/space-types";
 
 const MAX_MEDIA = 6;
 const STEP_LABELS = ["Basics", "Photos & extras", "Verify"] as const;
@@ -84,7 +85,25 @@ export function AddSpace({
    */
   const timeZone = usePointZone(point);
   const [address, setAddress] = useState("");
+  /**
+   * The town, from the geocoder rather than from the address text.
+   *
+   * This is what puts the listing on a city page. Null where the provider did
+   * not tell us — nothing here guesses, because a listing filed under the
+   * wrong town is worse than one filed under none.
+   */
+  const [place, setPlace] = useState<{
+    city: string | null;
+    state: string | null;
+    postalCode: string | null;
+  } | null>(null);
   const [category, setCategory] = useState<CategoryKey | null>(null);
+  /**
+   * What the room is bookable for, which is not the same question as its
+   * category. A movement studio can be hired for yoga and for pilates, and a
+   * host who teaches neither still knows which their floor suits.
+   */
+  const [suitableFor, setSuitableFor] = useState<string[]>([]);
   const [rate, setRate] = useState("");
   const [capacity, setCapacity] = useState("");
   const [accessType, setAccessType] = useState<AccessTypeKey | null>(null);
@@ -219,6 +238,10 @@ export function AddSpace({
         addressLine: address.trim(),
         lat: point.lat,
         lng: point.lng,
+        city: place?.city ?? null,
+        state: place?.state ?? null,
+        postalCode: place?.postalCode ?? null,
+        suitableFor,
         timeZone,
         // Where the pin sits on the illustrated browse map, which is a separate
         // question from where the studio is — see toBrowsePosition.
@@ -335,10 +358,26 @@ export function AddSpace({
                 // silently keeping them is how a listing ends up on the map a
                 // block from where it says it is.
                 setPoint(null);
+                setPlace(null);
               }}
               onSelect={(picked) => {
                 setAddress(picked.addressLine);
                 setPoint({ lat: picked.lat, lng: picked.lng });
+                /*
+                 * The town is kept against the address, not against the pin.
+                 *
+                 * The map below can move the pin, and it should — it is there
+                 * so a host can put it on the right door. But it opens at
+                 * street zoom, so a drag is a few metres: it corrects which
+                 * entrance, not which town. Re-deriving the town on every drag
+                 * would be a geocoder call per pixel to answer a question that
+                 * has not changed.
+                 */
+                setPlace({
+                  city: picked.city,
+                  state: picked.state,
+                  postalCode: picked.postalCode,
+                });
               }}
             />
             {/*
@@ -385,19 +424,76 @@ export function AddSpace({
               <LocationMap point={point} onPick={point ? setPoint : undefined} />
             </div>
 
-            <SectionLabel className="mt-6">Room type</SectionLabel>
-            <div className="flex flex-wrap gap-2">
+            {/*
+              Two rows of chips, and four labels appear in both: a Treatment
+              Room is a room type above and a use below. That is not a mistake
+              — what a room *is* and what it is *good for* are different
+              questions, and a movement studio really can be marked as good for
+              general movement work. But two identical words on one screen need
+              their groups named, or neither a screen reader nor anybody
+              skimming can tell which "Treatment Room" they are pressing.
+            */}
+            <SectionLabel className="mt-6" id="room-type-label">
+              Room type
+            </SectionLabel>
+            <div className="flex flex-wrap gap-2" role="group" aria-labelledby="room-type-label">
               {CATEGORIES.map((c) => (
                 <Chip
                   key={c.key}
                   active={category === c.key}
-                  onClick={() => setCategory(c.key)}
+                  onClick={() => {
+                    setCategory(c.key);
+                    // The uses below belong to the room type above them, so
+                    // changing it leaves stale ones selected that are no
+                    // longer on screen to unselect.
+                    setSuitableFor([]);
+                  }}
                 >
                   <CatIcon cat={c.key} size={12} />
                   {c.roomType}
                 </Chip>
               ))}
             </div>
+
+            {/*
+              What the room is bookable for, which is a different question from
+              what kind of room it is — and the one a practitioner actually
+              searches with. Nobody looks for a "movement studio"; they look
+              for a pilates studio, and the same floor is both.
+
+              Optional. A host who does not tick anything still gets a
+              listing; it appears in browse and on its own page, and only
+              misses the pages built around a use. Making it required would
+              trade a real listing for a tidier database.
+            */}
+            {category && (
+              <>
+                <SectionLabel className="mt-6" id="good-for-label">
+                  Good for <span className="text-ink-faint">(optional, pick any)</span>
+                </SectionLabel>
+                <div className="flex flex-wrap gap-2" role="group" aria-labelledby="good-for-label">
+                  {spaceTypesFor(category).map((type) => (
+                    <Chip
+                      key={type.slug}
+                      active={suitableFor.includes(type.slug)}
+                      onClick={() =>
+                        setSuitableFor((previous) =>
+                          previous.includes(type.slug)
+                            ? previous.filter((slug) => slug !== type.slug)
+                            : [...previous, type.slug],
+                        )
+                      }
+                    >
+                      {type.label}
+                    </Chip>
+                  ))}
+                </div>
+                <p className="font-body font-normal text-[13px] leading-relaxed mt-2 text-ink-soft">
+                  This is how people find you. Someone searching for a pilates studio near them
+                  sees rooms marked for pilates.
+                </p>
+              </>
+            )}
 
             <div className="grid grid-cols-2 gap-3 mt-5">
               <div>
@@ -880,12 +976,16 @@ export function AddSpace({
 function SectionLabel({
   children,
   className = "",
+  id,
 }: {
   children: React.ReactNode;
   className?: string;
+  /** So a group of chips below can name itself after this heading. */
+  id?: string;
 }) {
   return (
     <p
+      id={id}
       className={`font-body font-semibold text-[12px] uppercase tracking-[0.2em] mb-2 text-sky-text ${className}`}
     >
       {children}

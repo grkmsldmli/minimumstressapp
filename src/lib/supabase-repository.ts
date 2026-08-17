@@ -66,6 +66,7 @@ import type {
 } from "./domain";
 import type { CancellationEvent } from "./reliability";
 import type { CreateBookingInput, Repository, ReviewInput } from "./repository";
+import { knownSpaceTypes } from "./space-types";
 import { type CategoryKey, roomTypeFor } from "./taxonomy";
 import { type ClaimKind, claimType, overstayCents } from "./claims";
 import { type RefundReason, questionFor } from "./refunds";
@@ -93,6 +94,13 @@ interface SpaceRow {
   requirements?: string[];
   house_rules?: string;
   address_line?: string;
+  // Added in 0043. Optional here because the base table and the public view
+  // are both read through this shape, and a row selected before the migration
+  // ran simply has neither.
+  city?: string | null;
+  state?: string | null;
+  postal_code?: string | null;
+  suitable_for?: string[] | null;
   entry_instructions?: string;
   sublease_doc_path?: string;
   insurance_doc_path?: string | null;
@@ -448,6 +456,10 @@ export class SupabaseRepository implements Repository {
       mapX: Number(row.map_x ?? 50),
       mapY: Number(row.map_y ?? 50),
       area: row.area ?? null,
+      // Stored rather than parsed out of `area` — see 0043.
+      city: (row.city as string | null) ?? null,
+      state: (row.state as string | null) ?? null,
+      suitableFor: knownSpaceTypes((row.suitable_for as string[] | null) ?? []),
       access: {
         entrance: (row.entrance_access as AccessDetails["entrance"]) ?? null,
         floor: (row.floor_access as AccessDetails["floor"]) ?? null,
@@ -1110,7 +1122,16 @@ export class SupabaseRepository implements Repository {
         // Private, and only ever read back through space_access_details.
         lat: input.lat,
         lng: input.lng,
-        // The coarse, public derivation of the two above — see 0008.
+        // Public, and the axes every city page is built on — see 0043. Null
+        // where the geocoder did not say: a room with no town appears on no
+        // city page, which is recoverable, rather than on the wrong one.
+        city: input.city,
+        state: input.state,
+        postal_code: input.postalCode,
+        // Filtered against the same list the database constrains, so a stale
+        // tab posting a renamed use loses the use rather than the listing.
+        suitable_for: knownSpaceTypes(input.suitableFor),
+        // The coarse, public derivation of lat/lng — see 0008.
         map_x: input.mapX,
         map_y: input.mapY,
         // The four the listing reads. `accessible` is deliberately left null:

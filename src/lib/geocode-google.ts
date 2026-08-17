@@ -107,6 +107,48 @@ export async function predictAddresses(
   return toSuggestionsFromGoogle(await response.json());
 }
 
+interface GoogleAddressComponent {
+  longText?: string;
+  shortText?: string;
+  types?: string[];
+}
+
+/**
+ * The town, the state and the postcode, taken from Google's own split.
+ *
+ * Not parsed out of the formatted address. That string reads "1840 Gateway Dr,
+ * San Mateo, CA 94404, USA" most of the time and something else the rest of
+ * the time — a business name in front, a suite number, a county instead of a
+ * town — and the comma you count on is the one that moves. Google has already
+ * done this properly and labels each part; asking for the labels costs one
+ * more field on a call we are making anyway.
+ *
+ * `locality` is the town in almost every US address. `postal_town` and
+ * `sublocality` are the fallbacks for the places where it is missing, which is
+ * mostly unincorporated areas. Nothing is invented: an address the provider
+ * cannot place returns null, and the listing simply has no town — which the
+ * city pages read as "not on any of them" rather than as a wrong one.
+ */
+export function placeFromComponents(components: GoogleAddressComponent[] | undefined): {
+  city: string | null;
+  state: string | null;
+  postalCode: string | null;
+} {
+  const find = (type: string, short = false): string | null => {
+    const match = (components ?? []).find((component) => component.types?.includes(type));
+    const value = short ? match?.shortText : match?.longText;
+    return value?.trim() || null;
+  };
+
+  return {
+    city: find("locality") ?? find("postal_town") ?? find("sublocality_level_1"),
+    // Short, so it is "CA" — the form every address in this state is written
+    // in, and what the URLs use.
+    state: find("administrative_area_level_1", true),
+    postalCode: find("postal_code"),
+  };
+}
+
 /**
  * Exchanges a chosen prediction for the coordinates it never carried.
  *
@@ -128,7 +170,12 @@ export async function resolveGooglePlace(
     signal,
     headers: {
       "X-Goog-Api-Key": key,
-      "X-Goog-FieldMask": "location,formattedAddress",
+      // addressComponents is the town, the state and the postcode already
+      // labelled. It is in the same billing tier as the two beside it, so
+      // asking for it costs nothing on a call being made anyway — and it is
+      // the difference between a listing that can be found by place and one
+      // that can only be found by scanning every address.
+      "X-Goog-FieldMask": "location,formattedAddress,addressComponents",
     },
   });
 
@@ -137,6 +184,7 @@ export async function resolveGooglePlace(
   const payload = (await response.json()) as {
     location?: { latitude?: number; longitude?: number };
     formattedAddress?: string;
+    addressComponents?: GoogleAddressComponent[];
   };
 
   const lat = payload.location?.latitude;
@@ -147,5 +195,6 @@ export async function resolveGooglePlace(
     addressLine: payload.formattedAddress?.trim() ?? "",
     lat,
     lng,
+    ...placeFromComponents(payload.addressComponents),
   };
 }

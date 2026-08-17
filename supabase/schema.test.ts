@@ -54,6 +54,23 @@ async function rows<T = Record<string, unknown>>(sql: string, params?: unknown[]
   return result.rows;
 }
 
+/**
+ * A host to hang test listings off, since `spaces.host_id` references one.
+ *
+ * Its own row each time, so a test that inserts four rooms cannot be read as
+ * one host with four rooms by a later test that counts them.
+ */
+let hostSeq = 0;
+async function hostFor(name: string): Promise<string> {
+  hostSeq += 1;
+  const id = `000000ff-0000-4000-8000-${String(hostSeq).padStart(12, "0")}`;
+  await db.exec(`insert into auth.users (id) values ('${id}') on conflict do nothing`);
+  await db.exec(
+    `insert into profiles (id, display_name) values ('${id}', '${name}') on conflict do nothing`,
+  );
+  return id;
+}
+
 describe("migrations apply cleanly", () => {
   it("survives being applied a second time", async () => {
     /**
@@ -339,6 +356,18 @@ describe("private columns stay out of the public views", () => {
       // booking and the safety flag are absent from both of these.
       "public_reviews",
       "space_ratings",
+      /*
+       * How many rooms are bookable in each town, and what they cost.
+       *
+       * Public because the pages built on them are: a search engine reaches
+       * those signed out, which is the whole reason they exist. They aggregate
+       * the same rows spaces_public shows, under the same `status = 'active'`
+       * filter, so they can reveal nothing a listing does not already publish
+       * on its own page — a count, a range, and a median of prices that are
+       * public one at a time.
+       */
+      "city_inventory",
+      "city_type_inventory",
     ];
 
     /**
@@ -518,5 +547,187 @@ describe("money and scheduling constraints", () => {
     );
 
     expect(balance.balance_cents).toBe(332);
+  });
+});
+/**
+ * 0043 — the two axes every generated page is built on.
+ *
+ * The town, and what a room is bookable for. Neither was stored: `spaces` had
+ * an address string and four coarse categories, and "the pilates rooms in San
+ * Mateo" is not a question either can answer. These columns are what make a
+ * page like that generable at all — so what is checked here is that they
+ * exist, that they can be grouped by, and that adding them did not quietly
+ * widen what the public can see.
+ */
+describe("0043 — where a space is and what it suits", () => {
+  it("stores the town, the state and the postcode as columns", async () => {
+    const columns = await rows<{ column_name: string; data_type: string }>(
+      `select column_name, data_type from information_schema.columns
+       where table_name = 'spaces'
+         and column_name in ('city', 'state', 'postal_code', 'suitable_for')
+       order by column_name`,
+    );
+
+    expect(columns.map((c) => c.column_name)).toEqual([
+      "city",
+      "postal_code",
+      "state",
+      "suitable_for",
+    ]);
+    // An array, because a room is bookable for more than one thing — which is
+    // also what puts one listing on several city pages.
+    expect(columns.find((c) => c.column_name === "suitable_for")?.data_type).toBe("ARRAY");
+  });
+
+  /**
+   * The uses are constrained, and that is the point rather than an oversight.
+   *
+   * Every value in this column becomes a URL segment. A typo reaching it is a
+   * page that quietly splits the traffic of a real one, and nothing about a
+   * text[] would ever object — so the database objects, and adding a use is a
+   * migration on purpose. src/lib/space-types.test.ts holds the other half:
+   * that the list here and the list the app offers are the same list.
+   */
+  it("refuses a use that is not on the list", async () => {
+    const host = await hostFor("Constraint Host");
+
+    const insert = (uses: string) => `
+      insert into spaces (
+        host_id, name, category, hourly_rate_cents, capacity, access_type,
+        entry_instructions, address_line, sublease_doc_path, legal_ack_at,
+        timezone, suitable_for
+      ) values (
+        '${host}', 'Room', 'physical', 4000, 3, 'keypad', 'Side door',
+        '1 Test St, San Mateo, CA 94404, USA', 'lease.pdf', now(),
+        'America/Los_Angeles', ${uses}
+      )`;
+
+    await expect(db.exec(insert("array['therapy-office']"))).rejects.toThrow();
+    await expect(db.exec(insert("array['pilates-studio', 'yoga-studio']"))).resolves.toBeDefined();
+  });
+
+  /**
+   * Both indexes are partial on `status = 'active'`.
+   *
+   * Every query that will use them is a public page asking what is bookable in
+   * a town, and a pending or delisted room is never part of that answer. A
+   * partial index also stays small as rejected listings accumulate — which
+   * they do, and which the pages never look at.
+   */
+  it("indexes what the pages filter on", async () => {
+    const indexes = await rows<{ indexname: string; indexdef: string }>(
+      `select indexname, indexdef from pg_indexes where tablename = 'spaces'
+         and indexname in ('spaces_active_place_idx', 'spaces_active_suitable_for_idx')
+       order by indexname`,
+    );
+
+    expect(indexes.map((i) => i.indexname)).toEqual([
+      "spaces_active_place_idx",
+      "spaces_active_suitable_for_idx",
+    ]);
+    for (const index of indexes) {
+      expect(index.indexdef, index.indexname).toContain("status = 'active'");
+    }
+  });
+
+  /**
+   * The count the indexing rule reads.
+   *
+   * A city page is only worth indexing when there is something on it. Thin
+   * pages are how programmatic SEO fails: a thousand near-empty addresses
+   * teach a search engine that the site is mostly nothing, and that judgement
+   * lands on the pages that are not. The count lives in the database so the
+   * sitemap, the page's own robots tag and the internal links all read one
+   * number — three separate counts drift, and it surfaces as a sitemap
+   * advertising pages that tell the crawler to go away.
+   */
+  it("counts only what somebody could actually book", async () => {
+    const host = await hostFor("Inventory Host");
+
+    const add = (status: string, cents: number) => `
+      insert into spaces (
+        host_id, name, category, hourly_rate_cents, capacity, access_type,
+        entry_instructions, address_line, sublease_doc_path, legal_ack_at,
+        timezone, city, state, suitable_for, status,
+        sublease_doc_state, sublease_doc_reviewed_at
+      ) values (
+        '${host}', 'Room', 'physical', ${cents}, 3, 'keypad', 'Side door',
+        '1 Test St', 'lease.pdf', now(), 'America/Los_Angeles',
+        'Belmont', 'CA', array['pilates-studio'], '${status}',
+        -- 0018 refuses an active listing whose lease has not been checked,
+        -- which is the rule that keeps unreviewed rooms out of Discover. A
+        -- test row is a listing like any other and has to satisfy it.
+        'verified', now()
+      )`;
+
+    await db.exec(add("active", 3000));
+    await db.exec(add("active", 5000));
+    // Neither of these can be booked, so neither belongs on a page.
+    await db.exec(add("pending", 9900));
+    await db.exec(add("delisted", 100));
+
+    const [belmont] = await rows<{
+      space_count: number;
+      median_cents: number;
+      max_cents: number;
+    }>(
+      `select space_count, median_cents, max_cents from city_inventory
+       where city = 'Belmont' and state = 'CA'`,
+    );
+
+    expect(belmont.space_count).toBe(2);
+    // The pending room is the expensive one. A page quoting it would be
+    // quoting a price nobody can pay.
+    expect(belmont.max_cents).toBe(5000);
+    expect(belmont.median_cents).toBe(4000);
+  });
+
+  it("puts a room on a page for every use it is marked for", async () => {
+    const host = await hostFor("Multi Use Host");
+    await db.exec(`
+      insert into spaces (
+        host_id, name, category, hourly_rate_cents, capacity, access_type,
+        entry_instructions, address_line, sublease_doc_path, legal_ack_at,
+        timezone, city, state, suitable_for, status,
+        sublease_doc_state, sublease_doc_reviewed_at
+      ) values (
+        '${host}', 'Both', 'physical', 4000, 3, 'keypad', 'Side door',
+        '2 Test St', 'lease.pdf', now(), 'America/Los_Angeles',
+        'Foster City', 'CA', array['pilates-studio', 'yoga-studio'], 'active', 'verified', now()
+      )`);
+
+    const counts = await rows<{ space_type: string; space_count: number }>(
+      `select space_type, space_count from city_type_inventory
+       where city = 'Foster City' order by space_type`,
+    );
+
+    // One room, two pages. This is the reason the column is an array: at this
+    // stage, pages per listing is the number that matters.
+    expect(counts).toEqual([
+      { space_type: "pilates-studio", space_count: 1 },
+      { space_type: "yoga-studio", space_count: 1 },
+    ]);
+  });
+
+  /**
+   * A room the geocoder could not place is on no page rather than a wrong one.
+   *
+   * Nothing derives a town from the address string, which is what makes this
+   * safe: the comma you would have to count on is the one that moves.
+   */
+  it("leaves a room with no town off the city pages entirely", async () => {
+    const host = await hostFor("Placeless Host");
+    await db.exec(`
+      insert into spaces (
+        host_id, name, category, hourly_rate_cents, capacity, access_type,
+        entry_instructions, address_line, sublease_doc_path, legal_ack_at,
+        timezone, status, sublease_doc_state, sublease_doc_reviewed_at
+      ) values (
+        '${host}', 'Nowhere', 'physical', 4000, 3, 'keypad', 'Side door',
+        'A place with no comma', 'lease.pdf', now(), 'America/Los_Angeles',
+        'active', 'verified', now()
+      )`);
+
+    expect(await rows("select * from city_inventory where city is null")).toEqual([]);
   });
 });

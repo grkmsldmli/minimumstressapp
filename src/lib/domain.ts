@@ -154,6 +154,25 @@ export interface PublicSpace {
    */
   area: string | null;
   /**
+   * The town and state on their own, which `area` cannot answer.
+   *
+   * `area` is one formatted string — "San Mateo, CA 94404, USA" — good to
+   * print and useless to group by. These are what a page is built from: the
+   * rooms in San Mateo, the heading that names it, the URL it lives at. Null
+   * where the geocoder did not say, which puts the listing on no city page
+   * rather than on a wrong one.
+   */
+  city: string | null;
+  state: string | null;
+  /**
+   * What the room is bookable for — slugs from lib/space-types.
+   *
+   * Empty is normal and allowed: a host who ticked nothing still has a
+   * listing that browses and books. It just does not appear on the pages
+   * built around a particular use.
+   */
+  suitableFor: string[];
+  /**
    * The street, and where it is on a map.
    *
    * Public because every listing here is a retail studio whose address is
@@ -426,6 +445,26 @@ export interface NewSpaceInput {
   /** Real coordinates, as private as the address they came from. */
   lat: number;
   lng: number;
+  /**
+   * The town, the state and the postcode, split by the geocoder.
+   *
+   * Public, unlike the three above — a listing already says which town it is
+   * in, and these are the columns the city pages are built on. Null where the
+   * provider did not return one. Nothing derives them from `addressLine`: a
+   * town read off the wrong comma files a room under a place it is not in, and
+   * every page built on it is then confidently wrong.
+   */
+  city: string | null;
+  state: string | null;
+  postalCode: string | null;
+  /**
+   * What the room is bookable for — slugs from lib/space-types.
+   *
+   * Several, because rooms are. A finer axis than `category`: a movement
+   * studio genuinely suits yoga, pilates and mobility work alike, and one
+   * label would be both less true and fewer pages for the same room.
+   */
+  suitableFor: string[];
   mapX: number;
   mapY: number;
   /** Resolved from the coordinates above, server-side. See zone-for-point.ts. */

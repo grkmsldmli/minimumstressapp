@@ -47,6 +47,7 @@ import type { CreateBookingInput, Repository } from "./repository";
 import type { AccessDetails } from "./access-details";
 import type { MediaKind, SpaceEdit } from "./domain";
 import type { NotificationEntry } from "./notify/history";
+import { knownSpaceTypes } from "./space-types";
 import { type CategoryKey, roomTypeFor } from "./taxonomy";
 import { SESSION_MINUTES } from "./session";
 import { FALLBACK_ZONE, addDays, civilIn } from "./timezone";
@@ -80,6 +81,8 @@ const everyDay = (startHour: number, endHour: number) =>
 interface SeedSpace {
   name: string;
   category: CategoryKey;
+  /** What the room is bookable for — slugs from lib/space-types. */
+  suitableFor: string[];
   /**
    * The host's rate — what they receive. The prototype stored the all-in
    * price here and divided it back out by 1.2, which shorted the host and
@@ -108,6 +111,7 @@ interface SeedSpace {
 const SEED_SPACES: SeedSpace[] = [
   {
     name: "Willow",
+    suitableFor: ["pilates-studio", "movement-studio"],
     category: "physical",
     hourlyRateCents: 4500,
     capacity: 3,
@@ -131,6 +135,7 @@ const SEED_SPACES: SeedSpace[] = [
   },
   {
     name: "The Annex",
+    suitableFor: ["consultation-room"],
     category: "social",
     hourlyRateCents: 2200,
     capacity: 3,
@@ -154,6 +159,7 @@ const SEED_SPACES: SeedSpace[] = [
   },
   {
     name: "Still Room",
+    suitableFor: ["meditation-room", "reiki-room"],
     category: "spirit",
     hourlyRateCents: 2600,
     capacity: 6,
@@ -177,6 +183,7 @@ const SEED_SPACES: SeedSpace[] = [
   },
   {
     name: "Sage House",
+    suitableFor: ["massage-room", "treatment-room", "acupuncture-room"],
     category: "traditional",
     hourlyRateCents: 3500,
     capacity: 2,
@@ -199,6 +206,7 @@ const SEED_SPACES: SeedSpace[] = [
   },
   {
     name: "Meridian",
+    suitableFor: ["yoga-studio", "movement-studio"],
     category: "physical",
     hourlyRateCents: 3000,
     capacity: 8,
@@ -222,6 +230,7 @@ const SEED_SPACES: SeedSpace[] = [
   },
   {
     name: "Hearth",
+    suitableFor: ["meditation-room"],
     category: "spirit",
     hourlyRateCents: 2400,
     capacity: 4,
@@ -320,6 +329,11 @@ export class MockRepository implements Repository {
         mapX: seed.mapX,
         mapY: seed.mapY,
         area: seed.area,
+        // Every seed room is in the same town; the real repository reads
+        // these from columns the geocoder filled — see 0043.
+        city: "San Mateo",
+        state: "CA",
+        suitableFor: seed.suitableFor,
         addressLine: seed.addressLine,
         lat: seed.lat,
         lng: seed.lng,
@@ -737,6 +751,12 @@ export class MockRepository implements Repository {
       mapX: input.mapX,
       mapY: input.mapY,
       area: null,
+      // Kept, so the mock drops nothing the form collects. A field the real
+      // repository stores and this one silently discards is a bug that can
+      // only ever be found in production.
+      city: input.city,
+      state: input.state,
+      suitableFor: knownSpaceTypes(input.suitableFor),
       // The old boolean, still on the type and still written by nothing. See
       // the note on NewSpaceInput.access.
       accessible: null,

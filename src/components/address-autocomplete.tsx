@@ -130,6 +130,14 @@ export function AddressAutocomplete({
         addressLine: suggestion.addressLine,
         lat: suggestion.lat,
         lng: suggestion.lng,
+        // A suggestion that arrived with coordinates came from a geocoder that
+        // was not asked to break the address up, so there is nothing to pass
+        // on. Null rather than a town picked out of the formatted line: the
+        // listing is then on no city page, which is recoverable, instead of on
+        // the wrong one, which nobody notices.
+        city: null,
+        state: null,
+        postalCode: null,
       });
       sessionRef.current = newSession();
       return;

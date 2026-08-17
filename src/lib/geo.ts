@@ -41,6 +41,22 @@ export interface ResolvedAddress {
   addressLine: string;
   lat: number;
   lng: number;
+  /**
+   * The town, the state and the postcode, as the geocoder itself split them.
+   *
+   * Separate from `addressLine`, which is one formatted string. These are the
+   * parts a query can ask for, and "the active rooms in San Mateo" is not a
+   * question you can put to a formatted string without a LIKE across every
+   * row — which is what the city pages are built on.
+   *
+   * Null where the provider did not return one, rather than picked out of the
+   * formatted line. A town guessed from the wrong comma files a listing under
+   * a place it is not in, and every page built on that column is then
+   * confidently wrong about it.
+   */
+  city: string | null;
+  state: string | null;
+  postalCode: string | null;
 }
 
 export const TILE_SIZE = 256;

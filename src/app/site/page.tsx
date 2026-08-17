@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import type { Metadata } from "next";
 
@@ -44,6 +45,11 @@ export const metadata: Metadata = {
     "by the hour. No lease, no deposit — or list the space you already have.",
 };
 
+/*
+ * Five, not six. The open-plan room came out of the rotation when it took a
+ * place of its own further down the page — the same photograph twice on one
+ * page reads as a company with five photographs pretending to have six.
+ */
 const HERO: Slide[] = [
   {
     src: "/photos/room-treatment.webp",
@@ -69,11 +75,6 @@ const HERO: Slide[] = [
     src: "/photos/room-consulting.webp",
     label: "Consulting space",
     alt: "A consulting room with two wooden-framed chairs facing each other over a low table.",
-  },
-  {
-    src: "/photos/room-open-plan.webp",
-    label: "Open space",
-    alt: "An open room with a treatment table at one end and a mat at the other.",
   },
 ];
 
@@ -298,46 +299,70 @@ function ForPractitioners() {
   return (
     <section className="mx-auto max-w-6xl px-6 py-20">
       <Reveal>
-        <div className="max-w-2xl">
-          <Eyebrow>If you need a space</Eyebrow>
-          <h2
-            className={`mt-4 ${TYPE.h2}`}
-            style={{ fontFamily: "var(--font-dm-serif)", color: COLOUR.ink }}
-          >
-            A professional room,
-            <br />
-            without the lease.
-          </h2>
-          <p className={`mt-5 ${TYPE.body}`} style={{ color: COLOUR.body }}>
-            Work for yourself without signing for a studio you use six hours a week. Book the hour,
-            pay the price you were shown, and let yourself in — the door code arrives the day
-            before.
-          </p>
+        {/*
+          A photograph beside the argument rather than under it.
 
-          <ul className="mt-7 space-y-3">
-            {[
-              "Book by the hour, or the same hour every week",
-              "Choose the town you actually work in",
-              "See your own clients, in your own way",
-              "Cancel 24 hours ahead and the money comes back",
-            ].map((line) => (
-              <li key={line} className={`flex gap-3.5 ${TYPE.body}`} style={{ color: COLOUR.body }}>
-                <span
-                  className="mt-2.5 h-2 w-2 shrink-0 rounded-full"
-                  style={{ backgroundColor: COLOUR.accent }}
-                />
-                <span>{line}</span>
-              </li>
-            ))}
-          </ul>
+          Both of these sections were a column of text with the right-hand half
+          of the page empty, which reads as a page that stopped rather than one
+          that ended. The pictures are not decoration here: this one is the
+          sentence "see your own clients, in your own way" as a thing rather
+          than a claim.
+        */}
+        <div className="grid items-center gap-10 lg:grid-cols-[1.05fr_1fr] lg:gap-14">
+          <div>
+            <Eyebrow>If you need a space</Eyebrow>
+            <h2
+              className={`mt-4 ${TYPE.h2}`}
+              style={{ fontFamily: "var(--font-dm-serif)", color: COLOUR.ink }}
+            >
+              A professional room,
+              <br />
+              without the lease.
+            </h2>
+            <p className={`mt-5 ${TYPE.body}`} style={{ color: COLOUR.body }}>
+              Work for yourself without signing for a studio you use six hours a week. Book the
+              hour, pay the price you were shown, and let yourself in — the door code arrives the
+              day before.
+            </p>
 
-          <Link
-            href="/spaces"
-            className="mt-8 inline-block rounded-full px-8 py-4 text-[16px] font-medium text-white transition-transform duration-200 hover:-translate-y-0.5"
-            style={{ backgroundColor: COLOUR.ink }}
-          >
-            Find a space
-          </Link>
+            <ul className="mt-7 space-y-3">
+              {[
+                "Book by the hour, or the same hour every week",
+                "Choose the town you actually work in",
+                "See your own clients, in your own way",
+                "Cancel 24 hours ahead and the money comes back",
+              ].map((line) => (
+                <li key={line} className={`flex gap-3.5 ${TYPE.body}`} style={{ color: COLOUR.body }}>
+                  <span
+                    className="mt-2.5 h-2 w-2 shrink-0 rounded-full"
+                    style={{ backgroundColor: COLOUR.accent }}
+                  />
+                  <span>{line}</span>
+                </li>
+              ))}
+            </ul>
+
+            <Link
+              href="/spaces"
+              className="mt-8 inline-block rounded-full px-8 py-4 text-[16px] font-medium text-white transition-transform duration-200 hover:-translate-y-0.5"
+              style={{ backgroundColor: COLOUR.ink }}
+            >
+              Find a space
+            </Link>
+          </div>
+
+          {/* Second in the markup, so a phone reads the argument before the
+              picture — the text is what somebody scrolled here for. */}
+          <div className="overflow-hidden rounded-3xl" style={{ border: `1px solid ${COLOUR.line}` }}>
+            <Image
+              src="/photos/practitioner-session.webp"
+              alt="A practitioner kneeling beside a client on a mat, working on their leg, in a bright room with a window onto trees."
+              width={1672}
+              height={941}
+              sizes="(min-width: 1024px) 46vw, 100vw"
+              className="aspect-[4/3] h-full w-full object-cover"
+            />
+          </div>
         </div>
       </Reveal>
     </section>
@@ -356,34 +381,63 @@ function ForHosts() {
     <section id="hosts" className="py-20 text-white" style={{ backgroundColor: COLOUR.dark }}>
       <div className="mx-auto max-w-6xl px-6">
         <Reveal>
-          <p className={TYPE.eyebrow} style={{ color: COLOUR.onDark }}>
-            If you have one
-          </p>
-          <h2 className={`mt-4 ${TYPE.h2}`} style={{ fontFamily: "var(--font-dm-serif)" }}>
-            Your space already exists.
-            <br />
-            Let the empty hours earn.
-          </h2>
-          <p className={`mt-5 max-w-2xl ${TYPE.body}`} style={{ color: "rgba(255,255,255,.82)" }}>
-            Set your hours and your rate — and keep the rate. The fee is added on top and the
-            practitioner pays it, so what you charge is what reaches your bank after each session.
-          </p>
+          <div className="grid items-center gap-10 lg:grid-cols-[1fr_1.05fr] lg:gap-14">
+            {/*
+              An empty room, and the emptiness is the argument. Every other
+              picture on this page has somebody in it; this one is a made-up
+              treatment table with nobody at it and the sun going to waste,
+              which is the whole of what the section says.
 
-          <div className="mt-8 flex flex-wrap gap-3">
-            <Link
-              href="/rent-out-your"
-              className="rounded-full bg-white px-8 py-4 text-[16px] font-medium transition-transform duration-200 hover:-translate-y-0.5"
-              style={{ color: COLOUR.ink }}
+              First in the markup and second on a phone — `order` keeps the
+              heading above the photograph on a narrow screen without moving
+              the picture to the right on a wide one.
+            */}
+            <div
+              className="order-2 overflow-hidden rounded-3xl lg:order-1"
+              style={{ border: "1px solid rgba(255,255,255,.16)" }}
             >
-              See what your space could earn
-            </Link>
-            <Link
-              href="/for-hosts"
-              className="rounded-full border px-8 py-4 text-[16px] font-medium text-white"
-              style={{ borderColor: "rgba(255,255,255,.35)" }}
-            >
-              How hosting works
-            </Link>
+              <Image
+                src="/photos/room-open-plan.webp"
+                alt="An empty open room in afternoon sun, with a made treatment table at one end and a mat at the other."
+                width={1672}
+                height={941}
+                sizes="(min-width: 1024px) 46vw, 100vw"
+                className="aspect-[4/3] h-full w-full object-cover"
+              />
+            </div>
+
+            <div className="order-1 lg:order-2">
+              <p className={TYPE.eyebrow} style={{ color: COLOUR.onDark }}>
+                If you have one
+              </p>
+              <h2 className={`mt-4 ${TYPE.h2}`} style={{ fontFamily: "var(--font-dm-serif)" }}>
+                Your space already exists.
+                <br />
+                Let the empty hours earn.
+              </h2>
+              <p className={`mt-5 ${TYPE.body}`} style={{ color: "rgba(255,255,255,.82)" }}>
+                Set your hours and your rate — and keep the rate. The fee is added on top and the
+                practitioner pays it, so what you charge is what reaches your bank after each
+                session.
+              </p>
+
+              <div className="mt-8 flex flex-wrap gap-3">
+                <Link
+                  href="/rent-out-your"
+                  className="rounded-full bg-white px-8 py-4 text-[16px] font-medium transition-transform duration-200 hover:-translate-y-0.5"
+                  style={{ color: COLOUR.ink }}
+                >
+                  See what your space could earn
+                </Link>
+                <Link
+                  href="/for-hosts"
+                  className="rounded-full border px-8 py-4 text-[16px] font-medium text-white"
+                  style={{ borderColor: "rgba(255,255,255,.35)" }}
+                >
+                  How hosting works
+                </Link>
+              </div>
+            </div>
           </div>
         </Reveal>
       </div>

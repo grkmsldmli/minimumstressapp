@@ -120,35 +120,10 @@ const GROUPS = CATEGORIES.map((category) => ({
   gradient: category.gradient,
 }));
 
-/**
- * The three steps, each with the fact somebody actually wants underneath it.
- *
- * They were three titles and three sentences, which is a diagram of a
- * marketplace rather than an answer about this one. The `detail` line is the
- * question a person is really asking at that step — when am I charged, when do
- * I get in, do I have to sign up to look — and each is checked rather than
- * written: the card is charged at booking (0030) and the code appears
- * twenty-four hours ahead (0039).
- */
 const STEPS = [
-  {
-    n: "1",
-    title: "Search",
-    body: "The kind of room you need, in the town you work in.",
-    detail: "Looking is open. An account is for booking, not for browsing.",
-  },
-  {
-    n: "2",
-    title: "Book",
-    body: "Pick the hours. You pay the price on the listing, and nothing else.",
-    detail: "Your card is charged when you book, not on the day.",
-  },
-  {
-    n: "3",
-    title: "Work",
-    body: "Let yourself in with the code, and see your own clients.",
-    detail: "The door code appears 24 hours before your hour.",
-  },
+  { n: "1", title: "Search", body: "The kind of room you need, in the town you work in." },
+  { n: "2", title: "Book", body: "Pick the hours. You pay the price on the listing, and nothing else." },
+  { n: "3", title: "Work", body: "Let yourself in with the code, and see your own clients." },
 ];
 
 const TRUST = [
@@ -344,12 +319,6 @@ function HowItWorks() {
               </h3>
               <p className={`mt-2 ${TYPE.body}`} style={{ color: COLOUR.body }}>
                 {step.body}
-              </p>
-              <p
-                className={`mt-3 border-t pt-3 ${TYPE.small}`}
-                style={{ color: COLOUR.muted, borderColor: COLOUR.line }}
-              >
-                {step.detail}
               </p>
             </Reveal>
           ))}

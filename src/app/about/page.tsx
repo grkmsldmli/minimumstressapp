@@ -32,7 +32,7 @@ export const metadata: Metadata = {
 const STEPS = [
   {
     title: "Find a room",
-    body: "Search by what you practise and where you are. Listings show the room, the rate, what is in it, and how you get in — the neighbourhood, not the street.",
+    body: "Search by what you practise and where you are. Listings show the room, the rate, the address, what is in it and what it suits — everything except how to get through the door.",
   },
   {
     title: "Book the hour",
@@ -40,7 +40,7 @@ const STEPS = [
   },
   {
     title: "Let yourself in",
-    body: "The full address, the entry instructions and the door code are released to you shortly before your session, and to nobody else.",
+    body: "The entry instructions and the door code are released to you 24 hours before your session, and to nobody else.",
   },
   {
     title: "Both sides review",
@@ -146,12 +146,14 @@ export default function About() {
             </p>
           </Section>
 
-          <Section title="Privacy of a room's address">
+          <Section title="What is public, and what is not">
             <p className="font-body font-normal text-[15px] leading-relaxed text-ink-muted">
-              A listing shows its neighbourhood, never its street, until it has been booked. The
-              exact address, the entry instructions and any door code go to the practitioner who
-              booked that session, shortly before it starts. Hosts hand us verification documents;
-              those are read by us and shown to nobody.
+              The address is on the listing — it is already on a map and on the studio&rsquo;s own
+              website, and hiding it left a practitioner booking an afternoon somewhere they could
+              not place. How to get in is the part that is not public: the entry instructions and
+              any door code go only to whoever paid for that hour, 24 hours before it starts. Hosts
+              hand us a lease or ownership document before a room goes live; those are read by us
+              and shown to nobody.
             </p>
           </Section>
 

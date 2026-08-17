@@ -50,6 +50,19 @@ export function sitemapPaths(): string[] {
      */
     "/rent-out-your",
     ...hostPages().map((page) => `/rent-out-your/${page.type.slug}`),
+    /*
+     * The written pages a marketplace is expected to have. Each is a real page
+     * with its own subject rather than a redirect to the terms — three of them
+     * were specified as separate policies (cancellation, refunds, the wellness
+     * disclaimer) and are deliberately absent, because all three already live
+     * inside the terms and three labels pointing at one page is three ways of
+     * saying Terms.
+     */
+    "/pricing",
+    "/trust",
+    "/faq",
+    "/contact",
+    "/privacy-choices",
     // The parent of the generated addresses. It exists whether or not any of
     // them do, and says plainly that nothing is listed yet when nothing is.
     "/spaces",

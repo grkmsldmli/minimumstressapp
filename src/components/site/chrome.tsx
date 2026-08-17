@@ -84,23 +84,23 @@ export function SiteHeader({ width = "wide" }: { width?: Width }) {
  * surface: it is where somebody who did not find what they came for goes next,
  * and it is the site telling a crawler which pages it considers its own.
  *
- * Every link here goes somewhere that exists. That sounds like a low bar and
- * is the reason this is shorter than it was asked to be — a fuller structure
- * was specified, with Recurring Bookings, Pricing & Fees, Trust & Safety,
- * Partnerships, a Cancellation Policy, a Refund Policy and a Wellness
- * Disclaimer among others, and about a dozen of those have no page behind
- * them. A footer full of 404s is worse than a short one on every count: a
- * reader loses trust the first time one dead-ends, and a crawler learns the
- * site does not know what it has.
+ * Every link here goes somewhere that exists, which is the only rule it has.
+ * The footer is on every page, so one dead link in it is a dead link
+ * everywhere: a reader stops trusting the rest the first time one dead-ends,
+ * and a crawler learns the site does not know what it has.
  *
- * Two were rescued cheaply rather than dropped, because the content already
- * existed and only lacked an address: "How it works" and "Recurring bookings"
- * are sections of the homepage, and the host FAQ is a section of /for-hosts.
- * They have ids now.
+ * The structure was specified with about a dozen destinations that had no page
+ * behind them. Rather than drop them, most were built — pricing, trust and
+ * safety, the questions, contact, and the Californian privacy-choices page —
+ * and two were rescued for the cost of an id, because "How it works" and
+ * "Recurring bookings" were already sections of the homepage and the host FAQ
+ * was already a section of /for-hosts.
  *
- * The rest are worth building — several of them are pages a marketplace is
- * expected to have, and one, a Californian "Your privacy choices", may not be
- * optional for long. They are absent here rather than fabricated.
+ * Three are still deliberately missing. A Cancellation Policy, a Refund Policy
+ * and a Wellness Disclaimer all live inside the terms already, and three
+ * labels pointing at one page is three ways of saying Terms. Partnerships is
+ * absent because there is no partnership programme — a page saying "write to
+ * us" under that heading is a link that wastes somebody's click.
  */
 
 /** The four rooms, in the words the categories now use. */
@@ -116,6 +116,8 @@ const FOR_PRACTITIONERS = [
   { label: "How it works", href: "/#how-it-works" },
   { label: "Browse spaces", href: "/spaces" },
   { label: "Recurring bookings", href: "/#recurring" },
+  { label: "Pricing & fees", href: "/pricing" },
+  { label: "Questions", href: "/faq" },
   /*
    * The eleven wellness tools, kept and kept out of the way. They were the
    * whole of the old site and they are not the product now — a footer is
@@ -127,14 +129,23 @@ const FOR_PRACTITIONERS = [
 const FOR_HOSTS = [
   { label: "List your space", href: `${APP_URL}?list=1` },
   { label: "How hosting works", href: "/for-hosts" },
+  { label: "Pricing & fees", href: "/pricing" },
+  { label: "Trust & safety", href: "/trust" },
   { label: "Host FAQ", href: "/for-hosts#faq" },
 ];
 
 const COMPANY = [
   { label: "About", href: "/about" },
-  { label: "Contact", href: `mailto:${SUPPORT_EMAIL}` },
+  { label: "Contact", href: "/contact" },
+  { label: "Trust & safety", href: "/trust" },
   { label: "Terms", href: `${APP_URL}/terms` },
   { label: "Privacy", href: `${APP_URL}/privacy` },
+  /*
+   * A legal fixture for a company operating in California, and one worth
+   * linking rather than burying: the page says plainly that there is nothing
+   * to opt out of, which is only credible if it is easy to find.
+   */
+  { label: "Your privacy choices", href: "/privacy-choices" },
 ];
 
 function Column({
@@ -246,8 +257,9 @@ export function SiteFooter({ width = "wide" }: { width?: Width }) {
 
           <nav className={`flex flex-wrap gap-6 ${TYPE.small}`}>
             <FooterLink href={`${APP_URL}/privacy`}>Privacy</FooterLink>
+            <FooterLink href="/privacy-choices">Your privacy choices</FooterLink>
             <FooterLink href={`${APP_URL}/terms`}>Terms</FooterLink>
-            <FooterLink href={`mailto:${SUPPORT_EMAIL}`}>Support</FooterLink>
+            <FooterLink href="/contact">Support</FooterLink>
           </nav>
         </div>
       </div>

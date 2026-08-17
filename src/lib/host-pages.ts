@@ -1,0 +1,259 @@
+import { SPACE_TYPES, type SpaceType, spaceTypeBySlug } from "./space-types";
+
+/**
+ * One page per kind of room, written rather than templated.
+ *
+ * These are the first pages here that exist to be found rather than to be
+ * navigated to, and the temptation with ten of them is obvious: write one and
+ * swap the noun. That produces ten pages a search engine reads as one, picks a
+ * winner from, and discounts the rest of — which is the standard way this kind
+ * of page fails, and the reason "programmatic SEO" has the reputation it does.
+ *
+ * So each entry below says something only true of that room. Who actually
+ * rents one, what makes a particular one bookable, and what a host with that
+ * room specifically tends to be worried about. A reader should be able to tell
+ * two of these apart with the headings covered.
+ *
+ * They also carry no inventory. That is the point of doing them first: there
+ * are no listings yet, so every page built around "rooms in San Mateo" would
+ * be empty and correctly refuse to be indexed — while these can go up today
+ * and start the months of ranking they need, and what they bring back is the
+ * supply that makes the rest of it possible.
+ */
+
+export interface HostPage {
+  /** The room this page is about. */
+  type: SpaceType;
+  /** The <title>, which is also most of what a search result shows. */
+  title: string;
+  /** The h1. Shorter than the title, and not a repeat of it. */
+  heading: string;
+  /** The line under the heading. */
+  standfirst: string;
+  /** Who is looking for a room like this, and why they cannot just get a lease. */
+  whoRents: string;
+  /** What makes this particular kind of room bookable. Specific, not generic. */
+  whatItNeeds: string[];
+  /** The thing a host with this room worries about, answered. */
+  concern: { question: string; answer: string };
+}
+
+const COPY: Record<string, Omit<HostPage, "type">> = {
+  "pilates-studio": {
+    title: "Rent Out Your Pilates Studio by the Hour",
+    heading: "Your reformers, on the days you are not teaching",
+    standfirst:
+      "Instructors need a studio for four hours on a Tuesday, not a lease. If yours is dark half the week, those hours have a price.",
+    whoRents:
+      "Almost always a self-employed instructor with a client list and nowhere to put it. They have built up enough private clients to leave a big studio's rota but nowhere near enough to sign for a space of their own, and the maths in between is brutal: a small studio lease in the Bay Area runs into thousands a month before a single reformer is bought. Renting your equipped studio for the six hours a week they actually teach is the only version of the sum that works.",
+    whatItNeeds: [
+      "At least one reformer, and it is worth saying how many and which make — instructors teach differently on a Balanced Body than on an Allegro, and they will ask.",
+      "Room to walk around the equipment with a client on it.",
+      "Somewhere to leave a bag and change, even if it is a corner and a hook.",
+      "Mirrors help and are not essential. Instructors correcting by hand care more about the floor and the light.",
+    ],
+    concern: {
+      question: "What about my equipment?",
+      answer:
+        "You say what may be used and what may not, in the listing, and it is on the page before anybody books. Springs, straps and boxes are the usual line — most hosts let the reformers be used and keep the small apparatus out of it. Every practitioner here holds their own insurance, and every booking is a named person with a card on file, not a stranger with a door code.",
+    },
+  },
+
+  "yoga-studio": {
+    title: "Rent Out Your Yoga Studio by the Hour",
+    heading: "A quiet floor is worth more than an empty one",
+    standfirst:
+      "Teachers want a room for one class a week. A studio with mornings free is a studio with income it is not taking.",
+    whoRents:
+      "Teachers running their own small classes, and one-to-one instructors whose clients will not go to a gym. What they need is unglamorous and specific: a clean floor big enough for six mats, a door that shuts, and a time slot they can promise the same people every week. Most of them are working around a room they currently borrow, which is why the thing they value most in a listing is that the hour is actually theirs.",
+    whatItNeeds: [
+      "Floor space and a number: how many mats fit, laid out properly rather than touching.",
+      "A floor that is warm underfoot, or the room heated. It is the first thing a class complains about.",
+      "Quiet enough that a room of people can hear one voice — say what is above and below.",
+      "Somewhere to leave shoes at the door, and props if you have them.",
+    ],
+    concern: {
+      question: "Will there be people coming and going?",
+      answer:
+        "A booking is an hour, and the buffer you set either side of it is when the room is empty. You choose the hours it can be booked at all — so if the building is quiet before nine, the room simply is not available before nine. Nothing is bookable in hours you have not opened.",
+    },
+  },
+
+  "movement-studio": {
+    title: "Rent Out Your Movement Studio by the Hour",
+    heading: "An open floor books more often than a specialised one",
+    standfirst:
+      "Mobility coaches, tai chi teachers, personal trainers. A plain room with space to move suits more people than a room built for one thing.",
+    whoRents:
+      "The broadest group on this site, which is what makes an open floor worth listing: mobility and rehab coaches, tai chi and qigong teachers, personal trainers who have left the gym, movement therapists. None of them need much and all of them need the same thing — floor, air, and an hour nobody walks through.",
+    whatItNeeds: [
+      "Clear floor, and the dimensions. Roughly is fine; people plan a session around it.",
+      "Nothing fixed in the middle of the room, which is the thing photographs hide.",
+      "Ventilation. A closed room with four people working in it is a different room after twenty minutes.",
+      "Somewhere to put shoes, bags and a water bottle.",
+    ],
+    concern: {
+      question: "My room is not really a studio.",
+      answer:
+        "Most of the good ones are not. A cleared church hall, the back half of a physio practice, a converted garage with a decent floor — these get booked, because what is being paid for is an hour of uninterrupted space rather than a fit-out. Photograph it honestly and say what it is; the listings that disappoint are the ones that oversold.",
+    },
+  },
+
+  "massage-room": {
+    title: "Rent Out Your Massage Room by the Hour",
+    heading: "The hours between your own clients",
+    standfirst:
+      "Massage therapists with a table and a room usually have gaps in the week. Those gaps are what somebody else is looking for.",
+    whoRents:
+      "Licensed massage therapists building a private client list, and mobile therapists who have decided they are done carrying a table up stairs. They tend to book the same hour every week for months, because their own clients book the same hour every week — which makes this the room type where a host most often ends up with something closer to a regular tenant than a stream of strangers.",
+    whatItNeeds: [
+      "A table, and whether linens are provided or brought. Say which; it changes what they pack.",
+      "A door that locks and a room nobody walks into. This is the whole product.",
+      "A sink, or a clear route to one.",
+      "Somewhere for a client to undress and leave clothes.",
+      "Heating that reaches the table. A cold room ends a session early.",
+    ],
+    concern: {
+      question: "Do I have to be there?",
+      answer:
+        "No. Most hosts use a keypad or a lockbox, and the code goes to the practitioner only once the session is paid for — never before, and never to anybody who has not booked. If you would rather let people in yourself, set the room to that instead and it will only be bookable when you can.",
+    },
+  },
+
+  "treatment-room": {
+    title: "Rent Out Your Treatment Room by the Hour",
+    heading: "A clean private room is the most rentable thing you own",
+    standfirst:
+      "It suits more kinds of practitioner than anything else on this site, and the ones who need it need it every week.",
+    whoRents:
+      "Whoever works one-to-one behind a closed door: bodyworkers, acupuncturists, facialists, nutritionists, breathwork practitioners. A treatment room is the most flexible thing a host can list, and it is usually the one that fills first, because almost every practitioner leaving a clinic or a salon suite is looking for exactly this and finding nothing between a lease and a shared desk.",
+    whatItNeeds: [
+      "A sink in the room, or immediately outside it. It is the single most asked-about detail.",
+      "A treatment couch, and whether it stays or folds away.",
+      "Hard flooring or something wipeable, and say which.",
+      "A lock on the door and no window anybody can see through.",
+      "Somewhere a client can sit for five minutes before or after.",
+    ],
+    concern: {
+      question: "Different people, different practices — is that a problem?",
+      answer:
+        "It is why the listing has house rules, and why they are on the page before anybody books rather than in an email afterwards. No scented oils, no candles, wipe the couch down, take your rubbish — whatever the room actually needs. Every practitioner carries their own insurance and is responsible for their own clients and their own qualifications.",
+    },
+  },
+
+  "acupuncture-room": {
+    title: "Rent Out Your Room to Acupuncturists by the Hour",
+    heading: "Quiet, private, and booked in blocks",
+    standfirst:
+      "Acupuncturists work in long, still appointments and often see several people in an afternoon. They book in blocks, which suits a room that is free by the half-day.",
+    whoRents:
+      "Practitioners in private practice, most of them newly out on their own after years in a multi-room clinic. They are looking for somewhere to run a whole afternoon rather than a single hour, because a needle appointment involves the client resting for a stretch of it and they cannot turn a room over every sixty minutes. A host with a room free from noon on a Thursday is exactly who they are looking for.",
+    whatItNeeds: [
+      "A couch that can be reached from both sides.",
+      "Genuine quiet during the appointment — this is the room where a client is lying still for twenty minutes.",
+      "Warmth, and a blanket or somewhere to keep one.",
+      "A sink, and somewhere clinical waste can be dealt with properly.",
+      "Dimmable or soft lighting, if you have it.",
+    ],
+    concern: {
+      question: "Are they allowed to do that in my building?",
+      answer:
+        "That is a question about your lease and your building, not about us, and it is worth asking your landlord before you list rather than after. We check that you have the right to sublet the room before a listing goes live — which is why the lease or ownership document is part of listing it. Practitioners are responsible for their own licence, registration and insurance.",
+    },
+  },
+
+  "esthetician-room": {
+    title: "Rent Out Your Esthetician Room by the Hour",
+    heading: "Salon-quality space, without a salon-length lease",
+    standfirst:
+      "Estheticians leaving a salon suite need a proper room with water and light. Most cannot sign a year for it on day one.",
+    whoRents:
+      "Estheticians and skincare practitioners going independent, usually from a salon suite whose monthly rent stopped making sense at their client volume. They know exactly what a room needs, they will ask about the water and the lighting before anything else, and they tend to want the same two afternoons every week rather than scattered hours.",
+    whatItNeeds: [
+      "Running water in the room, hot as well as cold. This is the make-or-break detail.",
+      "Light that can be aimed at a face — a lamp, or a window that is not behind the couch.",
+      "A couch that reclines, if you have one, and say if you do not.",
+      "Power sockets near the couch, and how many.",
+      "Somewhere to put a trolley and a clean surface to work off.",
+    ],
+    concern: {
+      question: "What about products and mess?",
+      answer:
+        "House rules cover it and they are shown before anybody books: what may be used in the room, what must be taken away, and how it should be left. Most hosts of this kind of room ask that nothing is stored between sessions and the surfaces are wiped down. A practitioner who leaves a room badly is reviewed for it, and a review here is written by the host as well as about them.",
+    },
+  },
+
+  "consultation-room": {
+    title: "Rent Out Your Consultation Room by the Hour",
+    heading: "A private room to see people in, by the hour",
+    standfirst:
+      "Coaches and independent practitioners need somewhere quiet to sit with one person. An office you use three days a week has four days in it.",
+    whoRents:
+      "People who see clients one at a time and talk to them: coaches, nutritionists, mediators, practitioners in private practice. They have almost always been meeting people in cafés and have decided that is no longer acceptable — which means what they are buying is privacy and the impression the room makes, and they will pay properly for a room that has both.",
+    whatItNeeds: [
+      "Two chairs that face each other without a desk between them, if you can.",
+      "A door that shuts and a room nobody passes through.",
+      "Genuine sound privacy. Say what is on the other side of the wall — it is the question that decides the booking.",
+      "Somewhere for a client to wait for five minutes without standing on the street, or a clear note that there is not.",
+      "Reliable wifi, and the network name in the entry instructions.",
+    ],
+    concern: {
+      question: "Is my spare office really worth listing?",
+      answer:
+        "If it is private, quiet and somebody can find it, yes. This is the room type with the widest gap between what exists and what is bookable — the Bay Area is full of half-used offices and short of anywhere to sit with one person for an hour. The rooms that get booked are not the smartest ones; they are the ones whose listing answered the wall question.",
+    },
+  },
+
+  "meditation-room": {
+    title: "Rent Out Your Meditation Room by the Hour",
+    heading: "Stillness is a thing people will pay for",
+    standfirst:
+      "Teachers running sits, breathwork sessions and small group practice need a room that is quiet at a specific hour of a specific day.",
+    whoRents:
+      "Meditation and breathwork teachers, mostly running small regular groups rather than one-offs. What they need is the least material of anything on this site — a room where nothing happens for an hour — and it is why an ordinary room in a quiet building often out-books a purpose-built one on a main road.",
+    whatItNeeds: [
+      "Quiet at the hour it is bookable, which is not the same as quiet in general. Say which hours are which.",
+      "Floor space, and cushions or chairs — say which, and how many.",
+      "Soft light, or blinds. A room lit like an office is hard to sit in.",
+      "Somewhere to leave shoes and phones at the door.",
+    ],
+    concern: {
+      question: "How do I know it will be left as it was?",
+      answer:
+        "The buffer you set after each booking is yours, and the house rules are on the listing before anybody books — resetting cushions, opening a window, whatever the room needs. Both sides review each other afterwards, so a practitioner who leaves rooms badly carries that with them. Nobody booking here is anonymous.",
+    },
+  },
+
+  "reiki-room": {
+    title: "Rent Out Your Reiki Room by the Hour",
+    heading: "A warm, private room, for the hours it is empty",
+    standfirst:
+      "Reiki practitioners need very little and need it uninterrupted. If you have a quiet room with a couch, it is already most of the way there.",
+    whoRents:
+      "Practitioners seeing clients one at a time, usually part-time and usually alongside other work, which is exactly why a lease is out of the question for them. They book few hours and book them repeatedly. A room that suits massage almost always suits this too, and marking it for both is the cheapest way to double who finds it.",
+    whatItNeeds: [
+      "A couch or treatment table, reachable from both sides.",
+      "Warmth. The client is lying still and fully clothed for an hour.",
+      "Quiet and no interruption — no one passing through, no deliveries.",
+      "Soft lighting, and somewhere to put a blanket.",
+    ],
+    concern: {
+      question: "I already list it for massage. Is this separate?",
+      answer:
+        "No, and it should not be. A room can be marked for as many uses as it genuinely suits, and each one is a different set of people finding it. Marking a treatment room for massage, reiki and acupuncture costs nothing and puts it in front of three groups instead of one.",
+    },
+  },
+};
+
+export function hostPageFor(slug: string): HostPage | null {
+  const type = spaceTypeBySlug(slug);
+  const copy = COPY[slug];
+  return type && copy ? { type, ...copy } : null;
+}
+
+/** Every one that has a page, which is every use the site offers. */
+export function hostPages(): HostPage[] {
+  return SPACE_TYPES.map((type) => hostPageFor(type.slug)).filter(
+    (page): page is HostPage => page !== null,
+  );
+}

@@ -1,3 +1,4 @@
+import { hostPages } from "./host-pages";
 import { TOOLS } from "./tools";
 
 /**
@@ -33,7 +34,28 @@ export function crawlPolicyFor(host: string | null): CrawlPolicy {
  * it costs trust in the rest.
  */
 export function sitemapPaths(): string[] {
-  return ["/", "/tools", "/about", "/for-hosts", ...TOOLS.filter((t) => t.live).map((t) => `/tools/${t.slug}`)];
+  return [
+    "/",
+    "/tools",
+    "/about",
+    "/for-hosts",
+    ...TOOLS.filter((t) => t.live).map((t) => `/tools/${t.slug}`),
+    /*
+     * The host pages, listed from the same source that generates them.
+     *
+     * Written out by hand this would be the first list to go stale — a page
+     * added and not listed is a page nobody finds, and a page listed and not
+     * added is a crawler being told something untrue, which costs more. Both
+     * ends read `hostPages()`, so neither can happen.
+     *
+     * These carry no inventory, which is why they are here while the city
+     * pages are not. A page about renting out a pilates studio is finished the
+     * day it ships; a page about the pilates studios in San Mateo is empty
+     * until there is one, and an empty page belongs in no sitemap.
+     */
+    "/rent-out-your",
+    ...hostPages().map((page) => `/rent-out-your/${page.type.slug}`),
+  ];
 }
 
 export function robotsFor(host: string | null, origin: string): string {

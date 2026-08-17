@@ -1,8 +1,10 @@
 import Image from "next/image";
+import Link from "next/link";
 import type { Metadata } from "next";
 
 import { SiteFooter, SiteHeader } from "@/components/site/chrome";
 import { APP_URL, BRAND } from "@/lib/company";
+import { hostPages } from "@/lib/host-pages";
 
 /**
  * Where the old application forms land.
@@ -108,6 +110,50 @@ export default function ForHostsPage() {
                   {step.body}
                 </p>
               </div>
+            ))}
+          </div>
+        </section>
+
+        {/*
+          Into the ten rooms.
+
+          A page each, because "what could my room earn" has a different honest
+          answer for a reformer studio than for a consultation room — different
+          people renting it, different things making it bookable, and a
+          different worry stopping the host. Linked from here because a page
+          nothing points at is a page a crawler reaches late and a reader never
+          reaches at all.
+        */}
+        <section className="mx-auto max-w-5xl px-6 pb-4">
+          <h2
+            className="text-[26px] leading-tight"
+            style={{ fontFamily: "var(--font-dm-serif)", color: "#0F2F55" }}
+          >
+            What could your room earn?
+          </h2>
+          <p className="mt-3 max-w-2xl text-[15.5px] leading-[1.75]" style={{ color: "#5f6673" }}>
+            Put your own rate and your free hours in, and see the figure. You keep your rate — the
+            fee is added on top and the practitioner pays it.
+          </p>
+
+          <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {hostPages().map((page) => (
+              <Link
+                key={page.type.slug}
+                href={`/rent-out-your/${page.type.slug}`}
+                className="rounded-xl p-4"
+                style={{ border: "1px solid #e7eef6" }}
+              >
+                <span className="block text-[15px]" style={{ color: "#0F2F55" }}>
+                  {page.type.label}
+                </span>
+                <span
+                  className="mt-1 block text-[13px] leading-[1.6]"
+                  style={{ color: "#8a94a3" }}
+                >
+                  {page.type.blurb}
+                </span>
+              </Link>
             ))}
           </div>
         </section>

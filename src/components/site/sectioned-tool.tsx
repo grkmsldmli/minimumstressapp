@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 import { ResultActions } from "@/components/site/result-actions";
+import { CountUp, ResultReveal } from "@/components/site/result-reveal";
 import { StepFlow, type StepQuestion } from "@/components/site/step-flow";
 import {
   type SectionAnswers,
@@ -79,7 +80,11 @@ export function SectionedTool({ assessment }: { assessment: SectionedAssessment 
       onFinish={() => {}}
       accent="#0EA5E9"
     >
-      {result && <Result assessment={assessment} result={result} onRestart={restart} />}
+      {result && (
+        <ResultReveal>
+          <Result assessment={assessment} result={result} onRestart={restart} />
+        </ResultReveal>
+      )}
     </StepFlow>
   );
 }
@@ -101,12 +106,11 @@ function Result({
     <div aria-live="polite">
       <div className="rounded-2xl p-7" style={{ border: "1px solid #e7eef6" }}>
         <div className="flex flex-wrap items-baseline gap-x-4">
-          <span
+          <CountUp
+            to={result.overall}
             className="text-[52px] leading-none"
             style={{ fontFamily: "var(--font-dm-serif)", color: colour }}
-          >
-            {result.overall}
-          </span>
+          />
           {/*
             The band name always sits beside the number. These three do not
             agree on which direction is good — a bare 68 is a high cortisol

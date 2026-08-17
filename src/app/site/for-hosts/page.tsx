@@ -163,7 +163,7 @@ export default function ForHostsPage() {
           being asked. Every one of them is about risk, which is the only
           reason somebody hesitates to let a stranger into their room.
         */}
-        <section className="mx-auto max-w-3xl px-6 py-16">
+        <section id="faq" className="mx-auto max-w-3xl px-6 py-16">
           <h2
             className="text-[28px] leading-tight"
             style={{ fontFamily: "var(--font-dm-serif)", color: "#0F2F55" }}

@@ -264,7 +264,11 @@ function Groups() {
 
 function HowItWorks() {
   return (
-    <section className="border-y py-20" style={{ borderColor: COLOUR.line, backgroundColor: COLOUR.wash }}>
+    <section
+      id="how-it-works"
+      className="border-y py-20"
+      style={{ borderColor: COLOUR.line, backgroundColor: COLOUR.wash }}
+    >
       <div className="mx-auto max-w-6xl px-6">
         {/*
           The heading had the left third of a wide page and nothing beside it.
@@ -480,7 +484,7 @@ function ForHosts() {
 
 function Recurring() {
   return (
-    <section className="mx-auto max-w-6xl px-6 py-20">
+    <section id="recurring" className="mx-auto max-w-6xl px-6 py-20">
       <Reveal>
         <div
           className="overflow-hidden rounded-3xl"

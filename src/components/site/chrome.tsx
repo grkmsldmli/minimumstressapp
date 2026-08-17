@@ -1,11 +1,11 @@
 import Image from "next/image";
 import Link from "next/link";
 
-import { APP_URL, BRAND } from "@/lib/company";
+import { APP_URL, BRAND, LEGAL_ENTITY, SUPPORT_EMAIL } from "@/lib/company";
 import { COLOUR, TYPE } from "@/lib/site-theme";
 
 /**
- * The bar at the top and the line at the bottom, written once.
+ * The bar at the top and the footer at the bottom, written once.
  *
  * They were copied into the homepage, the hub and the BMI page within an hour
  * of each other, and had already drifted: three different max-widths and two
@@ -78,34 +78,178 @@ export function SiteHeader({ width = "wide" }: { width?: Width }) {
 }
 
 /**
- * The last place the failing grey survived.
+ * The footer, as a place somebody can actually get somewhere from.
  *
- * #8a94a3 sits at 3.07:1 on white where AA asks for 4.5. The palette round
- * fixed the pages and did not touch the chrome, which is exactly how a colour
- * like that outlives the change meant to remove it: nobody looks at the footer.
+ * It was a copyright line and four links. A marketplace footer is a navigation
+ * surface: it is where somebody who did not find what they came for goes next,
+ * and it is the site telling a crawler which pages it considers its own.
+ *
+ * Every link here goes somewhere that exists. That sounds like a low bar and
+ * is the reason this is shorter than it was asked to be — a fuller structure
+ * was specified, with Recurring Bookings, Pricing & Fees, Trust & Safety,
+ * Partnerships, a Cancellation Policy, a Refund Policy and a Wellness
+ * Disclaimer among others, and about a dozen of those have no page behind
+ * them. A footer full of 404s is worse than a short one on every count: a
+ * reader loses trust the first time one dead-ends, and a crawler learns the
+ * site does not know what it has.
+ *
+ * Two were rescued cheaply rather than dropped, because the content already
+ * existed and only lacked an address: "How it works" and "Recurring bookings"
+ * are sections of the homepage, and the host FAQ is a section of /for-hosts.
+ * They have ids now.
+ *
+ * The rest are worth building — several of them are pages a marketplace is
+ * expected to have, and one, a Californian "Your privacy choices", may not be
+ * optional for long. They are absent here rather than fabricated.
  */
+
+/** The four rooms, in the words the categories now use. */
+const EXPLORE = [
+  { label: "Find a space", href: "/spaces" },
+  { label: "Movement studios", href: "/spaces?type=movement-studio" },
+  { label: "Consultation & coaching rooms", href: "/spaces?type=consultation-room" },
+  { label: "Holistic practice rooms", href: "/spaces?type=treatment-room" },
+  { label: "Meditation & breathwork spaces", href: "/spaces?type=meditation-room" },
+];
+
+const FOR_PRACTITIONERS = [
+  { label: "How it works", href: "/#how-it-works" },
+  { label: "Browse spaces", href: "/spaces" },
+  { label: "Recurring bookings", href: "/#recurring" },
+  /*
+   * The eleven wellness tools, kept and kept out of the way. They were the
+   * whole of the old site and they are not the product now — a footer is
+   * exactly where something like that should live.
+   */
+  { label: "Free tools", href: "/tools" },
+];
+
+const FOR_HOSTS = [
+  { label: "List your space", href: `${APP_URL}?list=1` },
+  { label: "How hosting works", href: "/for-hosts" },
+  { label: "Host FAQ", href: "/for-hosts#faq" },
+];
+
+const COMPANY = [
+  { label: "About", href: "/about" },
+  { label: "Contact", href: `mailto:${SUPPORT_EMAIL}` },
+  { label: "Terms", href: `${APP_URL}/terms` },
+  { label: "Privacy", href: `${APP_URL}/privacy` },
+];
+
+function Column({
+  title,
+  links,
+}: {
+  title: string;
+  links: { label: string; href: string }[];
+}) {
+  return (
+    <div>
+      <h2 className={TYPE.eyebrow} style={{ color: COLOUR.ink }}>
+        {title}
+      </h2>
+      <ul className="mt-4 space-y-2.5">
+        {links.map((link) => (
+          <li key={link.href + link.label}>
+            <FooterLink href={link.href}>{link.label}</FooterLink>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** A Link for our own paths, a plain anchor for the app and for mailto. */
+function FooterLink({ href, children }: { href: string; children: React.ReactNode }) {
+  const className = "hover:underline";
+  const style = { color: COLOUR.muted };
+
+  return href.startsWith("/") ? (
+    <Link href={href} className={className} style={style}>
+      {children}
+    </Link>
+  ) : (
+    <a href={href} className={className} style={style}>
+      {children}
+    </a>
+  );
+}
+
 export function SiteFooter({ width = "wide" }: { width?: Width }) {
   return (
-    <footer className="border-t py-10" style={{ borderColor: COLOUR.line }}>
-      <div
-        className={`mx-auto flex ${MAX[width]} flex-wrap items-center justify-between gap-4 px-6 ${TYPE.small}`}
-        style={{ color: COLOUR.muted }}
-      >
-        <span>
-          © {new Date().getFullYear()} {BRAND}
-        </span>
+    <footer className="border-t pt-14 pb-10" style={{ borderColor: COLOUR.line }}>
+      <div className={`mx-auto ${MAX[width]} px-6`}>
+        <div className={`grid gap-10 sm:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1fr_1fr_1fr] ${TYPE.small}`}>
+          <div>
+            <Image
+              src="/photos/logo-lockup.webp"
+              alt={BRAND}
+              width={321}
+              height={120}
+              className="h-11 w-auto"
+            />
+            <p className="mt-4 max-w-xs" style={{ color: COLOUR.body }}>
+              Wellness spaces, by the hour. Private rooms for people who work for themselves —
+              book only the hours you need.
+            </p>
+            <a
+              href={`mailto:${SUPPORT_EMAIL}`}
+              className="mt-4 inline-block hover:underline"
+              style={{ color: COLOUR.link }}
+            >
+              {SUPPORT_EMAIL}
+            </a>
+          </div>
 
-        <nav className="flex flex-wrap gap-6">
-          <Link href="/tools">Free tools</Link>
-          <Link href="/about">About</Link>
+          <Column title="Explore" links={EXPLORE} />
+          <Column title="Practitioners" links={FOR_PRACTITIONERS} />
+
+          <div>
+            <h2 className={TYPE.eyebrow} style={{ color: COLOUR.ink }}>
+              Hosts
+            </h2>
+            <ul className="mt-4 space-y-2.5">
+              {FOR_HOSTS.map((link) => (
+                <li key={link.href}>
+                  <FooterLink href={link.href}>{link.label}</FooterLink>
+                </li>
+              ))}
+              {/*
+                Given weight on purpose. It is the one link on this page that
+                answers a question with a number, and the number is what turns
+                somebody with a spare room into a listing.
+              */}
+              <li className="pt-1">
+                <Link href="/rent-out-your" className="font-medium hover:underline" style={{ color: COLOUR.link }}>
+                  See what your space could earn →
+                </Link>
+              </li>
+            </ul>
+          </div>
+
+          <Column title="Company" links={COMPANY} />
+        </div>
+
+        <div
+          className="mt-12 flex flex-wrap items-center justify-between gap-4 border-t pt-6"
+          style={{ borderColor: COLOUR.line, color: COLOUR.muted }}
+        >
           {/*
-            The terms and the privacy notice live in the app, because that is
-            where they are agreed to and where the version somebody accepted is
-            recorded. Two copies of a contract is one too many.
+            The registered name, not the brand. "Minimum Stress LLC" is not the
+            company; a copyright line naming an entity that does not exist is
+            the one sentence on a page that is meant to be exact.
           */}
-          <a href={`${APP_URL}/terms`}>Terms</a>
-          <a href={`${APP_URL}/privacy`}>Privacy</a>
-        </nav>
+          <span className={TYPE.small}>
+            © {new Date().getFullYear()} {LEGAL_ENTITY}. All rights reserved.
+          </span>
+
+          <nav className={`flex flex-wrap gap-6 ${TYPE.small}`}>
+            <FooterLink href={`${APP_URL}/privacy`}>Privacy</FooterLink>
+            <FooterLink href={`${APP_URL}/terms`}>Terms</FooterLink>
+            <FooterLink href={`mailto:${SUPPORT_EMAIL}`}>Support</FooterLink>
+          </nav>
+        </div>
       </div>
     </footer>
   );

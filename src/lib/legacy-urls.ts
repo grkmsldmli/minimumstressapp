@@ -46,6 +46,10 @@ const SHOPIFY_PREFIXES = ["/collections/", "/products/", "/cart", "/checkout", "
  * renting rooms.
  */
 export function isGone(pathname: string): boolean {
+  // An article with no tool on the same subject. The blog is not moving here,
+  // and 410 says so once rather than making a crawler ask for months.
+  if (/^\/blogs\/[^/]+\/.+$/.test(pathname)) return true;
+
   return SHOPIFY_PREFIXES.some(
     (prefix) => pathname === prefix.replace(/\/$/, "") || pathname.startsWith(prefix),
   );
@@ -88,13 +92,44 @@ const PAGE_REDIRECTS: Record<string, string> = {
   // A shop's returns policy, on a site that will not be selling anything.
   "/pages/returns-exchanges": "/about",
   "/pages/refund-cancellation-policy": "/about",
-  "/pages/wellness-brief": "/articles",
+  "/pages/wellness-brief": "/tools",
 
   // Shopify's blog paths. Both indexes land on the one list that replaces them.
   "/pages/wellness-hub": "/tools",
 
-  "/blogs/wellness": "/articles",
-  "/blogs/general-info": "/articles",
+  "/blogs/wellness": "/tools",
+  "/blogs/general-info": "/tools",
+};
+
+/**
+ * Each article, sent to the tool that covers the same ground.
+ *
+ * There is no blog on the new site and there is not going to be one, so these
+ * fifteen addresses have to land somewhere. The homepage would be the usual
+ * answer and the wrong one — it tells a search engine the homepage is what
+ * "the burnout you don't see coming" is about, and it drops a reader who came
+ * for one subject onto a page about renting rooms.
+ *
+ * Most of them have a direct match, because the articles and the tools were
+ * written about the same eight subjects. Somebody searching for the burnout
+ * piece gets the burnout test: not what they clicked, but the same topic and
+ * something they can actually use.
+ *
+ * The five with no match are deliberately absent — they fall through to 410
+ * below, which is the honest answer for writing that is not coming back.
+ */
+const ARTICLE_TO_TOOL: Record<string, string> = {
+  "the-burnout-you-dont-see-coming": "burnout-test",
+  "why-you-cant-switch-off": "burnout-test",
+  "scientific-methods-to-reduce-stress": "burnout-test",
+  "5-stress-management-techniques-you-can-apply-instantly-in-daily-life": "burnout-test",
+  "the-silent-damage-of-chronic-cortisol": "cortisol-assessment",
+  "are-you-really-getting-enough-sleep": "sleep-score",
+  "your-gut-is-talking-are-you-listening": "gut-health-score",
+  "the-inflammation-nobody-talks-about": "inflammation-score",
+  "is-your-body-older-than-you-think": "biological-age-calculator",
+  "bmi-is-broken-heres-what-actually-matters": "bmi-calculator",
+  "why-most-calorie-advice-is-wrong": "tdee-calculator",
 };
 
 /**
@@ -110,15 +145,17 @@ export function destinationFor(pathname: string): string | null {
   const path = pathname.replace(/\/+$/, "") || "/";
 
   /*
-   * Every article lands on the index for now, not on its own page.
+   * An article goes to the tool on the same subject, or nowhere.
    *
-   * One-to-one is what these should be, and the slug is already carried
-   * through to make that a one-line change. But the fifteen posts still live
-   * in Shopify and cannot be invented here, so pointing at a page that does
-   * not exist would trade a redirect for a 404 — which is the thing this file
-   * exists to prevent. The index says plainly that the writing is being moved.
+   * Nowhere means 410 rather than a redirect to the homepage: writing that is
+   * not coming back should be marked gone, not quietly pointed at a page about
+   * something else.
    */
-  if (/^\/blogs\/[^/]+\/.+$/.test(path)) return "/articles";
+  const article = path.match(/^\/blogs\/[^/]+\/(.+)$/);
+  if (article) {
+    const tool = ARTICLE_TO_TOOL[article[1]];
+    return tool ? `/tools/${tool}` : null;
+  }
 
   /*
    * The tools keep their own slugs, so /pages/burnout-test is simply

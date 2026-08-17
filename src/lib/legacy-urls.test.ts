@@ -83,30 +83,50 @@ describe("tool pages", () => {
 
 describe("articles", () => {
   /*
-   * Shopify wrote these as /blogs/<blog>/<slug> across two blogs. The slug is
-   * the part worth keeping, so this is a pattern rather than a list of fifteen
-   * that somebody has to remember to extend.
+   * There is no blog on the new site and there is not going to be one, so each
+   * article goes to the tool on the same subject. The articles and the tools
+   * were written about the same eight things, so most of them have a real
+   * match — somebody searching for the burnout piece gets the burnout test.
    */
-  /*
-   * The index rather than a page each, until the posts themselves are out of
-   * Shopify. One-to-one is the right answer and the slug is already parsed for
-   * it, but sending somebody to an article that does not exist trades a
-   * redirect for a 404 — which is what this file is for.
-   */
-  it("lands every article on the index while the writing is still in Shopify", () => {
-    expect(destinationFor("/blogs/wellness/why-you-cant-switch-off")).toBe("/articles");
-    expect(destinationFor("/blogs/general-info/scientific-methods-to-reduce-stress")).toBe(
-      "/articles",
+  it("sends an article to the tool on its subject", () => {
+    expect(destinationFor("/blogs/wellness/the-burnout-you-dont-see-coming")).toBe(
+      "/tools/burnout-test",
+    );
+    expect(destinationFor("/blogs/wellness/are-you-really-getting-enough-sleep")).toBe(
+      "/tools/sleep-score",
+    );
+    expect(destinationFor("/blogs/wellness/is-your-body-older-than-you-think")).toBe(
+      "/tools/biological-age-calculator",
+    );
+    expect(destinationFor("/blogs/wellness/bmi-is-broken-heres-what-actually-matters")).toBe(
+      "/tools/bmi-calculator",
     );
   });
 
-  it("sends both blog indexes to the one list", () => {
-    expect(destinationFor("/blogs/wellness")).toBe("/articles");
-    expect(destinationFor("/blogs/general-info")).toBe("/articles");
+  it("works from either of the two blogs", () => {
+    expect(destinationFor("/blogs/general-info/scientific-methods-to-reduce-stress")).toBe(
+      "/tools/burnout-test",
+    );
   });
 
   it("ignores a trailing slash", () => {
-    expect(destinationFor("/blogs/wellness/the-burnout-you-dont-see-coming/")).toBe("/articles");
+    expect(destinationFor("/blogs/wellness/why-you-cant-switch-off/")).toBe("/tools/burnout-test");
+  });
+
+  /*
+   * The ones with no matching tool are marked gone rather than pointed at the
+   * homepage. Redirecting "the bay area wellness guide" to a page about
+   * renting rooms tells a search engine the homepage is that guide, and drops
+   * a reader who came for one subject onto another.
+   */
+  it("marks an article with no matching tool as gone", () => {
+    expect(destinationFor("/blogs/wellness/bay-area-wellness-guide-2026")).toBeNull();
+    expect(isGone("/blogs/wellness/bay-area-wellness-guide-2026")).toBe(true);
+  });
+
+  it("sends both blog indexes to the tools", () => {
+    expect(destinationFor("/blogs/wellness")).toBe("/tools");
+    expect(destinationFor("/blogs/general-info")).toBe("/tools");
   });
 });
 

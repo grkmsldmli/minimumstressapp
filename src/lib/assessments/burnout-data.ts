@@ -2055,7 +2055,7 @@ export const PROFILES: Record<BurnoutLevel, {
       "planText": "For the next 7 days, the goal is not a dramatic life overhaul. The goal is to stop the drain, create safety, and take one supported step at a time.",
       "actions": [
         "Choose one place to reduce demand immediately: workload, commitments, screens, social pressure, or over-giving.",
-        "Book one supportive session or speak with a qualified professional if distress feels persistent or intense.",
+        "Speak with your doctor, or another qualified professional, if distress feels persistent or intense.",
         "Use a twice-daily nervous-system reset: 3 slow breaths, unclench jaw/shoulders, feet on floor, longer exhale."
       ],
       "chips": [

@@ -345,7 +345,7 @@ export const inflammation: SectionedAssessment = {
       "insights": [
         "Severe systemic inflammation is associated with 4–5x increased risk of cardiovascular events — lifestyle intervention is the most effective first-line treatment",
         "Multiple co-occurring inflammatory drivers create a compounding burden that requires sequential, structured addressing",
-        "Naturopathic and Ayurvedic frameworks have the most comprehensive evidence-informed protocols for multi-dimensional inflammation reduction",
+        "A result at this level is worth taking to a doctor — inflammatory markers are a blood test, and this questionnaire is only an estimate of what one would show",
         "The most dramatic anti-inflammatory results in clinical trials consistently come from comprehensive lifestyle overhauls, not single interventions"
       ]
     }

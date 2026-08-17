@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 import { MeasureField, UnitToggle } from "@/components/site/measure-field";
+import { ResultActions } from "@/components/site/result-actions";
 import {
   type BodyFatResult,
   type Sex,
@@ -190,11 +191,8 @@ export function BodyFatTool() {
       </form>
 
       {result && (
-        <div
-          className="mt-10 rounded-2xl p-7"
-          style={{ border: "1px solid #e7eef6" }}
-          aria-live="polite"
-        >
+        <div className="mt-10" aria-live="polite">
+        <div className="rounded-2xl p-7" style={{ border: "1px solid #e7eef6" }}>
           <div className="flex flex-wrap items-baseline gap-x-4">
             <span
               className="text-[52px] leading-none"
@@ -220,6 +218,33 @@ export function BodyFatTool() {
             Estimated from tape measurements, so it is only as good as the tape. Measure the same
             way each time and the change over weeks means more than any single reading.
           </p>
+        </div>
+
+        {/*
+          Worth having in an inbox more than most results here, because this
+          one is only useful as a series. A percentage on its own says very
+          little; the same measurement in six weeks says everything, and an
+          email is where somebody will still have the first one.
+        */}
+        <ResultActions
+          accent="#0F2F55"
+          result={{
+            slug: "body-fat-calculator",
+            toolName: "Body Fat Calculator",
+            score: `${result.percent}%`,
+            band: BAND_LABEL[result.band],
+            summary: `${showKg(result.leanKg)} lean, ${showKg(result.fatKg)} fat.`,
+            story: FAT_BAND_COPY[result.band],
+            dimensions: [
+              { label: "Body fat", value: result.percent },
+              { label: "Lean mass", value: 100 - result.percent },
+            ],
+            insights: [
+              "Estimated from tape measurements, so it is only as good as the tape.",
+              "Measure the same way each time. The change over weeks means more than any single reading — including this one.",
+            ],
+          }}
+        />
         </div>
       )}
     </div>

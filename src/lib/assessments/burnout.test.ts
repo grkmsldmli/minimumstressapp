@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 
+// Straight from the data file: `CATEGORIES` is no longer exported from
+// ./burnout, because it is the consultant directory and nothing renders it any
+// more. The keys are still what the questions are tagged with, which is all
+// this file uses it for.
+import { CATEGORIES } from "./burnout-data";
 import {
   type BurnoutCategory,
-  CATEGORIES,
   CATEGORY_INSIGHTS,
   DRAWN,
   PROFILES,
@@ -145,10 +149,16 @@ describe("levels", () => {
     }
   });
 
+  /*
+   * The reading of each category, which is what the page shows. What it no
+   * longer shows is `CATEGORIES[…].desc` — the paragraph naming the kind of
+   * consultant to book — because there are no consultants to book. See
+   * BURNOUT_FOCUS in ./focus, which is what took its place.
+   */
   it("has wording for every category", () => {
     for (const category of Object.keys(CATEGORIES) as BurnoutCategory[]) {
-      expect(CATEGORIES[category].desc, category).toBeTruthy();
-      expect(CATEGORIES[category].tags.length, category).toBeGreaterThan(0);
+      expect(CATEGORY_INSIGHTS[category].label, category).toBeTruthy();
+      expect(CATEGORY_INSIGHTS[category].text, category).toBeTruthy();
     }
   });
 });

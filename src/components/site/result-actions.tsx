@@ -16,12 +16,32 @@ import { looksLikeEmail } from "@/lib/result-email";
 
 type State = "idle" | "sending" | "sent";
 
+/**
+ * What goes in the message.
+ *
+ * The whole result, not the number. Each tool already works out which
+ * dimension is thinnest and what the band means; sending only a score turns
+ * four minutes of answering into a receipt for something the reader has
+ * already read.
+ *
+ * The related tools are not here. The server picks those from its own list, so
+ * a link in somebody's inbox cannot be chosen by whatever posted to the
+ * endpoint.
+ */
 export interface ResultPayload {
   toolName: string;
   score: string;
   band: string;
   summary: string;
-  breakdown?: string[];
+  headline?: string;
+  story?: string;
+  /** 0–100 each, with the one to start on marked. */
+  dimensions?: { label: string; value: number; focus?: boolean }[];
+  insights?: string[];
+  focus?: { label: string; action: string };
+  steps?: string[];
+  /** The tool's own slug, which is how the server picks what else to suggest. */
+  slug?: string;
 }
 
 export function ResultActions({ result, accent }: { result: ResultPayload; accent: string }) {
@@ -44,7 +64,14 @@ export function ResultActions({ result, accent }: { result: ResultPayload; accen
       const response = await fetch("/api/tools/result", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...result, email, url: window.location.href }),
+        /*
+         * No URL. The obvious version sends `window.location.href` for the
+         * button in the message, and the server ignores it on purpose: an open
+         * endpoint that mails a link of the caller's choosing to an address of
+         * the caller's choosing, from us, is a phishing relay. It builds every
+         * link from the slug instead.
+         */
+        body: JSON.stringify({ ...result, email }),
       });
 
       if (!response.ok) {

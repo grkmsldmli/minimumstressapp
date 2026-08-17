@@ -454,7 +454,7 @@ export const BIO_COPY: Record<BioDimension, {
       "mid": "Your stress system is carrying some load, but it may still be recoverable with better regulation practices.",
       "weak": "Chronic stress is one of the strongest aging signals in your result.",
       "science": "Long-term stress can increase cortisol load, inflammation, sleep disruption, blood pressure, and immune wear.",
-      "action": "Use breathwork, meditation, coaching, slower transitions, and daily decompression windows to train down the stress response."
+      "action": "Use breathwork, meditation, slower transitions, and daily decompression windows to train down the stress response."
     },
     "substances": {
       "name": "Smoking & Alcohol",

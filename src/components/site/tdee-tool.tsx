@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 import { MeasureField, UnitToggle } from "@/components/site/measure-field";
+import { ResultActions } from "@/components/site/result-actions";
 import {
   type Activity,
   type EnergyResult,
@@ -264,6 +265,41 @@ function Result({ result, goal }: { result: EnergyResult; goal: Goal }) {
         An estimate, not a measurement. Real needs vary with sleep, stress, illness and how much
         you move without noticing. Track the trend over two or three weeks rather than one day.
       </p>
+
+      {/*
+        Four numbers and three macros is more than anybody memorises walking
+        away from a page, and this is the one result here somebody actually
+        has to refer back to while shopping.
+      */}
+      <ResultActions
+        accent="#0F2F55"
+        result={{
+          slug: "tdee-calculator",
+          toolName: "Calorie & Macro Calculator",
+          score: result.target.toLocaleString(),
+          band: "calories a day",
+          summary:
+            goal === "lose"
+              ? "To lose fat, at the pace this assumes."
+              : goal === "gain"
+                ? "To build muscle, at the pace this assumes."
+                : "To maintain where you are.",
+          story: `${result.bmr.toLocaleString()} at rest, ${result.tdee.toLocaleString()} with your activity, and ${result.target.toLocaleString()} once your goal is applied.`,
+          dimensions: macros.map((macro) => ({
+            label: `${macro.label} · ${macro.grams}g`,
+            value: macro.percent,
+          })),
+          insights: [
+            ...(floored
+              ? [
+                  "The deficit you asked for would have gone below 1,200 calories, which is lower than anybody should eat without a doctor watching. Your target is that floor, not the sum.",
+                ]
+              : []),
+            "An estimate, not a measurement. Real needs vary with sleep, stress, illness and how much you move without noticing.",
+            "Track the trend over two or three weeks rather than one day.",
+          ],
+        }}
+      />
     </div>
   );
 }

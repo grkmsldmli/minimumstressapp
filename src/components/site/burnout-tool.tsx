@@ -6,10 +6,10 @@ import { ResultActions } from "@/components/site/result-actions";
 import { CountUp, ResultReveal } from "@/components/site/result-reveal";
 import { StepFlow, type StepQuestion } from "@/components/site/step-flow";
 
+import { BURNOUT_FOCUS } from "@/lib/assessments/focus";
 import {
   type BurnoutQuestion,
   type BurnoutResult,
-  CATEGORIES,
   CATEGORY_INSIGHTS,
   LEVEL_LABEL,
   PROFILES,
@@ -174,11 +174,14 @@ function Result({ result, onRestart }: { result: BurnoutResult; onRestart: () =>
       </div>
 
       {/*
-        The categories the answers pointed at. The original ended each of these
-        with an "Explore ..." button into /collections/all-session, and that
-        catalogue closes with the store — the buttons would land on a 410. What
-        the category says about where the strain is landing is the useful part
-        and it stays.
+        The categories the answers pointed at.
+
+        Each one used to end by naming the kind of consultant to book, above an
+        "Explore ..." button into /collections/all-session. There are no
+        consultants and no sessions now, and that catalogue closes with the
+        store — so the referral is replaced by something the reader can do this
+        week on their own. What the category says about where the strain is
+        landing was always the useful part, and it stays as it was.
       */}
       <p className="mt-8 text-[14px] font-medium" style={{ color: "#1a2744" }}>
         Where your answers pointed
@@ -192,18 +195,36 @@ function Result({ result, onRestart }: { result: BurnoutResult; onRestart: () =>
             {CATEGORY_INSIGHTS[category].text}
           </p>
           <p className="mt-3 text-[14px] leading-[1.75]" style={{ color: "#8a94a3" }}>
-            {CATEGORIES[category].desc}
+            {BURNOUT_FOCUS[category].action}
           </p>
         </div>
       ))}
 
+      {/*
+        The same result, in an inbox. Not the number — the number on its own is
+        a receipt for something they have just spent two minutes reading. What
+        travels is the story their level tells, the categories their own
+        answers pointed at, and the seven days the page recommends.
+      */}
       <ResultActions
         accent="#1a2744"
         result={{
+          slug: "burnout-test",
           toolName: "Burnout Test",
           score: String(result.percent),
           band: LEVEL_LABEL[result.level],
           summary: profile.scoreNote,
+          headline: profile.storyTitle,
+          story: profile.story,
+          dimensions: result.ranked.map(({ category, percent }, index) => ({
+            label: CATEGORY_INSIGHTS[category].label,
+            value: percent,
+            // The heaviest one, which is also the first the page names.
+            focus: index === 0,
+          })),
+          insights: shown.map(({ category }) => CATEGORY_INSIGHTS[category].text),
+          focus: BURNOUT_FOCUS[result.ranked[0].category],
+          steps: profile.actions,
         }}
       />
 

@@ -5,6 +5,7 @@ import { useState } from "react";
 import { ResultActions } from "@/components/site/result-actions";
 import { CountUp, ResultReveal } from "@/components/site/result-reveal";
 import { StepFlow, type StepQuestion } from "@/components/site/step-flow";
+import { SECTION_FOCUS, weakestSection } from "@/lib/assessments/focus";
 import {
   type SectionAnswers,
   type SectionedAssessment,
@@ -102,6 +103,16 @@ function Result({
   const colour = colourFor(result.overall, assessment.higherIsBetter);
   const name = toolBySlug(assessment.slug)?.name ?? "Your result";
 
+  /*
+   * The section to start on — which is not the smallest number.
+   *
+   * Cortisol counts upward toward trouble and the other two count upward
+   * toward good, so "the lowest bar" would send somebody carrying a high
+   * cortisol load off to work on their strongest area.
+   */
+  const weakest = weakestSection(assessment, result);
+  const focus = weakest ? SECTION_FOCUS[`${assessment.slug}:${weakest}`] : undefined;
+
   return (
     <div aria-live="polite">
       <div className="rounded-2xl p-7" style={{ border: "1px solid #e7eef6" }}>
@@ -158,6 +169,20 @@ function Result({
           })}
         </div>
 
+        {focus && (
+          <div className="mt-8 rounded-xl p-5" style={{ backgroundColor: "#f8fbfd" }}>
+            <p className="text-[10px] uppercase tracking-[0.14em]" style={{ color: colour }}>
+              Start here
+            </p>
+            <p className="mt-1.5 text-[15px] font-medium" style={{ color: "#1a2744" }}>
+              {focus.label}
+            </p>
+            <p className="mt-1.5 text-[14.5px] leading-[1.75]" style={{ color: "#5f6673" }}>
+              {focus.action}
+            </p>
+          </div>
+        )}
+
         {band.insights.length > 0 && (
           <div className="mt-8 rounded-xl p-5" style={{ backgroundColor: "#f8fbfd" }}>
             <p className="text-[14px] font-medium" style={{ color: "#1a2744" }}>
@@ -185,13 +210,23 @@ function Result({
       <ResultActions
         accent="#0F2F55"
         result={{
+          slug: assessment.slug,
           toolName: name,
           score: String(result.overall),
           band: band.label,
-          summary: band.desc,
-          breakdown: assessment.sections.map(
-            (section) => `${section.title}: ${result.sections[section.key]}`,
-          ),
+          // The band's sentence under the score, its paragraph under that —
+          // the same order this page reads in.
+          summary: band.title,
+          story: band.desc,
+          dimensions: assessment.sections.map((section) => ({
+            // The short name where there is one: these section titles were
+            // written as headings and read badly beside a number.
+            label: SECTION_FOCUS[`${assessment.slug}:${section.key}`]?.label ?? section.title,
+            value: result.sections[section.key],
+            focus: section.key === weakest,
+          })),
+          insights: band.insights,
+          focus,
         }}
       />
 

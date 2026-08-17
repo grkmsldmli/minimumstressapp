@@ -211,13 +211,33 @@ function Result({ result, onRestart }: { result: BioResult; onRestart: () => voi
       <ResultActions
         accent="#1a2744"
         result={{
+          slug: "biological-age-calculator",
           toolName: "Biological Age Calculator",
           score: String(result.biological),
-          band: narrativeFor(result.difference).badge,
-          summary: narrativeFor(result.difference).headline,
-          breakdown: BIO_DELTAS.map(
-            ({ key }) => `${BIO_COPY[key].short}: ${result.dimensions[key]}`,
-          ),
+          band: narrative.badge,
+          summary: `Against ${result.chronological} on the calendar.`,
+          headline: narrative.headline,
+          dimensions: BIO_DELTAS.map(({ key }) => ({
+            label: BIO_COPY[key].short,
+            value: result.dimensions[key],
+            focus: key === result.weakest,
+          })),
+          // What each bar is actually saying, in the assessment's own words —
+          // the line the page prints under it, for the same three thresholds.
+          insights: BIO_DELTAS.map(({ key }) => {
+            const value = result.dimensions[key];
+            const copy = value >= 70 ? "strong" : value >= 45 ? "mid" : "weak";
+            return `${BIO_COPY[key].short}: ${BIO_COPY[key][copy]}`;
+          }),
+          focus: {
+            label: BIO_COPY[result.weakest].short,
+            action: BIO_COPY[result.weakest].action,
+          },
+          steps: [
+            BIO_COPY[result.weakest].action,
+            BIO_COPY[result.secondWeakest].action,
+            `Keep what is already working: ${BIO_COPY[result.strongest].strong}`,
+          ],
         }}
       />
 

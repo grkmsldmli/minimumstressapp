@@ -7,8 +7,22 @@ import {
   QUESTION_POOL,
 } from "./burnout-data";
 
+/**
+ * `CATEGORIES` is deliberately not re-exported.
+ *
+ * It is the consultant directory the original ended each result with — a
+ * label, a paragraph saying which kind of practitioner could help, and a list
+ * of job titles to book. There are no consultants and no sessions now, so that
+ * paragraph advertises something a reader cannot buy, which is worse than
+ * saying nothing because it sits where advice should be.
+ *
+ * It stays in the data file because scoring still uses its keys, and because
+ * deleting somebody else's extracted copy is not the same as not showing it.
+ * Not exporting it from here is what keeps it off the page: an import that
+ * would put it back in front of a reader now has to be written on purpose.
+ * What replaces it is `BURNOUT_FOCUS` in ./focus.
+ */
 export {
-  CATEGORIES,
   CATEGORY_INSIGHTS,
   PROFILES,
   QUESTION_POOL,
@@ -39,8 +53,17 @@ export interface BurnoutResult {
   /** 0–100. Higher means more strain, which is their direction. */
   percent: number;
   level: BurnoutLevel;
-  /** Category totals, heaviest first. */
-  ranked: { category: BurnoutCategory; weight: number }[];
+  /**
+   * Category totals, heaviest first.
+   *
+   * `weight` is the raw points, which is what the original ranked on and what
+   * the ordering still uses. `percent` is those points against what the drawn
+   * questions could have given that category — needed because the raw weights
+   * are not comparable to each other: a draw might tag six questions
+   * `physical` and one `spiritual`, and the larger number then says more about
+   * the draw than about the person.
+   */
+  ranked: { category: BurnoutCategory; weight: number; percent: number }[];
 }
 
 /** Their thresholds: under 35 recovering, under 65 burning, else burnt out. */
@@ -93,6 +116,14 @@ export function scoreBurnout(
     spiritual: 0,
   };
 
+  /** What each category could have scored, given the ten that were drawn. */
+  const maximums: Record<BurnoutCategory, number> = {
+    physical: 0,
+    traditional: 0,
+    social: 0,
+    spiritual: 0,
+  };
+
   let total = 0;
   let answered = 0;
 
@@ -103,13 +134,24 @@ export function scoreBurnout(
     const points = question.w[chosen];
     total += points;
     answered += 1;
-    for (const tag of question.tags) weights[tag] += points;
+    for (const tag of question.tags) {
+      weights[tag] += points;
+      maximums[tag] += MAX_PER_QUESTION;
+    }
   });
 
   const percent = Math.round((total / (answered * MAX_PER_QUESTION || 1)) * 100);
 
   const ranked = (Object.keys(weights) as BurnoutCategory[])
-    .map((category) => ({ category, weight: weights[category] }))
+    .map((category) => ({
+      category,
+      weight: weights[category],
+      // Zero where the draw asked nothing about this category, which is not
+      // the same as scoring nothing on it — see `categoriesToShow`, which is
+      // why only the top one or three are ever named.
+      percent:
+        maximums[category] > 0 ? Math.round((weights[category] / maximums[category]) * 100) : 0,
+    }))
     .sort((a, b) => b.weight - a.weight);
 
   return { percent, level: levelFor(percent), ranked };

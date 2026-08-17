@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import { ResultActions } from "@/components/site/result-actions";
 import {
   BAND_COPY,
   type BmiResult,
@@ -210,6 +211,30 @@ function Result({ result, showKg }: { result: BmiResult; showKg: (kg: number) =>
           </p>
         )}
       </div>
+
+      <ResultActions
+        accent="#0F2F55"
+        result={{
+          slug: "bmi-calculator",
+          toolName: "BMI Calculator",
+          score: String(result.bmi),
+          band: copy.label,
+          summary: `For your height, the healthy range is ${showKg(result.healthyLowKg)} to ${showKg(result.healthyHighKg)}.`,
+          story: copy.body,
+          /*
+           * The caveat travels with the number. A BMI arriving on its own in
+           * an inbox, days later and without the page around it, is exactly
+           * the reading of it this tool spends its whole result page arguing
+           * against.
+           */
+          insights: [
+            result.toRangeKg > 0
+              ? `You are ${showKg(result.toRangeKg)} from the nearest edge of that range.`
+              : "You are inside that range.",
+            "BMI is weight over height squared. It knows nothing about muscle, frame or how you feel, and it was never designed to describe one person.",
+          ],
+        }}
+      />
     </div>
   );
 }

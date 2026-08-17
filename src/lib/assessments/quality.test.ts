@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { BIO_SECTIONS } from "./bio-age";
-import { QUESTION_POOL } from "./burnout-data";
+import { BAND_COPY } from "../bmi";
+import { FAT_BAND_COPY } from "../body-composition";
+import { BIO_COPY, BIO_SECTIONS } from "./bio-age";
+import { CATEGORY_INSIGHTS, PROFILES, QUESTION_POOL } from "./burnout-data";
 import { cortisol } from "./cortisol";
+import { BURNOUT_FOCUS, SECTION_FOCUS, SLEEP_FOCUS } from "./focus";
 import { gut } from "./gut";
 import { inflammation } from "./inflammation";
-import { SLEEP_POOL } from "./sleep-data";
+import { SLEEP_BANDS, SLEEP_POOL } from "./sleep-data";
 
 /**
  * What makes a question set usable, checked as structure rather than read.
@@ -166,5 +169,84 @@ describe("the fixed sets", () => {
     }
     const shared = [...byText].filter(([, tools]) => new Set(tools).size > 1);
     expect(shared.map(([text]) => text)).toEqual([]);
+  });
+});
+
+describe("what the results are allowed to recommend", () => {
+  /*
+   * The company no longer has consultants and no longer sells sessions.
+   *
+   * Every one of these tools was written when it did, and each ended by
+   * pointing somewhere: the burnout categories named the kind of practitioner
+   * to book, the sectioned assessments ended in "Explore ..." buttons into a
+   * catalogue that is closing, and the inflammation result recommended
+   * naturopathic protocols. All of it has been replaced with something the
+   * reader can do on their own — but the copy is long, it came over from
+   * elsewhere, and the way this comes back is one sentence at a time.
+   *
+   * So this walks every string that can reach a reader. Pointing at a doctor
+   * is fine and stays; pointing at a service we do not have is what fails.
+   */
+  const SELLING =
+    /\b(coach|coaching|consultants?|practitioners?|naturopath\w*|herbalists?|our (team|experts))\b|book\s+(a|one)[^.]{0,40}\bsession\b/i;
+
+  /** Everything a finished result can put on the page or in the email. */
+  const COPY: { where: string; text: string }[] = [
+    ...[cortisol, gut, inflammation].flatMap((assessment) =>
+      Object.entries(assessment.bands).flatMap(([key, band]) =>
+        [band.label, band.title, band.desc, ...band.insights].map((text) => ({
+          where: `${assessment.slug}/${key}`,
+          text,
+        })),
+      ),
+    ),
+    ...Object.entries(SLEEP_BANDS).flatMap(([key, band]) =>
+      [band.label, band.title, band.desc, ...band.insights].map((text) => ({
+        where: `sleep/${key}`,
+        text,
+      })),
+    ),
+    ...Object.entries(PROFILES).flatMap(([key, profile]) =>
+      [
+        profile.scoreNote,
+        profile.storyTitle,
+        profile.story,
+        profile.patternTitle,
+        profile.pattern,
+        profile.scienceTitle,
+        profile.science,
+        profile.planTitle,
+        profile.planText,
+        ...profile.actions,
+      ].map((text) => ({ where: `burnout/${key}`, text })),
+    ),
+    ...Object.entries(CATEGORY_INSIGHTS).flatMap(([key, insight]) =>
+      [insight.label, insight.text].map((text) => ({ where: `burnout/${key}`, text })),
+    ),
+    ...Object.entries(BIO_COPY).flatMap(([key, copy]) =>
+      [copy.strong, copy.mid, copy.weak, copy.science, copy.action].map((text) => ({
+        where: `bio-age/${key}`,
+        text,
+      })),
+    ),
+    ...Object.entries({ ...SECTION_FOCUS, ...SLEEP_FOCUS, ...BURNOUT_FOCUS }).flatMap(
+      ([key, focus]) =>
+        [focus.label, focus.action].map((text) => ({ where: `focus/${key}`, text })),
+    ),
+    ...Object.entries(BAND_COPY).flatMap(([key, copy]) =>
+      [copy.label, copy.body].map((text) => ({ where: `bmi/${key}`, text })),
+    ),
+    ...Object.entries(FAT_BAND_COPY).map(([key, text]) => ({ where: `body-fat/${key}`, text })),
+  ];
+
+  it("never sends anybody to a consultant we do not have", () => {
+    const selling = COPY.filter(({ text }) => SELLING.test(text));
+    expect(selling.map(({ where, text }) => `${where}: ${text}`)).toEqual([]);
+  });
+
+  /** And the guard is actually looking at something. */
+  it("is reading the copy, not an empty list", () => {
+    expect(COPY.length).toBeGreaterThan(150);
+    expect(COPY.every(({ text }) => typeof text === "string" && text.length > 0)).toBe(true);
   });
 });

@@ -47,14 +47,12 @@ export function sitemapPaths(): string[] {
      * added and not listed is a page nobody finds, and a page listed and not
      * added is a crawler being told something untrue, which costs more. Both
      * ends read `hostPages()`, so neither can happen.
-     *
-     * These carry no inventory, which is why they are here while the city
-     * pages are not. A page about renting out a pilates studio is finished the
-     * day it ships; a page about the pilates studios in San Mateo is empty
-     * until there is one, and an empty page belongs in no sitemap.
      */
     "/rent-out-your",
     ...hostPages().map((page) => `/rent-out-your/${page.type.slug}`),
+    // The parent of the generated addresses. It exists whether or not any of
+    // them do, and says plainly that nothing is listed yet when nothing is.
+    "/spaces",
   ];
 }
 
@@ -77,8 +75,16 @@ export function robotsFor(host: string | null, origin: string): string {
   ].join("\n");
 }
 
-export function sitemapFor(origin: string): string {
-  const urls = sitemapPaths()
+export function sitemapFor(origin: string, generated: string[] = []): string {
+  /*
+   * Deduplicated, in one order.
+   *
+   * The generated addresses come from a different source than the written
+   * ones, and nothing stops the two overlapping one day. A URL listed twice is
+   * a crawler being told the same thing twice — a small thing, in the one file
+   * whose entire value is being right about what exists.
+   */
+  const urls = [...new Set([...sitemapPaths(), ...generated])]
     .map((path) => `  <url><loc>${origin}${path === "/" ? "" : path}</loc></url>`)
     .join("\n");
 

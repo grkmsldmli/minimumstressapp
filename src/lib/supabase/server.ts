@@ -29,6 +29,26 @@ export async function supabaseServer() {
 }
 
 /**
+ * A client with nobody signed in, for pages that are the same for everybody.
+ *
+ * The city and listing pages are read by strangers and by crawlers, and they
+ * show only what `anon` is granted: spaces_public and the two inventory views.
+ * Using `supabaseServer()` for them would work and would be wrong twice over —
+ * it reads cookies, which opts the route out of static rendering and makes
+ * every crawl a fresh render, and it would quietly show a signed-in visitor a
+ * different page from the one a search engine was given.
+ *
+ * No cookies in, no session, nothing to refresh. If RLS would hide a row from
+ * a stranger, it is hidden here too, which is the property these pages need.
+ */
+export function supabasePublic() {
+  return createServerClient(supabaseUrl(), supabasePublishableKey(), {
+    cookies: { getAll: () => [], setAll: () => {} },
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+}
+
+/**
  * Admin client. Bypasses RLS entirely — every policy in
  * supabase/migrations/0002_rls.sql stops applying.
  *

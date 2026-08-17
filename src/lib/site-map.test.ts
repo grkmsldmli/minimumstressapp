@@ -118,12 +118,14 @@ describe("the generated host pages", () => {
   });
 
   /*
-   * No inventory anywhere in here. That is why these are the pages that exist
-   * today: a city page is empty until a room is listed in that city, and an
-   * empty page belongs in no sitemap. If a path built on listings ever appears
-   * in this list, it arrived before the rule that gates it.
+   * The fixed list may name /spaces — that page is written, and it says
+   * plainly that nothing is listed yet when nothing is. What it may never name
+   * is a town: /spaces/ca/san-mateo has content only if somebody has listed a
+   * room there, so it belongs in the generated half, behind the threshold. A
+   * town appearing in this list arrived without the rule that gates it.
    */
-  it("names no page that would need a listing to have content", () => {
-    expect(sitemapPaths().filter((path) => path.startsWith("/spaces"))).toEqual([]);
+  it("names the directory itself but never a town", () => {
+    expect(sitemapPaths()).toContain("/spaces");
+    expect(sitemapPaths().filter((path) => path.startsWith("/spaces/"))).toEqual([]);
   });
 });

@@ -2,6 +2,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { PGlite } from "@electric-sql/pglite";
+import { indexableCity, indexableCityType, indexablePaths } from "../src/lib/directory";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 /**
@@ -729,5 +730,168 @@ describe("0043 — where a space is and what it suits", () => {
       )`);
 
     expect(await rows("select * from city_inventory where city is null")).toEqual([]);
+  });
+});
+
+
+/**
+ * The indexing rule, against real rows rather than hand-written ones.
+ *
+ * src/lib/directory.test.ts checks the rule as arithmetic. This checks the
+ * other half — that the numbers it is given are the numbers the database
+ * actually produces — because a threshold applied to a miscounted total is a
+ * rule that is right about the wrong thing. The two failures that matter are
+ * both invisible: a town advertised with less in it than we thought, and a use
+ * page that turns out to be its parent under another address.
+ */
+describe("the indexing rule, on rows the database produced", () => {
+  it("holds a town back until it has enough, then lets it through", async () => {
+    const host = await hostFor("Threshold Host");
+
+    const add = (city: string, uses: string) => `
+      insert into spaces (
+        host_id, name, category, hourly_rate_cents, capacity, access_type,
+        entry_instructions, address_line, sublease_doc_path, legal_ack_at,
+        timezone, city, state, suitable_for, status,
+        sublease_doc_state, sublease_doc_reviewed_at
+      ) values (
+        '${host}', 'Room', 'physical', 4000, 3, 'keypad', 'Side door',
+        '1 Test St', 'lease.pdf', now(), 'America/Los_Angeles',
+        '${city}', 'CA', ${uses}, 'active', 'verified', now()
+      )`;
+
+    // Two is below the threshold of three.
+    await db.exec(add("Atherton", "array['pilates-studio']"));
+    await db.exec(add("Atherton", "array['pilates-studio']"));
+
+    const under = await rows<{ space_count: number }>(
+      `select space_count from city_inventory where city = 'Atherton'`,
+    );
+    expect(indexableCity({ spaceCount: under[0].space_count })).toBe(false);
+
+    await db.exec(add("Atherton", "array['pilates-studio']"));
+
+    const over = await rows<{ space_count: number }>(
+      `select space_count from city_inventory where city = 'Atherton'`,
+    );
+    expect(over[0].space_count).toBe(3);
+    expect(indexableCity({ spaceCount: over[0].space_count })).toBe(true);
+  });
+
+  /*
+   * The duplicate that is easy to ship. Every room in Atherton is a pilates
+   * studio, so the use page lists exactly what the town page lists — one page,
+   * two addresses, and a search engine picking between them.
+   */
+  it("refuses a use page that is its own town page", async () => {
+    const [town] = await rows<{ space_count: number }>(
+      `select space_count from city_inventory where city = 'Atherton'`,
+    );
+    const [use] = await rows<{ space_count: number; space_type: string }>(
+      `select space_count, space_type from city_type_inventory
+       where city = 'Atherton' and space_type = 'pilates-studio'`,
+    );
+
+    expect(use.space_count).toBe(town.space_count);
+    expect(
+      indexableCityType(
+        {
+          state: "CA",
+          city: "Atherton",
+          spaceType: use.space_type,
+          spaceCount: use.space_count,
+          minCents: 0,
+          maxCents: 0,
+          medianCents: 0,
+        },
+        town.space_count,
+      ),
+    ).toBe(false);
+  });
+
+  /*
+   * And lets it through once it is a genuine subset — which is what happens
+   * the moment the town has a room that is something else.
+   */
+  it("allows it once the town has more than that one use", async () => {
+    const host = await hostFor("Mixed Host");
+    for (let i = 0; i < 3; i++) {
+      await db.exec(`
+        insert into spaces (
+          host_id, name, category, hourly_rate_cents, capacity, access_type,
+          entry_instructions, address_line, sublease_doc_path, legal_ack_at,
+          timezone, city, state, suitable_for, status,
+          sublease_doc_state, sublease_doc_reviewed_at
+        ) values (
+          '${host}', 'Couch Room', 'traditional', 5000, 2, 'keypad', 'Side door',
+          '2 Test St', 'lease.pdf', now(), 'America/Los_Angeles',
+          'Atherton', 'CA', array['massage-room'], 'active', 'verified', now()
+        )`);
+    }
+
+    const [town] = await rows<{ space_count: number }>(
+      `select space_count from city_inventory where city = 'Atherton'`,
+    );
+    const [use] = await rows<{ space_count: number }>(
+      `select space_count from city_type_inventory
+       where city = 'Atherton' and space_type = 'pilates-studio'`,
+    );
+
+    expect(town.space_count).toBe(6);
+    expect(use.space_count).toBe(3);
+    expect(
+      indexableCityType(
+        {
+          state: "CA",
+          city: "Atherton",
+          spaceType: "pilates-studio",
+          spaceCount: use.space_count,
+          minCents: 0,
+          maxCents: 0,
+          medianCents: 0,
+        },
+        town.space_count,
+      ),
+    ).toBe(true);
+  });
+
+  /*
+   * The whole engine, end to end: rows in, addresses out. The town, and the
+   * two uses that are each a real subset of it — and nothing else.
+   */
+  it("produces exactly the addresses those rows earn", async () => {
+    const cities = (
+      await rows<{ state: string; city: string; space_count: number }>(
+        `select state, city, space_count from city_inventory where city = 'Atherton'`,
+      )
+    ).map((r) => ({
+      state: r.state,
+      city: r.city,
+      spaceCount: r.space_count,
+      minCents: 0,
+      maxCents: 0,
+      medianCents: 0,
+    }));
+
+    const types = (
+      await rows<{ state: string; city: string; space_type: string; space_count: number }>(
+        `select state, city, space_type, space_count from city_type_inventory
+         where city = 'Atherton'`,
+      )
+    ).map((r) => ({
+      state: r.state,
+      city: r.city,
+      spaceType: r.space_type,
+      spaceCount: r.space_count,
+      minCents: 0,
+      maxCents: 0,
+      medianCents: 0,
+    }));
+
+    expect(indexablePaths(cities, types)).toEqual([
+      "/spaces/ca/atherton",
+      "/spaces/ca/atherton/massage-room",
+      "/spaces/ca/atherton/pilates-studio",
+    ]);
   });
 });

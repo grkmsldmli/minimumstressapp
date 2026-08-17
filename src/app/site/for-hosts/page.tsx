@@ -48,7 +48,7 @@ export default function ForHostsPage() {
       <SiteHeader />
 
       <main>
-        <section className="mx-auto grid max-w-5xl items-center gap-12 px-6 pb-16 pt-8 lg:grid-cols-2">
+        <section className="mx-auto grid max-w-6xl items-center gap-12 px-6 pb-16 pt-8 lg:grid-cols-2">
           <div>
             <p className="text-[11px] uppercase tracking-[0.18em]" style={{ color: "#0EA5E9" }}>
               For hosts
@@ -94,7 +94,7 @@ export default function ForHostsPage() {
         </section>
 
         <section className="border-y py-16" style={{ borderColor: "#eef2f6", backgroundColor: "#f8fbfd" }}>
-          <div className="mx-auto grid max-w-5xl gap-6 px-6 md:grid-cols-3">
+          <div className="mx-auto grid max-w-6xl gap-6 px-6 md:grid-cols-3">
             {STEPS.map((step) => (
               <div key={step.n}>
                 <span className="text-[12px] font-bold tracking-[0.1em]" style={{ color: "#0EA5E9" }}>
@@ -124,7 +124,7 @@ export default function ForHostsPage() {
           nothing points at is a page a crawler reaches late and a reader never
           reaches at all.
         */}
-        <section className="mx-auto max-w-5xl px-6 pb-4">
+        <section className="mx-auto max-w-6xl px-6 pb-4">
           <h2
             className="text-[26px] leading-tight"
             style={{ fontFamily: "var(--font-dm-serif)", color: "#0F2F55" }}

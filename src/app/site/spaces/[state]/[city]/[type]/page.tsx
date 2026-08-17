@@ -97,57 +97,59 @@ export default async function CityTypePage({
 
   return (
     <>
-      <SiteHeader width="narrow" />
+      <SiteHeader />
 
-      <main className="mx-auto max-w-3xl px-6 pb-24 pt-4">
-        <Link
-          href={cityPath(found.city.state, found.city.city)}
-          className="text-[14px]"
-          style={{ color: "#0EA5E9" }}
-        >
-          ← All spaces in {found.city.city}
-        </Link>
-
-        <h1
-          className="mt-5 text-[38px] leading-[1.1] sm:text-[44px]"
-          style={{ fontFamily: "var(--font-dm-serif)", color: "#0F2F55" }}
-        >
-          {spaceType.plural} for rent in {found.city.city}
-        </h1>
-
-        <p className="mt-5 text-[16.5px] leading-[1.75]" style={{ color: "#5f6673" }}>
-          {spaceType.blurb}
-        </p>
-
-        {prices && (
-          <p className="mt-3 text-[15px]" style={{ color: "#8a94a3" }}>
-            {formatCents(prices.from)}–{formatCents(prices.to)} an hour in {found.city.city},
-            typically {formatCents(prices.median)}.
-          </p>
-        )}
-
-        <div className="mt-10">
-          <SpaceCards spaces={spaces} />
-        </div>
-
-        <div
-          className="mt-14 rounded-2xl p-6"
-          style={{ backgroundColor: "#f8fbfd", border: "1px solid #e7eef6" }}
-        >
-          <h2 className="text-[19px]" style={{ color: "#0F2F55" }}>
-            Have a {spaceType.label.toLowerCase()} in {found.city.city}?
-          </h2>
-          <p className="mt-2 text-[15px] leading-[1.75]" style={{ color: "#5f6673" }}>
-            The hours you are not in it can earn. You set the rate and keep it.
-          </p>
+      <main className="mx-auto max-w-6xl px-6 pb-24 pt-4">
+      <div className="max-w-3xl">
           <Link
-            href={`/rent-out-your/${spaceType.slug}`}
-            className="mt-4 inline-block rounded-full px-6 py-3 text-[14.5px] font-medium text-white"
-            style={{ backgroundColor: "#0F2F55" }}
+            href={cityPath(found.city.state, found.city.city)}
+            className="text-[14px]"
+            style={{ color: "#0EA5E9" }}
           >
-            See what it could earn
+            ← All spaces in {found.city.city}
           </Link>
-        </div>
+
+          <h1
+            className="mt-5 text-[38px] leading-[1.1] sm:text-[44px]"
+            style={{ fontFamily: "var(--font-dm-serif)", color: "#0F2F55" }}
+          >
+            {spaceType.plural} for rent in {found.city.city}
+          </h1>
+
+          <p className="mt-5 text-[16.5px] leading-[1.75]" style={{ color: "#5f6673" }}>
+            {spaceType.blurb}
+          </p>
+
+          {prices && (
+            <p className="mt-3 text-[15px]" style={{ color: "#8a94a3" }}>
+              {formatCents(prices.from)}–{formatCents(prices.to)} an hour in {found.city.city},
+              typically {formatCents(prices.median)}.
+            </p>
+          )}
+
+          <div className="mt-10">
+            <SpaceCards spaces={spaces} />
+          </div>
+
+          <div
+            className="mt-14 rounded-2xl p-6"
+            style={{ backgroundColor: "#f8fbfd", border: "1px solid #e7eef6" }}
+          >
+            <h2 className="text-[19px]" style={{ color: "#0F2F55" }}>
+              Have a {spaceType.label.toLowerCase()} in {found.city.city}?
+            </h2>
+            <p className="mt-2 text-[15px] leading-[1.75]" style={{ color: "#5f6673" }}>
+              The hours you are not in it can earn. You set the rate and keep it.
+            </p>
+            <Link
+              href={`/rent-out-your/${spaceType.slug}`}
+              className="mt-4 inline-block rounded-full px-6 py-3 text-[14.5px] font-medium text-white"
+              style={{ backgroundColor: "#0F2F55" }}
+            >
+              See what it could earn
+            </Link>
+          </div>
+      </div>
       </main>
 
       <SiteFooter />

@@ -15,50 +15,52 @@ export const metadata: Metadata = {
 export default function BurnoutTestPage() {
   return (
     <>
-      <SiteHeader width="narrow" />
+      <SiteHeader />
 
-      <main className="mx-auto max-w-3xl px-6 pb-24 pt-4">
-        <Link href="/tools" className="text-[14px]" style={{ color: "#0EA5E9" }}>
-          ← All tools
-        </Link>
+      <main className="mx-auto max-w-6xl px-6 pb-24 pt-4">
+      <div className="max-w-3xl">
+          <Link href="/tools" className="text-[14px]" style={{ color: "#0EA5E9" }}>
+            ← All tools
+          </Link>
 
-        <h1
-          className="mt-5 text-[38px] leading-[1.1] sm:text-[44px]"
-          style={{ fontFamily: "var(--font-dm-serif)", color: "#1a2744" }}
-        >
-          Are you burning out
-          <br />
-          <em className="italic" style={{ color: "#1D9E75" }}>
-            or burning through?
-          </em>
-        </h1>
+          <h1
+            className="mt-5 text-[38px] leading-[1.1] sm:text-[44px]"
+            style={{ fontFamily: "var(--font-dm-serif)", color: "#1a2744" }}
+          >
+            Are you burning out
+            <br />
+            <em className="italic" style={{ color: "#1D9E75" }}>
+              or burning through?
+            </em>
+          </h1>
 
-        <p className="mt-5 text-[16.5px] leading-[1.75]" style={{ color: "#5f6673" }}>
-          Ten questions, drawn at random from a hundred, so it is a different test each time you
-          take it. About two minutes.
-        </p>
+          <p className="mt-5 text-[16.5px] leading-[1.75]" style={{ color: "#5f6673" }}>
+            Ten questions, drawn at random from a hundred, so it is a different test each time you
+            take it. About two minutes.
+          </p>
 
-        <p className="mt-4 text-[15px] leading-[1.75]" style={{ color: "#8a94a3" }}>
-          Answer honestly rather than well — nobody sees this but you. Nothing is stored and
-          nothing is emailed.
-        </p>
+          <p className="mt-4 text-[15px] leading-[1.75]" style={{ color: "#8a94a3" }}>
+            Answer honestly rather than well — nobody sees this but you. Nothing is stored and
+            nothing is emailed.
+          </p>
 
-        <div className="mt-12">
-          <BurnoutTool />
-        </div>
+          <div className="mt-12">
+            <BurnoutTool />
+          </div>
 
-        <p
-          className="mt-12 rounded-2xl p-6 text-[14px] leading-[1.75]"
-          style={{ backgroundColor: "#f8fbfd", border: "1px solid #e7eef6", color: "#5f6673" }}
-        >
-          This is a reflection, not a diagnosis. Burnout is not a medical condition on its own,
-          and low mood, exhaustion and detachment have causes a questionnaire cannot see.{" "}
-          {BRAND} is not a medical provider. If your stress feels intense or unsafe, please talk
-          to a doctor or a mental health professional.
-        </p>
+          <p
+            className="mt-12 rounded-2xl p-6 text-[14px] leading-[1.75]"
+            style={{ backgroundColor: "#f8fbfd", border: "1px solid #e7eef6", color: "#5f6673" }}
+          >
+            This is a reflection, not a diagnosis. Burnout is not a medical condition on its own,
+            and low mood, exhaustion and detachment have causes a questionnaire cannot see.{" "}
+            {BRAND} is not a medical provider. If your stress feels intense or unsafe, please talk
+            to a doctor or a mental health professional.
+          </p>
+      </div>
       </main>
 
-      <SiteFooter width="narrow" />
+      <SiteFooter />
     </>
   );
 }

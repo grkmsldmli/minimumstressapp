@@ -14,24 +14,26 @@ import { COLOUR, TYPE } from "@/lib/site-theme";
  */
 
 /**
- * Matches the content width of the page it sits on.
+ * One measure, for every page, with no way to choose another.
  *
- * "Matches" is the whole job and it stopped being true: the homepage moved to
- * six and the bar above it stayed at five, so the logo sat a visible thirty
- * pixels inside the headline underneath it. Chrome that does not line up with
- * its page is the thing that reads as amateur before anybody can say why.
+ * This was a prop, and the prop was the bug. Each page picked the width that
+ * suited it — the homepage six, the hub and the host page five, everything
+ * else three — so the logo landed in three different places depending on where
+ * you had navigated from, and /about managed to set a header wider than its
+ * own text. Nothing was wrong on any one page; the site was wrong between
+ * them, which is the harder kind to see and the kind a visitor feels
+ * immediately.
+ *
+ * Long-form pages stay readable by holding their text to a column inside this,
+ * rather than by shrinking the whole page around it. So the logo, every
+ * heading and the footer all begin at the same x, everywhere, and changing
+ * page moves nothing that is not content.
  */
-type Width = "narrow" | "wide" | "full";
+const MEASURE = "max-w-6xl";
 
-const MAX: Record<Width, string> = {
-  narrow: "max-w-3xl",
-  wide: "max-w-5xl",
-  full: "max-w-6xl",
-};
-
-export function SiteHeader({ width = "wide" }: { width?: Width }) {
+export function SiteHeader() {
   return (
-    <header className={`mx-auto flex ${MAX[width]} items-center justify-between px-6 py-6`}>
+    <header className={`mx-auto flex ${MEASURE} items-center justify-between px-6 py-6`}>
       {/*
         The drawn lockup rather than the brand name set in the page's serif.
         They are not the same mark — the wordmark has its own letterforms and
@@ -196,10 +198,10 @@ function FooterLink({ href, children }: { href: string; children: React.ReactNod
   );
 }
 
-export function SiteFooter({ width = "wide" }: { width?: Width }) {
+export function SiteFooter() {
   return (
     <footer className="pt-16 pb-10 text-white" style={{ backgroundColor: COLOUR.dark }}>
-      <div className={`mx-auto ${MAX[width]} px-6`}>
+      <div className={`mx-auto ${MEASURE} px-6`}>
         <div className={`grid gap-10 sm:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1fr_1fr_1fr] ${TYPE.small}`}>
           <div>
             <Image

@@ -30,7 +30,7 @@ export default function ToolsPage() {
     <>
       <SiteHeader />
 
-      <main className="mx-auto max-w-5xl px-6 pb-24 pt-6">
+      <main className="mx-auto max-w-6xl px-6 pb-24 pt-6">
         <h1
           className="max-w-lg text-[40px] leading-[1.08] sm:text-[48px]"
           style={{ fontFamily: "var(--font-dm-serif)", color: "#0F2F55" }}

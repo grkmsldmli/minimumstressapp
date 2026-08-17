@@ -26,9 +26,13 @@ export function PageShell({
 }) {
   return (
     <>
-      <SiteHeader width="narrow" />
+      <SiteHeader />
 
-      <main className="mx-auto max-w-3xl px-6 pb-24 pt-4">
+      {/* The page measure is the site measure. The reading column sits
+          inside it and starts where the logo starts, so nothing shifts on
+          the way from one page to the next. */}
+      <main className="mx-auto max-w-6xl px-6 pb-24 pt-4">
+        <div className="max-w-3xl">
         <p className={TYPE.eyebrow} style={{ color: COLOUR.link }}>
           {eyebrow}
         </p>
@@ -42,10 +46,11 @@ export function PageShell({
           {standfirst}
         </p>
 
-        {children}
+          {children}
+        </div>
       </main>
 
-      <SiteFooter width="narrow" />
+      <SiteFooter />
     </>
   );
 }

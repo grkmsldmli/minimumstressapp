@@ -148,7 +148,7 @@ const TRUST = [
 export default function SiteHome() {
   return (
     <>
-      <SiteHeader width="full" />
+      <SiteHeader />
 
       <main>
         <Hero />
@@ -161,7 +161,7 @@ export default function SiteHome() {
         <Install />
       </main>
 
-      <SiteFooter width="full" />
+      <SiteFooter />
     </>
   );
 }

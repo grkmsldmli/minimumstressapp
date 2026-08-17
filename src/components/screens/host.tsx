@@ -41,6 +41,19 @@ import { roomTypeFor } from "@/lib/taxonomy";
 
 import { GroupLabel, ProfileHeader, ProfileRow, SettingToggle } from "./practitioner-extras";
 
+/**
+ * "2 spaces · 1 hidden", or nothing to say when there is nothing to say.
+ *
+ * The hidden count is the reason this line exists. A host whose only space is
+ * hidden currently sees a dashboard that looks entirely normal, with no
+ * explanation for why nothing is booking.
+ */
+function spacesSummary(spaces: HostSpace[]): string {
+  const hidden = spaces.filter((space) => space.status === "delisted").length;
+  const count = `${spaces.length} space${spaces.length === 1 ? "" : "s"}`;
+  return hidden > 0 ? `${count} · ${hidden} hidden` : count;
+}
+
 /* ------------------------------------------------------------------ */
 /*  Host dashboard                                                     */
 /* ------------------------------------------------------------------ */
@@ -97,6 +110,7 @@ export function HostDashboard({
   }
 
   const pending = active.status === "pending";
+  const hidden = active.status === "delisted";
   const spaceBookings = bookings.filter((b) => b.spaceId === active.id);
 
   /**
@@ -292,7 +306,28 @@ export function HostDashboard({
         </div>
       ) : (
         <>
-          <div className="px-6 -mt-9 shrink-0">
+          {/*
+          Said on the dashboard, not only in the list.
+
+          A host whose space is hidden used to come back to a screen that
+          looked entirely normal — no bookings, and nothing anywhere to explain
+          why. The switch that caused it was three taps inside Edit, so it was
+          also the last place anybody would look.
+        */}
+        {hidden && (
+          <div
+            className="rounded-xl p-4 mb-3"
+            style={{ backgroundColor: "#F1F3F6", border: "1px solid #DDE3EA" }}
+          >
+            <p className="font-body font-medium text-[14.5px] text-navy">This space is hidden</p>
+            <p className="font-body font-normal text-[14px] leading-relaxed mt-1 text-ink-soft">
+              Nobody can find or book it. Bookings already made are untouched — you can put it
+              back from Your spaces.
+            </p>
+          </div>
+        )}
+
+        <div className="px-6 -mt-9 shrink-0">
             <button
               type="button"
               onClick={onOpenEarnings}
@@ -777,6 +812,7 @@ export function HostProfile({
   onDeleteAccount,
   onPickAvatar,
   onGoLegal,
+  onGoSpaces,
   onConnectPayouts,
   onOpenPayoutDashboard,
   onSignOut,
@@ -797,6 +833,8 @@ export function HostProfile({
   /** Uploads the picture and resolves once it is stored, not once it is shown. */
   onPickAvatar: (file: File) => Promise<unknown>;
   onGoLegal: () => void;
+  /** The list of every space, and where hiding one now lives. */
+  onGoSpaces: () => void;
   /** Rejects when Stripe cannot be reached, so the screen can say so. */
   onConnectPayouts: () => Promise<unknown>;
   onOpenPayoutDashboard: () => Promise<unknown>;
@@ -1052,6 +1090,18 @@ export function HostProfile({
           <GroupLabel>Account</GroupLabel>
         </div>
         <div className="flex flex-col gap-2.5">
+          {/*
+            Above the legal rows because it is the one somebody comes here for.
+            Hiding a space used to live three taps inside Edit, which is the
+            wrong place: it is not an edit, it is the switch that decides
+            whether the space exists for anybody else.
+          */}
+          <ProfileRow
+            icon={Building2}
+            label="Your spaces"
+            value={spacesSummary(spaces)}
+            onClick={onGoSpaces}
+          />
           <ProfileRow icon={ScrollText} label="Terms & privacy" onClick={onGoLegal} />
           <ProfileRow icon={LogOut} label="Log out" onClick={onSignOut} danger />
         </div>

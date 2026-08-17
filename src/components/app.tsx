@@ -52,6 +52,7 @@ import { Confirmed, MyBookings } from "./screens/bookings";
 import { Discover } from "./screens/discover";
 import { EditSpace } from "./screens/edit-space";
 import { EditAvailability, Earnings, HostDashboard, HostProfile } from "./screens/host";
+import { HostSpaces } from "./screens/host-spaces";
 import { Legal } from "./screens/legal";
 import { Notifications } from "./screens/notifications";
 import { PaymentSheet } from "./screens/payment-sheet";
@@ -1321,6 +1322,21 @@ export function App() {
     case "notifications":
       return <Notifications entries={data.notifications} onBack={back} />;
 
+    case "host-spaces":
+      return (
+        <HostSpaces
+          spaces={mySpaces}
+          bookings={hostBookings}
+          onBack={back}
+          onAddSpace={() => go("addspace")}
+          onOpenSpace={(spaceId) => {
+            setEditingSpaceId(spaceId);
+            go("edit-space");
+          }}
+          onSetListed={(spaceId, listed) => mutate(() => repo.setSpaceListed(spaceId, listed))}
+        />
+      );
+
     case "legal":
       return <Legal onBack={back} />;
 
@@ -1389,6 +1405,7 @@ export function App() {
           onUpdate={(patch) => mutate(() => repo.updateProfile(patch))}
           onPickAvatar={(file) => mutate(() => repo.uploadAvatar(file))}
           onGoLegal={() => go("legal")}
+          onGoSpaces={() => go("host-spaces")}
           onConnectPayouts={() => mutate(() => repo.connectPayouts())}
           onOpenPayoutDashboard={() => repo.openPayoutDashboard()}
           onSignOut={signOut}

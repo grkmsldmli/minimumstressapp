@@ -17,6 +17,7 @@ import { supabaseBrowser } from "@/lib/supabase/client";
  */
 export type Screen =
   | "splash"
+  | "host-spaces"
   | "how"
   | "auth-entry"
   | "auth-verify"

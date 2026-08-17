@@ -22,6 +22,7 @@ import {
   quote,
 } from "@/lib/money";
 import { LATE_CANCELLATION_HOURS } from "@/lib/reliability";
+import { spaceTypeBySlug } from "@/lib/space-types";
 import { ACCESS_TYPES, requirementsByKind, roomTypeFor } from "@/lib/taxonomy";
 import {
   type CivilDate,
@@ -182,6 +183,28 @@ export function SpaceDetail({
       : (ACCESS_TYPES.find((a) => a.key === space.accessType)?.label ?? "Keypad code");
   const requirementGroups = requirementsByKind(space.requirements);
 
+  /**
+   * The uses worth printing, which is not all of them.
+   *
+   * Four of the ten share a name with a room type — a Treatment Room is both —
+   * and the badge at the top of this page already says which room type it is.
+   * Printing it again under "Good for" is the listing repeating itself in the
+   * one place a reader is scanning for new information. What survives is the
+   * part the badge does not already say: that the movement studio above is
+   * also set up for pilates.
+   *
+   * Unknown slugs drop out here too. The column is filtered on the way in, so
+   * this is the second of two guards — and the failure it prevents is a
+   * listing showing a stranger "reiki-room".
+   */
+  const roomType = roomTypeFor(space.category);
+  const extraUses = space.suitableFor
+    .map(spaceTypeBySlug)
+    // flatMap rather than filter, because a filter narrows nothing: the
+    // compiler still has to be told the nulls are gone, and being told is how
+    // one gets through later.
+    .flatMap((type) => (type && type.label !== roomType ? [type] : []));
+
   return (
     <div className="h-full flex flex-col relative screen-in bg-white">
       <SpaceGallery media={space.media} category={space.category} height={320}>
@@ -274,6 +297,26 @@ export function SpaceDetail({
         <div className="mt-2.5">
           <ParkingPanel parking={space.parking} />
         </div>
+
+        {/*
+          What the host says the room suits.
+
+          Shown because it is asked for. A field a host fills in and never sees
+          again is a field they stop filling in — and this one decides which
+          pages the listing appears on, so it is the last one that should rot.
+          It also answers the question a practitioner is actually asking: not
+          "what category is this" but "can I teach pilates in it".
+        */}
+        {extraUses.length > 0 && (
+          <>
+            <Label>Good for</Label>
+            <div className="flex flex-wrap gap-1.5">
+              {extraUses.map((type) => (
+                <Tag key={type.slug}>{type.label}</Tag>
+              ))}
+            </div>
+          </>
+        )}
 
         {space.amenities.length > 0 && (
           <>

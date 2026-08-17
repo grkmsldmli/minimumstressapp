@@ -15,7 +15,8 @@ import { type LatLng, toBrowsePosition } from "@/lib/geo";
 import { MIN_DESCRIPTION_CHARS, describesTheRoom } from "@/lib/listing-quality";
 import { PARKING_LIMIT_OPTIONS, PARKING_OPTIONS, limitOutlastsSession } from "@/lib/parking";
 import { formatCents, quote } from "@/lib/money";
-import { CATEGORY_KEYS, roomTypeFor } from "@/lib/taxonomy";
+import { spaceTypesFor } from "@/lib/space-types";
+import { type CategoryKey, CATEGORY_KEYS, roomTypeFor } from "@/lib/taxonomy";
 import { usePointZone } from "@/lib/use-point-zone";
 
 /**
@@ -65,6 +66,20 @@ export function EditSpace({
    * and carrying them over is how a listing moves city on paper while its map,
    * its distance ranking and its browse pin all stay put.
    */
+  /**
+   * The town of a newly chosen address, or null while it is the old one.
+   *
+   * Null is the normal state and means "do not touch what is stored". It is
+   * only filled by picking an address from the list, which is the only moment
+   * a geocoder has actually told us the town.
+   */
+  const [place, setPlace] = useState<{
+    city: string | null;
+    state: string | null;
+    postalCode: string | null;
+  } | null>(null);
+  /** What the room is bookable for. Free to change, bookings or not. */
+  const [suitableFor, setSuitableFor] = useState<string[]>(space.suitableFor);
   const [point, setPoint] = useState<LatLng | null>(
     space.lat !== null && space.lng !== null ? { lat: space.lat, lng: space.lng } : null,
   );
@@ -119,7 +134,8 @@ export function EditSpace({
     description !== space.description ||
     floorArea !== (space.floorAreaSqft === null ? "" : String(space.floorAreaSqft)) ||
     parking.join() !== space.parking.options.join() ||
-    parkingLimit !== space.parking.limitMinutes;
+    parkingLimit !== space.parking.limitMinutes ||
+    suitableFor.join() !== space.suitableFor.join();
 
   const toggleListed = async () => {
     setError(null);
@@ -162,6 +178,10 @@ export function EditSpace({
         floorAccess: access.floor,
         doorwayInches: access.doorwayInches,
         restroomAccess: access.restroom,
+        // Not part of the move: nobody booked a session on the strength of a
+        // room being marked good for pilates, so this is free to change even
+        // while the address is locked.
+        suitableFor,
         // Only sent when they are actually free to change, so a locked
         // listing cannot be moved by a stale value sitting in a field.
         ...(locked
@@ -180,6 +200,19 @@ export function EditSpace({
                     ...toBrowsePosition(movedPoint),
                     timeZone,
                   }
+                : {}),
+              /*
+               * The town, only when a new address was actually resolved.
+               *
+               * Deliberately keyed off `place` rather than `movedPoint`. A
+               * host who drags the pin a few metres onto the right door has
+               * not changed town, and there is nothing to send — but the drag
+               * does move the point, so sending this with the bundle above
+               * would write the null that `place` holds in that case and drop
+               * the listing off its city page for a correction to a doorway.
+               */
+              ...(place
+                ? { city: place.city, state: place.state, postalCode: place.postalCode }
                 : {}),
             }),
       });
@@ -357,6 +390,15 @@ export function EditSpace({
 
         <div className="h-px my-7" style={{ backgroundColor: "#E7EEF6" }} />
 
+        {/*
+          Outside the lock. The address and the room type are frozen while
+          sessions are booked, because somebody arranged their day around them
+          — but nobody booked an hour on the strength of a room being marked
+          good for pilates, and a host who has started teaching something else
+          should be able to say so today.
+        */}
+        <SuitableFor category={category} value={suitableFor} onChange={setSuitableFor} />
+
         {locked ? (
           /*
            * Refused, not re-reviewed. Somebody has arranged their day around a
@@ -409,10 +451,19 @@ export function EditSpace({
               onChange={(next) => {
                 setAddress(next);
                 setPoint(null);
+                setPlace(null);
               }}
               onSelect={(picked) => {
                 setAddress(picked.addressLine);
                 setPoint({ lat: picked.lat, lng: picked.lng });
+                // Only a resolved address carries a town. Dragging the pin
+                // below leaves this alone on purpose — see the note where it
+                // is saved.
+                setPlace({
+                  city: picked.city,
+                  state: picked.state,
+                  postalCode: picked.postalCode,
+                });
               }}
             />
             <p className="font-body font-normal text-[13.5px] mt-2 text-ink-faint">
@@ -533,6 +584,68 @@ export function EditSpace({
 }
 
 const FIELD = { border: "1px solid #DCE7F2", backgroundColor: "#fff" } as const;
+
+/**
+ * What the room is bookable for.
+ *
+ * The finer question under "room type", and the one a practitioner actually
+ * searches with — nobody looks for a movement studio, they look for a pilates
+ * studio, and the same floor is both. It is what puts a listing on the pages
+ * built around a use.
+ *
+ * Optional, and left that way on edit as well as on create: a host who ticks
+ * nothing keeps a listing that browses and books, and simply misses those
+ * pages. The row is a named group because four of these labels are also room
+ * type names, and two identical words on one screen have to be tellable apart.
+ */
+function SuitableFor({
+  category,
+  value,
+  onChange,
+}: {
+  category: CategoryKey;
+  value: string[];
+  onChange: (next: string[]) => void;
+}) {
+  const toggle = (slug: string) =>
+    onChange(value.includes(slug) ? value.filter((s) => s !== slug) : [...value, slug]);
+
+  return (
+    <>
+      <p
+        id="edit-good-for-label"
+        className="font-body font-semibold text-[12px] uppercase tracking-[0.2em] mt-6 mb-2 text-sky-text"
+      >
+        Good for <span className="text-ink-faint">(optional)</span>
+      </p>
+      <div className="flex flex-wrap gap-2" role="group" aria-labelledby="edit-good-for-label">
+        {spaceTypesFor(category).map((type) => {
+          const on = value.includes(type.slug);
+          return (
+            <button
+              key={type.slug}
+              type="button"
+              aria-pressed={on}
+              onClick={() => toggle(type.slug)}
+              className="px-3.5 py-2 rounded-full font-body text-[13.5px] press"
+              style={
+                on
+                  ? { backgroundColor: "#2578C2", color: "#fff" }
+                  : { border: "1px solid #DCE7F2", color: "#4D6480" }
+              }
+            >
+              {type.label}
+            </button>
+          );
+        })}
+      </div>
+      <p className="font-body font-normal text-[13.5px] mt-2 text-ink-faint">
+        This is how people find you. Someone searching for a pilates studio near them sees rooms
+        marked for pilates.
+      </p>
+    </>
+  );
+}
 
 function Label({ children }: { children: React.ReactNode }) {
   return (

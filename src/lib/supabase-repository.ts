@@ -974,6 +974,15 @@ export class SupabaseRepository implements Repository {
     if (edit.category !== undefined) patch.category = edit.category;
     if (edit.addressLine !== undefined) patch.address_line = edit.addressLine;
     if (edit.lat !== undefined) patch.lat = edit.lat;
+    // Moves with the address too. A room that changed town and kept its old
+    // one sits on the wrong city page indefinitely, and nothing on the listing
+    // itself looks wrong — the address reads correctly, the map is right, and
+    // only the page it is filed under is a lie.
+    if (edit.city !== undefined) patch.city = edit.city;
+    if (edit.state !== undefined) patch.state = edit.state;
+    if (edit.postalCode !== undefined) patch.postal_code = edit.postalCode;
+    // Not part of the move, and not locked by bookings — see SpaceEdit.
+    if (edit.suitableFor !== undefined) patch.suitable_for = knownSpaceTypes(edit.suitableFor);
     // Moves with the address. A room that crossed a zone boundary and kept its
     // old zone would quietly shift every future booking by an hour.
     if (edit.timeZone !== undefined) patch.timezone = edit.timeZone;

@@ -352,6 +352,31 @@ export interface SpaceEdit {
    */
   lat?: number;
   lng?: number;
+  /**
+   * The town, sent only when a new address was actually resolved.
+   *
+   * Not merely when the pin moved. Nudging the pin is a host putting it on the
+   * right door, and re-deriving the town from a few metres would be a geocoder
+   * call to answer a question that has not changed — while sending an
+   * unresolved `null` alongside it would wipe a perfectly good town and drop
+   * the listing off its city page.
+   *
+   * When it is sent it travels with the address, like the coordinates and the
+   * timezone: a listing whose text says Belmont and whose city column still
+   * says San Mateo appears on the wrong page, and it is the kind of wrong
+   * nobody looks for.
+   */
+  city?: string | null;
+  state?: string | null;
+  postalCode?: string | null;
+  /**
+   * What the room is bookable for — free to change whenever.
+   *
+   * Not part of the move, and not locked by bookings. Nobody agreed a session
+   * on the strength of a listing being marked good for pilates, and a host who
+   * has started teaching something else should be able to say so.
+   */
+  suitableFor?: string[];
   /** Re-resolved whenever the coordinates above change, never typed. */
   timeZone?: string;
   /** Derived from lat/lng by toBrowsePosition, and granted in 0037. */

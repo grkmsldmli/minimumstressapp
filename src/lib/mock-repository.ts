@@ -636,6 +636,11 @@ export class MockRepository implements Repository {
 
     Object.assign(space, edit);
 
+    // Filtered the same way the real repository filters it, so a use that has
+    // since been renamed is dropped here too rather than only failing against
+    // the check constraint in 0043.
+    if (edit.suitableFor !== undefined) space.suitableFor = knownSpaceTypes(edit.suitableFor);
+
     // What was verified is no longer what is listed.
     if (moved) {
       space.status = "pending";

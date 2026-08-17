@@ -402,3 +402,98 @@ describe("uploadAvatar", () => {
     await expect(repo.uploadAvatar(pdf)).rejects.toThrow();
   });
 });
+
+/**
+ * The two axes the generated pages are built on, kept through an edit.
+ *
+ * Creating a listing stored them and editing one dropped them, which is the
+ * quiet half of the bug: the listing looks right, the address reads right, and
+ * only the page it is filed under is wrong.
+ */
+describe("keeping a listing's town and its uses", () => {
+  const listing = () =>
+    repo.createSpace({
+      name: "Test Room",
+      category: "physical",
+      hourlyRateCents: 3000,
+      capacity: 4,
+      accessType: "keypad",
+      entryInstructions: "Keypad by the door",
+      addressLine: "1 Test Street",
+      city: "San Mateo",
+      state: "CA",
+      postalCode: "94404",
+      suitableFor: ["pilates-studio"],
+      timeZone: "America/Los_Angeles",
+      parking: { options: [], limitMinutes: null },
+      floorAreaSqft: null,
+      lat: 37.5485,
+      lng: -122.3122,
+      mapX: 50,
+      mapY: 50,
+      access: { entrance: null, floor: null, doorwayInches: null, restroom: null },
+      restroom: "Private",
+      amenities: [],
+      requirements: [],
+      description: "A test room.",
+      houseRules: "",
+      bufferMinutes: 15,
+      availability: [],
+      media: [{ file: testFile("room.jpg", "image/jpeg"), kind: "image" }],
+      subleaseDoc: testFile("lease.pdf", "application/pdf"),
+      insuranceDoc: null,
+    });
+
+  it("stores both when the listing is made", async () => {
+    const space = await listing();
+    expect(space.city).toBe("San Mateo");
+    expect(space.state).toBe("CA");
+    expect(space.suitableFor).toEqual(["pilates-studio"]);
+  });
+
+  it("changes the uses when they are edited", async () => {
+    const space = await listing();
+    const edited = await repo.editSpace(space.id, {
+      suitableFor: ["yoga-studio", "movement-studio"],
+    });
+    expect(edited.suitableFor).toEqual(["yoga-studio", "movement-studio"]);
+  });
+
+  /*
+   * A use that has since been renamed costs the use, not the listing. The
+   * database would refuse the whole row on the check constraint, so the same
+   * filter runs on both sides.
+   */
+  it("drops a use it does not recognise rather than failing the edit", async () => {
+    const space = await listing();
+    const edited = await repo.editSpace(space.id, {
+      suitableFor: ["yoga-studio", "therapy-office"],
+    });
+    expect(edited.suitableFor).toEqual(["yoga-studio"]);
+  });
+
+  /*
+   * The important one. An edit that says nothing about the town must leave it
+   * alone — a host correcting their door code has not moved, and a listing
+   * that quietly loses its town disappears from its city page.
+   */
+  it("leaves the town alone when an edit does not mention it", async () => {
+    const space = await listing();
+    const edited = await repo.editSpace(space.id, { name: "Renamed" });
+    expect(edited.city).toBe("San Mateo");
+    expect(edited.state).toBe("CA");
+  });
+
+  it("moves the town when the listing genuinely moves", async () => {
+    const space = await listing();
+    const edited = await repo.editSpace(space.id, {
+      addressLine: "9 Elm Ave, Belmont, CA 94002, USA",
+      city: "Belmont",
+      state: "CA",
+      postalCode: "94002",
+      lat: 37.52,
+      lng: -122.28,
+    });
+    expect(edited.city).toBe("Belmont");
+  });
+});

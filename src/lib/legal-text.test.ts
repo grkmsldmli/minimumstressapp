@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { SECTIONS, sectionsFor } from "./legal-text";
+import { LEGAL_TOPICS, SECTIONS, sectionsFor } from "./legal-text";
 
 /**
  * The binding text, and the split that publishes it.
@@ -103,5 +103,63 @@ describe("what the privacy policy has to cover", () => {
   it("names the processor that is configured and unused", () => {
     expect(privacy).toContain("twilio");
     expect(privacy).toMatch(/twilio[^.]*not switched on|not switched on[^.]*twilio/);
+  });
+});
+
+/**
+ * The summary layer, held to the document it summarises.
+ *
+ * The app shows four cards instead of the whole of SECTIONS, and the risk that
+ * creates is drift: a section renamed, split or dropped leaves a card pointing
+ * at nothing, and nobody notices because the card still looks fine. These are
+ * the checks that make the short version answerable to the long one.
+ */
+describe("the cards in the app", () => {
+  it("only name sections that exist", () => {
+    const keys = new Set(SECTIONS.map((section) => section.key));
+    for (const topic of LEGAL_TOPICS) {
+      for (const key of topic.covers) {
+        expect(keys.has(key), `${topic.key} → ${key}`).toBe(true);
+      }
+    }
+  });
+
+  /*
+   * The one that matters. Four cards that between them skip a section mean a
+   * clause nobody can reach from inside the app — published, binding, and
+   * invisible to the person it binds.
+   */
+  it("between them reach every section of both documents", () => {
+    const reached = new Set(LEGAL_TOPICS.flatMap((topic) => topic.covers));
+    for (const section of SECTIONS) {
+      expect(reached.has(section.key), `${section.key} is in no card`).toBe(true);
+    }
+  });
+
+  it("send each card to the document its sections are actually in", () => {
+    for (const topic of LEGAL_TOPICS) {
+      for (const key of topic.covers) {
+        const section = SECTIONS.find((s) => s.key === key);
+        expect(section?.scope, `${topic.key} → ${key}`).toBe(topic.scope);
+      }
+    }
+  });
+
+  it("claims no section twice", () => {
+    const all = LEGAL_TOPICS.flatMap((topic) => topic.covers);
+    expect(new Set(all).size).toBe(all.length);
+  });
+
+  /*
+   * The account screen used to list which company stores the database and
+   * which serves the app. That belongs in a privacy policy at most, and the
+   * reason is not only that nobody wants to read it: an infrastructure list
+   * inside the product is a map for somebody deciding where to push.
+   */
+  it("say nothing about how the thing is built", () => {
+    const shown = LEGAL_TOPICS.map((t) => `${t.title} ${t.blurb}`).join(" ").toLowerCase();
+    for (const vendor of ["supabase", "vercel", "stripe", "resend", "maptiler", "twilio", "database"]) {
+      expect(shown, vendor).not.toContain(vendor);
+    }
   });
 });

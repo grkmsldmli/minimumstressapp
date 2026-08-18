@@ -167,12 +167,12 @@ const FOR_HOSTS = {
   links: [
     { label: "List your space", href: `${APP_URL}?list=1` },
     { label: "How hosting works", href: "/for-hosts" },
-    { label: "Get the quote", href: "/rent-out-your" },
+    { label: "See your quote", href: "/rent-out-your" },
     { label: "Pricing & fees", href: "/pricing" },
     { label: "Trust & safety", href: "/trust" },
     { label: "Host questions", href: "/for-hosts#faq" },
   ],
-  action: { label: "Get the quote →", href: "/rent-out-your" },
+  action: { label: "See your quote →", href: "/rent-out-your" },
 };
 
 const COMPANY = [

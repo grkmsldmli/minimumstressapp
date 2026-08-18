@@ -44,7 +44,7 @@ export const SECTIONS: readonly LegalSection[] = [
     points: [
       `These terms are between you and ${LEGAL_ENTITY}, which operates ${BRAND}.`,
       `${BRAND} runs a marketplace. We are not a party to the room booking itself, nor to the session a practitioner runs with their own client.`,
-      "Practitioners and hosts are independent businesses. A practitioner licenses a room by the hour — they are our customer, not our worker, and nothing in this arrangement makes them one.",
+      "Practitioners and hosts are independent businesses and contract with each other, not with us. A practitioner licenses a room by the hour — they are our customer, not our worker, and nothing in this arrangement makes them one.",
       "Hosts set their own rate and receive all of it. Our service fee is added on top for the practitioner; it is never deducted from what a host is owed.",
       "Hosts must hold the legal right to sublicense their space for paid sessions, and remain responsible for their own property and insurance.",
     ],
@@ -112,24 +112,33 @@ export const SECTIONS: readonly LegalSection[] = [
   },
   {
     /*
-     * Named, because "trusted partners" is not a disclosure. Every one of
-     * these is in the code and can be checked: stripe/, notify/transports.ts,
-     * geocode-google.ts, map-tiles.ts, supabase/. Twilio is listed as unused
-     * rather than left out, so that turning it on is a change to this text
-     * rather than a quiet extension of who has your number.
+     * Named, because "trusted partners" is not a disclosure — a privacy policy
+     * that will not say who receives your information has not disclosed
+     * anything, and California requires the categories in any case.
+     *
+     * What each line says is what *they receive and why*. It used to say what
+     * each one does for us — which service stores the files, which serves the
+     * app — and that is a different document: an architecture diagram, printed
+     * for anybody including the people who would use it, answering a question
+     * nobody reading a privacy policy asked. A reader wants to know who has
+     * their data. They do not need our stack.
+     *
+     * Twilio stays listed as unused rather than dropped, so switching it on is
+     * a change to this text rather than a quiet extension of who has your
+     * number.
      */
     key: "processors",
     title: "Who else handles it",
     scope: "privacy",
     points: [
-      "Supabase stores the database, the uploaded files, and the sign-in session. Vercel serves the app.",
-      "Stripe takes payments, holds card details, and pays hosts. Their own privacy policy governs what they hold.",
-      "Resend sends the emails — booking confirmations, codes, and the rest.",
-      "Google Places resolves an address while it is being typed. The lookup happens on our server, so the half-typed address does not leave your device for Google directly.",
-      "MapTiler serves the map images. It receives the tiles being requested, which is roughly the area on screen, not who is looking.",
-      "Signing in with Google or Microsoft tells us your email address and name, and tells them that you signed in here.",
-      "Twilio is configured for emergency SMS and is not switched on. Nothing is sent to them today.",
-      "We do not sell or share personal information, and we run no advertising or cross-site tracking.",
+      "Stripe, for payments and payouts: your card details, which go to them and never reach us, and what a booking cost. Their own privacy policy governs what they hold.",
+      "Resend, for email: your address, and what the message says — a booking confirmation, a door code, a receipt.",
+      "Supabase, for storage: your account, your bookings, anything you upload, and your signed-in session.",
+      "Google, when you type an address into the search box, and if you sign in with a Google account. Address lookups go through us, so a half-typed address does not leave your device for Google directly.",
+      "MapTiler, for the map: which part of the map is on screen, and not who is looking at it.",
+      "Microsoft, if you sign in with a Microsoft account: your email address and name.",
+      "Twilio is set up for emergency SMS and is not switched on. Nothing is sent to them today.",
+      "Nobody else. We do not sell or share personal information, and we run no advertising or cross-site tracking.",
     ],
   },
   {
@@ -229,6 +238,62 @@ export const SECTIONS: readonly LegalSection[] = [
 ];
 
 /** The sections that make up one published document. */
+/**
+ * The plain-language layer, and the only legal text most people should meet.
+ *
+ * SECTIONS above is the document: complete, published at /terms and /privacy,
+ * and what an acceptance is recorded against. It is also unreadable on a
+ * phone, and the app was showing all of it — every section, expanded, in an
+ * account screen. Somebody opening "Terms & Privacy" to check a refund window
+ * was being handed the name of our database host.
+ *
+ * So this is a map rather than a summary. Four cards, each naming what it
+ * covers and pointing at the sections that actually say it. Nothing here
+ * replaces the document or is agreed to instead of it — `covers` is the link,
+ * and a test asserts every key resolves, so a section renamed or removed
+ * cannot leave a card quietly pointing at nothing.
+ */
+export interface LegalTopic {
+  key: string;
+  title: string;
+  blurb: string;
+  /** Which published document to open. */
+  scope: LegalScope;
+  /** The sections this card stands for, by their key in SECTIONS. */
+  covers: readonly string[];
+}
+
+export const LEGAL_TOPICS: readonly LegalTopic[] = [
+  {
+    key: "bookings",
+    title: "Your bookings",
+    blurb: "Payment, cancellation, access and refunds.",
+    scope: "terms",
+    covers: ["cancel", "standing"],
+  },
+  {
+    key: "using",
+    title: "Using a space",
+    blurb: "Declared use, how many people, and the host's own rules.",
+    scope: "terms",
+    covers: ["use-of-space", "off-platform", "reviews", "wellness"],
+  },
+  {
+    key: "account",
+    title: "Your account",
+    blurb: "Who you are contracting with, and what that makes you.",
+    scope: "terms",
+    covers: ["terms"],
+  },
+  {
+    key: "privacy",
+    title: "Privacy",
+    blurb: "What we collect, how long we keep it, and what you can ask us to do.",
+    scope: "privacy",
+    covers: ["privacy", "processors", "keeping", "rights", "security-and-age", "location"],
+  },
+] as const;
+
 export function sectionsFor(scope: LegalScope): readonly LegalSection[] {
   return SECTIONS.filter((section) => section.scope === scope);
 }

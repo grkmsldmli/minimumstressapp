@@ -90,21 +90,36 @@ export function hasAcceptedTerms(accepted: { version: number | null }): boolean 
  * only stand behind what we can see" — a sentence that sounds like a position
  * and commits to nothing. Anything relied on in a dispute has to be a fact.
  */
+/**
+ * What somebody has to know before they tap agree.
+ *
+ * Three, and the test is narrow: does not knowing this change what a person
+ * does? Book in the app, use the room for what you said, keep to the host's
+ * rules. Those are behaviours. Everything else on this screen was not.
+ *
+ * It used to carry four cards of full paragraphs, including the entity name,
+ * the independent-contractor position and a hundred-word sentence about
+ * off-platform liability. All of that is still binding and still published —
+ * SECTIONS in legal-text.ts is the document, /terms is where it lives, and the
+ * link under the button goes there. None of it was ever going to be read on a
+ * navy screen standing between somebody and the app, and a wall of legal prose
+ * at the door does not produce informed consent. It produces scrolling.
+ *
+ * Deliberately not part of termsDigest(): that hashes SECTIONS, so shortening
+ * this screen changes what is shown and not what was agreed, and nobody is
+ * asked to accept again for a UI change.
+ */
 export const ACCEPTANCE_POINTS = [
   {
-    title: "Book and pay in the app",
-    body: "Payment, refunds, cancellation cover, access codes, reviews and support are provided only for bookings made through Minimum Stress.",
+    title: "Book and pay through Minimum Stress",
+    body: "Payment, refunds, access codes and support only cover bookings made here.",
   },
   {
-    title: "Do not exchange contact or payment details",
-    body: "Phone numbers, email addresses and payment details are removed from messages. Requesting them may result in suspension of your account.",
+    title: "Use the space only for what you declared",
+    body: "You say what a booking is for and how many people are coming. Turning up with something else ends the booking.",
   },
   {
-    title: "Bookings made outside the app are not covered",
-    body: "Minimum Stress is not a party to any session arranged or paid for outside the app, holds no record of it, and provides no payment protection, refund, access, verification, insurance or dispute resolution for it. Liability for such arrangements rests with the parties who made them.",
-  },
-  {
-    title: "You are an independent business",
-    body: "Practitioners and hosts contract with each other, not with Minimum Stress. Hosts must hold the legal right to sublicense their space and remain responsible for their property, insurance and compliance.",
+    title: "Follow the host's rules and limits",
+    body: "It is their room. Their house rules and the number it holds both apply.",
   },
 ] as const;

@@ -241,7 +241,7 @@ function Hero() {
         <p className={`mt-5 ${TYPE.small}`} style={{ color: COLOUR.muted }}>
           Have a space?{" "}
           <Link href="/rent-out-your" className="underline underline-offset-2" style={{ color: COLOUR.link }}>
-            Get the quote
+            See your quote
           </Link>
         </p>
       </div>
@@ -507,7 +507,7 @@ function ForHosts() {
                   className="rounded-full bg-white px-8 py-4 text-[16px] font-medium transition-transform duration-200 hover:-translate-y-0.5"
                   style={{ color: COLOUR.ink }}
                 >
-                  Get the quote
+                  See your quote
                 </Link>
                 <Link
                   href="/for-hosts"

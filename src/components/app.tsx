@@ -45,6 +45,7 @@ import { rebookable } from "@/lib/rebook";
 import { FALLBACK_ZONE } from "@/lib/timezone";
 import { sessionDayShort } from "@/lib/when";
 import { TERMS_VERSION, hasAcceptedTerms } from "@/lib/terms";
+import { WEBSITE } from "@/lib/company";
 
 import { type Screen, useApp } from "./app-state";
 import { AcceptTerms } from "./screens/accept-terms";
@@ -1369,7 +1370,21 @@ export function App() {
       );
 
     case "legal":
-      return <Legal onBack={back} />;
+      return (
+        <Legal
+          onBack={back}
+          /*
+           * Out to the published document, in a new tab.
+           *
+           * The full text is one thing, served at one address, and /terms is
+           * what an acceptance is recorded against — rendering a second copy
+           * inside the app is how the two drift and every stored acceptance
+           * becomes unverifiable. A new tab so somebody reading a policy does
+           * not lose where they were in the app.
+           */
+          onOpen={(path) => window.open(`${WEBSITE}${path}`, "_blank", "noopener,noreferrer")}
+        />
+      );
 
     case "host":
       return renderHostDashboard();

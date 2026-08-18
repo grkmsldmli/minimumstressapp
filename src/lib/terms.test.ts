@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { ACCEPTANCE_POINTS, TERMS_VERSION, digestOf, hasAcceptedTerms, termsDigest } from "./terms";
+import { SECTIONS } from "./legal-text";
 
 /**
  * The commercial point of all this: "it was in the terms" is worth very little
@@ -29,60 +30,90 @@ describe("hasAcceptedTerms", () => {
   });
 });
 
+/**
+ * The substance, and where it now lives.
+ *
+ * These guards were written against ACCEPTANCE_POINTS, to stop the clauses the
+ * business rests on being quietly dropped from the screen somebody agrees on.
+ * The screen is now three lines and links to the document, so asserting them
+ * there would fail for the right reason and the wrong one at once.
+ *
+ * So they moved rather than went. The document is what an acceptance is
+ * recorded against — SECTIONS, published at /terms and /privacy — and it is
+ * the honest place to insist these words exist. Asserted by substance rather
+ * than exact wording, as before: rephrasing passes, deleting does not.
+ */
 describe("what somebody is agreeing to", () => {
-  const all = ACCEPTANCE_POINTS.map((p) => `${p.title} ${p.body}`).join(" ").toLowerCase();
+  const document = SECTIONS.flatMap((s) => [s.title, ...s.points])
+    .join(" ")
+    .toLowerCase();
 
-  /**
-   * The clause the business rests on. Asserted by what it must contain rather
-   * than by its exact wording, so rephrasing it does not fail the test and
-   * dropping the substance does.
-   */
   it("excludes bookings made outside the app", () => {
-    expect(all).toContain("outside the app");
-    expect(all).toContain("not a party");
+    expect(document).toContain("outside the app");
+    expect(document).toContain("not a party");
   });
 
   it("names the specific protections that do not apply", () => {
-    // Vague exclusions are argued over. These are the things somebody would
-    // actually come back asking for.
     for (const protection of ["payment protection", "refund", "access", "insurance", "dispute"]) {
-      expect(all, protection).toContain(protection);
+      expect(document, protection).toContain(protection);
     }
   });
 
   it("places liability rather than only declining it", () => {
-    expect(all).toContain("liability");
-    expect(all).toContain("rests with the parties");
+    expect(document).toContain("liability");
+    expect(document).toContain("rests with the parties");
   });
 
   it("states the consequence of asking for contact details", () => {
-    expect(all).toContain("suspension");
+    expect(document).toContain("suspension");
   });
 
   /** Independence, in the words that matter for employment status. */
   it("says the two sides contract with each other", () => {
-    expect(all).toContain("contract with each other");
-    expect(all).toContain("sublicense");
-  });
-
-  /**
-   * Read on a phone, before a button. The liability clause is allowed to run
-   * longer than the rest — an exclusion that leaves a gap is worse than one
-   * that takes an extra line.
-   */
-  it("keeps every point short enough to be read", () => {
-    for (const point of ACCEPTANCE_POINTS) {
-      expect(point.body.length, point.title).toBeLessThan(320);
-      expect(point.title.length, point.title).toBeLessThan(50);
-    }
-  });
-
-  it("has no point that sounds like an opinion", () => {
-    for (const phrase of ["we can only", "we would rather", "we invented", "we believe"]) {
-      expect(all, phrase).not.toContain(phrase);
-    }
+    expect(document).toContain("contract with each other");
+    expect(document).toContain("sublicense");
   });
 });
+
+/**
+ * The screen itself, held short on purpose.
+ *
+ * The failure this guards is the one that produced the old version: every
+ * clause anybody thought important gets added "just in case", and the screen
+ * becomes a wall nobody reads — which is worse than a short one, because a
+ * person who scrolls past four paragraphs has been informed of nothing.
+ *
+ * A ceiling rather than a floor, and a link out, so the full text is always a
+ * tap away from the moment of agreeing.
+ */
+describe("the screen somebody agrees on", () => {
+  it("stays short enough to read standing up", () => {
+    expect(ACCEPTANCE_POINTS.length).toBeLessThanOrEqual(3);
+    for (const point of ACCEPTANCE_POINTS) {
+      expect(point.body.length, point.title).toBeLessThan(140);
+    }
+  });
+
+  /*
+   * Only things a person does. The entity name and the contracting position
+   * are true, binding and published; neither changes what anybody does next,
+   * which is what this screen is for.
+   */
+  it("carries only rules that change somebody's behaviour", () => {
+    const shown = ACCEPTANCE_POINTS.map((p) => `${p.title} ${p.body}`).join(" ").toLowerCase();
+    for (const boilerplate of ["llc", "consulting services", "sublicense", "indemn"]) {
+      expect(shown, boilerplate).not.toContain(boilerplate);
+    }
+  });
+
+  it("covers booking in the app, declared use, and the host's rules", () => {
+    const shown = ACCEPTANCE_POINTS.map((p) => `${p.title} ${p.body}`).join(" ").toLowerCase();
+    expect(shown).toContain("through minimum stress");
+    expect(shown).toContain("declared");
+    expect(shown).toContain("host");
+  });
+});
+
 
 /**
  * What version 1 actually says, pinned.
@@ -132,8 +163,13 @@ describe("the words a version stands for", () => {
      * released if the host declines or never answers. Not a new obligation,
      * but a different thing happening to somebody's money than the line above
      * it describes, which is exactly what a payment term is for.
+     *
+     * And "contract with each other", which had only ever existed on the
+     * acceptance screen. That screen is now three lines, so the clause moved
+     * into the document where it belongs — the same words, in the text an
+     * acceptance is actually recorded against.
      */
-    2: "15e31258",
+    2: "fffbd1f7",
   };
 
   it("still says what the current version said", () => {

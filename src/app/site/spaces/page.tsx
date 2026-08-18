@@ -139,7 +139,7 @@ export default async function SpacesIndex() {
                   className="mt-4 inline-block rounded-full px-6 py-3 text-[14.5px] font-medium text-white"
                   style={{ backgroundColor: "#0F2F55" }}
                 >
-                  Get the quote
+                  See your quote
                 </Link>
               </div>
             </>

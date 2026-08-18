@@ -131,24 +131,42 @@ const STEPS = [
   { n: "3", title: "Work", body: "Let yourself in and see your own clients." },
 ];
 
+/**
+ * Why book here rather than anywhere, said as what this actually does.
+ *
+ * The four before these were marketplace boilerplate — one price, no minimum,
+ * every room checked, free cancellation — and two of them were promises rather
+ * than descriptions. "Every room is checked" is only true for as long as
+ * somebody keeps opening every listing by hand, and "free cancellation" reads
+ * as a guarantee that a policy change quietly turns into a lie. A card that
+ * has to be revisited every time an operational decision changes is a card
+ * that will eventually be wrong without anybody noticing.
+ *
+ * These four describe the product instead. Each one is true because of how the
+ * thing is built, not because of a rule we are currently keeping — and the
+ * pricing card promises that the terms are shown, which stays true whatever
+ * the terms become.
+ */
 const TRUST = [
   {
-    title: "One price",
+    title: "Book only what you need",
+    body: "One hour, a few hours, or the same time every week. No lease, no long-term commitment.",
+  },
+  {
+    title: "Know what's included",
     body:
-      "The listing price already includes our fee. The only extra is $5 if you book a slot " +
-      "starting within two hours.",
+      "The room setup, what is in it, how you get in and anything to bring — all on the listing, " +
+      "before you book.",
   },
   {
-    title: "No minimum",
-    body: "Book a single hour. No contract, no notice period, nothing to sign.",
+    title: "Spaces made for practice",
+    body:
+      "Every listing says what it suits, from movement and coaching to holistic practice and " +
+      "meditation.",
   },
   {
-    title: "Every room is checked",
-    body: "We review the listing and the lease before a room can be booked.",
-  },
-  {
-    title: "Free cancellation",
-    body: "Cancel 24 hours ahead and the session is refunded — only the card fee is kept.",
+    title: "Clear pricing and cancellation",
+    body: "The total price and the cancellation terms are in front of you before you confirm.",
   },
 ];
 

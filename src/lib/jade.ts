@@ -1,11 +1,16 @@
 /**
  * Jade, the front desk — what she knows and what she can answer without asking.
  *
- * The widget this came from ran on Shopify and was cheap to run for one
- * reason worth keeping: most of what people ask a front desk is routing, and
- * routing does not need a model. `answerLocally` below handles the common
- * intents from a lookup table and never touches the API. Only a genuine
- * question — something nobody wrote an answer for — costs a call.
+ * The widget this came from ran on Shopify. It answered from a big lookup
+ * table to save tokens, and that turned into its whole personality: the same
+ * paragraph every time, no memory of the last message, a form letter for
+ * "naber". The traffic cost three cents a month, so the saving was imaginary
+ * and the cost was real.
+ *
+ * So the model answers now. `answerLocally` is down to a safety rail — the few
+ * questions where a generative reply could do harm (a prohibited use, a price)
+ * or where an email has to be collected first. Everything else is a real
+ * conversation.
  *
  * Everything here is the part that changed with the business. The old version
  * sold sessions with consultants, ran a shop, and pointed at Shopify
@@ -63,10 +68,15 @@ export const CHAT_CUSTOMER_URL = "https://ms-chat-proxy.vercel.app/api/customer"
 /**
  * How many model-backed questions one person gets in a day.
  *
- * Local answers are free and are not counted — somebody can route themselves
- * around the site all afternoon. The cap is on the expensive path only.
+ * Was fifteen, and a visitor hit it on their second message — "naber",
+ * "nasilsin", and then a form letter telling them to come back tomorrow. That
+ * was the cheap path protecting a bill that came to three cents a month.
+ *
+ * Eighty is an abuse ceiling, not a budget: far past any real conversation and
+ * still trivial against the rate limit on the route, which is the control that
+ * actually stops a script.
  */
-export const MAX_MODEL_MESSAGES_PER_DAY = 15;
+export const MAX_MODEL_MESSAGES_PER_DAY = 80;
 
 export type Language = "tr" | "en";
 
@@ -180,12 +190,12 @@ export const JADE_SYSTEM_PROMPT = [
  * The chips under the first message. Four.
  *
  * Six read as a menu, which is the thing a chat is supposed to save somebody
- * from — a wall of options is a worse version of the navigation they already
- * scrolled past. These are the four journeys the site actually has: come in as
- * a guest, come in as a host, find out what is allowed, or get a person.
+ * from. These are the four journeys the site has: come in as a guest, come in
+ * as a host, find out what is allowed, or reach a person.
  *
- * Every one of them is answered by the table in this file, so the opening move
- * costs nothing whichever chip is pressed. A test asserts that.
+ * They go to the model like anything else — a chip is an opening prompt, not a
+ * shortcut to a canned paragraph, so the reply reads the conversation rather
+ * than reciting a fixed one.
  */
 /**
  * The language, stated as a fact rather than left to be inferred.
@@ -232,75 +242,42 @@ export interface LocalAnswer {
  * which is the test for belonging here: if a model would only ever paraphrase
  * this, the paraphrase is not worth what it costs.
  */
+/**
+ * The two things a model must not be trusted to answer.
+ *
+ * Everything else went back to the model. The table started as a token-saving
+ * device and became the product's voice: canned paragraphs, the same wording
+ * every time, no memory of what was just said — a visitor asked "naber" and
+ * got a form letter. It was optimising the wrong thing. The whole month of
+ * traffic cost three cents; intelligence was never the expensive part.
+ *
+ * What stays is where being wrong actually costs somebody. A prohibited use
+ * has one answer and a generative one can be talked into a maybe. A price has
+ * one answer and the model invented a daily rate when it was left to infer
+ * one. Neither is a conversation.
+ */
 const ROUTES: { match: readonly string[]; answer: LocalAnswer }[] = [
   {
-    match: [
-      "find a space", "book a space", "find a room", "book a room", "browse",
-      "mekan bul", "oda bul", "yer bul", "kiralamak",
-    ],
+    match: ["party", "parties", "sexual", "escort", "adult", "porn", "parti", "seks"],
     answer: {
-      en: "Have a look at [what is available](/spaces) 🌿 You can filter by the kind of room and the time you need. What are you planning to use it for?",
-      tr: "[Açık olan alanlara](/spaces) göz atabilirsin 🌿 Stüdyo tipine ve ihtiyacın olan saate göre filtreleyebilirsin. Ne için kullanmayı düşünüyorsun?",
+      en: "No — parties, sexual services and adult-content production are not allowed in any space here, and a booking that misrepresents its purpose is ended. [Trust and safety](/trust).",
+      tr: "Hayır — partiler, cinsel hizmetler ve yetişkin içerik üretimi buradaki hiçbir mekânda kabul edilmiyor, amacını yanlış beyan eden rezervasyon iptal edilir. [Güven ve güvenlik](/trust).",
     },
   },
   {
     match: [
-      "what can i book", "what can i use", "allowed", "can i do", "what for",
-      "teach", "lesson", "private lesson", "class here",
-      "ne icin kullan", "ne için kullan", "izin var", "yapabilir miyim",
-      "ozel ders", "özel ders", "ders ver", "ders anlat", "kurs ver",
+      "how long", "how many hours", "per hour", "hourly", "daily rate", "per day",
+      "kac saat", "kaç saat", "saatlik", "gunluk", "günlük", "ne kadar sure", "ne kadar süre",
     ],
     answer: {
-      en: "It depends on the room and what the host allows — personal practice, dance or movement rehearsal, yoga and Pilates, meditation, private client sessions, coaching, small groups and workshops are all normal. You say what you are planning before you book. [What is available](/spaces).",
-      tr: "Alana ve mekân sahibinin izin verdiğine bağlı — kişisel çalışma, dans veya hareket provası, yoga ve Pilates, meditasyon, birebir danışan görüşmesi, koçluk, küçük gruplar ve atölyeler normal kullanımlar. Rezervasyondan önce ne yapacağını yazıyorsun. [Açık mekânlar](/spaces).",
+      en: "A booking is one hour. If you need longer, take the hours next to each other. There is no daily or weekly rate and no lease — you pay for the hours you book and nothing else.",
+      tr: "Bir rezervasyon bir saat. Daha uzun süre gerekiyorsa yan yana saatleri ayırtırsın. Günlük ya da haftalık fiyat yok, kira sözleşmesi de yok — sadece ayırttığın saati ödersin.",
     },
   },
   {
     match: [
-      "list my space", "list a space", "rent out", "become a host", "i have a space",
-      "i have a room", "host", "mekanimi", "mekânımı", "oda kiraya", "ev sahibi",
-    ],
-    answer: {
-      en: "Good — [see what your space could earn](/rent-out-your) with your own rate and hours 🌿 You choose which uses you allow and whether you approve each booking yourself. [How hosting works](/for-hosts).",
-      tr: "Güzel — kendi fiyatın ve saatlerinle [alanının ne kazanabileceğine](/rent-out-your) bakabilirsin 🌿 Hangi kullanımlara izin vereceğine ve her rezervasyonu kendin onaylayıp onaylamayacağına sen karar veriyorsun. Uzun dönem kiraya verme değil bu — sadece boş saatlerini açıyorsun. [Nasıl işliyor](/for-hosts).",
-      intake: "host_interest",
-    },
-  },
-  {
-    match: [
-      "how does booking work", "how do i book", "how it works", "booking work",
-      "nasil rezervasyon", "nasıl rezervasyon", "nasil calisiyor", "nasıl çalışıyor",
-    ],
-    answer: {
-      en: "Pick a space and a time, say what you will use it for and how many are coming, then pay. On rooms where the host accepts bookings themselves, your card is held and only charged if they accept. Entry details reach you before the session. More in the [questions](/faq).",
-      tr: "Bir alan ve saat seç, ne için kullanacağını ve kaç kişi olacağınızı yaz, sonra öde. Mekân sahibinin kendisi onayladığı yerlerde kartın bloke edilir ve yalnızca kabul ederse çekilir. Giriş bilgileri seanstan önce sana ulaşır. Detaylar [sorularda](/faq).",
-    },
-  },
-  {
-    match: [
-      "assessment", "assesment", "assessments", "test", "quiz", "burnout",
-      "sleep score", "cortisol", "degerlendirme nedir", "assesment nedir",
-      "degerlendirme", "değerlendirme", "tükenmişlik", "tukenmislik", "uyku",
-    ],
-    answer: {
-      en: "The [assessments](/assessments) are free and scored on the screen — nothing is stored and no account is needed. Burnout, sleep, stress, gut health and a few others.",
-      tr: "[Değerlendirmeler](/assessments) ücretsiz ve ekranda puanlanıyor — hiçbir şey saklanmıyor, hesap da gerekmiyor. Tükenmişlik, uyku, stres, bağırsak sağlığı ve birkaç tane daha.",
-    },
-  },
-  {
-    match: [
-      "safe", "safety", "trust", "verified", "secure",
-      "guvenli", "güvenli", "guven", "güven",
-    ],
-    answer: {
-      en: "Everybody says what they are booking a space for before they pay, and hosts choose which uses they allow — that is the core of it. [Trust and safety](/trust) has the rest.",
-      tr: "Herkes ödemeden önce alanı ne için kullanacağını yazıyor ve mekân sahipleri hangi kullanımlara izin vereceklerini kendileri seçiyor — işin özü bu. Gerisi [güven ve güvenlik](/trust) sayfasında.",
-    },
-  },
-  {
-    match: [
-      "cancel", "refund", "complaint", "problem", "not working", "support", "charged",
-      "iptal", "iade", "sikayet", "şikayet", "sorun", "destek", "yardim", "yardım",
+      "cancel", "refund", "complaint", "problem", "not working", "charged",
+      "iptal", "iade", "sikayet", "şikayet", "sorun",
     ],
     answer: {
       en: "I'm sorry about that 💙 Share your email and one line about what happened, and I'll pass it to the team. You can also write to info@minimumstress.com.",
@@ -310,7 +287,7 @@ const ROUTES: { match: readonly string[]; answer: LocalAnswer }[] = [
   },
   {
     match: [
-      "newsletter", "email list", "mailing list", "subscribe", "updates",
+      "newsletter", "email list", "mailing list", "subscribe",
       "mail listesi", "listeye ekle", "listene ekle", "bulten", "bülten",
     ],
     answer: {
@@ -319,111 +296,35 @@ const ROUTES: { match: readonly string[]; answer: LocalAnswer }[] = [
       intake: "email_signup",
     },
   },
-  {
-    match: [
-      "what is minimum stress", "who are you", "about you", "what do you do",
-      "minimum stress nedir", "kimsiniz", "burasi nedir", "burası nedir", "bu nedir",
-      "ne ise yariyor", "ne işe yarıyor",
-      "burasi ne", "burası ne", "ne yapiyorsunuz", "ne yapıyorsunuz",
-    ],
-    answer: {
-      en: "We're a marketplace for studios and private workout spaces 🌿 You book the hours you need — to practise, rehearse, teach, or see your own clients — and hosts open up the hours their space is standing empty. [Have a look](/spaces).",
-      tr: "Stüdyo ve çalışma alanları için bir pazar yeriyiz 🌿 Saatini ayırtıp kullanıyorsun — çalışmak, prova yapmak, ders vermek ya da kendi danışanlarını görmek için. Mekân sahipleri de boş saatlerini listeliyor. [Göz at](/spaces).",
-    },
-  },
-  /*
-   * "Oda mı alan mı", asked because the two sides of a marketplace are not
-   * obvious from outside it. The model answered it by coining "alan olmak",
-   * which means nothing. Written down instead.
-   */
-  {
-    match: [
-      "guest or host", "which side", "renting or listing", "difference between",
-      "oda mi alan mi", "oda mı alan mı", "kendi odami mi", "kendi odamı mı",
-      "hangisi", "ikisi de mi", "misafir mi ev sahibi mi",
-    ],
-    answer: {
-      en: "Two sides. You book the hours you need in somebody's studio and run your session there — that makes you a guest. Or you open up the empty hours in a space you already run, and are paid for the ones somebody books — that makes you a host. Nobody is letting a home or signing a lease; what is bought and sold is an hour. [Find a space](/spaces) or [list yours](/rent-out-your).",
-      tr: "İki taraf var. Bir stüdyonun saatini ayırtıp seansını orada yaparsın — o zaman misafirsin. Ya da elindeki çalışma alanının boş saatlerini listeler, kullanıldığı saatler için kazanırsın — o zaman mekân sahibisin. Kimse ev ya da uzun dönem kiralamıyor; alınıp satılan şey saat. [Mekân bul](/spaces) ya da [alanını listele](/rent-out-your).",
-    },
-  },
-  /*
-   * The invented daily rate came from here. Asked directly, it is a fact with
-   * one answer, and the model was making it up because nothing said otherwise.
-   */
-  {
-    match: [
-      "how long", "how many hours", "per hour", "hourly", "daily rate", "per day",
-      "kac saat", "kaç saat", "saatlik", "gunluk", "günlük", "ne kadar sure",
-      "ne kadar süre", "sureli", "süreli",
-    ],
-    answer: {
-      en: "A booking is one hour. If you need longer, take the hours next to each other. There is no daily or weekly rate and no lease — you pay for the hours you book and nothing else.",
-      tr: "Bir rezervasyon bir saat. Daha uzun süre gerekiyorsa yan yana saatleri ayırtırsın. Günlük ya da haftalık fiyat yok, kira sözleşmesi de yok — sadece ayırttığın saati ödersin.",
-    },
-  },
-  /*
-   * Who she is. Asked by nearly everybody, in the same three ways, and it was
-   * costing a model call each time — one visitor spent their whole daily
-   * allowance on small talk and then could not ask a real question.
-   *
-   * She does not claim to be a person and does not deny it either. The line
-   * she gives is true and closes the subject.
-   */
-  {
-    match: [
-      "how old are you", "are you a girl", "are you a woman", "are you real",
-      "are you a bot", "are you human", "are you ai", "your name", "who made you",
-      "where are you from", "are you a person",
-      "kac yasindasin", "kaç yaşındasın", "kiz misin", "kız mısın", "kadin misin",
-      "gercek misin", "gerçek misin", "insan misin", "robot musun", "bot musun",
-      "nerelisin", "adin ne", "adın ne", "seni kim yapti", "seni kim yaptı",
-    ],
-    answer: {
-      en: "I'm Jade, the front desk here 🌿 I'd rather talk about what you need — are you after a space, or thinking about listing one?",
-      tr: "Ben Jade, buranın ön masasıyım 🌿 Asıl senin ne aradığını konuşalım — bir alan mı arıyorsun, yoksa kendi alanını mı açmayı düşünüyorsun?",
-    },
-  },
-  /*
-   * Asked often, and the one place a wrong answer is expensive. Answered from
-   * the rule rather than from the model, so it cannot be softened into a maybe.
-   */
-  {
-    match: ["party", "parties", "sexual", "escort", "adult", "porn", "parti", "seks"],
-    answer: {
-      en: "No — parties, sexual services and adult-content production are not allowed in any space here, and a booking that misrepresents its purpose is ended. [Trust and safety](/trust).",
-      tr: "Hayır — partiler, cinsel hizmetler ve yetişkin içerik üretimi buradaki hiçbir mekânda kabul edilmiyor, amacını yanlış beyan eden rezervasyon iptal edilir. [Güven ve güvenlik](/trust).",
-    },
-  },
 ];
 
 /**
  * Which language to answer in.
  *
- * Two signals, because the first one alone was not enough. Turkish written
- * without its own letters is ordinary — "sen ne ise yariyorsun" has no ı, ş or
- * ğ in it — and a keyword list of nouns like "mekân" and "rezervasyon" misses
- * every sentence that is a question rather than a request. That one came back
- * in English.
+ * Two signals, because the letters alone are not enough. Turkish written
+ * without them is ordinary — "sen ne ise yariyorsun" has no ı, ş or ğ — and a
+ * list of nouns misses every sentence that is a question rather than a
+ * request. Greetings are in the list by name because "naber" has no Turkish
+ * letter, no verb ending, and no other word to match on.
  *
- * So: the letters, a set of function words that exist in Turkish and not in
- * English, and the verb endings. A sentence needs only one of them. The words
- * are matched whole, because "var" inside "variable" and "bir" inside "bird"
+ * Words are matched whole: "var" inside "variable" and "bir" inside "bird"
  * would otherwise answer an English question in Turkish.
  */
 const TURKISH_WORDS = [
+  "naber", "nabersin", "nasilsin", "nasılsın", "selam", "merhaba",
+  "napiyorsun", "napıyorsun", "gunaydin", "günaydın",
   "sen", "ben", "biz", "siz", "ne", "neden", "niye", "nedir", "nasil", "nasıl",
   "kim", "hangi", "nerede", "icin", "için", "ile", "bir", "cok", "çok", "daha",
   "gibi", "kadar", "sonra", "once", "önce", "ama", "veya", "degil", "değil",
   "yok", "var", "mi", "mı", "mu", "mü", "misin", "mısın", "musun", "lazim",
-  "lazım", "gerek", "istiyorum", "merhaba", "selam", "tesekkur", "teşekkür",
+  "lazım", "gerek", "istiyorum", "tesekkur", "teşekkür",
   "mekan", "mekân", "oda", "yer", "kirala", "rezervasyon", "iptal", "iade",
   "sikayet", "şikayet", "destek", "yardim", "yardım", "ucretsiz", "ücretsiz",
 ];
 
-/** -yorum, -yorsun, -iyor, -mek, -mak, -dir: endings English does not have. */
+/** -yorum, -yorsun, -iyor, -mek, -dir: endings English does not have. */
 const TURKISH_ENDINGS =
-  /\w+(yorum|yorsun|yoruz|iyor|ıyor|uyor|üyor|mek|mak|malı|meli|dir|dır|lar|ler)/;
+  /\\w+(yorum|yorsun|yoruz|iyor|ıyor|uyor|üyor|mek|mak|malı|meli|dir|dır|lar|ler)\\b/;
 
 export function detectLanguage(text: string): Language {
   const raw = String(text || "");

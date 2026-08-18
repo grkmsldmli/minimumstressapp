@@ -36,6 +36,8 @@ import {
 interface Message {
   role: "user" | "bot";
   text: string;
+  /** Characters revealed so far. Absent means all of it — user messages. */
+  revealed?: number;
 }
 
 type Intake = "support" | "host_interest" | "email_signup" | null;
@@ -60,13 +62,92 @@ export function JadeChat() {
    */
   const history = useRef<{ role: "user" | "assistant"; content: string }[]>([]);
 
+  const [nudge, setNudge] = useState(false);
+  /** The dots. Shown while she is thinking as well as while the model is. */
+  const [typing, setTyping] = useState(false);
+  /** Where the next bot message will land, so its reveal can be addressed. */
+  const messagesRef = useRef(0);
+  const reducedMotion = useRef(false);
+
+  useEffect(() => {
+    messagesRef.current = messages.length;
+  }, [messages]);
+
+  /*
+   * Somebody who has asked for less motion gets the whole sentence at once.
+   * Read from the ref rather than state so `say` sees it without being
+   * rebuilt, and read once because it is a preference, not an event.
+   */
+  useEffect(() => {
+    reducedMotion.current = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  }, []);
+
   useEffect(() => {
     if (scroller.current) scroller.current.scrollTop = scroller.current.scrollHeight;
-  }, [messages, busy]);
+  }, [messages, busy, typing]);
 
-  const say = (text: string) => {
+  /*
+   * A single nudge at eight seconds, for somebody who has not opened it.
+   *
+   * Long enough that they have read something and may have a question, short
+   * enough to still be on the page. It runs three times and stops — a bubble
+   * that pulses forever is an advertisement, and the one that pulses when you
+   * are already typing in it is worse.
+   */
+  useEffect(() => {
+    if (open) return;
+    const timer = setTimeout(() => setNudge(true), 8000);
+    return () => clearTimeout(timer);
+  }, [open]);
+
+  /*
+   * Every timer this component starts, so none of them outlive it.
+   *
+   * A visitor who closes the tab mid-sentence leaves a chain of setTimeouts
+   * calling setState on something React has thrown away.
+   */
+  const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  useEffect(() => () => timers.current.forEach(clearTimeout), []);
+
+  const wait = (ms: number) =>
+    new Promise<void>((resolve) => {
+      timers.current.push(setTimeout(resolve, ms));
+    });
+
+  /**
+   * Jade answering: a pause, then the sentence arriving a character at a time.
+   *
+   * The typing is not decoration. The routing table answers in zero
+   * milliseconds and the model in a second or two, and without this the
+   * difference is obvious to anybody — one reply materialises whole, the other
+   * arrives after a wait. Typing both makes the cheap path indistinguishable
+   * from the expensive one, which is the entire point of having it.
+   */
+  const say = async (text: string) => {
     history.current = [...history.current, { role: "assistant" as const, content: text }].slice(-10);
-    setMessages((prior) => [...prior, { role: "bot", text }]);
+
+    if (reducedMotion.current) {
+      setMessages((prior) => [...prior, { role: "bot", text }]);
+      return;
+    }
+
+    setTyping(true);
+    await wait(thinkingPause(text));
+    setTyping(false);
+
+    const total = visibleLength(text);
+    const index = messagesRef.current;
+    setMessages((prior) => [...prior, { role: "bot", text, revealed: 0 }]);
+
+    // Fast enough that a long answer never outstays its welcome.
+    const perChar = Math.min(TYPE_MS_PER_CHAR, TYPE_MAX_MS / Math.max(total, 1));
+
+    for (let shown = 1; shown <= total; shown++) {
+      await wait(restAfter(text.charAt(shown - 1), perChar));
+      setMessages((prior) =>
+        prior.map((message, at) => (at === index ? { ...message, revealed: shown } : message)),
+      );
+    }
   };
 
   /**
@@ -139,7 +220,7 @@ export function JadeChat() {
       if (isDecline(text)) {
         setIntake(null);
         setShowChips(true);
-        say(tr ? "Tabii, geçiyorum 🌿 Başka nasıl yardımcı olabilirim?" : "Of course — skipping that 🌿 What else can I help with?");
+        void say(tr ? "Tabii, geçiyorum 🌿 Başka nasıl yardımcı olabilirim?" : "Of course — skipping that 🌿 What else can I help with?");
         return;
       }
 
@@ -148,7 +229,7 @@ export function JadeChat() {
         captureLead(intake, email, text, tr ? "tr" : "en");
         setIntake(null);
         setShowChips(true);
-        say(
+        void say(
           tr
             ? `Teşekkürler 🌿 ${email} adresini ve konuşmayı ekibe ilettim.`
             : `Got it 🌿 I've passed ${email} and this conversation to the team.`,
@@ -156,7 +237,7 @@ export function JadeChat() {
         return;
       }
 
-      say(
+      void say(
         tr
           ? `Geçerli bir e-posta göremedim 🌿 Yazabilirsen iletirim; istemiyorsan “hayır” de. ${SUPPORT_EMAIL} adresine de yazabilirsin.`
           : `I don't have a valid email yet 🌿 Type it and I'll pass it on, or say "no" to skip. You can also write to ${SUPPORT_EMAIL}.`,
@@ -174,7 +255,7 @@ export function JadeChat() {
 
     /* ---- and only now, the model ---- */
     if (overDailyLimit()) {
-      say(
+      void say(
         tr
           ? `Bugünlük bu kadar sohbet edebiliyorum 💙 [Mekânlara](/spaces) göz atabilir ya da ${SUPPORT_EMAIL} adresine yazabilirsin.`
           : `That's as much as I can chat today 💙 Have a look at [the spaces](/spaces), or write to ${SUPPORT_EMAIL}.`,
@@ -217,9 +298,9 @@ export function JadeChat() {
         console.error(`Jade: /api/jade/chat returned ${response.status}`);
         throw new Error("no reply");
       }
-      say(reply);
+      await say(reply);
     } catch {
-      say(
+      void say(
         tr
           ? "Şu an küçük bir bağlantı sorunu var 💙 Birazdan tekrar dener misin?"
           : "I'm having a small connection issue 💙 Try again in a moment?",
@@ -245,6 +326,7 @@ export function JadeChat() {
         type="button"
         hidden={open}
         onClick={() => {
+          setNudge(false);
           setOpen((was) => !was);
           /*
             The greeting belongs to the click rather than to an effect on
@@ -258,7 +340,7 @@ export function JadeChat() {
         }}
         aria-label="Chat with Jade"
         aria-expanded={open}
-        className="fixed bottom-6 right-6 z-[9999] flex h-12 w-12 items-center justify-center rounded-full text-white transition-transform hover:scale-105"
+        className={`fixed bottom-6 right-6 z-[9999] flex h-12 w-12 items-center justify-center rounded-full text-white transition-transform hover:scale-105 active:scale-95 ${nudge && !open ? "jade-nudge" : ""}`}
         style={{
           background: "linear-gradient(135deg,#0F2F55,#0EA5E9)",
           boxShadow: "0 4px 18px rgba(15,47,85,.34)",
@@ -277,7 +359,7 @@ export function JadeChat() {
             about an eighth off both, which is the difference between a panel
             and a window.
           */
-          className="fixed bottom-6 right-6 z-[9998] flex h-[476px] max-h-[calc(100vh-96px)] w-[min(336px,calc(100vw-24px))] flex-col overflow-hidden rounded-[18px] bg-white"
+          className="jade-panel fixed bottom-6 right-6 z-[9998] flex h-[476px] max-h-[calc(100vh-96px)] w-[min(336px,calc(100vw-24px))] flex-col overflow-hidden rounded-[18px] bg-white"
           style={{ boxShadow: "0 8px 40px rgba(15,47,85,.16)" }}
           role="dialog"
           aria-label="Chat with Jade"
@@ -324,16 +406,20 @@ export function JadeChat() {
               {messages.map((message, index) => (
                 <Bubble key={index} message={message} />
               ))}
-              {busy && (
-                <div className="flex items-end gap-2">
+              {(busy || typing) && (
+                <div className="jade-message flex items-end gap-2">
                   <Avatar />
                   <div className="rounded-[4px_16px_16px_16px] bg-white px-4 py-3 shadow-sm">
-                    <span className="flex gap-1">
+                    <span className="flex gap-1" role="status" aria-label="Jade is typing">
                       {[0, 1, 2].map((dot) => (
                         <span
                           key={dot}
-                          className="h-1.5 w-1.5 rounded-full"
-                          style={{ backgroundColor: "#94a3b8" }}
+                          className="jade-dot h-1.5 w-1.5 rounded-full"
+                          style={{
+                            backgroundColor: "#94a3b8",
+                            // Staggered, so it reads as a wave rather than a blink.
+                            animationDelay: `${dot * 0.2}s`,
+                          }}
                         />
                       ))}
                     </span>
@@ -350,7 +436,7 @@ export function JadeChat() {
                   key={chip}
                   type="button"
                   onClick={() => void send(chip)}
-                  className="rounded-full bg-white px-3 py-1.5 text-[12px] font-medium transition-colors"
+                  className="rounded-full bg-white px-3 py-1.5 text-[12px] font-medium transition-all hover:border-sky-400 hover:text-sky-600 active:scale-95"
                   style={{ border: "1.5px solid #e2e8f0", color: "#0F2F55" }}
                 >
                   {chip}
@@ -417,7 +503,7 @@ function Avatar() {
 function Bubble({ message }: { message: Message }) {
   if (message.role === "user") {
     return (
-      <div className="flex flex-row-reverse items-end gap-2">
+      <div className="jade-message flex flex-row-reverse items-end gap-2">
         <p
           className="max-w-[80%] rounded-[16px_16px_4px_16px] px-3.5 py-2.5 text-[13.5px] leading-relaxed text-white"
           style={{ background: "linear-gradient(135deg,#0F2F55,#1a4a7a)" }}
@@ -429,67 +515,122 @@ function Bubble({ message }: { message: Message }) {
   }
 
   return (
-    <div className="flex items-end gap-2">
+    <div className="jade-message flex items-end gap-2">
       <Avatar />
       <p
         className="max-w-[80%] rounded-[4px_16px_16px_16px] bg-white px-3.5 py-2.5 text-[13.5px] leading-relaxed shadow-sm"
         style={{ color: "#1a1a2e" }}
       >
-        {renderMarkdown(message.text)}
+        {renderTokens(message.text, message.revealed ?? message.text.length)}
       </p>
     </div>
   );
 }
 
 /**
- * Links and bold, and nothing else.
+ * Links and bold, and nothing else — as tokens, so a message can be half told.
  *
- * The widget this replaces built HTML with a string of `.replace()` calls and
- * handed it to `innerHTML` — which is fine right up until a model, or a lead
- * echoed back into the transcript, contains a tag. This walks the text and
- * returns React nodes, so there is no HTML to inject into.
+ * Parsed rather than string-replaced. The widget this came from built HTML
+ * with a chain of `.replace()` calls and handed it to `innerHTML`, which is
+ * fine right up until a model, or a lead echoed back into the transcript,
+ * contains a tag.
+ *
+ * Tokens rather than nodes because the text is revealed a character at a time.
+ * Rendering markdown over a truncated string would show `[Find a space](/spa`
+ * for a few frames on every link she sends; counting characters across tokens
+ * shows the label appearing inside a finished link instead.
  */
-function renderMarkdown(text: string): React.ReactNode[] {
-  const nodes: React.ReactNode[] = [];
+interface Token {
+  kind: "text" | "link" | "bold";
+  text: string;
+  href?: string;
+}
+
+export function tokenise(text: string): Token[] {
+  const tokens: Token[] = [];
   const pattern = /\[([^\]]+)\]\(([^)]+)\)|\*\*([^*]+)\*\*/g;
   let last = 0;
   let match: RegExpExecArray | null;
-  let key = 0;
 
   while ((match = pattern.exec(text)) !== null) {
-    if (match.index > last) nodes.push(text.slice(last, match.index));
+    if (match.index > last) tokens.push({ kind: "text", text: text.slice(last, match.index) });
 
     if (match[1] && match[2]) {
       // Internal paths only. A model that hallucinates an external link
       // should produce text, not something somebody can click.
-      const href = match[2].startsWith("/") ? match[2] : null;
-      nodes.push(
-        href ? (
-          <a
-            key={key++}
-            href={href}
-            className="font-bold underline"
-            style={{ color: "#0EA5E9" }}
-          >
-            {match[1]}
-          </a>
-        ) : (
-          <span key={key++}>{match[1]}</span>
-        ),
-      );
+      const href = match[2].startsWith("/") ? match[2] : undefined;
+      tokens.push({ kind: href ? "link" : "text", text: match[1], href });
     } else if (match[3]) {
-      nodes.push(
-        <strong key={key++} style={{ color: "#0F2F55" }}>
-          {match[3]}
-        </strong>,
-      );
+      tokens.push({ kind: "bold", text: match[3] });
     }
 
     last = pattern.lastIndex;
   }
 
-  if (last < text.length) nodes.push(text.slice(last));
+  if (last < text.length) tokens.push({ kind: "text", text: text.slice(last) });
+  return tokens;
+}
+
+/** How many characters a reader has to get through. Drives the typing clock. */
+export function visibleLength(text: string): number {
+  return tokenise(text).reduce((total, token) => total + token.text.length, 0);
+}
+
+function renderTokens(text: string, revealed: number): React.ReactNode[] {
+  const nodes: React.ReactNode[] = [];
+  let budget = revealed;
+  let key = 0;
+
+  for (const token of tokenise(text)) {
+    if (budget <= 0) break;
+    const slice = token.text.slice(0, budget);
+    budget -= slice.length;
+
+    if (token.kind === "link" && token.href) {
+      nodes.push(
+        <a key={key++} href={token.href} className="font-bold underline" style={{ color: "#0EA5E9" }}>
+          {slice}
+        </a>,
+      );
+    } else if (token.kind === "bold") {
+      nodes.push(
+        <strong key={key++} style={{ color: "#0F2F55" }}>
+          {slice}
+        </strong>,
+      );
+    } else {
+      nodes.push(slice);
+    }
+  }
+
   return nodes;
+}
+
+/**
+ * How fast Jade types, and how long she waits before starting.
+ *
+ * Instant is not neutral. A reply that lands complete in the same frame as the
+ * question reads as a lookup, which is what the routing table is — and the
+ * whole point of the table is that the visitor should not be able to tell.
+ *
+ * The pause before is short and scales a little with length, on the reasoning
+ * that a longer answer took longer to think of. The typing itself is a
+ * per-character clock with a rest at punctuation, which is what makes it read
+ * as writing rather than as a progress bar. It is capped: a long answer speeds
+ * up so nobody waits four seconds to read something they have already read.
+ */
+export const TYPE_MS_PER_CHAR = 11;
+export const TYPE_MAX_MS = 2200;
+
+export function thinkingPause(text: string): number {
+  return Math.min(700, 260 + visibleLength(text) * 2);
+}
+
+export function restAfter(character: string, base: number): number {
+  if (".!?".includes(character)) return base + 110;
+  if (",;:".includes(character)) return base + 45;
+  if (character === "\n") return base + 80;
+  return base;
 }
 
 /** The proxy has returned several shapes over its life. Read them all. */

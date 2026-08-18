@@ -407,3 +407,24 @@ describe("what the table was missing", () => {
     expect(answer?.tr).toMatch(/alan/);
   });
 });
+
+/**
+ * It told somebody to "search Berkeley with piano as a filter".
+ *
+ * There is no amenity filter on /spaces. Inventing a control is worse than
+ * inventing a fact — the person goes looking for it, doesn't find it, and
+ * concludes the site is broken rather than that the answer was wrong.
+ */
+describe("interface it must not invent", () => {
+  it("is told not to describe filters or controls", () => {
+    expect(JADE_SYSTEM_PROMPT).toContain("Never describe a filter, button, field or setting");
+  });
+
+  /* And our own written answers must not do it either. */
+  it("never promises one in an answer we wrote", () => {
+    for (const ask of ["find a space", "what can i book", "what is minimum stress"]) {
+      const answer = answerLocally(ask);
+      expect(answer?.en, ask).not.toMatch(/filter by (amenity|equipment|piano)/i);
+    }
+  });
+});

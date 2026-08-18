@@ -38,7 +38,8 @@ export const metadata: Metadata = {
   title: "About",
   description:
     "Minimum Stress connects independent wellness professionals with private spaces they can " +
-    "book by the hour, and helps hosts earn from space that would otherwise sit unused.",
+    "book for the time they need, and helps hosts earn from space that would otherwise sit " +
+    "unused.",
 };
 
 /** What each side gets: a claim, then the sentence that earns it. */
@@ -56,8 +57,8 @@ const SIDES = [
     who: "For hosts",
     claim: "Empty hours can become useful hours.",
     body:
-      "Most studios and treatment rooms sit empty half the week while someone keeps paying " +
-      "for them. You choose the hours, you set the rate, and you keep all of it.",
+      "Many studios and private rooms have unused hours through the week while someone keeps " +
+      "paying for them. You choose the hours, you set the rate, and you keep all of it.",
     href: "/rent-out-your",
     action: "See what it could earn",
   },
@@ -88,9 +89,9 @@ export default function AboutPage() {
             </h1>
 
             <p className={`mt-7 ${TYPE.lead}`} style={{ color: COLOUR.body }}>
-              We connect independent wellness professionals with private rooms they can book by
-              the hour, and help the people who own those rooms earn from the time they sit
-              empty.
+              We connect independent wellness professionals with private rooms they can book for
+              the time they need, and help the people who own those rooms earn from the hours
+              they sit empty.
             </p>
 
             <p className={`mt-4 ${TYPE.small}`} style={{ color: COLOUR.muted }}>
@@ -112,8 +113,8 @@ export default function AboutPage() {
               style={{ border: `1px solid ${COLOUR.line}` }}
             >
               <Image
-                src="/photos/moment-practice.webp"
-                alt="A practitioner talking with a client in a bright room with a treatment table and a reformer, and a phone on the table in front of them showing rooms to book."
+                src="/photos/moment-arriving.webp"
+                alt="A practitioner with a mat over her shoulder and her phone in hand, letting herself into a studio."
                 width={1672}
                 height={941}
                 priority
@@ -265,11 +266,14 @@ export default function AboutPage() {
                       background: `linear-gradient(90deg, ${category.gradient[0]}, ${category.gradient[1]})`,
                     }}
                   />
-                  <div className="p-6">
-                    <h3 className={TYPE.h3} style={{ color: COLOUR.ink }}>
+                  <div className="p-7 sm:p-8">
+                    <h3
+                      className="text-[21px] leading-snug sm:text-[24px]"
+                      style={{ fontFamily: "var(--font-dm-serif)", color: COLOUR.ink }}
+                    >
                       {category.label}
                     </h3>
-                    <p className={`mt-2 ${TYPE.small}`} style={{ color: COLOUR.body }}>
+                    <p className={`mt-3 ${TYPE.body}`} style={{ color: COLOUR.body }}>
                       {category.specialties.join(" · ")}
                     </p>
                   </div>
@@ -277,6 +281,31 @@ export default function AboutPage() {
               </Reveal>
             ))}
           </div>
+        </section>
+
+        <section
+          className="border-y py-20"
+          style={{ borderColor: COLOUR.line, backgroundColor: COLOUR.wash }}
+        >
+          <Reveal>
+            <div className="mx-auto max-w-6xl px-6">
+              <div className="max-w-3xl">
+                <h2
+                  className={TYPE.h2}
+                  style={{ fontFamily: "var(--font-dm-serif)", color: COLOUR.ink }}
+                >
+                  Space should fit the work.
+                </h2>
+                <p className={`mt-6 ${TYPE.lead}`} style={{ color: COLOUR.body }}>
+                  Professional space should grow with your work, not become a fixed monthly
+                  burden.
+                </p>
+                <p className={`mt-4 ${TYPE.lead}`} style={{ color: COLOUR.body }}>
+                  And space that already exists should not have to sit unused.
+                </p>
+              </div>
+            </div>
+          </Reveal>
         </section>
 
         <Reveal>

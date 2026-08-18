@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { DM_Sans, DM_Serif_Display } from "next/font/google";
 
 import { BRAND } from "@/lib/company";
+import { JadeChat } from "@/components/site/jade-chat";
 
 /**
  * The content site's own typeface, which is not the app's.
@@ -55,6 +56,16 @@ export default function SiteLayout({ children }: { children: React.ReactNode }) 
       style={{ backgroundColor: "#ffffff", color: "#1a2744", fontFamily: "var(--font-dm-sans)" }}
     >
       {children}
+
+      {/*
+        The marketing site only.
+
+        A signed-in person asking about their own booking should reach the
+        support routes in the app, which know who they are and what they
+        booked. A general assistant that does not would be a slower way to the
+        same place, and a worse answer on the way.
+      */}
+      <JadeChat />
     </div>
   );
 }

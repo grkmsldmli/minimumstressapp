@@ -54,6 +54,21 @@ export const COLOUR = {
   page: "#ffffff",
   wash: "#F4F8FC",
   dark: "#0F2F55",
+
+  /*
+   * The slogan's accent, over `dark`.
+   *
+   * One colour across "mind, body & spirit" rather than a sweep through three.
+   * The gradient version read as a decoration applied to the sentence; a
+   * single accent lets the words be the thing and the white "Elevate your"
+   * carry the contrast against it.
+   *
+   * A solid value rather than `background-clip: text`, which sweeps more
+   * smoothly and takes the letters out of every contrast check with it — no
+   * single letter then has a colour anything can measure. 5.70:1 over the
+   * navy, so it holds at any size rather than only as a heading.
+   */
+  sloganAccent: "#5AB0EE",
   line: "#DDE7F1",
 } as const;
 

@@ -284,44 +284,76 @@ export function SiteFooter() {
   return (
     <footer className="pt-16 pb-10 text-white" style={{ backgroundColor: COLOUR.dark }}>
       <div className={`mx-auto ${MEASURE} px-6`}>
-        <div className={`grid gap-10 sm:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1fr_1fr_1fr] ${TYPE.small}`}>
-          <div>
-            <Image
-              src="/photos/logo-lockup.webp"
-              alt={BRAND}
-              width={321}
-              height={120}
-              className="h-11 w-auto"
-            />
-            <p className="mt-5 max-w-xs" style={{ color: COLOUR.onDarkBody }}>
-              Wellness space, on your schedule. Private rooms and studios for people who work
-              for themselves — one session, a group, or every week.
-            </p>
-            <a
-              href={`mailto:${SUPPORT_EMAIL}`}
-              className="mt-5 inline-block font-medium underline underline-offset-4"
-              style={{ color: COLOUR.onDark }}
-            >
-              {SUPPORT_EMAIL}
-            </a>
+        {/*
+          The footer opens on the brand rather than on a sitemap.
 
-            {/*
-              A new tab, because it leaves the site — and rel="noreferrer"
-              with it, which is not superstition: a target="_blank" link hands
-              the opened page a handle on this one unless it is told not to.
-            */}
-            <a
-              href={INSTAGRAM_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mt-4 flex items-center gap-2.5 hover:underline"
-              style={{ color: COLOUR.onDarkBody }}
-            >
-              <InstagramGlyph />
-              Instagram
-            </a>
-          </div>
+          It used to be five columns of links with the logo squeezed into the
+          first, which is the shape of a footer built by adding one link at a
+          time. The last thing on every page is now the line the company is
+          actually about, at the size a closing line deserves — and the columns
+          keep their job underneath, where a crawler and somebody hunting for
+          Terms both still find them.
+        */}
+        <Image
+          src="/photos/logo-lockup.webp"
+          alt={BRAND}
+          width={321}
+          height={120}
+          className="h-12 w-auto sm:h-14"
+        />
 
+        {/*
+          One accent, not a sweep through three.
+
+          A solid colour rather than a gradient clipped to the text: the sweep
+          reads as decoration applied to the sentence, and it takes the words
+          out of every contrast check with it, because no letter then has a
+          colour anything can measure.
+        */}
+        <h2
+          className="mt-12 text-[34px] leading-[1.12] sm:text-[46px]"
+          style={{ fontFamily: "var(--font-dm-serif)" }}
+        >
+          <span style={{ color: "#FFFFFF" }}>Elevate your </span>
+          <span style={{ color: COLOUR.sloganAccent }}>mind, body &amp; spirit</span>
+          <span style={{ color: "#FFFFFF" }}>.</span>
+        </h2>
+
+        <p className={`mt-5 max-w-md ${TYPE.body}`} style={{ color: COLOUR.onDarkBody }}>
+          Flexible spaces for wellness, movement and independent practice.
+        </p>
+
+        <div
+          className="mt-9 flex flex-wrap items-center gap-x-10 gap-y-4 border-t pt-8"
+          style={{ borderColor: "rgba(255,255,255,.16)" }}
+        >
+          <a
+            href={`mailto:${SUPPORT_EMAIL}`}
+            className={`flex items-center gap-3 hover:underline ${TYPE.body}`}
+            style={{ color: COLOUR.onDarkBody }}
+          >
+            <MailGlyph />
+            {SUPPORT_EMAIL}
+          </a>
+
+          {/*
+            A new tab, because it leaves the site — and rel="noreferrer" with
+            it, which is not superstition: a target="_blank" link hands the
+            opened page a handle on this one unless it is told not to.
+          */}
+          <a
+            href={INSTAGRAM_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={`flex items-center gap-3 hover:underline ${TYPE.body}`}
+            style={{ color: COLOUR.onDarkBody }}
+          >
+            <InstagramGlyph />
+            Instagram
+          </a>
+        </div>
+
+        <div className={`mt-14 grid gap-10 sm:grid-cols-2 lg:grid-cols-4 ${TYPE.small}`}>
           <Column title="Explore" links={EXPLORE} />
           <Column title="Practitioners" {...FOR_PRACTITIONERS} />
           <Column title="Hosts" {...FOR_HOSTS} />
@@ -350,5 +382,29 @@ export function SiteFooter() {
         </div>
       </div>
     </footer>
+  );
+}
+
+/**
+ * An envelope, inline, for the same reason the Instagram mark is inline: a
+ * two-line icon is not worth a request, and an icon font or a sprite would put
+ * the footer's appearance behind something that can fail to load.
+ */
+function MailGlyph() {
+  return (
+    <svg
+      width="20"
+      height="20"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={COLOUR.sloganAccent}
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <rect x="2.5" y="4.5" width="19" height="15" rx="2.5" />
+      <path d="m3.5 6.5 8.5 6 8.5-6" />
+    </svg>
   );
 }

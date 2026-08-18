@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import { AA_LARGE, AA_NORMAL, SURFACES, contrast, luminance } from "./contrast";
+import { COLOUR } from "./site-theme";
 
 /**
  * The palette, read out of the stylesheet that ships.
@@ -130,5 +131,23 @@ describe("the semantic accents", () => {
 describe("the dark screens", () => {
   it.each(["navy", "navy-deep", "navy-lift"])("carries white type on %s", (name) => {
     expect(contrast("#ffffff", token(name))).toBeGreaterThanOrEqual(AA_LARGE);
+  });
+});
+
+/**
+ * "Elevate your mind, body & spirit", the last line every visitor reads.
+ *
+ * The obvious way to draw a slogan in colour is a gradient clipped to the
+ * text, and that is the reason not to: no letter then has a colour, so nothing
+ * here could check it and the one line on the site everybody sees would be the
+ * only unmeasured type on it.
+ *
+ * Held to the full 4.5:1 rather than the 3:1 a 46px heading needs, because a
+ * slogan gets reused and the next place it lands is not guaranteed to be
+ * large.
+ */
+describe("the slogan", () => {
+  it("reads at any size over the footer navy", () => {
+    expect(contrast(COLOUR.sloganAccent, COLOUR.dark)).toBeGreaterThanOrEqual(AA_NORMAL);
   });
 });

@@ -58,7 +58,6 @@ export function sitemapPaths(): string[] {
      * inside the terms and three labels pointing at one page is three ways of
      * saying Terms.
      */
-    "/pricing",
     "/trust",
     "/faq",
     "/contact",

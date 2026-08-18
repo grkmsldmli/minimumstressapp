@@ -54,8 +54,8 @@ export default function FaqPage() {
 
           <QA q="What does it cost?">
             The price on the listing, and nothing more. Nothing is added at checkout. Booking
-            something starting within two hours adds {formatCents(INSTANT_FEE_CENTS)}. Full detail
-            on <Inline href="/pricing">pricing</Inline>.
+            something starting within two hours adds {formatCents(INSTANT_FEE_CENTS)}, and that is
+            marked on the slot before you pick it.
           </QA>
 
           <QA q="How do I get in?">

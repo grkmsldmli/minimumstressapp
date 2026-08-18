@@ -191,6 +191,18 @@ describe("everything else", () => {
  * the reason the rest of this file exists, so it is tested in the same place.
  */
 describe("the hub's own move", () => {
+  /*
+   * /pricing was deleted rather than rewritten: a public page explaining the
+   * whole model — our cut, the Pro price, the last-minute charge, how card
+   * processing behaves on a cancellation — to somebody who had not decided to
+   * book anything. It was linked from both footer columns and indexed, so it
+   * redirects rather than 404s.
+   */
+  it("sends the deleted pricing page to the FAQ", () => {
+    expect(destinationFor("/pricing")).toBe("/faq");
+    expect(destinationFor("/pricing/")).toBe("/faq");
+  });
+
   it("sends the old hub to the new one", () => {
     expect(destinationFor("/tools")).toBe("/assessments");
     expect(destinationFor("/tools/")).toBe("/assessments");

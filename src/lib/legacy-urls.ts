@@ -160,6 +160,23 @@ export function destinationFor(pathname: string): string | null {
    * shape, but a later reader adding a rule above it would silently break
    * every link anybody has ever shared.
    */
+  /*
+   * /pricing is gone, and it goes to the FAQ.
+   *
+   * The page existed to explain the model and explained rather more than
+   * that: the host's rate, our cut as a percentage, the Pro price, the
+   * last-minute fee and how card processing works on a cancellation — the
+   * whole business, on one public page, to somebody who had not yet decided
+   * to book anything.
+   *
+   * What replaces it is telling people at the point they are deciding: the
+   * total on the listing, the last-minute charge marked on the slot that
+   * carries it, the breakdown at checkout, and Pro at the moment somebody
+   * hits the limit it lifts. The FAQ is where the leftover questions live, so
+   * that is where an old link lands.
+   */
+  if (path === "/pricing") return "/faq";
+
   if (path === "/tools") return "/assessments";
   const movedTool = path.match(/^\/tools\/(.+)$/);
   if (movedTool) return `/assessments/${movedTool[1]}`;

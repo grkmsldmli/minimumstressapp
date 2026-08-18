@@ -363,3 +363,47 @@ describe("the words for what this is", () => {
     expect(JADE_SYSTEM_PROMPT).toContain("nobody signs a lease");
   });
 });
+
+/**
+ * Three things a real conversation broke.
+ *
+ * "assesment nedir" — one 's', which is how most people spell it — missed the
+ * assessments route and fell through to a bare "nedir" in the company blurb,
+ * so somebody asking what an assessment is was told what the company is.
+ *
+ * "sen kaç yaşındasın" and "sen kız mısın" each spent a model call, and the
+ * visitor in that transcript used their whole daily allowance on small talk
+ * before they could ask anything real.
+ */
+describe("what the table was missing", () => {
+  it("knows how assessment is usually misspelled", () => {
+    expect(answerLocally("assesment nedir")?.tr).toContain("Değerlendirmeler");
+    expect(answerLocally("assessment nedir")?.tr).toContain("Değerlendirmeler");
+  });
+
+  /* "nedir" alone matched any Turkish "what is X" question at all. */
+  it("no longer answers every 'what is' question with the company blurb", () => {
+    expect(answerLocally("pilates nedir")).toBeNull();
+    expect(answerLocally("burasi nedir")?.tr).toContain("pazar yeriyiz");
+  });
+
+  it.each([
+    "kac yasindasin",
+    "sen kiz misin",
+    "insan misin",
+    "are you a bot",
+    "how old are you",
+  ])("answers %s without a model call", (question) => {
+    expect(answerLocally(question), question).not.toBeNull();
+  });
+
+  /*
+   * She neither claims to be a person nor announces she is not one. The
+   * business decided the first; the second is not hers to volunteer mid-chat.
+   */
+  it("turns the question back to what they came for", () => {
+    const answer = answerLocally("sen kiz misin");
+    expect(answer?.tr).toContain("Jade");
+    expect(answer?.tr).toMatch(/alan/);
+  });
+});

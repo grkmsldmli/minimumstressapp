@@ -33,7 +33,30 @@
  */
 export const JADE_AVATAR = "/photos/jade.webp";
 
-/** Where the model call goes. Public endpoint; the key lives on that side. */
+/**
+ * The model, ours now.
+ *
+ * The old proxy hardcoded its own and ignored the `model` field entirely —
+ * sending an invented model id still returned a reply, which is how we found
+ * out. It ignored `max_tokens` too, so neither the model nor the cost ceiling
+ * was ours to set.
+ *
+ * Sonnet 5 rather than Opus: this is a front desk answering in one to three
+ * sentences, and the questions with fixed answers never reach a model at all.
+ */
+export const JADE_MODEL = "claude-sonnet-5";
+
+/**
+ * Thinking off, effort low.
+ *
+ * Sonnet 5 thinks by default, and for a chat bubble that is latency somebody
+ * watches — the reply is short and the hard questions are answered from the
+ * table before this is reached. Sonnet 5 also rejects a non-default
+ * temperature outright, so tone is steered from the prompt and nowhere else.
+ */
+export const JADE_MAX_TOKENS = 400;
+
+/** Where the model call goes when we have no key of our own. */
 export const CHAT_PROXY_URL = "https://ms-chat-proxy.vercel.app/api/chat";
 export const CHAT_CUSTOMER_URL = "https://ms-chat-proxy.vercel.app/api/customer";
 
@@ -138,7 +161,7 @@ export const JADE_SYSTEM_PROMPT = [
   "- Say 'mekân sahibi', never 'ev sahibi'. Nobody here is letting a home.",
   "- Say 'saat ayırtmak' or 'rezervasyon yapmak'. 'Kiralamak' on its own suggests a lease; if you use it, say 'saatlik kiralamak'.",
   "- The two sides are 'misafir' and 'mekân sahibi'. Never coin a third — there is no such thing as 'alan olmak'.",
-  "- 'Seans' for a session, 'rezervasyon' for a booking.",
+  "- 'Seans' for a session, 'rezervasyon' for a booking, 'fiyat' for a rate — never 'oran', which is a translation rather than a word anybody says.",
 
   "LANGUAGE — this overrides everything above:",
   "- Reply in the same language as the visitor's most recent message, and nothing else.",
@@ -248,7 +271,8 @@ const ROUTES: { match: readonly string[]; answer: LocalAnswer }[] = [
   },
   {
     match: [
-      "assessment", "test", "quiz", "burnout", "sleep score", "cortisol",
+      "assessment", "assesment", "assessments", "test", "quiz", "burnout",
+      "sleep score", "cortisol", "degerlendirme nedir", "assesment nedir",
       "degerlendirme", "değerlendirme", "tükenmişlik", "tukenmislik", "uyku",
     ],
     answer: {
@@ -291,7 +315,8 @@ const ROUTES: { match: readonly string[]; answer: LocalAnswer }[] = [
   {
     match: [
       "what is minimum stress", "who are you", "about you", "what do you do",
-      "minimum stress nedir", "kimsiniz", "nedir", "ne ise yariyor", "ne işe yarıyor",
+      "minimum stress nedir", "kimsiniz", "burasi nedir", "burası nedir", "bu nedir",
+      "ne ise yariyor", "ne işe yarıyor",
       "burasi ne", "burası ne", "ne yapiyorsunuz", "ne yapıyorsunuz",
     ],
     answer: {
@@ -328,6 +353,28 @@ const ROUTES: { match: readonly string[]; answer: LocalAnswer }[] = [
     answer: {
       en: "A booking is one hour. If you need longer, take the hours next to each other. There is no daily or weekly rate and no lease — you pay for the hours you book and nothing else.",
       tr: "Bir rezervasyon bir saat. Daha uzun süre gerekiyorsa yan yana saatleri ayırtırsın. Günlük ya da haftalık fiyat yok, kira sözleşmesi de yok — sadece ayırttığın saati ödersin.",
+    },
+  },
+  /*
+   * Who she is. Asked by nearly everybody, in the same three ways, and it was
+   * costing a model call each time — one visitor spent their whole daily
+   * allowance on small talk and then could not ask a real question.
+   *
+   * She does not claim to be a person and does not deny it either. The line
+   * she gives is true and closes the subject.
+   */
+  {
+    match: [
+      "how old are you", "are you a girl", "are you a woman", "are you real",
+      "are you a bot", "are you human", "are you ai", "your name", "who made you",
+      "where are you from", "are you a person",
+      "kac yasindasin", "kaç yaşındasın", "kiz misin", "kız mısın", "kadin misin",
+      "gercek misin", "gerçek misin", "insan misin", "robot musun", "bot musun",
+      "nerelisin", "adin ne", "adın ne", "seni kim yapti", "seni kim yaptı",
+    ],
+    answer: {
+      en: "I'm Jade, the front desk here 🌿 I'd rather talk about what you need — are you after a space, or thinking about listing one?",
+      tr: "Ben Jade, buranın ön masasıyım 🌿 Asıl senin ne aradığını konuşalım — bir alan mı arıyorsun, yoksa kendi alanını mı açmayı düşünüyorsun?",
     },
   },
   /*

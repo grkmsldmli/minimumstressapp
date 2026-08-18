@@ -3,7 +3,16 @@ import type { NextRequest } from "next/server";
 import { LIMITS, check, identify, tooManyRequests } from "@/lib/api/rate-limit";
 import { handled, jsonError } from "@/lib/api/session";
 import { jsonObject } from "@/lib/api/validate";
-import { CHAT_PROXY_URL, JADE_SYSTEM_PROMPT, detectLanguage, languageDirective } from "@/lib/jade";
+import Anthropic from "@anthropic-ai/sdk";
+
+import {
+  CHAT_PROXY_URL,
+  JADE_MAX_TOKENS,
+  JADE_MODEL,
+  JADE_SYSTEM_PROMPT,
+  detectLanguage,
+  languageDirective,
+} from "@/lib/jade";
 
 /**
  * The chat call, made from here rather than from the browser.
@@ -52,7 +61,7 @@ export async function POST(request: NextRequest): Promise<Response> {
           typeof turn === "object" &&
           typeof (turn as { content?: unknown }).content === "string",
       )
-      .map((turn) => ({
+      .map((turn): Anthropic.MessageParam => ({
         role: turn.role === "assistant" ? "assistant" : "user",
         // A cap per turn, so a long paste cannot become a long bill.
         content: turn.content.slice(0, 1500),
@@ -60,44 +69,98 @@ export async function POST(request: NextRequest): Promise<Response> {
 
     if (turns.length === 0) return jsonError("messages is required", 400);
 
-    const upstream = await fetch(CHAT_PROXY_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        max_tokens: 180,
-        /*
-         * The language, detected from the last thing they wrote and stated as
-         * a fact at the end of the prompt.
-         *
-         * Asking the model to match the visitor was not enough on its own —
-         * "hello" came back in Turkish. Detected here rather than taken from
-         * the body, because it is the sort of field a caller could set to
-         * anything and there is no reason to let them.
-         */
-        system:
-          JADE_SYSTEM_PROMPT +
-          languageDirective(detectLanguage(turns[turns.length - 1]?.content ?? "")),
-        messages: turns,
-      }),
+    /*
+     * The language, from the last thing they wrote, stated as a fact at the
+     * end of the prompt. Detected here rather than taken from the body,
+     * because it is the sort of field a caller could set to anything.
+     *
+     * `content` widens to string | ContentBlockParam[] on MessageParam; every
+     * turn this route builds carries a string, and a block array would have
+     * no language to read anyway.
+     */
+    const latest = turns[turns.length - 1]?.content;
+    const system =
+      JADE_SYSTEM_PROMPT +
+      languageDirective(detectLanguage(typeof latest === "string" ? latest : ""));
+
+    /*
+     * Our own model when we have a key, the old proxy when we do not.
+     *
+     * The proxy was never ours to configure: it ignored the `model` field —
+     * an invented model id still came back with a reply — and ignored
+     * `max_tokens` too, so a five-token cap returned fifty words. Both of
+     * those are the parts you tune, which is the argument for calling the
+     * API directly.
+     *
+     * The fallback stays until the key is set in the deploy, so a missing
+     * environment variable degrades to what already worked instead of taking
+     * the chat down.
+     */
+    if (!process.env.ANTHROPIC_API_KEY) {
+      return await viaLegacyProxy(system, turns);
+    }
+
+    const anthropic = new Anthropic();
+
+    const message = await anthropic.messages.create({
+      model: JADE_MODEL,
+      max_tokens: JADE_MAX_TOKENS,
+      /*
+       * Off, deliberately. Sonnet 5 thinks by default, and this is a chat
+       * bubble somebody is watching — the questions worth thinking about are
+       * answered from the table without a model at all.
+       */
+      thinking: { type: "disabled" },
+      output_config: { effort: "low" },
+      system,
+      messages: turns,
     });
 
-    const text = await upstream.text();
+    const reply = message.content
+      .filter((block): block is Anthropic.TextBlock => block.type === "text")
+      .map((block) => block.text)
+      .join("")
+      .trim();
 
-    if (!upstream.ok) {
-      // Logged with the status, because the two failures upstream look the
-      // same from the widget and lead to different places.
-      console.error(`Jade proxy returned ${upstream.status}: ${text.slice(0, 200)}`);
+    /*
+     * Safety classifiers can decline a request outright — an ordinary 200
+     * with an empty body. Reading content[0] without checking this is how it
+     * surfaces as a crash rather than as a refusal.
+     */
+    if (message.stop_reason === "refusal" || !reply) {
+      console.error(`Jade: no reply (stop_reason ${message.stop_reason})`);
       return jsonError("Jade is unavailable right now", 502);
     }
 
-    /*
-     * Passed through as-is. The proxy has returned several shapes over its
-     * life and the widget already reads all of them; re-wrapping here would
-     * mean two places to update the next time it changes.
-     */
-    return new Response(text, {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
+    return Response.json({ reply });
+  });
+}
+
+/**
+ * The old path, kept as a fallback.
+ *
+ * Same request the widget has always made, minus the browser origin the
+ * proxy's allowlist refuses. Deletable the day the key is set everywhere.
+ */
+async function viaLegacyProxy(
+  system: string,
+  turns: Anthropic.MessageParam[],
+): Promise<Response> {
+  const upstream = await fetch(CHAT_PROXY_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ max_tokens: JADE_MAX_TOKENS, system, messages: turns }),
+  });
+
+  const text = await upstream.text();
+
+  if (!upstream.ok) {
+    console.error(`Jade proxy returned ${upstream.status}: ${text.slice(0, 200)}`);
+    return jsonError("Jade is unavailable right now", 502);
+  }
+
+  return new Response(text, {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
   });
 }

@@ -60,6 +60,22 @@ export const LIMITS = {
   toolResult: { limit: 6, windowMs: 3_600_000 },
 
   /**
+   * Asking Jade something the routing table has no answer for.
+   *
+   * This is the only endpoint here that spends money per request, and no
+   * sign-in stands in front of it. The widget caps itself at fifteen a day,
+   * which stops an honest visitor and nothing else — localStorage is the
+   * caller's to clear, and a script never loads the page at all.
+   *
+   * Twenty an hour per address is roughly double a real conversation and far
+   * below anything worth pointing a bot at.
+   */
+  jade: { limit: 20, windowMs: 3_600_000 },
+
+  /** Leads. Cheap to store and easy to flood, so counted separately. */
+  jadeLead: { limit: 5, windowMs: 3_600_000 },
+
+  /**
    * And the same ceiling per destination address.
    *
    * Counting only by caller lets one machine work through a list of addresses;

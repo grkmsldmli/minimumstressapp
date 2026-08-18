@@ -5,11 +5,8 @@ import { useEffect, useRef, useState } from "react";
 
 import { SUPPORT_EMAIL } from "@/lib/company";
 import {
-  CHAT_CUSTOMER_URL,
-  CHAT_PROXY_URL,
   JADE_AVATAR,
   JADE_GREETING,
-  JADE_SYSTEM_PROMPT,
   MAX_MODEL_MESSAGES_PER_DAY,
   QUICK_REPLIES,
   answerLocally,
@@ -107,7 +104,7 @@ export function JadeChat() {
 
   /** Sends a captured lead onward. Never blocks the reply on it. */
   const captureLead = (type: string, email: string, note: string, language: string) => {
-    void fetch(CHAT_CUSTOMER_URL, {
+    void fetch("/api/jade/lead", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -189,14 +186,18 @@ export function JadeChat() {
     setBusy(true);
 
     try {
-      const response = await fetch(CHAT_PROXY_URL, {
+      /*
+        Our own route, not the proxy.
+
+        The proxy allows one origin and refuses every other hostname the site
+        is served from — staging, www, localhost — with a 403 the visitor sees
+        as a connection error. A same-origin request cannot be refused for its
+        origin, and the server call behind it sends none at all.
+      */
+      const response = await fetch("/api/jade/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          max_tokens: 180,
-          system: JADE_SYSTEM_PROMPT,
-          messages: history.current.slice(-6),
-        }),
+        body: JSON.stringify({ messages: history.current.slice(-6) }),
       });
 
       const data: unknown = await response.json().catch(() => null);
@@ -213,11 +214,7 @@ export function JadeChat() {
          * Anybody debugging that from the message alone looks at the wrong
          * thing for an hour.
          */
-        console.error(
-          response.status === 403
-            ? `Jade: the chat proxy refused ${window.location.origin}. Add it to the allowlist on the proxy.`
-            : `Jade: chat proxy returned ${response.status}`,
-        );
+        console.error(`Jade: /api/jade/chat returned ${response.status}`);
         throw new Error("no reply");
       }
       say(reply);

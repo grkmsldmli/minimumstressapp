@@ -4485,3 +4485,393 @@ with (security_invoker = true) as
   from bookings b;
 
 grant select on bookings_with_access_code to authenticated;
+
+
+-- ===================================================================
+-- 0049_what_the_room_is_for.sql
+-- ===================================================================
+
+-- What the room is being used for, who decides, and who agreed.
+--
+-- Until now a booking recorded an hour and a payment and nothing about what
+-- would happen in the room. That is a gap with two edges.
+--
+-- The market edge: the app assumed the person booking was a professional
+-- seeing a client, so two friends who want a studio for an hour of dance
+-- practice had nowhere to say so. That is real demand turned away for no
+-- safety gain — a practitioner can misuse a room exactly as easily as anybody
+-- else.
+--
+-- The safety edge is the serious one. With nothing declared, a misuse is a
+-- disagreement about what was meant rather than a stated falsehood, and there
+-- is nothing to cancel a booking or suspend an account over. The declaration
+-- does not prevent anything; it makes enforcement possible, which is the part
+-- that was missing.
+--
+-- Everything here is backward compatible on purpose. Every column has a
+-- default that leaves existing rows valid and existing listings bookable —
+-- a migration that made every room require an answer nobody had given yet
+-- would have taken the marketplace down to nothing on the day it ran.
+
+-- ------------------------------------------------------------------
+-- What the host allows, and how a booking reaches them
+-- ------------------------------------------------------------------
+
+alter table spaces
+  /*
+   * Empty means "everything the platform allows", not "nothing" — see
+   * `allowsUse` in src/lib/booking-use.ts. Every listing that predates this
+   * question has an empty array, and reading that as a refusal would unlist
+   * them all.
+   */
+  add column if not exists allowed_uses text[] not null default '{}',
+  /*
+   * How a booking becomes a booking. `request` means the host says yes first;
+   * `instant` means it goes through when the rules match.
+   *
+   * Existing listings default to `instant` because that is what they have
+   * been doing since they were created, and changing the behaviour of a live
+   * listing underneath a host is not a migration's job. New listings default
+   * to `request` in the form, which is a decision the host makes with the
+   * screen in front of them.
+   */
+  add column if not exists booking_mode text not null default 'instant';
+
+alter table spaces drop constraint if exists spaces_booking_mode_known;
+
+alter table spaces add constraint spaces_booking_mode_known check (
+  booking_mode in ('request', 'instant')
+);
+
+-- ------------------------------------------------------------------
+-- What was declared, and what happened to the request
+-- ------------------------------------------------------------------
+
+alter table bookings
+  /*
+   * Null on every booking made before this existed. Not backfilled with a
+   * guess: "we do not know what this was for" is the true answer for those
+   * rows, and inventing `personal_practice` would put a declaration in a
+   * dispute record that nobody ever made.
+   */
+  add column if not exists purpose text,
+  add column if not exists purpose_note text,
+  add column if not exists attendee_count integer,
+  add column if not exists approval_state text not null default 'not_required',
+  add column if not exists approval_decided_at timestamptz,
+  add column if not exists approval_note text;
+
+comment on column bookings.purpose is
+  'Declared at booking, from BOOKING_USES in src/lib/booking-use.ts. Never rewritten — see the trigger below.';
+comment on column bookings.attendee_count is
+  'Everybody who will be in the room, the person booking included.';
+
+alter table bookings drop constraint if exists bookings_attendees_sane;
+
+alter table bookings add constraint bookings_attendees_sane check (
+  attendee_count is null or attendee_count between 1 and 200
+);
+
+alter table bookings drop constraint if exists bookings_approval_state_known;
+
+alter table bookings add constraint bookings_approval_state_known check (
+  approval_state in ('not_required', 'pending', 'approved', 'declined', 'expired')
+);
+
+comment on column bookings.approval_state is
+  'not_required on an instant booking. pending holds the card without taking it; approved captures that hold, declined and expired release it. See src/lib/booking-approval.ts.';
+
+/*
+ * The declaration is evidence, so it does not change.
+ *
+ * Its whole value is that it was made before the session and cannot be
+ * revised after it. A purpose that can be edited once something has gone
+ * wrong is not a record of what somebody said they would do; it is a record of
+ * what they would now prefer to have said.
+ *
+ * Written as a trigger rather than left to the application because the
+ * application is not the only thing that can write here, and because a rule
+ * about evidence should not depend on every future caller remembering it.
+ */
+create or replace function freeze_booking_purpose()
+returns trigger
+language plpgsql
+as $$
+begin
+  if old.purpose is not null and new.purpose is distinct from old.purpose then
+    raise exception 'A booking''s declared purpose cannot be changed once it is set';
+  end if;
+
+  if old.purpose_note is not null and new.purpose_note is distinct from old.purpose_note then
+    raise exception 'A booking''s declared purpose cannot be changed once it is set';
+  end if;
+
+  if old.attendee_count is not null and new.attendee_count is distinct from old.attendee_count then
+    raise exception 'The number of people declared on a booking cannot be changed once it is set';
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists bookings_purpose_is_evidence on bookings;
+
+create trigger bookings_purpose_is_evidence
+  before update on bookings
+  for each row
+  execute function freeze_booking_purpose();
+
+/*
+ * A host approving or declining their own room's booking.
+ *
+ * Both of these are taken straight back out in 0051, and the reasoning there
+ * is worth reading before anybody adds them again: answering a request is a
+ * write *and* a movement of money, and a grant that allows the first without
+ * the second lets a host leave a guest's card held on a booking the app shows
+ * as refused. The answer goes through the server, on the service role.
+ *
+ * Left in place rather than edited away because this migration has already run
+ * against the live database. A migration that has run is history.
+ */
+grant update (approval_state, approval_decided_at, approval_note) on bookings to authenticated;
+
+drop policy if exists "bookings: host answers a request on their own space" on bookings;
+
+create policy "bookings: host answers a request on their own space"
+  on bookings for update
+  using (
+    exists (
+      select 1 from spaces s
+      where s.id = bookings.space_id
+        and s.host_id = auth.uid()
+    )
+  )
+  with check (
+    exists (
+      select 1 from spaces s
+      where s.id = bookings.space_id
+        and s.host_id = auth.uid()
+    )
+  );
+
+-- The two axes a host's own queue is read on.
+create index if not exists bookings_awaiting_host_idx
+  on bookings (space_id, starts_at)
+  where approval_state = 'pending';
+
+-- ------------------------------------------------------------------
+-- The public view carries what a person deciding needs
+-- ------------------------------------------------------------------
+
+drop view if exists spaces_public;
+
+create view spaces_public as
+  select
+    id, host_id, name, category, hourly_rate_cents, capacity, access_type,
+    accessible, restroom, buffer_minutes, timezone, status, created_at,
+    description, amenities, requirements, house_rules,
+    map_x, map_y,
+    entrance_access, floor_access, doorway_inches, restroom_access,
+    parking, parking_limit_minutes,
+    floor_area_sqft,
+    -- Public since 0032: every listing is a retail studio whose address is
+    -- already on its own website. How to get in is still not here.
+    address_line,
+    lat,
+    lng,
+    public_area(address_line) as area,
+    city, state, postal_code, suitable_for, room_setup,
+    allowed_uses, booking_mode
+  from spaces
+  where status = 'active';
+
+grant select on spaces_public to anon, authenticated;
+grant select on spaces_public to service_role;
+
+
+-- ===================================================================
+-- 0050_the_host_answers.sql
+-- ===================================================================
+
+-- The queue a host answers from.
+--
+-- `host_bookings()` cannot carry this and should not be made to. It filters on
+-- `captured_at is not null` — money arrived, or it never happened — which is
+-- exactly right for a list of sessions and exactly wrong for a list of
+-- requests, because a request holds the card rather than charging it and is
+-- uncaptured until the host says yes. Loosening that filter would put
+-- abandoned checkouts and unanswered requests into a host's earnings list.
+--
+-- So: a second function, for a different question. What is waiting on me.
+--
+-- It carries the declaration with it. A host deciding needs what the room is
+-- for and how many people are coming in the same row as the hour, because
+-- a queue that makes them open something else to find out is a queue that
+-- gets answered late or not at all.
+
+drop function if exists host_requests();
+
+create function host_requests()
+returns table (
+  booking_id uuid,
+  space_id uuid,
+  space_name text,
+  starts_at timestamptz,
+  ends_at timestamptz,
+  requested_at timestamptz,
+  net_cents integer,
+  practitioner_name text,
+  practitioner_avatar_path text,
+  purpose text,
+  purpose_note text,
+  attendee_count integer
+)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select
+    b.id,
+    b.space_id,
+    s.name,
+    b.starts_at,
+    b.ends_at,
+    b.created_at,
+    -- The host's rate, never the total. What the practitioner paid is not
+    -- theirs to see, and host_bookings() draws the same line.
+    b.host_rate_cents,
+    p.display_name,
+    p.avatar_path,
+    b.purpose,
+    b.purpose_note,
+    b.attendee_count
+  from bookings b
+  join spaces s on s.id = b.space_id
+  join profiles p on p.id = b.practitioner_id
+  where s.host_id = auth.uid()
+    and b.approval_state = 'pending'
+    and b.status = 'upcoming'
+    /*
+     * A card was actually entered. Between the row being written and the
+     * payment sheet being completed there is a booking with no authorisation
+     * behind it, and showing that to a host would put a request in their queue
+     * that somebody may be about to abandon — they would approve it, and there
+     * would be nothing to capture.
+     */
+    and b.authorized_at is not null
+  -- Soonest session first: the one closest to happening is the one whose
+  -- answer matters most, and the one that will expire first.
+  order by b.starts_at;
+$$;
+
+revoke all on function host_requests() from public;
+grant execute on function host_requests() to authenticated;
+
+-- ------------------------------------------------------------------
+-- What the person who made the request can see
+-- ------------------------------------------------------------------
+--
+-- Two things are wrong with the view as it stands, and both hide a booking
+-- from the person who made it.
+--
+-- The request itself. `listMyBookings` keeps only rows with `captured_at`,
+-- because an abandoned checkout is not a session somebody had. A request is
+-- uncaptured by design — the card is held, not charged — so a guest would pay,
+-- watch their request disappear, and have no way to tell whether it had been
+-- sent. `approval_state` and `authorized_at` are added here so that filter can
+-- tell the two apart: money held is evidence exactly as money taken is.
+--
+-- And `is_instant` and `was_pro`, which 0048 dropped from the column list while
+-- rewriting the access-code case. Nothing complained, because the app reads
+-- this view with `select *` into an untyped row — so both fields simply became
+-- undefined on every booking a practitioner looked at. Restored here.
+
+drop view if exists bookings_with_access_code;
+
+create view bookings_with_access_code
+with (security_invoker = true) as
+  select
+    b.id, b.space_id, b.practitioner_id, b.starts_at, b.ends_at, b.status,
+    b.is_instant, b.was_pro,
+    b.host_rate_cents, b.service_fee_cents,
+    b.instant_fee_cents, b.pro_discount_cents, b.credit_applied_cents,
+    b.total_cents, b.platform_cents, b.captured_at, b.cancelled_at,
+    b.cancelled_by, b.access_code_revealed_at, b.created_at,
+    -- The request, from the side that made it.
+    b.approval_state, b.approval_decided_at, b.approval_note, b.authorized_at,
+    b.purpose, b.purpose_note, b.attendee_count,
+    case
+      when b.practitioner_id = auth.uid()
+       and b.access_code_revealed_at <= now()
+       /*
+        * Until the hour is over. Not until somebody is paid: the payout is a
+        * money event on a twice-daily job, and tying a door to it means the
+        * door stays open while a transfer is pending and shuts while a session
+        * is still running.
+        */
+       and now() < b.ends_at
+       -- Not cancelled. This is the one thing status is actually being asked.
+       and b.status in ('upcoming', 'completed')
+       /*
+        * And paid for. The row exists from the moment somebody reaches the
+        * card form; the hour is theirs only once the money is taken.
+        *
+        * This is also what keeps a pending request out of a door. A held card
+        * is not a captured one, so a request that has not been approved has no
+        * code behind it however close to the hour it gets — which is the right
+        * answer, because nobody has agreed to let that person in yet.
+        */
+       and b.captured_at is not null
+        then b.access_code
+      else null
+    end as revealed_access_code
+  from bookings b;
+
+grant select on bookings_with_access_code to authenticated;
+grant select on bookings_with_access_code to service_role;
+
+
+-- ===================================================================
+-- 0051_the_answer_goes_through_the_server.sql
+-- ===================================================================
+
+-- Take back the write rights 0049 handed to hosts.
+--
+-- 0049 gave `authenticated` a column-level update grant on the three approval
+-- columns and an RLS policy letting a host update bookings on their own
+-- spaces. The reasoning in that file was that a host needs to be able to
+-- answer a request, and it was wrong twice.
+--
+-- It is not needed. The only thing that answers a request is
+-- /api/bookings/[id]/approval, which runs on the service role — the host's own
+-- token never writes this table. The grant was surface with nothing behind it.
+--
+-- And it does harm. Answering is not one write; it is a write and a movement
+-- of money, and the two only make sense together. A host with this grant could
+-- PATCH the row directly and skip the second half:
+--
+--   approval_state = 'declined' with no release, and the guest's card stays
+--   held on a booking the app shows as refused — until Stripe expires the
+--   authorisation a week later, if anybody notices at all.
+--
+--   approval_state = 'approved' with no capture, and the guest is shown a
+--   confirmed session that was never paid for. No door opens — access is gated
+--   on `captured_at`, which nothing here can write — but the payout sweep will
+--   never pay the host either, and both sides believe something different.
+--
+-- The comment in 0049 also claimed 0002 grants update on bookings wholesale.
+-- It does not; 0002 grants select and nothing else. That mistake is why the
+-- grant looked like a narrowing when it was the only update right on the table.
+--
+-- Written as a separate migration rather than a fix to 0049 because 0049 has
+-- already run against the live database, and a migration that has run is
+-- history. This is the correction, in the order it actually happened.
+
+revoke update on bookings from authenticated;
+
+drop policy if exists "bookings: host answers a request on their own space" on bookings;
+
+-- The index stays. `host_requests()` reads on exactly these two columns, and it
+-- is a security-definer function rather than a policy — nothing about who may
+-- write the table changes what a host is allowed to read.

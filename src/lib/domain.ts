@@ -7,6 +7,7 @@
  */
 
 import type { AccessDetails } from "./access-details";
+import type { ApprovalState } from "./booking-approval";
 import type { Parking } from "./parking";
 import type { AvailabilityBlock } from "./availability";
 import type { AccessTypeKey, CategoryKey, RestroomOption, RoomSetupKey } from "./taxonomy";
@@ -172,6 +173,15 @@ export interface PublicSpace {
    * built around a particular use.
    */
   suitableFor: string[];
+  /**
+   * What the host offers the room for — keys from lib/booking-use.
+   *
+   * Empty means they have not chosen, which reads as "everything the platform
+   * permits" rather than "nothing". See `allowsUse`.
+   */
+  allowedUses: string[];
+  /** Whether the host answers a request first, or a booking simply goes through. */
+  bookingMode: "request" | "instant";
   /** Private room, a room inside a shared studio, or the whole place. */
   roomSetup: RoomSetupKey;
   /**
@@ -429,6 +439,18 @@ export interface Booking extends BookingMoneyRecord {
    */
   revealedAccessCode: string | null;
   accessCodeRevealedAt: Date;
+  /**
+   * Where this got to if the host had to say yes.
+   *
+   * `not_required` on an instant booking, which is most of them. It is on this
+   * side and not the host's because host_bookings() only ever returns captured
+   * sessions, so a host's list has nothing pending in it by construction —
+   * their queue is a separate list. Here it is the difference between "you have
+   * a room at two o'clock" and "you have asked for one", and a screen that
+   * showed the second as the first would have somebody drive to a studio that
+   * never agreed to let them in.
+   */
+  approvalState: ApprovalState;
 }
 
 /** A booking as its host sees it: net earnings, never a fee percentage. */
@@ -449,6 +471,34 @@ export interface HostBooking {
    * checking last week wants the difference.
    */
   hostPaidAt: Date | null;
+}
+
+/**
+ * A booking waiting on the host's answer.
+ *
+ * Separate from HostBooking rather than a variant of it, because they are two
+ * different lists answering two different questions — what have I earned, and
+ * what is waiting on me. A pending request has no status worth showing and no
+ * payout to report; a finished session has no deadline. Folding them together
+ * would give one type where half the fields are null in either direction.
+ */
+export interface BookingRequest {
+  id: string;
+  spaceId: string;
+  spaceName: string;
+  practitionerName: string;
+  startsAt: Date;
+  endsAt: Date;
+  /** When it was asked for. The expiry counts from here. */
+  requestedAt: Date;
+  /** Exactly the host's rate, as everywhere else on the host's side. */
+  netCents: number;
+  /** What they said they would be doing, as a BOOKING_USES key. */
+  purpose: string | null;
+  /** Their own words, only ever set when the purpose is "other". */
+  purposeNote: string | null;
+  /** Everybody who will be in the room, the person booking included. */
+  attendeeCount: number | null;
 }
 
 /** One message on a booking's thread, as its two participants see it. */
@@ -494,6 +544,21 @@ export interface NewSpaceInput {
    * label would be both less true and fewer pages for the same room.
    */
   suitableFor: string[];
+  /**
+   * What the host offers the room for — keys from lib/booking-use.
+   *
+   * Empty is allowed and means "everything the platform permits". A host who
+   * skips the question keeps a bookable listing rather than an unbookable one.
+   */
+  allowedUses: string[];
+  /**
+   * Whether a booking waits for the host, or simply goes through.
+   *
+   * New listings arrive at `request` on the form. A host choosing this with
+   * the screen in front of them is a different thing from a default they
+   * never saw, and the safer of the two is the one to reach by accident.
+   */
+  bookingMode: "request" | "instant";
   /**
    * Whether the room is theirs for the hour, or a corner of somewhere busier.
    *

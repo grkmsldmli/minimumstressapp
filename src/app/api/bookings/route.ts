@@ -2,7 +2,8 @@ import type { NextRequest } from "next/server";
 
 import { LIMITS, check, identify, tooManyRequests } from "@/lib/api/rate-limit";
 import { handled, jsonError, requireUser } from "@/lib/api/session";
-import { jsonObject, timestamp, uuid } from "@/lib/api/validate";
+import { integer, jsonObject, oneOf, timestamp, uuid } from "@/lib/api/validate";
+import { BOOKING_USES, MAX_OTHER_CHARS } from "@/lib/booking-use";
 import { stripeGateway } from "@/lib/api/stripe-gateway";
 import { createBooking } from "@/lib/booking-service";
 import { supabaseAdmin } from "@/lib/supabase/server";
@@ -37,12 +38,33 @@ export async function POST(request: NextRequest): Promise<Response> {
     const startsAt = timestamp(body.value, "startsAt");
     if (!startsAt.ok) return jsonError(startsAt.reason, 400);
 
+    /*
+     * What the space will be used for. Read here rather than defaulted:
+     * planBooking refuses a booking with no declaration, and a route that
+     * quietly supplied one would be making the statement on somebody's behalf.
+     */
+    const purpose = oneOf(
+      body.value,
+      "purpose",
+      BOOKING_USES.map((use) => use.key),
+    );
+    if (!purpose.ok) return jsonError(purpose.reason, 400);
+
+    const attendees = integer(body.value, "attendees", { min: 1, max: 200 });
+    if (!attendees.ok) return jsonError(attendees.reason, 400);
+
+    const purposeNote =
+      typeof body.value.purposeNote === "string"
+        ? body.value.purposeNote.trim().slice(0, MAX_OTHER_CHARS)
+        : null;
+
     // The admin client, because writing the booking, its ledger entry and the
     // PaymentIntent has to outrank the person asking — a practitioner has no
     // insert rights on `bookings` by design.
     const result = await createBooking(supabaseAdmin(), stripeGateway, auth.user.id, {
       spaceId: spaceId.value,
       startsAt: startsAt.value,
+      declared: { purpose: purpose.value, purposeNote, attendees: attendees.value },
     });
 
     return Response.json(

@@ -1,7 +1,7 @@
 import "server-only";
 
 import type { StripeGateway } from "../booking-service";
-import { chargeBooking, payHost, settle } from "../stripe/client";
+import { captureHold, chargeBooking, payHost, releaseHold, settle } from "../stripe/client";
 import { settlementFor } from "../stripe/payments";
 
 /**
@@ -12,7 +12,12 @@ import { settlementFor } from "../stripe/payments";
  * a second processor slot in without touching the money logic.
  */
 export const stripeGateway: StripeGateway = {
-  charge: (money, meta, customerId) => chargeBooking(money, meta, customerId),
+  charge: (money, meta, customerId, awaitingApproval) =>
+    chargeBooking(money, meta, customerId, awaitingApproval),
+
+  capture: (paymentIntentId, bookingId) => captureHold(paymentIntentId, bookingId),
+
+  release: (paymentIntentId) => releaseHold(paymentIntentId),
 
   settle: async (paymentIntentId, paidCents, outcome) =>
     settlementFor(outcome, paidCents).kind === "none"

@@ -17,7 +17,7 @@ import { SECTIONS } from "./legal-text";
  * Wording, punctuation, a new example: leave it. A new obligation, a new
  * liability, a change to money or cancellation: raise it.
  */
-export const TERMS_VERSION = 1;
+export const TERMS_VERSION = 2;
 
 /**
  * A fingerprint of the exact words a version stands for.

@@ -41,13 +41,20 @@ export interface PaymentIntentPlan {
   amount: number;
   currency: "usd";
   /**
-   * Taken, not held.
+   * Taken, or only held.
    *
-   * Free cancellation is a refund now rather than a released hold. It is slower
-   * and it shows on a statement, and in exchange a booking can be made as far
-   * ahead as somebody wants to plan.
+   * An ordinary booking is taken. Free cancellation is then a refund rather
+   * than a released hold — slower, and it shows on a statement, and in exchange
+   * a booking can be made as far ahead as somebody wants to plan. A card
+   * authorisation lasts seven days; a booking can be thirty days out.
+   *
+   * A request the host has to answer is only held. That deadline is a day, not
+   * thirty — see REQUEST_EXPIRY_HOURS — so the hold comfortably outlives the
+   * question, and the two ways it can end without a session are a release
+   * rather than a refund: no fee, and nothing on the statement for a booking
+   * that never happened.
    */
-  capture_method: "automatic";
+  capture_method: "automatic" | "manual";
   transfer_group: string;
   metadata: Record<string, string>;
 }
@@ -97,6 +104,8 @@ function moneyMetadata(
 export function planPaymentIntent(
   money: BookingMoney,
   metadata: { bookingId: string; spaceId: string; practitionerId: string },
+  /** True when the host still has to say yes. Holds the money instead. */
+  awaitingApproval = false,
 ): PaymentIntentPlan {
   if (money.totalCents < money.hostRateCents) {
     // Unreachable through quote(), which floors the platform's cut above
@@ -111,7 +120,7 @@ export function planPaymentIntent(
   return {
     amount: money.totalCents,
     currency: "usd",
-    capture_method: "automatic",
+    capture_method: awaitingApproval ? "manual" : "automatic",
     transfer_group: transferGroupFor(metadata.bookingId),
     metadata: moneyMetadata(money, metadata),
   };

@@ -42,7 +42,7 @@ describe("pricing flows through the money module", () => {
   it("charges the all-in price and pays the host their rate exactly", async () => {
     const spaceId = await firstSpaceId();
     const space = await repo.getPublicSpace(spaceId);
-    const { booking: booking } = await repo.createBooking({ spaceId, startsAt: daysFromNow(3) });
+    const { booking: booking } = await repo.createBooking({ spaceId, startsAt: daysFromNow(3), declared: { purpose: "personal_practice", attendees: 1 } });
 
     expect(space!.hourlyRateCents).toBe(4500);
     expect(booking.hostRateCents).toBe(4500);
@@ -55,11 +55,11 @@ describe("pricing flows through the money module", () => {
     const spaceId = await firstSpaceId();
 
     const soon = new Date(Date.now() + 30 * 60 * 1000);
-    const { booking: instant } = await repo.createBooking({ spaceId, startsAt: soon });
+    const { booking: instant } = await repo.createBooking({ spaceId, startsAt: soon, declared: { purpose: "personal_practice", attendees: 1 } });
     expect(instant.isInstant).toBe(true);
     expect(instant.instantFeeCents).toBe(INSTANT_FEE_CENTS);
 
-    const { booking: later } = await repo.createBooking({ spaceId, startsAt: daysFromNow(2) });
+    const { booking: later } = await repo.createBooking({ spaceId, startsAt: daysFromNow(2), declared: { purpose: "personal_practice", attendees: 1 } });
     expect(later.isInstant).toBe(false);
     expect(later.instantFeeCents).toBe(0);
   });
@@ -69,14 +69,13 @@ describe("pricing flows through the money module", () => {
     const spaceId = await firstSpaceId();
     const startsAt = new Date(Date.now() + 30 * 60 * 1000);
 
-    const before = await repo.createBooking({ spaceId, startsAt });
+    const before = await repo.createBooking({ spaceId, startsAt, declared: { purpose: "personal_practice", attendees: 1 } });
     await repo.cancelBooking(before.booking.id, "practitioner");
 
     await repo.startProSubscription();
     const { booking } = await repo.createBooking({
       spaceId,
-      startsAt: new Date(Date.now() + 90 * 60 * 1000),
-    });
+      startsAt: new Date(Date.now() + 90 * 60 * 1000), declared: { purpose: "personal_practice", attendees: 1 } });
 
     expect(booking.wasPro).toBe(true);
     expect(booking.proDiscountCents).toBe(0);
@@ -86,7 +85,7 @@ describe("pricing flows through the money module", () => {
 
   it("freezes the price so a later rate change cannot rewrite it", async () => {
     const spaceId = await firstSpaceId();
-    const { booking: booking } = await repo.createBooking({ spaceId, startsAt: daysFromNow(3) });
+    const { booking: booking } = await repo.createBooking({ spaceId, startsAt: daysFromNow(3), declared: { purpose: "personal_practice", attendees: 1 } });
     const originalTotal = booking.totalCents;
 
     // Whatever happens to the listing afterwards, the booking keeps its quote.
@@ -99,7 +98,7 @@ describe("pricing flows through the money module", () => {
 describe("cancellation", () => {
   it("charges nothing when the practitioner cancels well ahead", async () => {
     const spaceId = await firstSpaceId();
-    const { booking: booking } = await repo.createBooking({ spaceId, startsAt: daysFromNow(3) });
+    const { booking: booking } = await repo.createBooking({ spaceId, startsAt: daysFromNow(3), declared: { purpose: "personal_practice", attendees: 1 } });
 
     const cancelled = await repo.cancelBooking(booking.id, "practitioner");
 
@@ -110,11 +109,11 @@ describe("cancellation", () => {
 
   it("keeps spent credit when the practitioner cancels late", async () => {
     const spaceId = await firstSpaceId();
-    const { booking: first } = await repo.createBooking({ spaceId, startsAt: daysFromNow(3) });
+    const { booking: first } = await repo.createBooking({ spaceId, startsAt: daysFromNow(3), declared: { purpose: "personal_practice", attendees: 1 } });
     await repo.cancelBooking(first.id, "host");
 
     const soon = new Date(Date.now() + 45 * 60 * 1000);
-    const { booking: second } = await repo.createBooking({ spaceId, startsAt: soon });
+    const { booking: second } = await repo.createBooking({ spaceId, startsAt: soon, declared: { purpose: "personal_practice", attendees: 1 } });
 
     await repo.cancelBooking(second.id, "practitioner");
 
@@ -129,7 +128,7 @@ describe("the address is withheld until there is a booking", () => {
 
   it("releases it once a booking exists", async () => {
     const spaceId = await firstSpaceId();
-    await repo.createBooking({ spaceId, startsAt: daysFromNow(3) });
+    await repo.createBooking({ spaceId, startsAt: daysFromNow(3), declared: { purpose: "personal_practice", attendees: 1 } });
 
     const details = await repo.getSpaceAccessDetails(spaceId);
 
@@ -141,7 +140,7 @@ describe("the address is withheld until there is a booking", () => {
 describe("the access code is withheld until its reveal time", () => {
   it("hides it on a booking days away", async () => {
     const spaceId = await firstSpaceId();
-    const { booking: booking } = await repo.createBooking({ spaceId, startsAt: daysFromNow(3) });
+    const { booking: booking } = await repo.createBooking({ spaceId, startsAt: daysFromNow(3), declared: { purpose: "personal_practice", attendees: 1 } });
 
     expect(booking.revealedAccessCode).toBeNull();
     expect(booking.accessCodeRevealedAt.getTime()).toBeLessThan(booking.startsAt.getTime());
@@ -151,8 +150,7 @@ describe("the access code is withheld until its reveal time", () => {
     const spaceId = await firstSpaceId();
     const { booking: booking } = await repo.createBooking({
       spaceId,
-      startsAt: new Date(Date.now() + 10 * 60 * 1000),
-    });
+      startsAt: new Date(Date.now() + 10 * 60 * 1000), declared: { purpose: "personal_practice", attendees: 1 } });
 
     expect(booking.revealedAccessCode).toMatch(/^\d{4}$/);
   });
@@ -191,6 +189,8 @@ describe("listing a space", () => {
       bufferMinutes: 15,
       availability: [{ weekday: 1, startMinute: 540, endMinute: 1020 }],
       media: [{ file: testFile("room.jpg", "image/jpeg"), kind: "image" }],
+      allowedUses: [],
+      bookingMode: "instant" as const,
       subleaseDoc: testFile("lease.pdf", "application/pdf"),
       insuranceDoc: null,
     });
@@ -232,6 +232,8 @@ describe("listing a space", () => {
       bufferMinutes: 0,
       availability: [{ weekday: 1, startMinute: 540, endMinute: 1020 }],
       media: [{ file: testFile("room.jpg", "image/jpeg"), kind: "image" }],
+      allowedUses: [],
+      bookingMode: "instant" as const,
       subleaseDoc: testFile("lease.pdf", "application/pdf"),
       insuranceDoc: null,
     });
@@ -275,6 +277,8 @@ describe("listing a space", () => {
         { weekday: 1, startMinute: 660, endMinute: 1020 },
       ],
       media: [{ file: testFile("room.jpg", "image/jpeg"), kind: "image" }],
+      allowedUses: [],
+      bookingMode: "instant" as const,
       subleaseDoc: testFile("lease.pdf", "application/pdf"),
       insuranceDoc: null,
     });
@@ -320,6 +324,8 @@ describe("simulated inbound bookings pay the host their rate", () => {
         endMinute: 1440,
       })),
       media: [{ file: testFile("room.jpg", "image/jpeg"), kind: "image" }],
+      allowedUses: [],
+      bookingMode: "instant" as const,
       subleaseDoc: testFile("lease.pdf", "application/pdf"),
       insuranceDoc: null,
     });
@@ -362,6 +368,8 @@ describe("simulated inbound bookings pay the host their rate", () => {
       bufferMinutes: 0,
       availability: [{ weekday: 1, startMinute: 540, endMinute: 1020 }],
       media: [{ file: testFile("room.jpg", "image/jpeg"), kind: "image" }],
+      allowedUses: [],
+      bookingMode: "instant" as const,
       subleaseDoc: testFile("lease.pdf", "application/pdf"),
       insuranceDoc: null,
     });
@@ -446,6 +454,8 @@ describe("keeping a listing's town and its uses", () => {
       bufferMinutes: 15,
       availability: [],
       media: [{ file: testFile("room.jpg", "image/jpeg"), kind: "image" }],
+      allowedUses: [],
+      bookingMode: "instant" as const,
       subleaseDoc: testFile("lease.pdf", "application/pdf"),
       insuranceDoc: null,
     });

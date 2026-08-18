@@ -11,6 +11,12 @@ import { sessionDayLong, sessionWeekday } from "@/lib/when";
 import { BookingCalendar } from "@/components/booking-calendar";
 import { SpaceGallery } from "@/components/space-gallery";
 import { PrimaryButton } from "@/components/primitives";
+import { DeclareUse } from "@/components/declare-use";
+import {
+  type DeclaredUse,
+  checkDeclaredUse,
+  explainUseRejection,
+} from "@/lib/booking-use";
 import { slotStartsForDate } from "@/lib/availability";
 import type { PublicReview, PublicSpace } from "@/lib/domain";
 import {
@@ -75,7 +81,7 @@ export function SpaceDetail({
   reviews: PublicReview[] | null;
   onBack: () => void;
   /** `weeks` is 1 for a single session, more for a term. */
-  onBook: (startsAt: Date, weeks: number) => void | Promise<void>;
+  onBook: (startsAt: Date, weeks: number, declared: DeclaredUse) => void | Promise<void>;
   /** Why the booking was refused. Silence here was the bug. */
   error?: string | null;
   /** What a term booking managed, when it managed some of it. */
@@ -103,6 +109,8 @@ export function SpaceDetail({
   /* Itemisation is available on request, not led with. */
   const [showBreakdown, setShowBreakdown] = useState(false);
   const [booking, setBooking] = useState(false);
+  /** What this booking says it is for. Null until somebody answers. */
+  const [declared, setDeclared] = useState<DeclaredUse | null>(null);
   const now = useNow();
   /**
    * The day being looked at, on the studio's calendar.
@@ -134,6 +142,12 @@ export function SpaceDetail({
   }, [day, space.availability, space.timeZone, space.bufferMinutes, now, isPro]);
 
   const isToday = sameCivil(day, civilIn(now, space.timeZone));
+  /*
+   * "Request" rather than "Book", because the two do different things and the
+   * button is where somebody decides.
+   */
+  const byRequest = space.bookingMode === "request";
+  const verb = byRequest ? "Request" : "Book";
 
   /*
    * Times are the room's times. Said out loud only when the reader is somewhere
@@ -141,6 +155,15 @@ export function SpaceDetail({
    * who is not, a bare "9:00 AM" is the difference between arriving on time and
    * arriving three hours early.
    */
+  /*
+   * The same function the server runs, so the button and the API agree. The
+   * server is still the enforcement — this only decides what the screen says.
+   */
+  const useProblem = selected
+    ? checkDeclaredUse(declared, { allowedUses: space.allowedUses, capacity: space.capacity })
+    : null;
+  const ready = declared !== null && useProblem === null;
+
   const zoneNote = zonesDiffer(space.timeZone, viewerZone(), now)
     ? zoneAbbreviation(now, space.timeZone)
     : null;
@@ -699,26 +722,72 @@ export function SpaceDetail({
           A disabled button reading "Choose a time" when there is no time to
           choose looks like the app is broken. It says which it is now.
         */
+        <>
+        {/*
+          Asked after the hour is chosen and before the money. Putting it
+          earlier makes somebody answer questions about a booking they have not
+          decided to make; putting it after payment makes it a formality.
+        */}
+        {selected && (
+          <DeclareUse
+            allowedUses={space.allowedUses}
+            capacity={space.capacity}
+            value={declared}
+            onChange={setDeclared}
+          />
+        )}
+
+        {/*
+          Said before the card, not after it.
+          A room the host has to accept looks identical to one that books
+          straight through, right up until the confirmation screen — so
+          somebody would pay expecting an hour and get a wait instead. The
+          button verb and this line are the whole difference.
+        */}
+        {byRequest && selected && (
+          <p
+            className="rounded-xl px-3.5 py-3 font-body font-normal text-[13.5px] leading-relaxed mb-3"
+            style={{ backgroundColor: "#FFF8F1", border: "1px solid #F5DFC4", color: "#8B6C37" }}
+          >
+            This host accepts bookings themselves. Your card is held, not charged, until they say
+            yes — and released in full if they say no or do not answer within a day.
+          </p>
+        )}
+
         <PrimaryButton
-          disabled={!selected || booking}
+          disabled={!selected || !ready || booking}
           onClick={() => {
-            if (!selected) return;
+            if (!selected || !declared || useProblem) return;
             setBooking(true);
-            void Promise.resolve(onBook(selected, weeks)).finally(() => setBooking(false));
+            void Promise.resolve(onBook(selected, weeks, declared)).finally(() =>
+              setBooking(false),
+            );
           }}
         >
           {booking
             ? "One moment…"
             : selected
               ? weeks > 1
-                ? `Book ${weeks} weeks · ${formatCents(priced.totalCents * weeks)}`
-                : `Book ${clock(selected)}${zoneNote ? ` ${zoneNote}` : ""} · ${formatCents(priced.totalCents)}`
+                ? `${verb} ${weeks} weeks · ${formatCents(priced.totalCents * weeks)}`
+                : `${verb} ${clock(selected)}${zoneNote ? ` ${zoneNote}` : ""} · ${formatCents(priced.totalCents)}`
             : slots.length === 0
               ? isToday
                 ? "Nothing left today"
                 : "Nothing open this day"
               : "Choose a time"}
         </PrimaryButton>
+
+        {/*
+          The reason, under the button rather than after a failed attempt.
+          A greyed-out button with no explanation is the fault this codebase
+          has fixed twice already.
+        */}
+        {selected && useProblem && (
+          <p className="font-body font-normal text-[13.5px] leading-relaxed mt-2 text-ink-soft">
+            {explainUseRejection(useProblem, { allowedUses: space.allowedUses, capacity: space.capacity })}
+          </p>
+        )}
+        </>
         )}
       </div>
     </div>

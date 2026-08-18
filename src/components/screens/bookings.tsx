@@ -471,10 +471,19 @@ export function MyBookings({
                         </p>
                         <p className="font-body font-normal text-[13.5px] text-ink-faint">
                           {sessionDate(booking.startsAt, booking.timeZone)}
-                          {booking.status === "cancelled_by_host" && " · refunded in full"}
+                          {/*
+                            A request that was refused or ran out was never
+                            charged, so there is nothing to refund and saying
+                            so would have somebody watching a statement for
+                            money that is not coming. The hold was released.
+                          */}
+                          {booking.approvalState === "declined" ||
+                          booking.approvalState === "expired"
+                            ? " · nothing was charged"
+                            : booking.status === "cancelled_by_host" && " · refunded in full"}
                         </p>
                       </div>
-                      <StatusPill status={booking.status} />
+                      <StatusPill booking={booking} />
                     </div>
 
                     {reviewable && (
@@ -554,6 +563,7 @@ function UpcomingBooking({
   // which meant cancellation was always free and the rule never bound.
   const freeToCancel = isFreeCancellation(booking.startsAt, now);
   const codeReady = Boolean(booking.revealedAccessCode);
+  const waiting = booking.approvalState === "pending";
   const [cancelling, setCancelling] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
 
@@ -590,6 +600,17 @@ function UpcomingBooking({
             {sessionTime(booking.startsAt, booking.timeZone)} ·{" "}
             {formatCents(booking.totalCents)}
           </p>
+          {/*
+            The one line that keeps somebody from driving to a studio that has
+            not agreed to let them in. A pending request is `upcoming` and
+            sits in this list beside real bookings, so without this it reads
+            as confirmed — same card, same hour, same price.
+          */}
+          {waiting && (
+            <p className="font-body font-medium text-[14.5px] mt-0.5 text-[#8B6C37]">
+              Waiting on the host
+            </p>
+          )}
           {codeReady && (
             <p className="font-body font-medium text-[15px] mt-0.5 text-sky-text">
               Code {booking.revealedAccessCode}
@@ -615,7 +636,20 @@ function UpcomingBooking({
             <p className="flex items-center gap-1.5 font-body font-semibold text-[12px] uppercase tracking-[0.14em] text-sky-text mb-1.5">
               <KeyRound size={11} /> Getting in
             </p>
-            {codeReady ? (
+            {waiting ? (
+              /*
+                Not a countdown. Promising a code at a particular time on a
+                booking the host has not accepted is promising something
+                nobody has agreed to — and the code genuinely will not come:
+                the view withholds it until the money is captured, which only
+                happens on approval.
+              */
+              <p className="font-body font-normal text-[13.5px] leading-relaxed text-ink-soft">
+                Nothing to get you in yet. The host has to accept this first —
+                we&apos;ll write as soon as they answer, and your code follows
+                shortly before you start.
+              </p>
+            ) : codeReady ? (
               <p className="font-display italic font-semibold text-[24px] text-navy tracking-[0.18em]">
                 {booking.revealedAccessCode}
               </p>
@@ -751,14 +785,31 @@ function UpcomingBooking({
   );
 }
 
-function StatusPill({ status }: { status: Booking["status"] }) {
-  const style = {
-    cancelled_by_practitioner: { bg: "#FEF2F0", fg: "#B45143", label: "Cancelled" },
-    cancelled_by_host: { bg: "#EDF6FE", fg: "#3B9BE8", label: "Host cancelled" },
-    no_show: { bg: "#FEF2F0", fg: "#B45143", label: "No-show" },
-    completed: { bg: "#EFF4EC", fg: "#557255", label: "Completed" },
-    upcoming: { bg: "#EFF4EC", fg: "#557255", label: "Upcoming" },
-  }[status];
+/**
+ * What happened, in the words that are true for this booking.
+ *
+ * The approval state is read first because it is the more specific answer. A
+ * declined request and an expired one both land in the table as
+ * `cancelled_by_host` — the schema has no status for "never became a booking"
+ * — so going by status alone would tell somebody the host cancelled their
+ * session when the host had simply not agreed to it, and would tell somebody
+ * whose request timed out the same thing.
+ */
+function StatusPill({ booking }: { booking: Booking }) {
+  const style =
+    booking.approvalState === "pending"
+      ? { bg: "#FFF8F1", fg: "#8B6C37", label: "Waiting on host" }
+      : booking.approvalState === "declined"
+        ? { bg: "#F1F3F6", fg: "#5A6674", label: "Not accepted" }
+        : booking.approvalState === "expired"
+          ? { bg: "#F1F3F6", fg: "#5A6674", label: "Expired" }
+          : {
+              cancelled_by_practitioner: { bg: "#FEF2F0", fg: "#B45143", label: "Cancelled" },
+              cancelled_by_host: { bg: "#EDF6FE", fg: "#3B9BE8", label: "Host cancelled" },
+              no_show: { bg: "#FEF2F0", fg: "#B45143", label: "No-show" },
+              completed: { bg: "#EFF4EC", fg: "#557255", label: "Completed" },
+              upcoming: { bg: "#EFF4EC", fg: "#557255", label: "Upcoming" },
+            }[booking.status];
 
   return (
     <span

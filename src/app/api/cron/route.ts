@@ -1,6 +1,8 @@
 import type { NextRequest } from "next/server";
 
 import { abandonedBefore } from "@/lib/abandoned";
+import { expireStaleRequests, remindWaitingHosts } from "@/lib/approval-service";
+import { stripeGateway } from "@/lib/api/stripe-gateway";
 import { safetyRecipient } from "@/lib/admin/access";
 import { subjectFor, waitingOn, waitingSignature } from "@/lib/admin/attention";
 import { notifyAccessCodesReady, rebuildPending } from "@/lib/notify/for-booking";
@@ -61,6 +63,12 @@ export async function GET(request: NextRequest): Promise<Response> {
      */
     const paid = await payHostsForFinishedSessions(now);
     const released = await releaseAbandonedCheckouts(now);
+    /*
+     * Before the access codes, and for the same reason payouts come first: an
+     * expired request is an hour a studio cannot sell and money held on
+     * somebody's card. Both keep getting worse until this runs.
+     */
+    const requests = await sweepRequests(now);
     const announced = await announceAccessCodes(now);
     const retried = await retryFailedNotifications();
     const waiting = await reportWhatIsWaiting(now);
@@ -69,6 +77,7 @@ export async function GET(request: NextRequest): Promise<Response> {
       ranAt: now.toISOString(),
       ...paid,
       ...released,
+      ...requests,
       ...announced,
       ...retried,
       ...waiting,
@@ -122,6 +131,23 @@ async function releaseAbandonedCheckouts(
     // Never paid. This is the whole safety condition — `captured_at` is
     // written by the `payment_intent.succeeded` webhook and by nothing else.
     .is("captured_at", null)
+    /*
+     * Except a request still waiting on its host, which is uncaptured by
+     * design and would otherwise be reaped half an hour after it was made.
+     *
+     * A request holds the card rather than charging it, so `captured_at` stays
+     * null until the host approves — which is the one condition above. Without
+     * this clause every request would be destroyed thirty minutes in, before
+     * most hosts had looked at their phone, and the guest would be told their
+     * booking was abandoned when they had done everything asked of them.
+     *
+     * `authorized_at is null` keeps the case this reaper is actually for: a
+     * request whose card form was opened and closed has no authorisation
+     * behind it, and is as abandoned as any other unpaid checkout. Requests
+     * that were paid for expire on their own clock instead — see
+     * expireStaleRequests, which is the sweep that owns them.
+     */
+    .or("approval_state.neq.pending,authorized_at.is.null")
     .lt("created_at", abandonedBefore(now).toISOString());
 
   if (error) throw error;
@@ -307,6 +333,30 @@ async function payHostsForFinishedSessions(
  * Wrapped so a notification failure cannot take down the capture result that
  * was already computed. Nothing here is worth reporting a failed cron run for.
  */
+/**
+ * Requests that ran out of time, and hosts who still have some left.
+ *
+ * One pass rather than two jobs, because both read the same rows and the
+ * decision between them is a clock comparison. Splitting them would mean two
+ * queries returning the same set and two chances for them to disagree about
+ * which requests are still open.
+ */
+async function sweepRequests(
+  now: Date,
+): Promise<{ requestsExpired: number; requestsReminded: number }> {
+  try {
+    const admin = supabaseAdmin();
+    const { expired } = await expireStaleRequests(admin, stripeGateway, now);
+    const { reminded } = await remindWaitingHosts(admin, now);
+    return { requestsExpired: expired, requestsReminded: reminded };
+  } catch (error) {
+    // Counted as none rather than thrown: the payouts above have already run
+    // and a failure here must not turn the whole sweep into a 500.
+    console.error("Could not sweep booking requests:", describe(error));
+    return { requestsExpired: 0, requestsReminded: 0 };
+  }
+}
+
 async function announceAccessCodes(now: Date): Promise<{ announced: number }> {
   try {
     return await notifyAccessCodesReady(supabaseAdmin(), now);

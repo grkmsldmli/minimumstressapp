@@ -12,6 +12,7 @@
 import type {
   Booking,
   CreatedBooking,
+  BookingRequest,
   HostBooking,
   HostSpace,
   MediaKind,
@@ -25,6 +26,7 @@ import type {
   SpaceEdit,
 } from "./domain";
 import type { NotificationEntry } from "./notify/history";
+import type { DeclaredUse } from "./booking-use";
 import type { CancellationEvent } from "./reliability";
 
 export interface Repository {
@@ -157,6 +159,28 @@ export interface Repository {
   updateSpaceAvailability(spaceId: string, blocks: HostSpace["availability"]): Promise<HostSpace>;
   listHostBookings(): Promise<HostBooking[]>;
 
+  /**
+   * What is waiting on the host to answer.
+   *
+   * Separate from listHostBookings because they are separate questions and,
+   * underneath, separate SQL: a host's bookings are captured sessions, and a
+   * request is uncaptured by definition.
+   */
+  listBookingRequests(): Promise<BookingRequest[]>;
+
+  /**
+   * Say yes or no to one.
+   *
+   * The note is optional and only reaches the guest on a decline — a host is
+   * entitled to refuse their own room without giving a reason, and requiring
+   * one would just produce a field full of full stops.
+   */
+  answerBookingRequest(
+    bookingId: string,
+    decision: "approve" | "decline",
+    note?: string,
+  ): Promise<void>;
+
   /** Stands in for the manual review the brief defers to a later phase. */
   approveSpace(spaceId: string): Promise<HostSpace>;
 
@@ -183,6 +207,8 @@ export interface Repository {
 export interface CreateBookingInput {
   spaceId: string;
   startsAt: Date;
+  /** What the space will be used for, and how many will be there. */
+  declared: DeclaredUse;
 }
 
 /** What the review screen collects. The server decides everything else. */

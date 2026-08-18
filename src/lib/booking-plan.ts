@@ -13,6 +13,7 @@
 
 import { slotStartsForDate, type AvailabilityBlock } from "./availability";
 import { civilIn } from "./timezone";
+import { tooCloseToRequest } from "./booking-approval";
 import {
   MAX_UPCOMING_BOOKINGS_FREE,
   bookingMoneyFromQuote,
@@ -21,12 +22,25 @@ import {
   quote,
   type BookingMoney,
 } from "./money";
+import {
+  type DeclaredUse,
+  type SpaceRules,
+  type UseRejection,
+  checkDeclaredUse,
+  explainUseRejection,
+} from "./booking-use";
 
 export interface SpaceFacts {
   id: string;
   hostId: string;
   hourlyRateCents: number;
   bufferMinutes: number;
+  /** How many people fit. Checked against what the booking declares. */
+  capacity: number;
+  /** What the host offers the room for. Empty means everything permitted. */
+  allowedUses: readonly string[];
+  /** Whether the host answers first, or the booking simply goes through. */
+  bookingMode: "request" | "instant";
   status: "pending" | "active" | "delisted";
   /** The room's own zone. Availability minutes are wall-clock times in it. */
   timeZone: string;
@@ -52,6 +66,7 @@ export interface PractitionerFacts {
 }
 
 export type PlanRejection =
+  | UseRejection
   | "space_not_found"
   | "space_not_active"
   | "host_cannot_be_paid"
@@ -59,11 +74,24 @@ export type PlanRejection =
   | "beyond_booking_horizon"
   | "slot_not_open"
   | "slot_taken"
-  | "too_many_upcoming";
+  | "too_many_upcoming"
+  | "too_soon_to_request";
 
 export type BookingPlan =
   | { ok: false; reason: PlanRejection }
-  | { ok: true; money: BookingMoney; isInstant: boolean };
+  | {
+      ok: true;
+      money: BookingMoney;
+      isInstant: boolean;
+      /**
+       * Whether this booking is confirmed on payment or waits for the host.
+       *
+       * It also decides what happens to the money: a request holds the card
+       * and captures on approval, an ordinary booking takes it outright. See
+       * booking-approval.ts for why a hold is safe on one and not the other.
+       */
+      needsApproval: boolean;
+    };
 
 export function planBooking(input: {
   space: SpaceFacts | null;
@@ -73,10 +101,29 @@ export function planBooking(input: {
   takenStarts: readonly Date[];
   /** This practitioner's own sessions still ahead, across every space. */
   upcomingCount?: number;
+  /**
+   * What the person booking says they will do, and how many will be there.
+   *
+   * Checked here rather than at the form, because the form is not the only
+   * caller and a rule that lives in a component is a rule an API route does
+   * not have. Optional in the type only so the existing tests that predate it
+   * still describe what they were written to describe; the service always
+   * passes one, and a missing declaration is a rejection rather than a pass.
+   */
+  declared?: DeclaredUse | null;
   startsAt: Date;
   now: Date;
 }): BookingPlan {
-  const { space, host, practitioner, takenStarts, startsAt, now, upcomingCount = 0 } = input;
+  const {
+    space,
+    host,
+    practitioner,
+    takenStarts,
+    startsAt,
+    now,
+    upcomingCount = 0,
+    declared = null,
+  } = input;
 
   if (!space) return { ok: false, reason: "space_not_found" };
   if (space.status !== "active") return { ok: false, reason: "space_not_active" };
@@ -129,11 +176,38 @@ export function planBooking(input: {
     return { ok: false, reason: "slot_taken" };
   }
 
+  /*
+   * What the room is for, checked last.
+   *
+   * After the hour is known to be free, so somebody who picked a taken slot is
+   * told that rather than being asked to justify a booking they cannot have.
+   */
+  const useProblem = checkDeclaredUse(declared, {
+    allowedUses: space.allowedUses,
+    capacity: space.capacity,
+  });
+  if (useProblem) return { ok: false, reason: useProblem };
+
   const isInstant = isInstantSlot(startsAt, now);
+  const needsApproval = space.bookingMode === "request";
+
+  /*
+   * A request nobody could answer in time is not worth taking.
+   *
+   * Last, because it is the narrowest reason to refuse and somebody who also
+   * picked a taken hour should hear about the hour. A request made forty
+   * minutes before the session can only expire — the host has no window to
+   * answer in — so it would hold the money, block the hour and end in nothing.
+   * Refusing here is the honest version of that.
+   */
+  if (needsApproval && tooCloseToRequest(startsAt, now)) {
+    return { ok: false, reason: "too_soon_to_request" };
+  }
 
   return {
     ok: true,
     isInstant,
+    needsApproval,
     money: bookingMoneyFromQuote(
       quote({
         hostRateCents: space.hourlyRateCents,
@@ -144,9 +218,24 @@ export function planBooking(input: {
   };
 }
 
-/** Human wording for each refusal, kept next to the reasons they explain. */
-export function explainRejection(reason: PlanRejection): { message: string; status: number } {
+/**
+ * Human wording for each refusal, kept next to the reasons they explain.
+ *
+ * The use rejections take the room's own numbers, so "this room takes 6" says
+ * six rather than sending somebody to count the listing again.
+ */
+export function explainRejection(
+  reason: PlanRejection,
+  rules: SpaceRules = { allowedUses: [], capacity: 0 },
+): { message: string; status: number } {
   switch (reason) {
+    case "purpose_missing":
+    case "purpose_unknown":
+    case "purpose_needs_detail":
+    case "use_not_allowed":
+    case "attendees_missing":
+    case "too_many_attendees":
+      return { message: explainUseRejection(reason, rules), status: 409 };
     case "space_not_found":
       return { message: "No such space", status: 404 };
     case "space_not_active":
@@ -164,6 +253,12 @@ export function explainRejection(reason: PlanRejection): { message: string; stat
     case "too_many_upcoming":
       return {
         message: `You have ${MAX_UPCOMING_BOOKINGS_FREE} sessions booked. Finish one, or go Pro to book as many at a time as you like.`,
+        status: 409,
+      };
+
+    case "too_soon_to_request":
+      return {
+        message: `This host accepts bookings themselves, and that is too soon for them to answer. Pick a later time, or a room that books straight away.`,
         status: 409,
       };
   }

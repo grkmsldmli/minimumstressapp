@@ -21,6 +21,11 @@ import { formatCents } from "../money";
 export const NOTIFICATION_KINDS = [
   "booking_confirmed",
   "host_new_booking",
+  "host_new_request",
+  "host_request_reminder",
+  "request_approved",
+  "request_declined",
+  "request_expired",
   "access_code_ready",
   "cancelled_by_practitioner",
   "cancelled_by_host",
@@ -106,6 +111,10 @@ export interface MessageContext {
   note?: string;
   /** Which side wrote it, so staff know who they are reading. */
   role?: string;
+  /** A request: what was declared, and how long the host has left. */
+  purpose?: string;
+  attendees?: number;
+  deadline?: string;
 }
 
 /**
@@ -195,6 +204,104 @@ export function render(kind: NotificationKind, context: MessageContext): Message
             ? `You receive ${formatCents(context.amountCents)} for this session — your rate in full. Payouts arrive about two business days after the session.`
             : null,
           `Nothing to do unless something changes at your end. If it does, tell us as early as you can: late cancellations count against a studio the same way they count against a practitioner.`,
+          SIGN_OFF,
+        ),
+        sms: null,
+      };
+
+    /**
+     * A request landing in a host's queue.
+     *
+     * Everything they need to decide is in the message, because a host reading
+     * it on a phone should be able to make the call without opening anything —
+     * what the room is for, how many people, when, and by when they have to
+     * say. Vague here means the request sits until it expires.
+     */
+    case "host_new_request":
+      return {
+        subject: `Booking request: ${spaceName}, ${when}`,
+        body: lines(
+          greeting(name),
+          `Somebody has asked to book ${spaceName} for ${when}.`,
+          context.purpose ? `What for: ${context.purpose}` : null,
+          context.attendees !== undefined
+            ? `People coming: ${context.attendees}, including them`
+            : null,
+          context.amountCents !== undefined
+            ? `You would receive ${formatCents(context.amountCents)} — your rate in full.`
+            : null,
+          /*
+           * The deadline is stated because a request that quietly expires
+           * looks, to a host, exactly like one that was never sent.
+           */
+          context.deadline
+            ? `Approve or decline in the app. If nobody answers by ${context.deadline}, the request expires on its own and the hour goes back on your calendar.`
+            : `Approve or decline in the app.`,
+          `Their card is held for this, not charged. Nothing is taken unless you approve.`,
+          SIGN_OFF,
+        ),
+        sms: null,
+      };
+
+    /** Halfway through, once — not a drip. */
+    case "host_request_reminder":
+      return {
+        subject: `Still waiting: ${spaceName}, ${when}`,
+        body: lines(
+          greeting(name),
+          `A booking request for ${spaceName} on ${when} has not been answered yet.`,
+          context.purpose ? `What for: ${context.purpose}` : null,
+          context.deadline
+            ? `It expires by itself at ${context.deadline}, and the hour is unavailable to anybody else until then.`
+            : `The hour is unavailable to anybody else until it is answered.`,
+          `Declining is a perfectly good answer, and it costs you nothing.`,
+          SIGN_OFF,
+        ),
+        sms: null,
+      };
+
+    case "request_approved":
+      return {
+        subject: `Confirmed: ${spaceName}, ${when}`,
+        body: lines(
+          greeting(name),
+          `The host said yes. Your session at ${spaceName} on ${when} is confirmed.`,
+          context.amountCents !== undefined
+            ? `${formatCents(context.amountCents)} has now been taken from the card you used. Cancel more than 24 hours ahead and all of it is refunded.`
+            : null,
+          `The way in appears in this app the day before, and your door code shortly before you start.`,
+          SIGN_OFF,
+        ),
+        sms: null,
+      };
+
+    /*
+     * A decline is not a failure and is not written as one. No apology on the
+     * host's behalf, no reason invented — a host is entitled to say no about
+     * their own room, and dressing it up would only invite a reply asking why.
+     */
+    case "request_declined":
+      return {
+        subject: `Not this time: ${spaceName}, ${when}`,
+        body: lines(
+          greeting(name),
+          `The host is not able to take your request for ${spaceName} on ${when}.`,
+          context.note ? `They said: ${context.note}` : null,
+          `Nothing was charged. The hold on your card has been released, so there is nothing to wait for on a statement.`,
+          `The hour is back on their calendar, and other spaces are open for that time.`,
+          SIGN_OFF,
+        ),
+        sms: null,
+      };
+
+    case "request_expired":
+      return {
+        subject: `Expired: ${spaceName}, ${when}`,
+        body: lines(
+          greeting(name),
+          `Your request for ${spaceName} on ${when} was not answered in time, so it has expired.`,
+          `Nothing was charged. The hold on your card has been released, so there is nothing to wait for on a statement.`,
+          `Some spaces confirm straight away — those book without waiting on anybody.`,
           SIGN_OFF,
         ),
         sms: null,

@@ -120,6 +120,20 @@ describe("the words a version stands for", () => {
    */
   const DIGESTS: Record<number, string> = {
     1: "338e9ed4",
+    /*
+     * Version 2 adds "What a space may be used for": the platform's list of
+     * prohibited uses, the rule that a space is used only for what was
+     * declared and by the number declared, and what we may do when it is not
+     * — cancel, remove access, refuse a refund, suspend. That is a new
+     * obligation on every user, so everybody is asked again.
+     *
+     * It also says what happens to the money on a studio that accepts
+     * bookings itself: the card is held rather than charged, and the hold is
+     * released if the host declines or never answers. Not a new obligation,
+     * but a different thing happening to somebody's money than the line above
+     * it describes, which is exactly what a payment term is for.
+     */
+    2: "15e31258",
   };
 
   it("still says what the current version said", () => {

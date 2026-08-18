@@ -61,6 +61,32 @@ export const SECTIONS: readonly LegalSection[] = [
     ],
   },
   {
+    key: "use-of-space",
+    title: "What a space may be used for",
+    scope: "terms",
+    points: [
+      "Every booking states what the space will be used for and how many people will be there, including you. That statement is part of the booking and cannot be changed afterwards.",
+      "The space may be used only for what was stated, by no more than the number stated, and only during the hours booked.",
+      /*
+       * The floor. A host cannot lower it, and none of these appear as an
+       * option anywhere in the product — see PROHIBITED_USES in
+       * src/lib/booking-use.ts, which is the same list this is written from.
+       */
+      "The following are not permitted on Minimum Stress, whatever a host allows: sexual activity or sexual services; pornography or adult-content production; prostitution or escort activity; anything illegal, including illegal drugs; weapons where prohibited or unsafe; hazardous activities; parties and nightlife events; entering outside the booked time; commercial filming or production that was not declared and allowed; and anything that damages the space or creates an unreasonable safety risk.",
+      "Hosts choose which of the permitted uses they offer, and may set their own rules on top — occupancy, music, filming, equipment, food and drink, footwear and how the space is left. Those rules are on the listing before you book and apply to the booking.",
+      "Where a host reviews requests before accepting them, a booking is not confirmed until they accept it.",
+      /*
+       * What we can actually do, and nothing beyond it. "We will charge you
+       * for any damage" is a sentence a payment processor does not support and
+       * a term nobody can rely on; the claim process that does exist is
+       * referenced instead.
+       */
+      "If a space is used for something other than what was stated, by more people than were stated, or for anything on the list above, we may cancel the booking, remove access, refuse a refund, and suspend or close the account. We may look into what happened and ask both sides for an account of it.",
+      "A host may report damage after a session through the claim process in the app, which is the only route by which a practitioner can be charged for it.",
+      "Nothing here makes Minimum Stress responsible for what happens in a space. We are not present, we do not supervise sessions, and the people using a space are responsible for what they do in it.",
+    ],
+  },
+  {
     key: "wellness",
     title: "Health and Wellness",
     scope: "terms",
@@ -176,6 +202,7 @@ export const SECTIONS: readonly LegalSection[] = [
     scope: "terms",
     points: [
       "You pay when you book. We hold the money until the session has happened, then pay the studio.",
+      "Some studios accept bookings themselves rather than taking them automatically. On those, your card is held for the amount rather than charged, and the money is only taken if the host accepts. If they decline, or do not answer within a day, the hold is released and nothing is taken.",
       "Cancel 24 or more hours ahead and you are refunded, back to the card you paid with, apart from what the card network charges to process a payment — it keeps that whether or not the session happens, and we do not add anything to it.",
       "If the studio cancels on you, you get everything back including that fee. You did not cause it and you do not pay for it.",
       "Cancel inside 24 hours, or fail to attend, and the full amount is captured.",

@@ -301,8 +301,9 @@ export async function chargeBooking(
   money: BookingMoney,
   meta: { bookingId: string; spaceId: string; practitionerId: string },
   customerId?: string,
+  awaitingApproval = false,
 ): Promise<AuthorizeResult> {
-  const plan = planPaymentIntent(money, meta);
+  const plan = planPaymentIntent(money, meta, awaitingApproval);
 
   const intent = await stripe().paymentIntents.create(
     {
@@ -370,6 +371,32 @@ export async function settle(
     case "none":
       return;
   }
+}
+
+/**
+ * Take a hold the host has said yes to.
+ *
+ * Idempotent on the booking, because a host can tap approve twice and a
+ * retried request must not become a second charge. Stripe refuses to capture
+ * an intent that is already captured, so the key is doing the work the guard
+ * on the row cannot: it turns the second attempt into the first one's answer
+ * rather than an error the host would see.
+ */
+export async function captureHold(paymentIntentId: string, bookingId: string): Promise<void> {
+  await stripe().paymentIntents.capture(paymentIntentId, undefined, {
+    idempotencyKey: `booking_capture_${bookingId}`,
+  });
+}
+
+/**
+ * Let a hold go, because the host said no or never answered.
+ *
+ * Not a refund. Nothing was taken, so nothing comes back — the money was never
+ * off the card, and a declined request leaves no line on a statement to explain
+ * to anybody. That is the whole reason a request holds rather than charges.
+ */
+export async function releaseHold(paymentIntentId: string): Promise<void> {
+  await stripe().paymentIntents.cancel(paymentIntentId);
 }
 
 /**

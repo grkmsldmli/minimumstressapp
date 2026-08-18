@@ -25,6 +25,7 @@ import type {
   Booking,
   BookingMoneyRecord,
   CreatedBooking,
+  BookingRequest,
   HostBooking,
   HostSpace,
   Message,
@@ -47,6 +48,7 @@ import type { CreateBookingInput, Repository } from "./repository";
 import type { AccessDetails } from "./access-details";
 import type { MediaKind, SpaceEdit } from "./domain";
 import type { NotificationEntry } from "./notify/history";
+import { knownUses } from "./booking-use";
 import { knownSpaceTypes } from "./space-types";
 import { type CategoryKey, type RoomSetupKey, roomTypeFor } from "./taxonomy";
 import { SESSION_MINUTES } from "./session";
@@ -342,6 +344,8 @@ export class MockRepository implements Repository {
         city: "San Mateo",
         state: "CA",
         suitableFor: seed.suitableFor,
+        allowedUses: [],
+        bookingMode: "instant" as const,
         roomSetup: seed.roomSetup,
         addressLine: seed.addressLine,
         lat: seed.lat,
@@ -485,6 +489,12 @@ export class MockRepository implements Repository {
       endsAt,
       timeZone: space.timeZone,
       status: "upcoming",
+      /*
+       * The demo never waits on anybody. The mock has no second person in it
+       * to press approve, so a request made here would sit pending forever and
+       * the only thing it would demonstrate is a dead end.
+       */
+      approvalState: "not_required",
       isInstant,
       wasPro: this.profile.isPro,
       revealedAccessCode: generateAccessCode(),
@@ -771,6 +781,8 @@ export class MockRepository implements Repository {
       city: input.city,
       state: input.state,
       suitableFor: knownSpaceTypes(input.suitableFor),
+      allowedUses: knownUses(input.allowedUses ?? []),
+      bookingMode: input.bookingMode ?? "request",
       roomSetup: input.roomSetup,
       // The old boolean, still on the type and still written by nothing. See
       // the note on NewSpaceInput.access.
@@ -809,6 +821,22 @@ export class MockRepository implements Repository {
 
   async listHostBookings(): Promise<HostBooking[]> {
     return [...this.hostBookings].sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
+  }
+
+  /**
+   * Always empty, and that is the honest answer here.
+   *
+   * A request needs somebody on the other side of it. The mock is one person
+   * looking at their own data, so seeding a pending request would mean seeding
+   * a practitioner who does not exist, waiting on an answer that changes
+   * nothing. The queue's empty state is what a new host sees anyway.
+   */
+  async listBookingRequests(): Promise<BookingRequest[]> {
+    return [];
+  }
+
+  async answerBookingRequest(): Promise<void> {
+    throw new Error("There is nothing to answer in the demo.");
   }
 
   /**

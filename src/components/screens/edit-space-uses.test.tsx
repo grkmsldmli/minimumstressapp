@@ -50,6 +50,8 @@ async function aSpace(suitableFor = ["pilates-studio"]): Promise<HostSpace> {
     state: "CA",
     postalCode: "94061",
     suitableFor,
+    allowedUses: [],
+    bookingMode: "instant" as const,
     lat: 37.48,
     lng: -122.23,
     mapX: 0.5,

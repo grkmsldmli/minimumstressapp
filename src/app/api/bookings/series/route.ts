@@ -3,7 +3,8 @@ import type { NextRequest } from "next/server";
 import { LIMITS, check, identify, tooManyRequests } from "@/lib/api/rate-limit";
 import { stripeGateway } from "@/lib/api/stripe-gateway";
 import { handled, jsonError, requireUser } from "@/lib/api/session";
-import { integer, jsonObject, timestamp, uuid } from "@/lib/api/validate";
+import { integer, jsonObject, oneOf, timestamp, uuid } from "@/lib/api/validate";
+import { BOOKING_USES, MAX_OTHER_CHARS } from "@/lib/booking-use";
 import { BookingError, createBooking } from "@/lib/booking-service";
 import { MAX_SERIES_OCCURRENCES, describeSeries, seriesOccurrences } from "@/lib/series";
 import { supabaseAdmin } from "@/lib/supabase/server";
@@ -80,6 +81,26 @@ export async function POST(request: NextRequest): Promise<Response> {
     const skipped: { startsAt: string; because: string }[] = [];
 
     /*
+     * What the space will be used for. Read here rather than defaulted:
+     * planBooking refuses a booking with no declaration, and a route that
+     * quietly supplied one would be making the statement on somebody's behalf.
+     */
+    const purpose = oneOf(
+      body.value,
+      "purpose",
+      BOOKING_USES.map((use) => use.key),
+    );
+    if (!purpose.ok) return jsonError(purpose.reason, 400);
+
+    const attendees = integer(body.value, "attendees", { min: 1, max: 200 });
+    if (!attendees.ok) return jsonError(attendees.reason, 400);
+
+    const purposeNote =
+      typeof body.value.purposeNote === "string"
+        ? body.value.purposeNote.trim().slice(0, MAX_OTHER_CHARS)
+        : null;
+
+    /*
      * One at a time, and deliberately not in parallel.
      *
      * Each booking charges a card and counts against the concurrent-session
@@ -92,6 +113,12 @@ export async function POST(request: NextRequest): Promise<Response> {
         const result = await createBooking(admin, stripeGateway, auth.user.id, {
           spaceId: spaceId.value,
           startsAt: occurrence,
+          /*
+           * The same declaration on every week of the run. A series is one
+           * intention repeated, and asking again per occurrence would let the
+           * twelfth week carry a purpose nobody chose for it.
+           */
+          declared: { purpose: purpose.value, purposeNote, attendees: attendees.value },
         });
         booked.push({ startsAt: occurrence.toISOString(), bookingId: result.bookingId });
       } catch (failure) {

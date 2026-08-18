@@ -24,10 +24,11 @@ import { BadgeCard } from "@/components/badge-card";
 import { MilestoneCard } from "@/components/milestone-card";
 import { Ambient, Headline, LogoBadge } from "@/components/brand";
 import { PrimaryButton } from "@/components/primitives";
+import { RequestQueue } from "@/components/request-queue";
 import { StandingNotice } from "@/components/standing-notice";
 import { WeekSchedule } from "@/components/week-schedule";
 import type { AvailabilityBlock } from "@/lib/availability";
-import type { HostBooking, HostSpace, Profile } from "@/lib/domain";
+import type { BookingRequest, HostBooking, HostSpace, Profile } from "@/lib/domain";
 import { errorMessage } from "@/lib/error-message";
 import { formatCents } from "@/lib/money";
 import { PAYOUT_DELAY_DAYS, describeSpeed } from "@/lib/payouts";
@@ -61,6 +62,8 @@ function spacesSummary(spaces: HostSpace[]): string {
 export function HostDashboard({
   spaces,
   bookings,
+  requests,
+  onAnswerRequest,
   onAddSpace,
   onEditHours,
   onEditSpace,
@@ -75,6 +78,13 @@ export function HostDashboard({
 }: {
   spaces: HostSpace[];
   bookings: HostBooking[];
+  /** Waiting on the host. Empty on every listing that books instantly. */
+  requests: BookingRequest[];
+  onAnswerRequest: (
+    bookingId: string,
+    decision: "approve" | "decline",
+    note?: string,
+  ) => Promise<void>;
   onAddSpace: () => void;
   onEditHours: (spaceId: string) => void;
   onEditSpace: (spaceId: string) => void;
@@ -364,6 +374,17 @@ export function HostDashboard({
 
           <div className="flex-1 overflow-y-auto px-6 pt-6 pb-8">
             <Unfinished space={active} onEdit={() => onEditSpace(active.id)} />
+
+            {/*
+              Above the calendar, and above the listing's own warnings. A
+              request expires on a clock the host cannot see running, so it is
+              the one thing on this screen that gets worse while it is ignored.
+            */}
+            <RequestQueue
+              requests={requests.filter((r) => r.spaceId === active.id)}
+              zoneOf={zoneOf}
+              onAnswer={onAnswerRequest}
+            />
 
             <div className="mb-3">
               <p className="font-body font-semibold text-[12px] uppercase tracking-[0.2em] mb-2.5 text-sky-text">

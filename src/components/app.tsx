@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type {
   Booking,
+  BookingRequest,
   HostBooking,
   HostSpace,
   Profile,
@@ -73,6 +74,8 @@ interface Snapshot {
   bookings: Booking[];
   mySpaces: HostSpace[];
   hostBookings: HostBooking[];
+  /** What is waiting on the host to answer. Empty for everybody else. */
+  bookingRequests: BookingRequest[];
   access: Record<string, SpaceAccessDetails>;
   cancellations: CancellationEvent[];
   sessions: number;
@@ -399,6 +402,7 @@ export function App() {
         bookings,
         mySpaces,
         hostBookings,
+        bookingRequests,
         cancellations,
         sessions,
         notifications,
@@ -408,6 +412,7 @@ export function App() {
           repo.listMyBookings(),
           repo.listMySpaces(),
           repo.listHostBookings(),
+          repo.listBookingRequests(),
           repo.listCancellationHistory(),
           repo.getSessionCount(),
           repo.listNotifications(),
@@ -427,6 +432,7 @@ export function App() {
         bookings,
         mySpaces,
         hostBookings,
+        bookingRequests,
         access,
         cancellations,
         sessions,
@@ -677,7 +683,17 @@ export function App() {
     );
   }
 
-  const { profile, spaces, bookings, mySpaces, hostBookings, access, cancellations, sessions } =
+  const {
+    profile,
+    spaces,
+    bookings,
+    mySpaces,
+    hostBookings,
+    bookingRequests,
+    access,
+    cancellations,
+    sessions,
+  } =
     data;
 
   // One history, read from each side. The same function answers "how do I
@@ -870,6 +886,17 @@ export function App() {
         <HostDashboard
           spaces={mySpaces}
           bookings={hostBookings}
+          requests={bookingRequests}
+          /*
+           * Refreshed rather than patched in place. Answering moves a booking
+           * between two lists that come from two different queries — out of
+           * the queue and, on an approval, into the calendar — and keeping a
+           * local copy in step with both is how one of them ends up stale.
+           */
+          onAnswerRequest={async (bookingId, decision, note) => {
+            await repo.answerBookingRequest(bookingId, decision, note);
+            refresh();
+          }}
           onAddSpace={() => go("addspace")}
           onEditHours={(spaceId) => {
             setEditingSpaceId(spaceId);
@@ -993,7 +1020,7 @@ export function App() {
           error={bookingError}
           notice={bookingNotice}
           skipped={seriesSkipped}
-          onBook={async (startsAt, weeks) => {
+          onBook={async (startsAt, weeks, declared) => {
             /*
              * A term goes through its own route, which walks the weeks and
              * books each one under the ordinary rules. It reports what it
@@ -1009,6 +1036,9 @@ export function App() {
                   spaceId: activeSpace.id,
                   startsAt: startsAt.toISOString(),
                   weeks,
+                  purpose: declared.purpose,
+                  purposeNote: declared.purposeNote ?? null,
+                  attendees: declared.attendees,
                 }),
               });
               const body = await response.json().catch(() => ({}));
@@ -1041,6 +1071,7 @@ export function App() {
               const { booking, clientSecret } = await repo.createBooking({
                 spaceId: activeSpace.id,
                 startsAt,
+                declared,
               });
               setActiveBookingId(booking.id);
               setClientSecret(clientSecret);

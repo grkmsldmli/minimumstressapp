@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import type Stripe from "stripe";
 
-import { notifyBookingCreated, recipientFor } from "@/lib/notify/for-booking";
+import { notifyBookingCreated, notifyRequestMade, recipientFor } from "@/lib/notify/for-booking";
 import { notify } from "@/lib/notify/send";
 import { stripe } from "@/lib/stripe/client";
 import { grantsPro } from "@/lib/stripe/subscription";
@@ -131,7 +131,7 @@ async function handle(event: Stripe.Event): Promise<void> {
         .eq("stripe_payment_intent_id", intent.id)
         // Guarded so a replayed event cannot overwrite a time already recorded.
         .is("captured_at", null)
-        .select("id");
+        .select("id, approval_state");
 
       /*
        * And this is where the host finds out.
@@ -145,8 +145,43 @@ async function handle(event: Stripe.Event): Promise<void> {
        * selects no rows, and notify() claims a unique dedupe key per kind and
        * subject in any case.
        */
-      const bookingId = paid?.[0]?.id;
-      if (bookingId) await notifyBookingCreated(admin, bookingId);
+      const booking = paid?.[0];
+      /*
+       * Except when the host has just approved it.
+       *
+       * With manual capture this event fires at the capture, not at the card
+       * form — so for a request it means "the host said yes and the hold was
+       * taken", which both sides have already been told about: the host by
+       * doing it, the guest by request_approved. Sending "New booking" here
+       * would be the third message about one decision.
+       */
+      if (booking && booking.approval_state !== "approved") {
+        await notifyBookingCreated(admin, booking.id);
+      }
+      return;
+    }
+
+    /**
+     * A card confirmed against a hold rather than a charge.
+     *
+     * Only requests reach here, because only they are created for manual
+     * capture. It is the true "the request has been made" moment — the guest
+     * has entered a card and the money is held — and it is where the host is
+     * told, for the same reason `succeeded` is where they are told about an
+     * ordinary booking: before this, a request is a form somebody might still
+     * close.
+     */
+    case "payment_intent.amount_capturable_updated": {
+      const intent = event.data.object;
+      const { data: held } = await admin
+        .from("bookings")
+        .update({ authorized_at: new Date().toISOString() })
+        .eq("stripe_payment_intent_id", intent.id)
+        .eq("approval_state", "pending")
+        .select("id");
+
+      const requestId = held?.[0]?.id;
+      if (requestId) await notifyRequestMade(admin, requestId);
       return;
     }
 
@@ -164,6 +199,18 @@ async function handle(event: Stripe.Event): Promise<void> {
           cancelled_by: "practitioner",
         })
         .eq("stripe_payment_intent_id", intent.id)
+        /*
+         * The status guard is what keeps a declined request from being
+         * relabelled here.
+         *
+         * Releasing a hold cancels its intent, so a host declining produces
+         * this event within a second or two. approval-service writes the row
+         * before it calls Stripe, precisely so that by the time this arrives
+         * the booking is no longer `upcoming` and this update matches nothing
+         * — otherwise a host's decline would be recorded as the practitioner
+         * having cancelled, and that is the version somebody reads back in a
+         * dispute.
+         */
         .eq("status", "upcoming");
       return;
     }

@@ -1,5 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { expiresAt } from "../booking-approval";
+import { bookingUse } from "../booking-use";
 import { type NotificationKind, render } from "./messages";
 import { type PendingNotification, type Recipient, notify } from "./send";
 
@@ -142,6 +144,189 @@ async function loadBooking(admin: SupabaseClient, bookingId: string): Promise<Bo
     .maybeSingle();
 
   return (data as BookingRow | null) ?? null;
+}
+
+/**
+ * The booking behind a request, which is a different set of conditions.
+ *
+ * loadBooking refuses anything uncaptured or closed, and it is right to: its
+ * messages carry the door code and the address, so a stale retry would hand
+ * somebody the way into a room. None of that applies here. A request is
+ * uncaptured by definition — that is what a hold is — and a decline is sent
+ * precisely because the booking has just been closed. Reusing the strict
+ * loader would mean no host was ever told about a request and nobody was ever
+ * told it had been refused.
+ *
+ * What makes that safe is the messages themselves: not one of the request
+ * kinds carries an address or a code, so there is nothing here to leak by
+ * being late.
+ */
+async function loadRequest(
+  admin: SupabaseClient,
+  bookingId: string,
+): Promise<
+  | (BookingRow & {
+      created_at: string;
+      purpose: string | null;
+      purpose_note: string | null;
+      attendee_count: number | null;
+      approval_note: string | null;
+    })
+  | null
+> {
+  const { data } = await admin
+    .from("bookings")
+    .select(
+      "id, practitioner_id, starts_at, created_at, total_cents, host_rate_cents, access_code, purpose, purpose_note, attendee_count, approval_note, spaces!inner(name, host_id, timezone, address_line, entry_instructions)",
+    )
+    .eq("id", bookingId)
+    .maybeSingle();
+
+  return (data as never) ?? null;
+}
+
+/** A host, told somebody wants their room and by when they have to answer. */
+export async function notifyRequestMade(admin: SupabaseClient, bookingId: string): Promise<void> {
+  try {
+    const booking = await loadRequest(admin, bookingId);
+    if (!booking) return;
+
+    const host = await recipientFor(admin, booking.spaces.host_id);
+    if (!host || hasOptedOut(host, "host_new_request")) return;
+
+    const zone = booking.spaces.timezone;
+    const deadline = expiresAt({
+      approvalState: "pending",
+      requestedAt: new Date(booking.created_at),
+      startsAt: new Date(booking.starts_at),
+    });
+
+    await notify({
+      kind: "host_new_request",
+      recipient: host,
+      subjectId: bookingId,
+      bookingId,
+      context: {
+        spaceName: booking.spaces.name,
+        when: formatWhen(new Date(booking.starts_at), zone),
+        // The host's rate, never the total — the same rule as host_new_booking.
+        amountCents: booking.host_rate_cents,
+        purpose: describePurpose(booking.purpose, booking.purpose_note),
+        attendees: booking.attendee_count ?? undefined,
+        deadline: formatWhen(deadline, zone),
+      },
+    });
+  } catch (error) {
+    console.error(`Request notification failed for ${bookingId}:`, error);
+  }
+}
+
+/** The nudge halfway to the deadline. Deduped by kind and subject, so once. */
+export async function notifyRequestReminder(
+  admin: SupabaseClient,
+  bookingId: string,
+): Promise<void> {
+  try {
+    const booking = await loadRequest(admin, bookingId);
+    if (!booking) return;
+
+    const host = await recipientFor(admin, booking.spaces.host_id);
+    if (!host || hasOptedOut(host, "host_new_request")) return;
+
+    const zone = booking.spaces.timezone;
+
+    await notify({
+      kind: "host_request_reminder",
+      recipient: host,
+      subjectId: bookingId,
+      bookingId,
+      context: {
+        spaceName: booking.spaces.name,
+        when: formatWhen(new Date(booking.starts_at), zone),
+        purpose: describePurpose(booking.purpose, booking.purpose_note),
+        deadline: formatWhen(
+          expiresAt({
+            approvalState: "pending",
+            requestedAt: new Date(booking.created_at),
+            startsAt: new Date(booking.starts_at),
+          }),
+          zone,
+        ),
+      },
+    });
+  } catch (error) {
+    console.error(`Request reminder failed for ${bookingId}:`, error);
+  }
+}
+
+/** The three ways a request ends, told to the person who made it. */
+export async function notifyRequestApproved(
+  admin: SupabaseClient,
+  bookingId: string,
+): Promise<void> {
+  await tellGuest(admin, bookingId, "request_approved");
+}
+
+export async function notifyRequestDeclined(
+  admin: SupabaseClient,
+  bookingId: string,
+): Promise<void> {
+  await tellGuest(admin, bookingId, "request_declined");
+}
+
+export async function notifyRequestExpired(
+  admin: SupabaseClient,
+  bookingId: string,
+): Promise<void> {
+  await tellGuest(admin, bookingId, "request_expired");
+}
+
+async function tellGuest(
+  admin: SupabaseClient,
+  bookingId: string,
+  kind: "request_approved" | "request_declined" | "request_expired",
+): Promise<void> {
+  try {
+    const booking = await loadRequest(admin, bookingId);
+    if (!booking) return;
+
+    const practitioner = await recipientFor(admin, booking.practitioner_id);
+    if (!practitioner) return;
+
+    await notify({
+      kind,
+      recipient: practitioner,
+      subjectId: bookingId,
+      bookingId,
+      context: {
+        spaceName: booking.spaces.name,
+        when: formatWhen(new Date(booking.starts_at), booking.spaces.timezone),
+        // The total, because this is the person paying it.
+        amountCents: booking.total_cents,
+        /*
+         * Only on a decline, and only if the host wrote one. An approval's
+         * note is an internal remark on a queue; passing it here would put it
+         * in front of the guest, which is not what a host was writing it into.
+         */
+        note: kind === "request_declined" ? (booking.approval_note ?? undefined) : undefined,
+      },
+    });
+  } catch (error) {
+    console.error(`Request outcome notification failed for ${bookingId}:`, error);
+  }
+}
+
+/**
+ * What was declared, in words a host reads rather than a key.
+ *
+ * "Something else" is the one that matters: the host is deciding on the note,
+ * not on the word "other", so the note is what goes in the message.
+ */
+function describePurpose(purpose: string | null, note?: string | null): string | undefined {
+  if (!purpose) return undefined;
+  const use = bookingUse(purpose);
+  if (!use) return undefined;
+  return use.key === "other" && note ? `${use.label} — ${note}` : use.label;
 }
 
 /**

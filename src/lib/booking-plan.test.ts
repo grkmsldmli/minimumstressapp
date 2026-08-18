@@ -40,6 +40,9 @@ const SPACE: SpaceFacts = {
   hostId: "host_1",
   hourlyRateCents: 4500,
   bufferMinutes: 0,
+  capacity: 8,
+  allowedUses: [],
+  bookingMode: "instant" as const,
   status: "active",
   timeZone: ZONE,
   availability: [1, 2, 3, 4, 5].map((weekday) => ({
@@ -63,6 +66,13 @@ const plan = (overrides: Partial<Parameters<typeof planBooking>[0]> = {}) =>
     takenStarts: [],
     startsAt: at(14),
     now: NOW,
+    /*
+     * Every booking declares what it is for, so the default here does too.
+     * These tests are about price, horizon and availability; a test that
+     * omitted the declaration would be failing for a reason it was not written
+     * to examine. The declaration's own rules are in booking-use.test.ts.
+     */
+    declared: { purpose: "personal_practice", attendees: 1 },
     ...overrides,
   });
 
@@ -334,5 +344,63 @@ describe("how many sessions can be held at once", () => {
   /** A cap on what is held at once, not on how much anybody may use this. */
   it("counts sessions ahead rather than sessions ever booked", () => {
     expect(plan({ upcomingCount: 0 }).ok).toBe(true);
+  });
+});
+
+/**
+ * The declaration, where it meets the rest of the plan.
+ *
+ * booking-use.test.ts covers the rule itself. What is checked here is that the
+ * plan asks it at all, that it asks last, and that a host who reviews requests
+ * gets a plan that says so.
+ */
+describe("what the room is for", () => {
+  it("refuses a booking that declares nothing", () => {
+    expect(plan({ declared: null })).toEqual({ ok: false, reason: "purpose_missing" });
+  });
+
+  it("refuses a use the host does not offer", () => {
+    const strict = { ...SPACE, allowedUses: ["personal_practice"] };
+    expect(plan({ space: strict, declared: { purpose: "filming", attendees: 2 } })).toEqual({
+      ok: false,
+      reason: "use_not_allowed",
+    });
+  });
+
+  it("refuses more people than the room takes", () => {
+    const small = { ...SPACE, capacity: 4 };
+    expect(plan({ space: small, declared: { purpose: "group_class", attendees: 9 } })).toEqual({
+      ok: false,
+      reason: "too_many_attendees",
+    });
+  });
+
+  /*
+   * Asked after availability, so somebody who picked an hour that is already
+   * taken is told that rather than being asked to justify a booking they were
+   * never going to get.
+   */
+  it("says the hour is taken before it asks what the hour is for", () => {
+    expect(plan({ takenStarts: [at(14)], declared: null })).toEqual({
+      ok: false,
+      reason: "slot_taken",
+    });
+  });
+
+  it("marks a booking on a request-to-book listing as needing approval", () => {
+    const byRequest = { ...SPACE, bookingMode: "request" as const };
+    const result = plan({ space: byRequest });
+    expect(result.ok && result.needsApproval).toBe(true);
+  });
+
+  it("does not, on an instant listing", () => {
+    const result = plan();
+    expect(result.ok && result.needsApproval).toBe(false);
+  });
+
+  /** A listing that predates the question keeps working. */
+  it("allows anything while the host has not chosen", () => {
+    const result = plan({ declared: { purpose: "filming", attendees: 2 } });
+    expect(result.ok).toBe(true);
   });
 });

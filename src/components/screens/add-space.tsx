@@ -53,6 +53,7 @@ import {
   formatBuffer,
 } from "@/lib/taxonomy";
 import { spaceTypesFor } from "@/lib/space-types";
+import { HOST_USES, OPT_IN_USES, defaultUsesFor } from "@/lib/booking-use";
 const MAX_MEDIA = 6;
 const STEP_LABELS = ["Basics", "Photos & extras", "Verify"] as const;
 export function AddSpace({
@@ -104,6 +105,27 @@ export function AddSpace({
   const [suitableFor, setSuitableFor] = useState<string[]>([]);
   /** Whether the room is theirs for the hour, or a corner of somewhere busier. */
   const [roomSetup, setRoomSetup] = useState<RoomSetupKey>("private_room");
+  /**
+   * What this host will have their room used for.
+   *
+   * Follows the room type, and the four that change who is in the room or what
+   * leaves it — classes, workshops, filming, anything else — are never ticked
+   * for them. Everything selected by default was the wrong way round: a host
+   * who scrolls past this would have agreed to exactly the things they would
+   * most have wanted to decline.
+   */
+  const [allowedUses, setAllowedUses] = useState<string[]>([]);
+  /*
+   * A real question now, and it opens on `instant`.
+   *
+   * "Ask me first" is the safer answer and it is not the right default. A
+   * request costs the guest a wait and the host an answer, and a host who
+   * never gets to the queue turns their own listing into one that expires
+   * everything. Instant is what the marketplace does unless somebody decides
+   * otherwise — and the ones who want the control are the ones who will read
+   * this and change it.
+   */
+  const [bookingMode, setBookingMode] = useState<"instant" | "request">("instant");
   const [rate, setRate] = useState("");
   const [capacity, setCapacity] = useState("");
   const [accessType, setAccessType] = useState<AccessTypeKey | null>(null);
@@ -232,6 +254,8 @@ export function AddSpace({
         postalCode: place?.postalCode ?? null,
         suitableFor,
         roomSetup,
+        allowedUses,
+        bookingMode,
         timeZone,
         // Where the pin sits on the illustrated browse map, which is a separate
         // question from where the studio is — see toBrowsePosition.
@@ -426,6 +450,9 @@ export function AddSpace({
                   active={category === c.key}
                   onClick={() => {
                     setCategory(c.key);
+                    // The room type implies what it is for. Set here rather
+                    // than derived, so a host can then change it.
+                    setAllowedUses(defaultUsesFor(c.key));
                     // The uses below belong to the room type above them, so
                     // changing it leaves stale ones selected that are no
                     // longer on screen to unselect.
@@ -437,6 +464,75 @@ export function AddSpace({
                 </Chip>
               ))}
             </div>
+            <SectionLabel className="mt-6">What may it be used for?</SectionLabel>
+            <p className="font-body font-normal text-[13.5px] leading-relaxed text-ink-soft mb-3">
+              Everyone booking says what they will use the space for. Untick anything you would
+              rather not have happen in your room.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {HOST_USES.map((use) => (
+                <Chip
+                  key={use.key}
+                  active={allowedUses.includes(use.key)}
+                  onClick={() =>
+                    setAllowedUses((list) =>
+                      list.includes(use.key)
+                        ? list.filter((k) => k !== use.key)
+                        : [...list, use.key],
+                    )
+                  }
+                >
+                  {use.hostLabel}
+                  {OPT_IN_USES.includes(use.key as (typeof OPT_IN_USES)[number]) && (
+                    <span className="text-[11px] opacity-70"> · ask</span>
+                  )}
+                </Chip>
+              ))}
+            </div>
+            <p className="font-body font-normal text-[13px] leading-relaxed mt-2 text-ink-soft">
+              The ones marked <span className="font-medium">ask</span> bring other people into your
+              room, or a camera. They are off unless you turn them on.
+            </p>
+
+            <SectionLabel className="mt-6">How do bookings reach you?</SectionLabel>
+            <div className="flex flex-col gap-2.5">
+              <ModeOption
+                active={bookingMode === "instant"}
+                onClick={() => setBookingMode("instant")}
+                title="Book straight away"
+                sub="Anyone can take an open hour. You are told once it is paid for. Most rooms work this way, and they get booked more."
+              />
+              <ModeOption
+                active={bookingMode === "request"}
+                onClick={() => setBookingMode("request")}
+                title="Ask me first"
+                sub="You see what they want the room for and who is coming, then approve or decline. Their card is held until you answer, and only taken if you say yes."
+              />
+            </div>
+            {bookingMode === "request" && (
+              /*
+                Stated before they choose it, not discovered afterwards. The
+                two costs of this mode are both invisible from this screen: the
+                hour is unavailable while a request waits, and an unanswered
+                one ends by itself.
+              */
+              <p
+                className="rounded-xl px-3.5 py-3 font-body font-normal text-[13.5px] leading-relaxed mt-3"
+                style={{ backgroundColor: "#F4F8FC", border: "1px solid #D6E6F5", color: "#2B4A6B" }}
+              >
+                Requests appear on your dashboard and wait a day for an answer. The hour is held
+                for them in the meantime, and anything you never answer expires on its own.
+              </p>
+            )}
+            {allowedUses.length === 0 && (
+              <p
+                className="rounded-xl px-3.5 py-3 font-body font-normal text-[13.5px] leading-relaxed mt-3"
+                style={{ backgroundColor: "#FFF8F1", border: "1px solid #F5DFC4", color: "#8B6C37" }}
+              >
+                Nothing is ticked, so nobody could book this room. Leave at least one.
+              </p>
+            )}
+
             {/*
               What the room is bookable for, which is a different question from
               what kind of room it is — and the one a practitioner actually
@@ -1046,6 +1142,44 @@ function Chip({
       }}
     >
       {children}
+    </button>
+  );
+}
+
+/**
+ * One of two ways bookings arrive, written as a choice rather than a switch.
+ *
+ * A toggle labelled "Require approval" would be shorter and would hide the
+ * thing that matters: what each option costs. Both consequences — a hold
+ * instead of a charge, an hour held while somebody waits — belong next to the
+ * option that causes them, on the screen where it is being chosen.
+ */
+function ModeOption({
+  active,
+  onClick,
+  title,
+  sub,
+}: {
+  active: boolean;
+  onClick: () => void;
+  title: string;
+  sub: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className="w-full text-left rounded-xl p-3.5 press"
+      style={{
+        backgroundColor: active ? "#EDF6FE" : "#fff",
+        border: `1px solid ${active ? "#9FC9EC" : "#DCE7F2"}`,
+      }}
+    >
+      <p className="font-body font-medium text-[15px] text-navy">{title}</p>
+      <p className="font-body font-normal text-[13.5px] leading-relaxed mt-1 text-ink-soft">
+        {sub}
+      </p>
     </button>
   );
 }

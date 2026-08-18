@@ -49,6 +49,7 @@ import {
 } from "./uploads";
 import type {
   Booking,
+  BookingRequest,
   BookingStatus,
   CreatedBooking,
   DocReviewState,
@@ -66,6 +67,8 @@ import type {
 } from "./domain";
 import type { CancellationEvent } from "./reliability";
 import type { CreateBookingInput, Repository, ReviewInput } from "./repository";
+import type { ApprovalState } from "./booking-approval";
+import { knownUses } from "./booking-use";
 import { knownSpaceTypes } from "./space-types";
 import { type CategoryKey, isRoomSetupKey, roomTypeFor } from "./taxonomy";
 import { type ClaimKind, claimType, overstayCents } from "./claims";
@@ -102,6 +105,8 @@ interface SpaceRow {
   postal_code?: string | null;
   suitable_for?: string[] | null;
   room_setup?: string | null;
+  allowed_uses?: string[] | null;
+  booking_mode?: string | null;
   entry_instructions?: string;
   sublease_doc_path?: string;
   insurance_doc_path?: string | null;
@@ -461,6 +466,8 @@ export class SupabaseRepository implements Repository {
       city: (row.city as string | null) ?? null,
       state: (row.state as string | null) ?? null,
       suitableFor: knownSpaceTypes((row.suitable_for as string[] | null) ?? []),
+      allowedUses: knownUses((row.allowed_uses as string[] | null) ?? []),
+      bookingMode: row.booking_mode === "request" ? "request" : "instant",
       // Defaulted rather than left null: a listing with no answer here is a
       // private room, which is what every one of them was before the column
       // existed.
@@ -547,7 +554,23 @@ export class SupabaseRepository implements Repository {
      * That is the right direction to be wrong in — briefly missing something
      * real beats indefinitely showing something that never was.
      */
-    const real = data.filter((row) => row.captured_at !== null);
+    /*
+     * Or held, which is the same evidence for a request.
+     *
+     * A request holds the card rather than charging it, so `captured_at` stays
+     * null until the host approves — and filtering on it alone made a guest's
+     * own request vanish the moment they paid for it. They would have had no
+     * way to tell whether it had been sent, and no way to cancel it.
+     *
+     * `authorized_at` is the equivalent line for that case: a card was entered
+     * and the money is held. An abandoned checkout has neither, so it is still
+     * excluded, which is what this filter was always for.
+     */
+    const real = data.filter(
+      (row) =>
+        row.captured_at !== null ||
+        (row.approval_state === "pending" && row.authorized_at !== null),
+    );
     if (!real.length) return [];
 
     // The view carries no space name, and a practitioner cannot read `spaces`
@@ -579,6 +602,8 @@ export class SupabaseRepository implements Repository {
         platformCents: row.platform_cents,
         revealedAccessCode: row.revealed_access_code ?? null,
         accessCodeRevealedAt: new Date(row.access_code_revealed_at),
+        // Older rows predate the column and are not requests.
+        approvalState: (row.approval_state ?? "not_required") as ApprovalState,
       };
     });
   }
@@ -604,6 +629,9 @@ export class SupabaseRepository implements Repository {
       body: JSON.stringify({
         spaceId: input.spaceId,
         startsAt: input.startsAt.toISOString(),
+        purpose: input.declared.purpose,
+        purposeNote: input.declared.purposeNote ?? null,
+        attendees: input.declared.attendees,
       }),
     });
 
@@ -1344,6 +1372,69 @@ export class SupabaseRepository implements Repository {
         hostPaidAt: row.host_paid_at ? new Date(row.host_paid_at) : null,
       }),
     );
+  }
+
+  async listBookingRequests(): Promise<BookingRequest[]> {
+    const { data, error } = await this.db.rpc("host_requests");
+    if (error) throw asError(error);
+
+    return (data ?? []).map(
+      (row: {
+        booking_id: string;
+        space_id: string;
+        space_name: string;
+        starts_at: string;
+        ends_at: string;
+        requested_at: string;
+        net_cents: number;
+        practitioner_name: string | null;
+        purpose: string | null;
+        purpose_note: string | null;
+        attendee_count: number | null;
+      }): BookingRequest => ({
+        id: row.booking_id,
+        spaceId: row.space_id,
+        spaceName: row.space_name,
+        practitionerName: row.practitioner_name ?? "A practitioner",
+        startsAt: new Date(row.starts_at),
+        endsAt: new Date(row.ends_at),
+        requestedAt: new Date(row.requested_at),
+        netCents: row.net_cents,
+        purpose: row.purpose,
+        purposeNote: row.purpose_note,
+        attendeeCount: row.attendee_count,
+      }),
+    );
+  }
+
+  /**
+   * Through the server, because approving is a capture.
+   *
+   * The host has update rights on exactly three approval columns (0049), which
+   * is enough to write the answer and not enough to move the money — and the
+   * money is the point: an approval that wrote `approved` without capturing
+   * the hold would confirm a session nobody had paid for, and a decline that
+   * did not release it would leave a guest's card held over a booking that no
+   * longer exists.
+   */
+  async answerBookingRequest(
+    bookingId: string,
+    decision: "approve" | "decline",
+    note?: string,
+  ): Promise<void> {
+    const response = await fetch(
+      `/api/bookings/${encodeURIComponent(bookingId)}/approval`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ decision, note }),
+      },
+    );
+
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => ({}))) as { error?: string };
+      throw new Error(payload.error ?? `Could not answer that request (${response.status})`);
+    }
   }
 
   async approveSpace(_spaceId: string): Promise<HostSpace> {

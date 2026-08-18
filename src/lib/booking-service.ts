@@ -2,6 +2,8 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import type { DeclaredUse } from "./booking-use";
+
 import { abandonedBefore } from "./abandoned";
 import { explainRejection, planBooking } from "./booking-plan";
 import { resolveCancellation, type BookingMoney } from "./money";
@@ -29,6 +31,14 @@ const ACCESS_CODE_LEAD_MS = 30 * 60 * 1000;
 export interface CreateBookingRequest {
   spaceId: string;
   startsAt: Date;
+  /**
+   * What the space will be used for, and how many people will be there.
+   *
+   * Required. A booking with no declaration is refused by planBooking rather
+   * than stored with a null — the record is the whole point of asking, and one
+   * that can be empty is one that will be.
+   */
+  declared: DeclaredUse;
 }
 
 export interface CreateBookingResult {
@@ -112,7 +122,13 @@ export interface StripeGateway {
     meta: { bookingId: string; spaceId: string; practitionerId: string },
     /** Whose card to keep. Without it the charge is anonymous and unrepeatable. */
     customerId?: string,
+    /** True to hold the money rather than take it, until the host answers. */
+    awaitingApproval?: boolean,
   ): Promise<{ paymentIntentId: string; clientSecret: string }>;
+  /** Takes a hold the host approved. */
+  capture(paymentIntentId: string, bookingId: string): Promise<void>;
+  /** Gives a hold back, because the host declined or never answered. */
+  release(paymentIntentId: string): Promise<void>;
   /** Returns what went back, so the booking can record it. */
   settle(paymentIntentId: string, paidCents: number, outcome: {
     action: "void" | "capture_full";
@@ -136,7 +152,9 @@ export async function createBooking(
 ): Promise<CreateBookingResult> {
   const { data: space, error: spaceError } = await admin
     .from("spaces")
-    .select("id, host_id, hourly_rate_cents, buffer_minutes, timezone, status")
+    .select(
+      "id, host_id, hourly_rate_cents, buffer_minutes, timezone, status, capacity, allowed_uses, booking_mode",
+    )
     .eq("id", request.spaceId)
     .maybeSingle();
   if (spaceError) throw spaceError;
@@ -203,12 +221,18 @@ export async function createBooking(
   // so this route and the pricing tests cannot drift apart.
   const plan = planBooking({
     upcomingCount: upcomingCount ?? 0,
+    declared: request.declared,
     space: space
       ? {
           id: space.id,
           hostId: space.host_id,
           hourlyRateCents: space.hourly_rate_cents,
           bufferMinutes: space.buffer_minutes,
+          capacity: space.capacity,
+          // Empty means the host has not answered yet, which reads as
+          // "everything permitted" — see allowsUse.
+          allowedUses: (space.allowed_uses as string[] | null) ?? [],
+          bookingMode: space.booking_mode === "request" ? "request" : "instant",
           timeZone: space.timezone,
           status: space.status,
           availability: (blocks ?? []).map((b) => ({
@@ -241,7 +265,7 @@ export async function createBooking(
     throw new BookingError(message, status);
   }
 
-  const { money, isInstant } = plan;
+  const { money, isInstant, needsApproval } = plan;
   const isPro = practitioner?.is_pro ?? false;
   const endsAt = new Date(request.startsAt.getTime() + SESSION_MINUTES * 60_000);
 
@@ -259,6 +283,27 @@ export async function createBooking(
       practitioner_id: practitionerId,
       starts_at: request.startsAt.toISOString(),
       ends_at: endsAt.toISOString(),
+      /*
+       * What was declared, written with the booking and never rewritten — a
+       * trigger in 0049 refuses an update to any of these three.
+       *
+       * The note is stored only for "something else", because the fixed
+       * purposes already say what they are and a stray note beside one of them
+       * is a second, unvalidated answer to a question already answered.
+       */
+      purpose: request.declared.purpose,
+      purpose_note:
+        request.declared.purpose === "other" ? (request.declared.purposeNote ?? null) : null,
+      attendee_count: request.declared.attendees,
+      /*
+       * Whether the host has to say yes.
+       *
+       * `pending` holds the hour and holds the card without taking it — the
+       * charge below is created for manual capture when this is set. Approving
+       * captures it, declining and expiring release it. See booking-approval.ts
+       * for why a hold works here and not on an ordinary booking.
+       */
+      approval_state: needsApproval ? "pending" : "not_required",
       is_instant: isInstant,
       was_pro: isPro,
       host_rate_cents: money.hostRateCents,
@@ -328,6 +373,7 @@ export async function createBooking(
         practitionerId,
       },
       customerId,
+      needsApproval,
     );
 
     await admin

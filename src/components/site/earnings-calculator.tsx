@@ -5,7 +5,6 @@ import { useState } from "react";
 import { MeasureField } from "@/components/site/measure-field";
 import { APP_URL } from "@/lib/company";
 import { DEFAULT_OCCUPANCY, OCCUPANCIES, earningsFor } from "@/lib/host-earnings";
-import { SERVICE_FEE_RATE } from "@/lib/money";
 
 /**
  * What the empty hours are worth, worked out on the page.
@@ -85,7 +84,7 @@ export function EarningsCalculator({ roomLabel }: { roomLabel: string }) {
 
         <div>
           <span className="block text-[11px] uppercase tracking-[0.1em]" style={{ color: "#8a94a3" }}>
-            Free hours a week
+            Available hours each week
           </span>
           <div className="mt-1.5 flex flex-wrap gap-2">
             {HOUR_STEPS.map((step) => (
@@ -118,9 +117,9 @@ export function EarningsCalculator({ roomLabel }: { roomLabel: string }) {
       */}
       <div className="mt-6">
         <span className="block text-[11px] uppercase tracking-[0.1em]" style={{ color: "#8a94a3" }}>
-          If this many of them book
+          Estimated booked time
         </span>
-        <div className="mt-1.5 flex flex-wrap gap-2" role="group" aria-label="If this many of them book">
+        <div className="mt-1.5 flex flex-wrap gap-2" role="group" aria-label="Estimated booked time">
           {OCCUPANCIES.map((option) => (
             <button
               key={option.label}
@@ -155,9 +154,8 @@ export function EarningsCalculator({ roomLabel }: { roomLabel: string }) {
         {valid && (
           <p className="mt-3 text-[15px] leading-[1.7]" style={{ color: "#5f6673" }}>
             {dollars(earnings.yearlyCents)} a year, from about{" "}
-            {Math.round(earnings.bookedHoursPerMonth)} booked hours a month. A practitioner would
-            pay {dollars(earnings.practitionerPaysCents)} for one of them — your rate plus the{" "}
-            {Math.round(SERVICE_FEE_RATE * 100)}% fee, which is theirs to pay, not yours.
+            {Math.round(earnings.bookedHoursPerMonth)} booked hours a month. This is your rate in
+            full — nothing is deducted from it.
           </p>
         )}
 

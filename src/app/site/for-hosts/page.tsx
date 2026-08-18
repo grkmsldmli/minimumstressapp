@@ -133,7 +133,7 @@ export default function ForHostsPage() {
           </h2>
           <p className="mt-3 max-w-2xl text-[15.5px] leading-[1.75]" style={{ color: "#5f6673" }}>
             Put in your rate and your free hours and see the number. You keep your rate in
-            full — our fee is added on top and paid by the practitioner.
+            full. Nothing is deducted from what you set.
           </p>
 
           <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">

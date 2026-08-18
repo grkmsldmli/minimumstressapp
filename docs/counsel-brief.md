@@ -34,6 +34,7 @@ We are launching in the San Francisco Bay Area. Live today with a small number o
 - Review a host's proof that they may sublicense their space, and their insurance certificate if provided.
 - Release the room's entry instructions and access code to the practitioner shortly before the session.
 - Operate a refund and damage-claim process in which a member of staff reads both accounts and decides an outcome.
+- Allow a host to require their approval before a booking completes. Where they do, we authorise the practitioner's card and hold it — taking the money only if the host accepts, and releasing it if they decline or do not answer within a day.
 - Record safety reports and escalate them to a person.
 
 **We do not:**
@@ -63,7 +64,13 @@ Our current terms contain **none** of the following. These are what we would lik
 1. **Worker classification.** Our terms deliberately describe a practitioner as *licensing a room by the hour* and as our customer, never as engaged, hired, or providing services to us. We drafted this with the AB5 ABC test in mind. Please tell us whether the language holds and where it does not.
 2. **Retention of the processing fee on cancellation.** We retain only the actual amount the card network keeps, we add nothing to it, and it is disclosed before payment. Please confirm this is defensible, and tell us how it must be described.
 3. **Privacy policy against CCPA/CPRA.** It names every processor, states retention, and lists the rights. Please tell us what is missing and whether we meet the thresholds that trigger the fuller obligations.
-4. **Anything a marketplace of this shape ordinarily needs that we have not thought of.** Our particular concern is physical risk: a practitioner and their client are alone in a room belonging to a third party, arranged through us.
+4. **Whether we can say we are not a party to the booking.** Our terms currently state: *"Minimum Stress runs a marketplace. We are not a party to the room booking itself, nor to the session a practitioner runs with their own client."* We are raising this against ourselves because the second half looks defensible to us and the first half may not.
+
+   What we actually do to a booking: we set and collect the total, we hold the money until after the session and then pay the host, we set the service fee, we decide whether a booking may be made at all, we generate the access code and control when it is released, we can cancel a booking, and we decide refund and damage-claim outcomes ourselves. A host can also require our approval before a booking completes, and where they do we hold the practitioner's card and only take the money if the host accepts.
+
+   Please tell us whether "not a party to the booking" survives that, what we would have to stop doing for it to be true, or how the clause should be redrafted so that it claims only what is defensible. We would rather carry an accurate description of our role than an over-broad disclaimer that fails as a whole when it is tested.
+
+5. **Anything a marketplace of this shape ordinarily needs that we have not thought of.** Our particular concern is physical risk: a practitioner and their client are alone in a room belonging to a third party, arranged through us.
 
 ## 7. What we would like from you
 

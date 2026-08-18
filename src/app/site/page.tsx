@@ -497,8 +497,8 @@ function ForHosts() {
                 Let the empty hours earn.
               </h2>
               <p className={`mt-5 ${TYPE.body}`} style={{ color: "rgba(255,255,255,.82)" }}>
-                You set the hours and the rate, and you keep the rate. Our fee is added on top
-                and paid by the practitioner. After each session the money goes to your bank.
+                You set the hours and the rate, and you keep the rate in full. After each
+                session the money goes to your bank.
               </p>
 
               <div className="mt-8 flex flex-wrap gap-3">

@@ -54,7 +54,24 @@ export default async function RentOutYourPage({
   const page = hostPageFor((await params).type);
   if (!page) notFound();
 
-  const others = hostPages().filter((other) => other.type.slug !== page.type.slug);
+  /*
+   * One page per other category, not the other nine.
+   *
+   * A wall of ten room cards at the foot of every page put Massage Room,
+   * Acupuncture Room and Esthetician Room in front of somebody reading about a
+   * movement studio — a taxonomy from before the four categories existed, and
+   * a set of links that says nothing except that we have more pages.
+   *
+   * Picking one per category keeps the internal linking a crawler needs while
+   * making the choice mean something: these are the genuinely different kinds
+   * of space, and a host whose room is not what they first clicked lands in
+   * the right one.
+   */
+  const others = hostPages().filter(
+    (other, index, all) =>
+      other.type.category !== page.type.category &&
+      all.findIndex((first) => first.type.category === other.type.category) === index,
+  );
 
   return (
     <>
@@ -91,11 +108,27 @@ export default async function RentOutYourPage({
             className="mt-14 text-[26px] leading-tight"
             style={{ fontFamily: "var(--font-dm-serif)", color: "#0F2F55" }}
           >
-            Who rents a {page.type.label.toLowerCase()}
+            Who uses a {page.type.label.toLowerCase()}?
           </h2>
           <p className="mt-4 text-[16px] leading-[1.8]" style={{ color: "#5f6673" }}>
-            {page.whoRents}
+            {page.whoUses.lead}
           </p>
+
+          {/*
+            Two groups, and the second one is the point.
+
+            The old version listed professions and nothing else, which told
+            everybody without a business card that this was not for them — and
+            told the host their room only earns from practitioners. Somebody
+            who wants a floor to rehearse on for an hour is ordinary demand,
+            and a host deciding whether to list should be able to see it.
+          */}
+          <div className="mt-6 grid gap-4 sm:grid-cols-2">
+            <Audience title="For work" items={page.whoUses.forWork} />
+            {page.whoUses.forThemselves && (
+              <Audience title="For themselves" items={page.whoUses.forThemselves} />
+            )}
+          </div>
 
           <h2
             className="mt-12 text-[26px] leading-tight"
@@ -139,9 +172,10 @@ export default async function RentOutYourPage({
           </h2>
           <ol className="mt-4 space-y-4">
             {[
-              "List the room — photographs, the address, your rate, and the hours you are happy for it to be used. About ten minutes.",
-              "We check the listing and the lease or ownership document before it goes live. Usually a day.",
-              "Bookings arrive only inside the hours you opened. Stripe pays your bank after each session.",
+              "List your space — photographs, the address, how many it holds, your rate, and the hours you are happy for it to be used. About ten minutes.",
+              "Choose what you allow. Personal practice, private client sessions, small groups, a camera in the room — you decide what happens in there, use by use.",
+              "Choose how bookings arrive. Approve each request yourself, or let a matching booking go straight through.",
+              "Get booked. Everybody says what they are using the space for and how many are coming before they pay, and your rate reaches your bank after each session.",
             ].map((step, index) => (
               <li key={step} className="flex gap-4">
                 <span
@@ -172,7 +206,7 @@ export default async function RentOutYourPage({
             how a crawler finds the other nine at all.
           */}
           <h2 className="mt-16 text-[14px] font-medium" style={{ color: "#0F2F55" }}>
-            Other rooms people are looking for
+            Explore other space types
           </h2>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             {others.map((other) => (
@@ -202,5 +236,29 @@ export default async function RentOutYourPage({
 
       <SiteFooter />
     </>
+  );
+}
+
+/**
+ * One column of who a room is for.
+ *
+ * Chips rather than prose, because this is a list somebody scans for
+ * themselves — "dance rehearsal" either is or is not what they were going to
+ * do, and a paragraph makes them read to find out.
+ */
+function Audience({ title, items }: { title: string; items: readonly string[] }) {
+  return (
+    <div className="rounded-2xl p-5" style={{ backgroundColor: "#f8fbfd", border: "1px solid #e7eef6" }}>
+      <p className="text-[12px] font-medium uppercase tracking-[0.16em]" style={{ color: "#0EA5E9" }}>
+        {title}
+      </p>
+      <ul className="mt-3 space-y-2">
+        {items.map((item) => (
+          <li key={item} className="text-[15px] leading-[1.6]" style={{ color: "#33404F" }}>
+            {item}
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }

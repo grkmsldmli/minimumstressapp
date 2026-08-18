@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { BRAND, LEGAL_ENTITY, SUPPORT_EMAIL } from "@/lib/company";
-import { SERVICE_FEE_RATE } from "@/lib/money";
 import { CATEGORIES } from "@/lib/taxonomy";
 
 /**
@@ -135,9 +134,8 @@ export default function About() {
 
           <Section title="What it costs">
             <p className="font-body font-normal text-[15px] leading-relaxed text-ink-muted">
-              A host sets their hourly rate and receives all of it. Our service fee is{" "}
-              {Math.round(SERVICE_FEE_RATE * 100)}% and is added on top for the practitioner — it is
-              never taken out of what a host is owed.
+              A host sets their rate and receives all of it. Nothing is deducted from what a
+              host is owed, and the price a practitioner sees on a listing is the price they pay.
             </p>
             <p className="font-body font-normal text-[15px] leading-relaxed text-ink-muted mt-3">
               Cancel 24 or more hours ahead and you are refunded. If a host cancels on you, you are

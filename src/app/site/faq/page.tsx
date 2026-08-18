@@ -8,7 +8,6 @@ import {
   FREE_CANCEL_WINDOW_MS,
   INSTANT_FEE_CENTS,
   PRO_BOOKING_HORIZON_DAYS,
-  SERVICE_FEE_RATE,
   formatCents,
 } from "@/lib/money";
 import { COLOUR } from "@/lib/site-theme";
@@ -29,7 +28,6 @@ export const metadata: Metadata = {
 };
 
 const CANCEL_HOURS = FREE_CANCEL_WINDOW_MS / 3_600_000;
-const FEE_PERCENT = Math.round(SERVICE_FEE_RATE * 100);
 
 function Inline({ href, children }: { href: string; children: React.ReactNode }) {
   return href.startsWith("/") ? (
@@ -55,10 +53,9 @@ export default function FaqPage() {
           <QA q="Do I need an account to look?">No. You only need one to book.</QA>
 
           <QA q="What does it cost?">
-            The price on the listing, and nothing more. That is the host&rsquo;s rate plus our{" "}
-            {FEE_PERCENT}% fee, already included. Booking something starting within two hours adds{" "}
-            {formatCents(INSTANT_FEE_CENTS)}. Full detail on{" "}
-            <Inline href="/pricing">pricing</Inline>.
+            The price on the listing, and nothing more. Nothing is added at checkout. Booking
+            something starting within two hours adds {formatCents(INSTANT_FEE_CENTS)}. Full detail
+            on <Inline href="/pricing">pricing</Inline>.
           </QA>
 
           <QA q="How do I get in?">
@@ -90,8 +87,7 @@ export default function FaqPage() {
       <Section title="Listing your space">
         <dl className="space-y-6">
           <QA q="What do you take?">
-            Nothing from your rate. Our {FEE_PERCENT}% is added on top and paid by the
-            practitioner, so what you set is what you receive. Listing is free.
+            Nothing from your rate. What you set is what you receive, and listing is free.
           </QA>
 
           <QA q="When am I paid?">

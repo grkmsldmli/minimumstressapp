@@ -25,6 +25,9 @@ import { describe, expect, it } from "vitest";
 
 const SOURCE = join(import.meta.dirname, "..");
 
+/** The platform separator, so the path filters below work on Windows too. */
+const sep = SOURCE.includes("\\") ? "\\" : "/";
+
 /**
  * Phrases that only appear when the app has an attitude about something.
  *
@@ -113,4 +116,58 @@ describe("the app's voice", () => {
       expect(offenders, offenders.join(", ")).toEqual([]);
     },
   );
+});
+
+/**
+ * The company's margin is not copy.
+ *
+ * The pricing page printed the split in three cards — the host's rate, our cut
+ * as a percentage, the total — and the FAQ, the about page, the host pages and
+ * the earnings calculator each repeated the percentage. Written as
+ * transparency, and it is the wrong kind: it publishes what we make on every
+ * booking, for any competitor to undercut and any host to open a negotiation
+ * with, in exchange for nothing a customer needed.
+ *
+ * Nothing is concealed by removing it. A guest sees one all-in price, which is
+ * what California requires of an advertised price in the first place; a host
+ * is told they receive their rate in full, which is the fact that matters to
+ * them. What is gone is the arithmetic in between.
+ *
+ * SERVICE_FEE_RATE still exists and is still what `quote()` charges. This
+ * guards the screens, not the number.
+ */
+describe("what the fee is never allowed to say", () => {
+  const files = sourceFiles(SOURCE);
+
+  /*
+   * The marketing surfaces, which is where a margin gets published.
+   *
+   * Deliberately not everything. The terms have to describe what happens to
+   * our fee when a refund is decided, and the refund screens and emails have
+   * to tell somebody which of the three outcomes they got — "our fee back,
+   * the studio keeps their rate" is an outcome, not a disclosure, and it
+   * carries no number. What is banned is the pitch quoting its own cut.
+   */
+  const marketing = files.filter(
+    (path) =>
+      path.includes(`${sep}site${sep}`) ||
+      path.includes(`${sep}about${sep}`) ||
+      path.includes(`${sep}pricing${sep}`),
+  );
+
+  it("does not print the platform's percentage anywhere a user can read it", () => {
+    const offenders = files
+      .filter((path) => /SERVICE_FEE_RATE\s*\*\s*100/.test(userFacingText(path)))
+      .map((path) => path.slice(SOURCE.length + 1).split("\\").join("/"));
+
+    expect(offenders, offenders.join(", ")).toEqual([]);
+  });
+
+  it("does not describe a fee of ours as a share of what somebody pays", () => {
+    const offenders = marketing
+      .filter((path) => /\bour\s+(?:service\s+)?fee\b/i.test(userFacingText(path)))
+      .map((path) => path.slice(SOURCE.length + 1).split("\\").join("/"));
+
+    expect(offenders, offenders.join(", ")).toEqual([]);
+  });
 });

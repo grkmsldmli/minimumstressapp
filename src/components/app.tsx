@@ -45,7 +45,6 @@ import { rebookable } from "@/lib/rebook";
 import { FALLBACK_ZONE } from "@/lib/timezone";
 import { sessionDayShort } from "@/lib/when";
 import { TERMS_VERSION, hasAcceptedTerms } from "@/lib/terms";
-import { WEBSITE } from "@/lib/company";
 
 import { type Screen, useApp } from "./app-state";
 import { AcceptTerms } from "./screens/accept-terms";
@@ -1381,8 +1380,14 @@ export function App() {
            * inside the app is how the two drift and every stored acceptance
            * becomes unverifiable. A new tab so somebody reading a policy does
            * not lose where they were in the app.
+           *
+           * Relative, and that is load-bearing rather than tidy. /terms and
+           * /privacy live at src/app, which is the app host; the content host
+           * has proxy.ts rewrite everything into /site, where no terms page
+           * exists. An absolute link to the .com would have 404'd — the two
+           * documents are only served here.
            */
-          onOpen={(path) => window.open(`${WEBSITE}${path}`, "_blank", "noopener,noreferrer")}
+          onOpen={(path) => window.open(path, "_blank", "noopener,noreferrer")}
         />
       );
 

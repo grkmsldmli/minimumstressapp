@@ -75,8 +75,7 @@ export default function RentOutYourIndex() {
           </p>
 
           <p className={`mt-4 ${TYPE.small}`} style={{ color: COLOUR.muted }}>
-            You set the rate and keep all of it. Our fee is added on top and paid by the
-            practitioner.
+            You set the rate and keep all of it. Nothing is deducted from what you set.
           </p>
         </div>
 

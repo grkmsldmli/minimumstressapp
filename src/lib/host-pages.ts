@@ -30,8 +30,26 @@ export interface HostPage {
   heading: string;
   /** The line under the heading. */
   standfirst: string;
-  /** Who is looking for a room like this, and why they cannot just get a lease. */
-  whoRents: string;
+  /**
+   * Who is looking for a room like this.
+   *
+   * Two groups, because this used to describe one. Every line was a
+   * profession — coaches, instructors, practitioners — which quietly told
+   * anybody without a business card that the room was not for them, and told
+   * a host their space only earns from professionals. Both are wrong: two
+   * friends who want a floor for an hour are ordinary demand.
+   *
+   * The entries are the uses in booking-use.ts, said the way each side would
+   * say them, so what this page advertises and what the booking form offers
+   * cannot drift apart. `forThemselves` is optional and deliberately missing
+   * on the rooms where it would be an invention — nobody books a treatment
+   * room with a table in it for their own practice.
+   */
+  whoUses: {
+    lead: string;
+    forWork: readonly string[];
+    forThemselves?: readonly string[];
+  };
   /** What makes this particular kind of room bookable. Specific, not generic. */
   whatItNeeds: string[];
   /** The thing a host with this room worries about, answered. */
@@ -44,8 +62,11 @@ const COPY: Record<string, Omit<HostPage, "type">> = {
     heading: "Your reformers, on the days you are not teaching",
     standfirst:
       "Instructors need a studio for four hours on a Tuesday, not a lease. If yours is dark half the week, those hours have a price.",
-    whoRents:
-      "Almost always a self-employed instructor with a client list and nowhere to put it. They have built up enough private clients to leave a big studio's rota but nowhere near enough to sign for a space of their own, and the maths in between is brutal: a small studio lease in the Bay Area runs into thousands a month before a single reformer is bought. Renting your equipped studio for the six hours a week they actually teach is the only version of the sum that works.",
+    whoUses: {
+      lead: "A reformer is expensive to own and idle most of the week, which is exactly why somebody else wants yours.",
+      forWork: ["Pilates instructors", "Reformer teachers", "Physiotherapists and rehab coaches", "Small group classes", "Workshops"],
+      forThemselves: ["Personal reformer practice", "Mat practice", "Two people training together"],
+    },
     whatItNeeds: [
       "At least one reformer, and it is worth saying how many and which make — instructors teach differently on a Balanced Body than on an Allegro, and they will ask.",
       "Room to walk around the equipment with a client on it.",
@@ -64,8 +85,11 @@ const COPY: Record<string, Omit<HostPage, "type">> = {
     heading: "A quiet floor is worth more than an empty one",
     standfirst:
       "Teachers want a room for one class a week. A studio with mornings free is a studio with income it is not taking.",
-    whoRents:
-      "Teachers running their own small classes, and one-to-one instructors whose clients will not go to a gym. What they need is unglamorous and specific: a clean floor big enough for six mats, a door that shuts, and a time slot they can promise the same people every week. Most of them are working around a room they currently borrow, which is why the thing they value most in a listing is that the hour is actually theirs.",
+    whoUses: {
+      lead: "A warm room with clear floor suits more people than a yoga schedule fills.",
+      forWork: ["Yoga instructors", "Breathwork facilitators", "Small group classes", "Workshops", "Private client sessions"],
+      forThemselves: ["Personal practice", "Meditation or breathwork", "Dance or movement rehearsal", "A few friends practising together"],
+    },
     whatItNeeds: [
       "Floor space and a number: how many mats fit, laid out properly rather than touching.",
       "A floor that is warm underfoot, or the room heated. It is the first thing a class complains about.",
@@ -81,16 +105,29 @@ const COPY: Record<string, Omit<HostPage, "type">> = {
 
   "movement-studio": {
     title: "Rent Out Your Movement Studio",
-    heading: "An open floor books more often than a specialised one",
+    /*
+     * "Books more often than a specialised one" was the old heading, and we
+     * have no booking data at all — there are no listings yet. A claim about
+     * relative demand, made up, on the page whose whole job is to be trusted
+     * by somebody deciding whether to hand us their room.
+     */
+    heading: "An open floor can do a lot",
     standfirst:
-      "Mobility coaches, tai chi teachers, personal trainers. A plain room with space to move suits more people than a room built for one thing.",
-    whoRents:
-      "The broadest group on this site, which is what makes an open floor worth listing: mobility and rehab coaches, tai chi and qigong teachers, personal trainers who have left the gym, movement therapists. None of them need much and all of them need the same thing — floor, air, and an hour nobody walks through.",
+      "Dance practice. Pilates. Yoga. Tai chi. Private movement sessions. Small group classes. If you have clear floor space sitting unused, somebody may already be looking for it.",
+    whoUses: {
+      lead: "If you have clear floor space sitting unused, somebody may already be looking for it.",
+      forWork: ["Pilates instructors", "Yoga instructors", "Tai chi and qigong instructors", "Movement professionals", "Small group classes"],
+      forThemselves: ["Dance rehearsal", "Personal movement practice", "Yoga practice", "Meditation", "Small groups"],
+    },
     whatItNeeds: [
       "Clear floor, and the dimensions. Roughly is fine; people plan a session around it.",
       "Nothing fixed in the middle of the room, which is the thing photographs hide.",
       "Ventilation. A closed room with four people working in it is a different room after twenty minutes.",
       "Somewhere to put shoes, bags and a water bottle.",
+      "How many it comfortably holds. This is the number a booking is checked against, so it is worth being honest rather than optimistic about it.",
+      "Mirrors, mats or equipment, if there are any, and whether they are included.",
+      "Anything about music or noise — a shared wall, a downstairs neighbour, a time after which it has to be quiet.",
+      "Whether a group can use it, or only one or two people. You choose this when you list, use by use.",
     ],
     concern: {
       question: "My room is not really a studio.",
@@ -104,8 +141,10 @@ const COPY: Record<string, Omit<HostPage, "type">> = {
     heading: "The hours between your own clients",
     standfirst:
       "Massage therapists with a table and a room usually have gaps in the week. Those gaps are what somebody else is looking for.",
-    whoRents:
-      "Licensed massage therapists building a private client list, and mobile therapists who have decided they are done carrying a table up stairs. They tend to book the same hour every week for months, because their own clients book the same hour every week — which makes this the room type where a host most often ends up with something closer to a regular tenant than a stream of strangers.",
+    whoUses: {
+      lead: "A table and a door that closes. The gaps in your week are what somebody else is looking for.",
+      forWork: ["Licensed massage therapists", "Bodyworkers", "Sports and remedial practitioners", "Mobile practitioners without a room"],
+    },
     whatItNeeds: [
       "A table, and whether linens are provided or brought. Say which; it changes what they pack.",
       "A door that locks and a room nobody walks into. This is the whole product.",
@@ -125,8 +164,10 @@ const COPY: Record<string, Omit<HostPage, "type">> = {
     heading: "A clean private room is the most rentable thing you own",
     standfirst:
       "It suits more kinds of practitioner than anything else on this site, and the ones who need it need it every week.",
-    whoRents:
-      "Whoever works one-to-one behind a closed door: bodyworkers, acupuncturists, facialists, nutritionists, breathwork practitioners. A treatment room is the most flexible thing a host can list, and it is usually the one that fills first, because almost every practitioner leaving a clinic or a salon suite is looking for exactly this and finding nothing between a lease and a shared desk.",
+    whoUses: {
+      lead: "A private room somebody can see one person in, without signing a lease for it.",
+      forWork: ["Practitioners seeing private clients", "Consultants and coaches", "Visiting specialists", "Practitioners running a second location"],
+    },
     whatItNeeds: [
       "A sink in the room, or immediately outside it. It is the single most asked-about detail.",
       "A treatment couch, and whether it stays or folds away.",
@@ -146,8 +187,10 @@ const COPY: Record<string, Omit<HostPage, "type">> = {
     heading: "Quiet, private, and booked in blocks",
     standfirst:
       "Acupuncturists work in long, still appointments and often see several people in an afternoon. They book in blocks, which suits a room that is free by the half-day.",
-    whoRents:
-      "Practitioners in private practice, most of them newly out on their own after years in a multi-room clinic. They are looking for somewhere to run a whole afternoon rather than a single hour, because a needle appointment involves the client resting for a stretch of it and they cannot turn a room over every sixty minutes. A host with a room free from noon on a Thursday is exactly who they are looking for.",
+    whoUses: {
+      lead: "Quiet, private, and set up for one person at a time.",
+      forWork: ["Acupuncturists", "Practitioners of traditional medicine", "Practitioners seeing private clients"],
+    },
     whatItNeeds: [
       "A couch that can be reached from both sides.",
       "Genuine quiet during the appointment — this is the room where a client is lying still for twenty minutes.",
@@ -167,8 +210,10 @@ const COPY: Record<string, Omit<HostPage, "type">> = {
     heading: "Salon-quality space, without a salon-length lease",
     standfirst:
       "Estheticians leaving a salon suite need a proper room with water and light. Most cannot sign a year for it on day one.",
-    whoRents:
-      "Estheticians and skincare practitioners going independent, usually from a salon suite whose monthly rent stopped making sense at their client volume. They know exactly what a room needs, they will ask about the water and the lighting before anything else, and they tend to want the same two afternoons every week rather than scattered hours.",
+    whoUses: {
+      lead: "A clean, well-lit room with a basin is hard to find by the session.",
+      forWork: ["Estheticians", "Skincare and beauty professionals", "Practitioners building a private client list"],
+    },
     whatItNeeds: [
       "Running water in the room, hot as well as cold. This is the make-or-break detail.",
       "Light that can be aimed at a face — a lamp, or a window that is not behind the couch.",
@@ -188,8 +233,10 @@ const COPY: Record<string, Omit<HostPage, "type">> = {
     heading: "A private room to see people in, for the time you need",
     standfirst:
       "Coaches and independent practitioners need somewhere quiet to sit with one person. An office you use three days a week has four days in it.",
-    whoRents:
-      "People who see clients one at a time and talk to them: coaches, nutritionists, mediators, practitioners in private practice. They have almost always been meeting people in cafés and have decided that is no longer acceptable — which means what they are buying is privacy and the impression the room makes, and they will pay properly for a room that has both.",
+    whoUses: {
+      lead: "A quiet room with two chairs and a door that closes.",
+      forWork: ["Coaches and consultants", "Practitioners seeing private clients", "Small group sessions", "Workshops"],
+    },
     whatItNeeds: [
       "Two chairs that face each other without a desk between them, if you can.",
       "A door that shuts and a room nobody passes through.",
@@ -209,8 +256,11 @@ const COPY: Record<string, Omit<HostPage, "type">> = {
     heading: "Stillness is a thing people will pay for",
     standfirst:
       "Teachers running sits, breathwork sessions and small group practice need a room that is quiet at a specific hour of a specific day.",
-    whoRents:
-      "Meditation and breathwork teachers, mostly running small regular groups rather than one-offs. What they need is the least material of anything on this site — a room where nothing happens for an hour — and it is why an ordinary room in a quiet building often out-books a purpose-built one on a main road.",
+    whoUses: {
+      lead: "A still room earns from more than teaching.",
+      forWork: ["Meditation teachers", "Breathwork facilitators", "Small group classes", "Workshops"],
+      forThemselves: ["Personal practice", "Meditation or breathwork", "A small sitting group"],
+    },
     whatItNeeds: [
       "Quiet at the hour it is bookable, which is not the same as quiet in general. Say which hours are which.",
       "Floor space, and cushions or chairs — say which, and how many.",
@@ -229,8 +279,11 @@ const COPY: Record<string, Omit<HostPage, "type">> = {
     heading: "A warm, private room, for the hours it is empty",
     standfirst:
       "Reiki practitioners need very little and need it uninterrupted. If you have a quiet room with a couch, it is already most of the way there.",
-    whoRents:
-      "Practitioners seeing clients one at a time, usually part-time and usually alongside other work, which is exactly why a lease is out of the question for them. They book few hours and book them repeatedly. A room that suits massage almost always suits this too, and marking it for both is the cheapest way to double who finds it.",
+    whoUses: {
+      lead: "Quiet and warm, and useful to more people than energy workers.",
+      forWork: ["Reiki practitioners", "Energy and bodywork practitioners", "Practitioners seeing private clients"],
+      forThemselves: ["Personal practice", "Meditation or breathwork"],
+    },
     whatItNeeds: [
       "A couch or treatment table, reachable from both sides.",
       "Warmth. The client is lying still and fully clothed for an hour.",

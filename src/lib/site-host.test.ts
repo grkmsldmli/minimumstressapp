@@ -101,3 +101,23 @@ describe("isSharedPath", () => {
     expect(isSharedPath("/assessments/burnout-test")).toBe(false);
   });
 });
+
+/**
+ * Where the legal documents actually live.
+ *
+ * /terms and /privacy are at src/app, so they are served on the app host and
+ * nowhere else. On the content host every path is rewritten into /site, and
+ * there is no /site/terms — so an absolute link to the .com 404s, which is
+ * exactly what the Terms & privacy screen shipped with for one commit.
+ *
+ * Asserted here rather than remembered, because the failure is silent: the
+ * link looks right, the page builds, and the only way to find out is to tap it
+ * on the one screen somebody opens when they are already unsure about
+ * something.
+ */
+describe("the legal documents", () => {
+  it("are not shared paths, so the content host rewrites them", () => {
+    expect(isSharedPath("/terms")).toBe(false);
+    expect(isSharedPath("/privacy")).toBe(false);
+  });
+});

@@ -108,15 +108,34 @@ export const JADE_SYSTEM_PROMPT = [
   "- If somebody sounds unsafe or in crisis, respond with care and point at emergency services.",
 ].join("\n");
 
-/** The chips under the first message. Six, and each opens a real path. */
+/**
+ * The chips under the first message. Four.
+ *
+ * Six read as a menu, which is the thing a chat is supposed to save somebody
+ * from — a wall of options is a worse version of the navigation they already
+ * scrolled past. These are the four journeys the site actually has: come in as
+ * a guest, come in as a host, find out what is allowed, or get a person.
+ *
+ * Every one of them is answered by the table in this file, so the opening move
+ * costs nothing whichever chip is pressed. A test asserts that.
+ */
 export const QUICK_REPLIES = [
   "Find a space",
-  "What can I book a space for?",
   "List my space",
-  "How does booking work?",
-  "Free assessments",
+  "What can I book?",
   "Contact support",
 ] as const;
+
+/**
+ * The opening line.
+ *
+ * "How can I help today?" is what every widget on the internet says, and it
+ * puts the work back on the visitor — they have to guess what this one is for
+ * before they can ask it anything. Naming the three things she can actually do
+ * is shorter to read and answers the question the greeting was asking.
+ */
+export const JADE_GREETING =
+  "Hi, I'm Jade 🌿 I can help you find a space, list your space, or answer questions about booking.";
 
 export interface LocalAnswer {
   /** What Jade says. Markdown links are rendered. */

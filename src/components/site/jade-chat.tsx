@@ -6,6 +6,7 @@ import { SUPPORT_EMAIL } from "@/lib/company";
 import {
   CHAT_CUSTOMER_URL,
   CHAT_PROXY_URL,
+  JADE_GREETING,
   JADE_SYSTEM_PROMPT,
   MAX_MODEL_MESSAGES_PER_DAY,
   QUICK_REPLIES,
@@ -215,8 +216,18 @@ export function JadeChat() {
 
   return (
     <>
+      {/*
+        The bubble disappears while the panel is open.
+
+        It used to stay put and turn into an ×, which left a 56px circle
+        floating below its own window — two controls for one thing, and the
+        larger of them was the one that only closed it. The close moved into
+        the panel's own header, where a close belongs, and this is now only
+        ever the way in.
+      */}
       <button
         type="button"
+        hidden={open}
         onClick={() => {
           setOpen((was) => !was);
           /*
@@ -226,30 +237,32 @@ export function JadeChat() {
             and there is nothing async here to wait for.
           */
           if (messages.length === 0) {
-            setMessages([{ role: "bot", text: "Hi, I'm Jade 🌿 How can I help today?" }]);
+            setMessages([{ role: "bot", text: JADE_GREETING }]);
           }
         }}
-        aria-label={open ? "Close chat" : "Chat with Jade"}
+        aria-label="Chat with Jade"
         aria-expanded={open}
-        className="fixed bottom-6 right-6 z-[9999] flex h-14 w-14 items-center justify-center rounded-full text-white transition-transform hover:scale-105"
+        className="fixed bottom-6 right-6 z-[9999] flex h-12 w-12 items-center justify-center rounded-full text-white transition-transform hover:scale-105"
         style={{
           background: "linear-gradient(135deg,#0F2F55,#0EA5E9)",
-          boxShadow: "0 4px 20px rgba(15,47,85,.4)",
+          boxShadow: "0 4px 18px rgba(15,47,85,.34)",
         }}
       >
-        {open ? (
-          <span className="text-[22px] leading-none">×</span>
-        ) : (
-          <svg viewBox="0 0 24 24" className="h-6 w-6" fill="currentColor" aria-hidden>
-            <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z" />
-          </svg>
-        )}
+        <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor" aria-hidden>
+          <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z" />
+        </svg>
       </button>
 
       {open && (
         <div
-          className="fixed bottom-24 right-6 z-[9998] flex h-[540px] max-h-[calc(100vh-140px)] w-[min(370px,calc(100vw-24px))] flex-col overflow-hidden rounded-[20px] bg-white"
-          style={{ boxShadow: "0 8px 48px rgba(15,47,85,.18)" }}
+          /*
+            Smaller, and sitting where the bubble was rather than above it.
+            370x540 read as a second application opened over the page. This is
+            about an eighth off both, which is the difference between a panel
+            and a window.
+          */
+          className="fixed bottom-6 right-6 z-[9998] flex h-[476px] max-h-[calc(100vh-96px)] w-[min(336px,calc(100vw-24px))] flex-col overflow-hidden rounded-[18px] bg-white"
+          style={{ boxShadow: "0 8px 40px rgba(15,47,85,.16)" }}
           role="dialog"
           aria-label="Chat with Jade"
         >
@@ -263,15 +276,29 @@ export function JadeChat() {
             >
               💚
             </span>
-            <div>
+            <div className="flex-1">
               <p className="text-[15px] text-white" style={{ fontFamily: "var(--font-dm-serif)" }}>
                 Jade
               </p>
+              {/*
+                The company, not the job title. "Front desk" describes what she
+                does for us; the name of the place is what tells a visitor
+                whose desk they are standing at.
+              */}
               <p className="flex items-center gap-1.5 text-[11px] text-white/60">
                 <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: "#4ade80" }} />
-                Front desk
+                Minimum Stress
               </p>
             </div>
+
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              aria-label="Close chat"
+              className="-mr-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[20px] leading-none text-white/70 transition-colors hover:bg-white/10 hover:text-white"
+            >
+              ×
+            </button>
           </div>
 
           <div ref={scroller} className="flex-1 overflow-y-auto p-4" style={{ backgroundColor: "#f8fafc" }}>

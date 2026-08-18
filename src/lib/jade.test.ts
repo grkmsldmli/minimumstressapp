@@ -233,3 +233,84 @@ describe("how she talks", () => {
     expect(JADE_GREETING).toContain("How can I assist you today");
   });
 });
+
+/**
+ * What a real conversation turned up.
+ *
+ * Somebody asked, in Turkish, whether they would be renting out their own
+ * room. Jade said yes — "saatlik veya günlük olarak, sen belirlersin". There
+ * is no daily rate. A booking is an hour, and she invented a pricing model on
+ * a page about money, because the prompt said rooms are booked "for the time
+ * they need" and left the model to fill the gap in.
+ *
+ * The same conversation drifted from 'sen' to 'siz' mid-answer, produced
+ * "kendi odana yoksa" for "kendi odan yoksa", and coined "alan olmak" for
+ * being a guest — a phrase that means nothing, in a language where "alan"
+ * already means "space". The original widget had a Turkish-quality section
+ * and the rewrite dropped it for length.
+ */
+describe("what she must not invent", () => {
+  it("states the session length, so the model does not guess a daily rate", () => {
+    const prompt = JADE_SYSTEM_PROMPT.toLowerCase();
+    expect(prompt).toContain("a booking is one hour");
+    expect(prompt).toContain("no daily rate");
+    expect(prompt).toContain("no lease");
+  });
+
+  it("fixes the Turkish register rather than leaving it to chance", () => {
+    const prompt = JADE_SYSTEM_PROMPT;
+    expect(prompt).toContain("Address one person as 'sen' and stay there");
+    expect(prompt).toContain("Never drift into 'siz'");
+  });
+
+  it("gives her the words for both sides, so she coins none", () => {
+    const prompt = JADE_SYSTEM_PROMPT;
+    expect(prompt).toContain("ev sahibi");
+    expect(prompt).toContain("misafir");
+    expect(prompt).toContain("alan olmak");
+  });
+});
+
+/**
+ * The questions from that conversation, now answered from the table.
+ *
+ * Every one of them reached the model, and every one has a single correct
+ * answer that does not change — which is the definition of something that
+ * should never have been generated. "Saatlik veya günlük" was invented on the
+ * way through, and "alan olmak" was coined out of nothing.
+ */
+describe("the questions that were being made up", () => {
+  it.each([
+    "ne ise yariyor burasi",
+    "burasi ne",
+    "ozel ders verebilir miyim",
+    "oda mi alan mi",
+    "kendi odami mi kiralicam",
+    "kac saat kiralayabilirim",
+    "gunluk fiyat var mi",
+  ])("answers %s without asking a model", (question) => {
+    expect(answerLocally(question), question).not.toBeNull();
+  });
+
+  it("says an hour, and says there is no daily rate", () => {
+    const answer = answerLocally("gunluk fiyat var mi");
+    expect(answer?.tr).toContain("bir saat");
+    expect(answer?.tr).toContain("Günlük ya da haftalık fiyat yok");
+    expect(answer?.en).toContain("one hour");
+  });
+
+  it("names the two sides with the words that exist", () => {
+    const answer = answerLocally("oda mi alan mi");
+    expect(answer?.tr).toContain("misafir");
+    expect(answer?.tr).toContain("ev sahibi");
+    expect(answer?.tr).not.toContain("alan olmak");
+  });
+
+  /* Every written answer stays in one register, which the model did not. */
+  it("never drifts from sen to siz in an answer we wrote", () => {
+    for (const question of ["oda mi alan mi", "gunluk fiyat var mi", "ne ise yariyor burasi"]) {
+      const tr = answerLocally(question)?.tr ?? "";
+      expect(tr, question).not.toMatch(/\b(siniz|sınız|sunuz|sünüz)\b/);
+    }
+  });
+});

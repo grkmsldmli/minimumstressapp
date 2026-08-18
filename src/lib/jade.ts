@@ -75,7 +75,8 @@ export const JADE_SYSTEM_PROMPT = [
   "- Never end on a dead stop. Leave them something to answer or somewhere to go.",
 
   "WHAT MINIMUM STRESS IS:",
-  "- A marketplace for private wellness space. People book a room for the time they need; hosts list a room they already have.",
+  "- A marketplace for private wellness space. People book a room; hosts list a room they already have.",
+  "- A booking is one hour. Somebody who needs longer books consecutive hours. There is no daily rate, no weekly rate, no monthly rate and no lease — never offer one.",
   "- Rooms are used for personal practice, dance and movement rehearsal, yoga and Pilates, meditation and breathwork, private client sessions, coaching, small group classes and workshops.",
   "- It is for anybody, not only professionals. Two friends who want a floor to rehearse on are exactly the point.",
   "- We also publish free self-scored assessments.",
@@ -129,6 +130,12 @@ export const JADE_SYSTEM_PROMPT = [
    * to every rule about content that follows it. The final line is the one a
    * model weights hardest, so this is the final line.
    */
+  "TURKISH, WHEN YOU WRITE IT:",
+  "- Address one person as 'sen' and stay there. Never drift into 'siz' halfway through a reply.",
+  "- Write Turkish, not translated English. Check the case endings: 'kendi odan yoksa', not 'kendi odana yoksa'. 'Orayı da kullanabilirsin', not 'orası da kullanabilirsiniz'.",
+  "- Use these words and no invented ones: mekân or oda for a space, ev sahibi for a host, misafir for the person booking, rezervasyon for a booking, seans for a session.",
+  "- Never coin a term for a role. There is no such thing as 'alan olmak'. The two sides are 'misafir' and 'ev sahibi'.",
+
   "LANGUAGE — this overrides everything above:",
   "- Reply in the same language as the visitor's most recent message, and nothing else.",
   "- English in, English out. Turkish in, Turkish out. Never switch on your own.",
@@ -205,7 +212,9 @@ const ROUTES: { match: readonly string[]; answer: LocalAnswer }[] = [
   {
     match: [
       "what can i book", "what can i use", "allowed", "can i do", "what for",
+      "teach", "lesson", "private lesson", "class here",
       "ne icin kullan", "ne için kullan", "izin var", "yapabilir miyim",
+      "ozel ders", "özel ders", "ders ver", "ders anlat", "kurs ver",
     ],
     answer: {
       en: "It depends on the room and what the host allows — personal practice, dance or movement rehearsal, yoga and Pilates, meditation, private client sessions, coaching, small groups and workshops are all normal. You say what you are planning before you book. [What is available](/spaces).",
@@ -276,10 +285,45 @@ const ROUTES: { match: readonly string[]; answer: LocalAnswer }[] = [
     },
   },
   {
-    match: ["what is minimum stress", "who are you", "about you", "minimum stress nedir", "kimsiniz", "nedir"],
+    match: [
+      "what is minimum stress", "who are you", "about you", "what do you do",
+      "minimum stress nedir", "kimsiniz", "nedir", "ne ise yariyor", "ne işe yarıyor",
+      "burasi ne", "burası ne", "ne yapiyorsunuz", "ne yapıyorsunuz",
+    ],
     answer: {
-      en: "We're a marketplace for private wellness space 🌿 People book a room for the time they need — to practise, rehearse, teach, or see their own clients — and hosts list a room they already have. [Have a look](/spaces).",
-      tr: "Özel wellness mekânları için bir pazar yeriyiz 🌿 İnsanlar ihtiyaç duydukları süre için bir oda kiralıyor — çalışmak, prova yapmak, ders vermek ya da kendi danışanlarını görmek için — ev sahipleri de ellerindeki odayı listeliyor. [Göz at](/spaces).",
+      en: "We're a marketplace for private wellness space 🌿 You book somebody's room by the hour — to practise, rehearse, teach, or see your own clients — and hosts list a room they already have. [Have a look](/spaces).",
+      tr: "Özel wellness mekânları için bir pazar yeriyiz 🌿 Birinin odasını saatlik kiralıyorsun — çalışmak, prova yapmak, ders vermek ya da kendi danışanlarını görmek için — ev sahipleri de ellerindeki odayı listeliyor. [Göz at](/spaces).",
+    },
+  },
+  /*
+   * "Oda mı alan mı", asked because the two sides of a marketplace are not
+   * obvious from outside it. The model answered it by coining "alan olmak",
+   * which means nothing. Written down instead.
+   */
+  {
+    match: [
+      "guest or host", "which side", "renting or listing", "difference between",
+      "oda mi alan mi", "oda mı alan mı", "kendi odami mi", "kendi odamı mı",
+      "hangisi", "ikisi de mi", "misafir mi ev sahibi mi",
+    ],
+    answer: {
+      en: "Two sides. You can book somebody's room for a session — that makes you a guest. Or you can list a room you already have and be paid for the hours somebody else uses it — that makes you a host. [Find a space](/spaces) or [list one](/rent-out-your).",
+      tr: "İki taraf var. Birinin odasını seans için kiralayabilirsin — o zaman misafir olursun. Ya da elindeki bir odayı listeleyip başkasının kullandığı saatler için para kazanırsın — o zaman ev sahibi olursun. [Mekân bul](/spaces) ya da [odanı listele](/rent-out-your).",
+    },
+  },
+  /*
+   * The invented daily rate came from here. Asked directly, it is a fact with
+   * one answer, and the model was making it up because nothing said otherwise.
+   */
+  {
+    match: [
+      "how long", "how many hours", "per hour", "hourly", "daily rate", "per day",
+      "kac saat", "kaç saat", "saatlik", "gunluk", "günlük", "ne kadar sure",
+      "ne kadar süre", "sureli", "süreli",
+    ],
+    answer: {
+      en: "A booking is one hour. If you need longer, take the hours next to each other. There is no daily or weekly rate and no lease — you pay for the hours you book and nothing else.",
+      tr: "Bir rezervasyon bir saat. Daha uzun süre gerekiyorsa yan yana saatleri alırsın. Günlük ya da haftalık fiyat yok, kira sözleşmesi de yok — sadece aldığın saatleri ödersin.",
     },
   },
   /*

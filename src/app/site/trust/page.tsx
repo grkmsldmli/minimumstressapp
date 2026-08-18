@@ -1,102 +1,360 @@
+import Link from "next/link";
 import type { Metadata } from "next";
 
-import { Onward, PageShell, QA, Section } from "@/components/site/page-shell";
+import { SiteFooter, SiteHeader } from "@/components/site/chrome";
+import { Reveal } from "@/components/site/reveal";
 import { BRAND, WEBSITE } from "@/lib/company";
 import { CLAIM_WINDOW_HOURS } from "@/lib/claims";
 import { FREE_CANCEL_WINDOW_MS } from "@/lib/money";
+import { COLOUR, TYPE } from "@/lib/site-theme";
 
 /**
- * What we check, who can get in, and what happens if something goes wrong.
+ * Not "we are safe" — how, and where it stops.
  *
- * Every claim here names something the product actually does. Nothing about
- * screening people, because we do not screen people.
+ * This was a page of paragraphs and the content was right: verification before
+ * listing, access tied to a paid booking, a claim window, cancellation,
+ * reviews in both directions. What it did badly was make somebody read an
+ * essay to find the one answer they came for — and the two people who arrive
+ * here arrive with opposite questions. A host is asking who is coming into
+ * their room. A practitioner is asking whether the room exists and what
+ * happens to their money.
+ *
+ * So it is laid out as answers rather than as prose, split by which of the two
+ * you are. The section that matters most is the one saying what we do not
+ * check: a platform that leaves that vague is one somebody will later say
+ * implied more than it promised.
+ *
+ * The questions are `details` elements rather than an accordion with state.
+ * They open with no JavaScript, the browser's own find-in-page reaches the
+ * closed answers, and a crawler reads all of them.
  */
 
 export const metadata: Metadata = {
   title: "Trust & Safety",
   description:
-    "What we check before a room is listed, who can get in, what happens if something is " +
-    "damaged, and what we do not do.",
+    "What we check before a room is listed, who can get in and when, what happens if something " +
+    "goes wrong, and what we do not certify.",
   alternates: { canonical: `${WEBSITE}/trust` },
 };
 
 const CANCEL_HOURS = FREE_CANCEL_WINDOW_MS / 3_600_000;
 
+const PILLARS = [
+  {
+    title: "Space verification",
+    body: "We review the listing and the host's right to offer the space before it goes live.",
+  },
+  {
+    title: "Controlled access",
+    body: "Entry details are released only for a booking that is paid for and still standing.",
+  },
+  {
+    title: "Booking accountability",
+    body: "Both sides know who booked, when the space is in use, and what was agreed.",
+  },
+  {
+    title: "Two-way reviews",
+    body: "Practitioners review spaces. Hosts review bookings. Neither can answer the other.",
+  },
+];
+
+const SIDES = [
+  {
+    who: "If you are booking a space",
+    heading: "Before you arrive",
+    points: [
+      "The address is on the listing, before you pay",
+      "What is in the room, and anything to bring",
+      "Entry details released as your session approaches",
+      "Cancellation terms shown before you confirm",
+    ],
+  },
+  {
+    who: "If you are listing a space",
+    heading: "Before anyone arrives",
+    points: [
+      "You know who booked, and can message them",
+      "The booking is paid before it stands",
+      "They confirm they carry their own insurance",
+      "Access exists only for that booking",
+    ],
+  },
+];
+
+const WHEN_WRONG = [
+  {
+    title: "Damage",
+    body: `Report it within ${CLAIM_WINDOW_HOURS} hours of the session. We hold that payout while the report is open.`,
+  },
+  {
+    title: "A host cancels",
+    body: "The practitioner is refunded in full and access is removed, whenever it happens.",
+  },
+  {
+    title: "Not as described",
+    body: "Tell us and say so in your review, so the listing can be looked at.",
+  },
+];
+
+const VERIFY = [
+  "Listing information",
+  "The right to offer the space",
+  "Booking and payment status",
+  "Access tied to the booking",
+];
+
+const DO_NOT = [
+  "Practitioner qualifications",
+  "Professional licences",
+  "The services a practitioner provides",
+];
+
+const FAQ = [
+  {
+    q: "Who is coming into my space?",
+    a: "Someone with an account who has accepted the terms, confirmed their insurance and paid for the hour. You see who booked and can message them beforehand.",
+  },
+  {
+    q: "What if they do not turn up?",
+    a: "They are still charged. Payment is taken when the booking is made, not on the day.",
+  },
+  {
+    q: "What if the room is not as described?",
+    a: "Tell us, and say so in your review. A listing that misdescribes a room is a listing problem, and the review is the part that reaches the next person.",
+  },
+  {
+    q: "Can I cancel?",
+    a: `Cancel more than ${CANCEL_HOURS} hours before the session and you are refunded. Inside that window the booking stands, because the host held the hour for you.`,
+  },
+];
+
 export default function TrustPage() {
   return (
-    <PageShell
-      eyebrow="Trust & safety"
-      title={<>You are letting a stranger in. Here is what we do about that.</>}
-      standfirst="What we look at before a room is listed, who can get in, and what happens if something goes wrong."
-    >
-      <Section title="Before a room goes live">
-        <p>
-          We look at every listing ourselves, along with the lease or ownership document behind it.
-          If the paperwork does not show a right to let the room, it is not listed.
-        </p>
-        <p>If a host moves to a new address, the listing goes back for the same check.</p>
-      </Section>
+    <>
+      <SiteHeader />
 
-      <Section title="Who can get in, and when">
-        <p>
-          The address is on the listing, so you always know where you are going before you book.
-          Most rooms here are studios whose address is public anyway.
-        </p>
-        <p>
-          Getting inside is separate. What you need to enter reaches the practitioner who paid for
-          that hour, shortly before it starts, and nobody else. Cancel and it disappears.
-        </p>
-      </Section>
+      <main>
+        <section className="mx-auto max-w-6xl px-6 pb-12 pt-6">
+          <div className="max-w-3xl">
+            <p className={TYPE.eyebrow} style={{ color: COLOUR.link }}>
+              Trust &amp; safety
+            </p>
+            <h1
+              className={`mt-4 ${TYPE.h2}`}
+              style={{ fontFamily: "var(--font-dm-serif)", color: COLOUR.ink }}
+            >
+              Know the space. Know the booking.
+              <br />
+              Know what happens next.
+            </h1>
+            <p className={`mt-6 ${TYPE.lead}`} style={{ color: COLOUR.body }}>
+              Documented listings, access tied to a paid booking, and accountability on both sides.
+            </p>
+          </div>
+        </section>
 
-      <Section title="If something is damaged">
-        <p>
-          Hosts have {CLAIM_WINDOW_HOURS} hours after a session to tell us. We hold that
-          session&rsquo;s payout while we look into it.
-        </p>
-        <p>
-          Everyone who books confirms they carry their own insurance first. {BRAND} is a booking
-          platform, not an insurer.
-        </p>
-      </Section>
+        <section className="mx-auto max-w-6xl px-6 pb-16">
+          <div className="grid gap-4 sm:grid-cols-2">
+            {PILLARS.map((pillar, index) => (
+              <Reveal key={pillar.title} delay={index * 80}>
+                <div
+                  className="h-full rounded-2xl p-7"
+                  style={{ border: `1px solid ${COLOUR.line}`, backgroundColor: COLOUR.wash }}
+                >
+                  <h2 className="text-[19px] font-medium" style={{ color: COLOUR.ink }}>
+                    {pillar.title}
+                  </h2>
+                  <p className={`mt-2.5 ${TYPE.body}`} style={{ color: COLOUR.body }}>
+                    {pillar.body}
+                  </p>
+                </div>
+              </Reveal>
+            ))}
+          </div>
+        </section>
 
-      <Section title="Cancelling">
-        <p>
-          Cancel {CANCEL_HOURS} hours or more before your session and you are refunded, apart
-          from the card processing fee. Inside that window the booking stands, because the host
-          kept the hour free for you.
-        </p>
-        <p>If a host cancels on you, you are refunded in full, whenever it happens.</p>
-      </Section>
+        <section className="border-y py-16" style={{ borderColor: COLOUR.line }}>
+          <div className="mx-auto grid max-w-6xl gap-12 px-6 lg:grid-cols-2 lg:gap-16">
+            {SIDES.map((side, index) => (
+              <Reveal key={side.who} delay={index * 100}>
+                <div>
+                  <p className={TYPE.eyebrow} style={{ color: COLOUR.link }}>
+                    {side.who}
+                  </p>
+                  <h2
+                    className="mt-3 text-[24px]"
+                    style={{ fontFamily: "var(--font-dm-serif)", color: COLOUR.ink }}
+                  >
+                    {side.heading}
+                  </h2>
+                  <ul className="mt-5 space-y-3">
+                    {side.points.map((point) => (
+                      <li
+                        key={point}
+                        className={`flex gap-3.5 ${TYPE.body}`}
+                        style={{ color: COLOUR.body }}
+                      >
+                        <span
+                          aria-hidden
+                          className="mt-2 h-2 w-2 shrink-0 rounded-full"
+                          style={{ backgroundColor: COLOUR.accent }}
+                        />
+                        <span>{point}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </Reveal>
+            ))}
+          </div>
+        </section>
 
-      <Section title="Reviews, both ways">
-        <p>
-          You review the room and the host reviews the session. Neither of you sees the other&rsquo;s
-          review until both are written, which is what makes them worth reading.
-        </p>
-      </Section>
+        <section className="mx-auto max-w-6xl px-6 py-16">
+          <Reveal>
+            <h2
+              className={TYPE.h2}
+              style={{ fontFamily: "var(--font-dm-serif)", color: COLOUR.ink }}
+            >
+              If something goes wrong.
+            </h2>
+          </Reveal>
 
-      <Section title="What we do not do">
-        <p>
-          We do not check qualifications or licences. Every professional here is responsible for
-          holding what their work requires, and for their own clients.
-        </p>
-        <p>{BRAND} does not own the rooms and provides no medical or health service.</p>
-      </Section>
+          <div className="mt-8 grid gap-4 sm:grid-cols-3">
+            {WHEN_WRONG.map((item, index) => (
+              <Reveal key={item.title} delay={index * 80}>
+                <div
+                  className="h-full rounded-2xl p-6"
+                  style={{ border: `1px solid ${COLOUR.line}` }}
+                >
+                  <h3 className="text-[17px] font-medium" style={{ color: COLOUR.ink }}>
+                    {item.title}
+                  </h3>
+                  <p className={`mt-2 ${TYPE.small}`} style={{ color: COLOUR.body }}>
+                    {item.body}
+                  </p>
+                </div>
+              </Reveal>
+            ))}
+          </div>
+        </section>
 
-      <Section title="Common questions">
-        <dl className="space-y-6">
-          <QA q="Who is coming into my space?">
-            Someone with an account who has accepted the terms, confirmed their insurance and paid
-            for the hour. You can see who booked and message them beforehand.
-          </QA>
-          <QA q="What if they do not turn up?">
-            They are still charged. Payment is taken when the booking is made.
-          </QA>
-          <QA q="What if a room is not as described?">Tell us, and say so in your review.</QA>
-        </dl>
+        <section
+          className="border-y py-16"
+          style={{ borderColor: COLOUR.line, backgroundColor: COLOUR.wash }}
+        >
+          <div className="mx-auto max-w-6xl px-6">
+            <Reveal>
+              <h2
+                className={TYPE.h2}
+                style={{ fontFamily: "var(--font-dm-serif)", color: COLOUR.ink }}
+              >
+                What we check, and what we do not.
+              </h2>
+            </Reveal>
 
-        <Onward href="/for-hosts">How hosting works</Onward>
-      </Section>
-    </PageShell>
+            <div className="mt-8 grid gap-4 sm:grid-cols-2">
+              <Reveal>
+                <div
+                  className="h-full rounded-2xl bg-white p-7"
+                  style={{ border: `1px solid ${COLOUR.line}` }}
+                >
+                  <h3 className="text-[17px] font-medium" style={{ color: COLOUR.ink }}>
+                    We check
+                  </h3>
+                  <ul className="mt-4 space-y-2.5">
+                    {VERIFY.map((item) => (
+                      <li key={item} className={TYPE.body} style={{ color: COLOUR.body }}>
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </Reveal>
+
+              <Reveal delay={100}>
+                <div
+                  className="h-full rounded-2xl bg-white p-7"
+                  style={{ border: `1px solid ${COLOUR.line}` }}
+                >
+                  <h3 className="text-[17px] font-medium" style={{ color: COLOUR.ink }}>
+                    We do not certify
+                  </h3>
+                  <ul className="mt-4 space-y-2.5">
+                    {DO_NOT.map((item) => (
+                      <li key={item} className={TYPE.body} style={{ color: COLOUR.muted }}>
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                  <p className={`mt-5 ${TYPE.small}`} style={{ color: COLOUR.muted }}>
+                    Each professional is responsible for holding whatever their work requires, and
+                    for their own clients. {BRAND} does not own the rooms listed and provides no
+                    medical or health service.
+                  </p>
+                </div>
+              </Reveal>
+            </div>
+          </div>
+        </section>
+
+        <section className="mx-auto max-w-6xl px-6 py-16">
+          <div className="max-w-3xl">
+            <h2
+              className={TYPE.h2}
+              style={{ fontFamily: "var(--font-dm-serif)", color: COLOUR.ink }}
+            >
+              Common questions.
+            </h2>
+
+            <div className="mt-8">
+              {FAQ.map((item) => (
+                <details key={item.q} className="border-b py-5" style={{ borderColor: COLOUR.line }}>
+                  <summary
+                    className={`cursor-pointer font-medium ${TYPE.body}`}
+                    style={{ color: COLOUR.ink }}
+                  >
+                    {item.q}
+                  </summary>
+                  <p className={`mt-3 ${TYPE.body}`} style={{ color: COLOUR.body }}>
+                    {item.a}
+                  </p>
+                </details>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <Reveal>
+          <section className="py-20 text-white" style={{ backgroundColor: COLOUR.dark }}>
+            <div className="mx-auto max-w-6xl px-6">
+              <h2 className={TYPE.h2} style={{ fontFamily: "var(--font-dm-serif)" }}>
+                Space should feel straightforward
+                <br />
+                on both sides.
+              </h2>
+
+              <div className="mt-8 flex flex-wrap gap-3">
+                <Link
+                  href="/spaces"
+                  className="rounded-full bg-white px-8 py-4 text-[16px] font-medium transition-transform duration-200 hover:-translate-y-0.5"
+                  style={{ color: COLOUR.ink }}
+                >
+                  Find a space
+                </Link>
+                <Link
+                  href="/rent-out-your"
+                  className="rounded-full border px-8 py-4 text-[16px] font-medium text-white"
+                  style={{ borderColor: "rgba(255,255,255,.35)" }}
+                >
+                  List your space
+                </Link>
+              </div>
+            </div>
+          </section>
+        </Reveal>
+      </main>
+
+      <SiteFooter />
+    </>
   );
 }

@@ -93,7 +93,7 @@ export async function generateMetadata({
 
   return {
     title,
-    description: `${spaceType.blurb} In ${found.city.city}, by the hour, with no lease.`,
+    description: `${spaceType.blurb} In ${found.city.city}, with no lease.`,
     /*
      * Canonical up to the town when this page is the town page under another
      * name. Never left for a search engine to work out on its own — an
@@ -177,7 +177,7 @@ export default async function CityTypePage({
               className="mt-4 inline-block rounded-full px-6 py-3 text-[14.5px] font-medium text-white"
               style={{ backgroundColor: "#0F2F55" }}
             >
-              See what it could earn
+              Get the quote
             </Link>
           </div>
       </div>

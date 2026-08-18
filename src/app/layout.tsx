@@ -36,7 +36,7 @@ const poppins = Poppins({
  * home screen, and a browser bar over every screen.
  */
 const DESCRIPTION =
-  "Private rooms by the hour for every kind of practice — movement, coaching, meditation, and healing.";
+  "Private rooms for every kind of practice — movement, coaching, meditation, and healing.";
 
 /**
  * The title, which was the brand name and nothing else.
@@ -51,7 +51,7 @@ const DESCRIPTION =
  * because search results are cut there and a title truncated mid-word reads as
  * a broken page rather than a busy one.
  */
-const SITE_TITLE = `${BRAND}: Private Wellness Space by the Hour | Book Now`;
+const SITE_TITLE = `${BRAND}: Private Wellness Space to Rent | Book Now`;
 
 export const metadata: Metadata = {
   // Every relative URL below is resolved against this, including the

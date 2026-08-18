@@ -16,7 +16,7 @@ import { ImageResponse } from "next/og";
 
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
-export const alt = "Minimum Stress — private rooms by the hour for every kind of practice";
+export const alt = "Minimum Stress — private rooms for every kind of practice";
 
 export default function Image() {
   return new ImageResponse(
@@ -60,7 +60,7 @@ export default function Image() {
             <div
               style={{ fontSize: 74, lineHeight: 1.14, color: "#FFFFFF", letterSpacing: -1.5 }}
             >
-              Private rooms by the hour,
+              Private rooms for your practice,
             </div>
             <div
               style={{ fontSize: 74, lineHeight: 1.14, color: "#FFFFFF", letterSpacing: -1.5 }}
@@ -69,7 +69,7 @@ export default function Image() {
             </div>
           </div>
           <div style={{ fontSize: 31, color: "#A9C6E4", maxWidth: 860, lineHeight: 1.4 }}>
-            Movement, coaching, meditation and healing — booked by the hour, in studios that
+            Movement, coaching, meditation and healing — booked on your schedule, in studios that
             already have the room.
           </div>
         </div>

@@ -60,16 +60,34 @@ export function SiteHeader() {
         — and a 14px nav that looked right before now reads as something the
         design forgot.
       */}
-      <nav className={`flex items-center gap-7 ${TYPE.body}`} style={{ color: COLOUR.body }}>
-        <Link href="/tools" className="hidden hover:underline sm:inline">
-          Free tools
+      {/*
+        Smaller on a phone, and the button most of all.
+
+        Both text links are hidden under `sm`, so on a phone this button is the
+        entire nav — and it was still wearing the desktop size it was given for
+        a row of three: 17px type in 24px of padding, sitting beside a 48px
+        logo. It read as the loudest thing on the page before anybody had
+        scrolled to what the page was about.
+
+        The sizes are written out rather than interpolated from TYPE. Tailwind
+        finds classes by reading the source text, so `sm:${TYPE.body}` compiles
+        to nothing at all — the string it would need to see never appears in
+        any file. The numbers still match the scale: 15px is TYPE.small, 17px
+        is TYPE.body.
+      */}
+      <nav
+        className="flex items-center gap-4 text-[15px] leading-[1.7] sm:gap-7 sm:text-[17px]"
+        style={{ color: COLOUR.body }}
+      >
+        <Link href="/assessments" className="hidden hover:underline sm:inline">
+          Assessments
         </Link>
         <Link href="/about" className="hidden hover:underline sm:inline">
           About
         </Link>
         <a
           href={APP_URL}
-          className="rounded-full px-6 py-3 font-medium text-white transition-transform duration-200 hover:-translate-y-0.5"
+          className="whitespace-nowrap rounded-full px-4 py-2 font-medium text-white transition-transform duration-200 hover:-translate-y-0.5 sm:px-6 sm:py-3"
           style={{ backgroundColor: COLOUR.ink }}
         >
           Open the app
@@ -149,12 +167,12 @@ const FOR_HOSTS = {
   links: [
     { label: "List your space", href: `${APP_URL}?list=1` },
     { label: "How hosting works", href: "/for-hosts" },
-    { label: "What your space earns", href: "/rent-out-your" },
+    { label: "Get the quote", href: "/rent-out-your" },
     { label: "Pricing & fees", href: "/pricing" },
     { label: "Trust & safety", href: "/trust" },
     { label: "Host questions", href: "/for-hosts#faq" },
   ],
-  action: { label: "See what your space could earn →", href: "/rent-out-your" },
+  action: { label: "Get the quote →", href: "/rent-out-your" },
 };
 
 const COMPANY = [
@@ -165,7 +183,7 @@ const COMPANY = [
    * to neither side of the marketplace, so they sit here rather than being
    * counted as something practitioners get.
    */
-  { label: "Free tools", href: "/tools" },
+  { label: "Assessments", href: "/assessments" },
   { label: "Terms", href: `${APP_URL}/terms` },
   { label: "Privacy", href: `${APP_URL}/privacy` },
   /*
@@ -173,7 +191,7 @@ const COMPANY = [
    * linking rather than burying: the page says plainly that there is nothing
    * to opt out of, which is only credible if it is easy to find.
    */
-  { label: "Your privacy choices", href: "/privacy-choices" },
+  { label: "YOUR PRIVACY CHOICES", href: "/privacy-choices" },
 ];
 
 type Entry = { label: string; href: string };
@@ -327,7 +345,7 @@ export function SiteFooter() {
 
           <nav className={`flex flex-wrap gap-6 ${TYPE.small}`}>
             <FooterLink href={`${APP_URL}/privacy`}>Privacy</FooterLink>
-            <FooterLink href="/privacy-choices">Your privacy choices</FooterLink>
+            <FooterLink href="/privacy-choices">YOUR PRIVACY CHOICES</FooterLink>
             <FooterLink href={`${APP_URL}/terms`}>Terms</FooterLink>
             <FooterLink href="/contact">Support</FooterLink>
           </nav>

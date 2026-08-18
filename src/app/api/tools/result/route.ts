@@ -97,8 +97,8 @@ function focus(value: unknown): { label: string; action: string } | undefined {
  */
 function pageUrl(slug: string): string {
   return TOOLS.some((tool) => tool.slug === slug && tool.live)
-    ? `${WEBSITE}/tools/${slug}`
-    : `${WEBSITE}/tools`;
+    ? `${WEBSITE}/assessments/${slug}`
+    : `${WEBSITE}/assessments`;
 }
 
 /**
@@ -115,7 +115,7 @@ function relatedTools(slug: string): { name: string; url: string }[] {
 
   return Array.from({ length: Math.min(RELATED, live.length - 1) }, (_, offset) => {
     const tool = live[(Math.max(at, 0) + offset + 1) % live.length];
-    return { name: tool.name, url: `${WEBSITE}/tools/${tool.slug}` };
+    return { name: tool.name, url: `${WEBSITE}/assessments/${tool.slug}` };
   }).filter((tool) => !tool.url.endsWith(`/${slug}`));
 }
 

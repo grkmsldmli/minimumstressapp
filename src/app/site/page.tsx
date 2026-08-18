@@ -39,10 +39,10 @@ import { CATEGORIES, type CategoryKey } from "@/lib/taxonomy";
  */
 
 export const metadata: Metadata = {
-  title: "Wellness Spaces for Rent by the Hour",
+  title: "Wellness Spaces for Rent",
   description:
     "Treatment rooms, Pilates studios, private consulting rooms and movement space, rented " +
-    "by the hour. No lease, no deposit — or list the space you already have.",
+    "for as long as you need. No lease, no deposit — or list the space you already have.",
 };
 
 /*
@@ -85,7 +85,7 @@ const HERO: Slide[] = [
 
 /** What each of the four is for, in one line a stranger can act on. */
 const BLURBS: Record<CategoryKey, string> = {
-  physical: "Floor to move on — reformers, mats and mirrors, by the hour.",
+  physical: "Floor to move on — reformers, mats and mirrors, for the session you have planned.",
   traditional: "Hands-on rooms with a couch and a sink, for treatment work.",
   social: "A private room with two chairs, for seeing one person at a time.",
   spirit: "Still, quiet rooms for sitting, breathwork and guided practice.",
@@ -241,7 +241,7 @@ function Hero() {
         <p className={`mt-5 ${TYPE.small}`} style={{ color: COLOUR.muted }}>
           Have a space?{" "}
           <Link href="/rent-out-your" className="underline underline-offset-2" style={{ color: COLOUR.link }}>
-            See what it could earn
+            Get the quote
           </Link>
         </p>
       </div>
@@ -399,7 +399,7 @@ function ForPractitioners() {
             >
               A professional room,
               <br />
-              without the lease.
+              no lease required.
             </h2>
             <p className={`mt-5 ${TYPE.body}`} style={{ color: COLOUR.body }}>
               You need a room a few hours a week, not a studio all year. Book the hours you
@@ -408,10 +408,10 @@ function ForPractitioners() {
 
             <ul className="mt-7 space-y-3">
               {[
-                "Book a single hour, or the same hour every week",
-                "Work in the town you already work in",
-                "Bring your own clients",
-                "Cancel 24 hours ahead, free",
+                "Book only the time you need — one session, a few hours, or recurring",
+                "Find spaces close to where you already work",
+                "Bring your own clients or participants",
+                "Cancel 24+ hours ahead at no charge",
               ].map((line) => (
                 <li key={line} className={`flex gap-3.5 ${TYPE.body}`} style={{ color: COLOUR.body }}>
                   <span
@@ -507,7 +507,7 @@ function ForHosts() {
                   className="rounded-full bg-white px-8 py-4 text-[16px] font-medium transition-transform duration-200 hover:-translate-y-0.5"
                   style={{ color: COLOUR.ink }}
                 >
-                  See what your space could earn
+                  Get the quote
                 </Link>
                 <Link
                   href="/for-hosts"
@@ -559,7 +559,7 @@ function Recurring() {
             </div>
 
             {/*
-              A class already sitting in a room somebody booked by the hour,
+              A class already sitting in a room somebody booked for the afternoon,
               with the phone that booked it in the frame. It is the argument
               this section is making rather than a picture beside it.
             */}

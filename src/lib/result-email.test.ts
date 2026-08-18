@@ -36,8 +36,8 @@ const full = {
   insights: ["Tension and low stamina may be part of your stress pattern."],
   focus: { label: "Physical Activity", action: "Gentle movement can help discharge activation." },
   steps: ["Remove one non-essential task.", "Create a 15-minute transition ritual."],
-  related: [{ name: "Sleep Score", url: "https://minimumstress.com/tools/sleep-score" }],
-  url: "https://minimumstress.com/tools/burnout-test",
+  related: [{ name: "Sleep Score", url: "https://minimumstress.com/assessments/sleep-score" }],
+  url: "https://minimumstress.com/assessments/burnout-test",
 } satisfies ResultEmail;
 
 describe("the whole result travels", () => {
@@ -87,7 +87,7 @@ describe("the sections that are missing", () => {
     score: "24.1",
     band: "Healthy range",
     summary: "Within the range the NHS uses.",
-    url: "https://minimumstress.com/tools/bmi-calculator",
+    url: "https://minimumstress.com/assessments/bmi-calculator",
   });
 
   it("leaves out every heading it has nothing to put under", () => {

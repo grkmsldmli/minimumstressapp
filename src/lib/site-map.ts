@@ -36,10 +36,10 @@ export function crawlPolicyFor(host: string | null): CrawlPolicy {
 export function sitemapPaths(): string[] {
   return [
     "/",
-    "/tools",
+    "/assessments",
     "/about",
     "/for-hosts",
-    ...TOOLS.filter((t) => t.live).map((t) => `/tools/${t.slug}`),
+    ...TOOLS.filter((t) => t.live).map((t) => `/assessments/${t.slug}`),
     /*
      * The host pages, listed from the same source that generates them.
      *

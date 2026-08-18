@@ -68,7 +68,7 @@ describe("isSharedPath", () => {
   it("lets ordinary pages through to be rewritten", () => {
     expect(isSharedPath("/")).toBe(false);
     expect(isSharedPath("/articles")).toBe(false);
-    expect(isSharedPath("/tools/sleep-score")).toBe(false);
+    expect(isSharedPath("/assessments/sleep-score")).toBe(false);
   });
 
   /** "/apiary" is a page, not the API. The slash is what separates them. */
@@ -98,6 +98,6 @@ describe("isSharedPath", () => {
    */
   it("reads only the last segment for an extension", () => {
     expect(isSharedPath("/v1.2/articles")).toBe(false);
-    expect(isSharedPath("/tools/burnout-test")).toBe(false);
+    expect(isSharedPath("/assessments/burnout-test")).toBe(false);
   });
 });

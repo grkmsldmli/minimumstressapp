@@ -33,7 +33,7 @@ const { POST } = await import("./route");
  */
 const post = (body: unknown, ip = "203.0.113.1") =>
   POST(
-    new Request("https://minimumstress.com/api/tools/result", {
+    new Request("https://minimumstress.com/api/assessments/result", {
       method: "POST",
       body: JSON.stringify(body),
       headers: { "x-forwarded-for": ip },
@@ -105,12 +105,12 @@ describe("what a caller cannot put in the message", () => {
     const { html, body } = sentMessage();
     expect(html).not.toContain("phishing.example");
     expect(body).not.toContain("phishing.example");
-    expect(html).toContain(`${WEBSITE}/tools/burnout-test`);
+    expect(html).toContain(`${WEBSITE}/assessments/burnout-test`);
   });
 
   it("lands an unrecognised slug on the hub rather than a made-up page", async () => {
     await post({ ...asked, slug: "../../admin" });
-    expect(sentMessage().html).toContain(`${WEBSITE}/tools"`);
+    expect(sentMessage().html).toContain(`${WEBSITE}/assessments"`);
     expect(sentMessage().html).not.toContain("admin");
   });
 
@@ -155,8 +155,8 @@ describe("the other tools it offers", () => {
   it("never suggests the one they just took", async () => {
     await post(asked);
     const { body } = sentMessage();
-    expect(body).toContain("/tools/");
-    expect(body.match(/\/tools\/burnout-test/g)?.length).toBe(1); // the "take it again" link
+    expect(body).toContain("/assessments/");
+    expect(body.match(/\/assessments\/burnout-test/g)?.length).toBe(1); // the "take it again" link
   });
 
   it("suggests something different from a different tool", async () => {

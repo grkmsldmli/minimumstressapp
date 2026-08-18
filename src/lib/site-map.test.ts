@@ -51,7 +51,7 @@ describe("sitemapFor", () => {
   it("writes absolute URLs, with no double slash at the root", () => {
     const xml = sitemapFor("https://minimumstress.com");
     expect(xml).toContain("<loc>https://minimumstress.com</loc>");
-    expect(xml).toContain("<loc>https://minimumstress.com/tools</loc>");
+    expect(xml).toContain("<loc>https://minimumstress.com/assessments</loc>");
     expect(xml).not.toContain("minimumstress.com//");
   });
 });

@@ -61,7 +61,13 @@ export function EarningsCalculator({ roomLabel }: { roomLabel: string }) {
         className="text-[26px] leading-tight sm:text-[30px]"
         style={{ fontFamily: "var(--font-dm-serif)", color: "#0F2F55" }}
       >
-        What could your {roomLabel.toLowerCase()} earn?
+        {/*
+          The room type stays in the heading. These are the programmatic pages
+          — one per room type per town — and "pilates studio" is the phrase the
+          page is found on. "Your quote" alone reads cleanly and makes every
+          one of them identical.
+        */}
+        Your {roomLabel.toLowerCase()} quote
       </h2>
       <p className="mt-2 text-[15px] leading-[1.7]" style={{ color: "#5f6673" }}>
         Your numbers, not ours. Nothing is sent anywhere.

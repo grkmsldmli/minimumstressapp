@@ -17,10 +17,10 @@ import { BRAND } from "@/lib/company";
  */
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: `${BRAND} — rooms by the hour`,
+    name: `${BRAND} — private rooms for your practice`,
     short_name: BRAND,
     description:
-      "Private rooms by the hour for every kind of practice — movement, coaching, meditation, and healing.",
+      "Private rooms for every kind of practice — movement, coaching, meditation, and healing.",
     start_url: "/",
     display: "standalone",
     orientation: "portrait",

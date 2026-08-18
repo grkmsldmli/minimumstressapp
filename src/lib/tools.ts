@@ -13,6 +13,19 @@
 
 export type ToolKind = "assessment" | "calculator";
 
+/**
+ * What to call one of these in a sentence.
+ *
+ * Derived from the kind rather than written into each screen, because the
+ * screens are shared: the same result page serves the Burnout Test and the BMI
+ * Calculator, and a hardcoded noun is wrong on one of them whichever one it is
+ * written for. "Share this tool" was that bug — a marketing word standing in
+ * for the two real ones so it could be wrong about neither.
+ */
+export function kindNoun(kind: ToolKind): string {
+  return kind === "assessment" ? "assessment" : "calculator";
+}
+
 export interface Tool {
   /** The Shopify page slug, kept. */
   slug: string;

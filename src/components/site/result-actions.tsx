@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 import { looksLikeEmail } from "@/lib/result-email";
+import { kindNoun, toolBySlug } from "@/lib/tools";
 
 /**
  * What somebody can do with a result once they have it.
@@ -45,6 +46,17 @@ export interface ResultPayload {
 }
 
 export function ResultActions({ result, accent }: { result: ResultPayload; accent: string }) {
+  /*
+   * Named from the instrument rather than hardcoded.
+   *
+   * This component is shared by the Burnout Test and the BMI Calculator, and
+   * the button used to read "Share this tool" — a word chosen because it was
+   * wrong about neither. It is the wrong word for both. The slug already
+   * travels in the payload, so the right noun is a lookup rather than a prop
+   * every page has to remember to pass.
+   */
+  const noun = kindNoun(toolBySlug(result.slug ?? "")?.kind ?? "assessment");
+
   const [email, setEmail] = useState("");
   const [state, setState] = useState<State>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -99,7 +111,7 @@ export function ResultActions({ result, accent }: { result: ResultPayload; accen
    * link is the same job with one more step, and saying so is what makes it
    * obvious the tap worked.
    *
-   * What is shared is the tool, not the score. Somebody's burnout result is
+   * What is shared is the page, not the score. Somebody's burnout result is
    * theirs, and a share sheet is one mis-tap from a group chat.
    */
   const share = async () => {
@@ -186,7 +198,7 @@ export function ResultActions({ result, accent }: { result: ResultPayload; accen
         className="w-full rounded-xl py-3 text-[14px]"
         style={{ border: "1px solid #e7eef6", color: "#5f6673" }}
       >
-        Share this tool
+        Share this {noun}
       </button>
 
       {shared && (

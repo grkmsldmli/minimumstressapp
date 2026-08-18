@@ -40,7 +40,7 @@ export interface HostPage {
 
 const COPY: Record<string, Omit<HostPage, "type">> = {
   "pilates-studio": {
-    title: "Rent Out Your Pilates Studio by the Hour",
+    title: "Rent Out Your Pilates Studio",
     heading: "Your reformers, on the days you are not teaching",
     standfirst:
       "Instructors need a studio for four hours on a Tuesday, not a lease. If yours is dark half the week, those hours have a price.",
@@ -60,7 +60,7 @@ const COPY: Record<string, Omit<HostPage, "type">> = {
   },
 
   "yoga-studio": {
-    title: "Rent Out Your Yoga Studio by the Hour",
+    title: "Rent Out Your Yoga Studio",
     heading: "A quiet floor is worth more than an empty one",
     standfirst:
       "Teachers want a room for one class a week. A studio with mornings free is a studio with income it is not taking.",
@@ -80,7 +80,7 @@ const COPY: Record<string, Omit<HostPage, "type">> = {
   },
 
   "movement-studio": {
-    title: "Rent Out Your Movement Studio by the Hour",
+    title: "Rent Out Your Movement Studio",
     heading: "An open floor books more often than a specialised one",
     standfirst:
       "Mobility coaches, tai chi teachers, personal trainers. A plain room with space to move suits more people than a room built for one thing.",
@@ -100,7 +100,7 @@ const COPY: Record<string, Omit<HostPage, "type">> = {
   },
 
   "massage-room": {
-    title: "Rent Out Your Massage Room by the Hour",
+    title: "Rent Out Your Massage Room",
     heading: "The hours between your own clients",
     standfirst:
       "Massage therapists with a table and a room usually have gaps in the week. Those gaps are what somebody else is looking for.",
@@ -121,7 +121,7 @@ const COPY: Record<string, Omit<HostPage, "type">> = {
   },
 
   "treatment-room": {
-    title: "Rent Out Your Treatment Room by the Hour",
+    title: "Rent Out Your Treatment Room",
     heading: "A clean private room is the most rentable thing you own",
     standfirst:
       "It suits more kinds of practitioner than anything else on this site, and the ones who need it need it every week.",
@@ -142,7 +142,7 @@ const COPY: Record<string, Omit<HostPage, "type">> = {
   },
 
   "acupuncture-room": {
-    title: "Rent Out Your Room to Acupuncturists by the Hour",
+    title: "Rent Out Your Room to Acupuncturists",
     heading: "Quiet, private, and booked in blocks",
     standfirst:
       "Acupuncturists work in long, still appointments and often see several people in an afternoon. They book in blocks, which suits a room that is free by the half-day.",
@@ -163,7 +163,7 @@ const COPY: Record<string, Omit<HostPage, "type">> = {
   },
 
   "esthetician-room": {
-    title: "Rent Out Your Esthetician Room by the Hour",
+    title: "Rent Out Your Esthetician Room",
     heading: "Salon-quality space, without a salon-length lease",
     standfirst:
       "Estheticians leaving a salon suite need a proper room with water and light. Most cannot sign a year for it on day one.",
@@ -184,8 +184,8 @@ const COPY: Record<string, Omit<HostPage, "type">> = {
   },
 
   "consultation-room": {
-    title: "Rent Out Your Consultation Room by the Hour",
-    heading: "A private room to see people in, by the hour",
+    title: "Rent Out Your Consultation Room",
+    heading: "A private room to see people in, for the time you need",
     standfirst:
       "Coaches and independent practitioners need somewhere quiet to sit with one person. An office you use three days a week has four days in it.",
     whoRents:
@@ -205,7 +205,7 @@ const COPY: Record<string, Omit<HostPage, "type">> = {
   },
 
   "meditation-room": {
-    title: "Rent Out Your Meditation Room by the Hour",
+    title: "Rent Out Your Meditation Room",
     heading: "Stillness is a thing people will pay for",
     standfirst:
       "Teachers running sits, breathwork sessions and small group practice need a room that is quiet at a specific hour of a specific day.",
@@ -225,7 +225,7 @@ const COPY: Record<string, Omit<HostPage, "type">> = {
   },
 
   "reiki-room": {
-    title: "Rent Out Your Reiki Room by the Hour",
+    title: "Rent Out Your Reiki Room",
     heading: "A warm, private room, for the hours it is empty",
     standfirst:
       "Reiki practitioners need very little and need it uninterrupted. If you have a quiet room with a couch, it is already most of the way there.",

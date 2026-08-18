@@ -19,8 +19,8 @@ export default function TdeePage() {
 
       <main className="mx-auto max-w-6xl px-6 pb-24 pt-4">
       <div className="max-w-3xl">
-          <Link href="/tools" className="text-[14px]" style={{ color: "#0EA5E9" }}>
-            ← All tools
+          <Link href="/assessments" className="text-[14px]" style={{ color: "#0EA5E9" }}>
+            ← All assessments
           </Link>
 
           <h1

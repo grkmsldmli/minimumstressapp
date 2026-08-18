@@ -60,7 +60,7 @@ const SIDES = [
       "Many studios and private rooms have unused hours through the week while someone keeps " +
       "paying for them. You choose the hours, you set the rate, and you keep all of it.",
     href: "/rent-out-your",
-    action: "See what it could earn",
+    action: "Get the quote",
   },
 ];
 

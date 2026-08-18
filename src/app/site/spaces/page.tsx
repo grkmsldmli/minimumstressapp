@@ -26,9 +26,9 @@ import { citiesWithSpaces } from "@/lib/directory-data";
 export const revalidate = 3600;
 
 export const metadata: Metadata = {
-  title: "Wellness Spaces for Rent by the Hour",
+  title: "Wellness Spaces for Rent",
   description:
-    "Treatment rooms, studios and private consulting rooms, rented by the hour. No lease, " +
+    "Treatment rooms, studios and private consulting rooms, rented for as long as you need. No lease, " +
     "no deposit.",
   alternates: { canonical: `${WEBSITE}/spaces` },
 };
@@ -62,7 +62,7 @@ export default async function SpacesIndex() {
           {listed.length > 0 ? (
             <>
               <p className="mt-5 text-[16.5px] leading-[1.75]" style={{ color: "#5f6673" }}>
-                Treatment rooms, studios and private consulting rooms, booked by the hour. No
+                Treatment rooms, studios and private consulting rooms, booked on your schedule. No
                 lease, no deposit, and the price you see is the price you pay.
               </p>
 
@@ -139,7 +139,7 @@ export default async function SpacesIndex() {
                   className="mt-4 inline-block rounded-full px-6 py-3 text-[14.5px] font-medium text-white"
                   style={{ backgroundColor: "#0F2F55" }}
                 >
-                  See what it could earn
+                  Get the quote
                 </Link>
               </div>
             </>

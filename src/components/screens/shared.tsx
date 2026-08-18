@@ -74,7 +74,7 @@ export function Splash({ next }: { next: () => void }) {
 
       <div className="w-full relative z-10">
         <p className="font-body font-normal text-[14px] leading-relaxed text-white/65 mb-6">
-          Private rooms by the hour for every kind of practice — movement, coaching, meditation,
+          Private rooms for every kind of practice — movement, coaching, meditation,
           and healing.
         </p>
         <PrimaryButton onClick={next}>Begin</PrimaryButton>
@@ -534,7 +534,7 @@ export function RoleSelect({
 
             <p className="font-body font-normal text-[13.5px] text-white/70 mt-3 leading-relaxed">
               {isPractitioner
-                ? "Find and book rooms by the hour, with your insurance and your booking history in one place."
+                ? "Find and book rooms on your schedule, with your insurance and your booking history in one place."
                 : "List your space, set your hours, and get paid — with your lease, your payouts and your calendar in one place."}
             </p>
 
@@ -592,7 +592,7 @@ export function RoleSelect({
           <Users color="#fff" size={20} />
           <p className="font-body font-medium text-[16.5px] text-white mt-3">I teach or practice</p>
           <p className="font-body font-normal text-[13.5px] text-white/80 mt-1">
-            Find a private room by the hour — no membership, one all-in price.
+            Find a private room for the time you need — no membership, one all-in price.
           </p>
           <span className="inline-flex items-center gap-1 font-body text-[15px] font-medium text-white mt-3">
             Browse spaces <ChevronRight size={14} />

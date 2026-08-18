@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 
 import { SiteFooter, SiteHeader } from "@/components/site/chrome";
 import { BRAND } from "@/lib/company";
-import { TOOLS, type Tool, liveToolsOfKind } from "@/lib/tools";
+import { type Tool, liveToolsOfKind } from "@/lib/tools";
 
 /**
  * The Wellness Hub.
@@ -19,13 +19,11 @@ import { TOOLS, type Tool, liveToolsOfKind } from "@/lib/tools";
  */
 
 export const metadata: Metadata = {
-  title: "Free wellness tools",
+  title: "Assessments",
   description:
-    "Free assessments and calculators that answer on the screen — no email, no account, " +
-    "and nothing stored.",
+    "Assessments and calculators scored on the screen as you answer — no email, no account, " +
+    "and nothing kept.",
 };
-
-const LIVE_COUNT = TOOLS.filter((tool) => tool.live).length;
 
 export default function ToolsPage() {
   return (
@@ -33,44 +31,48 @@ export default function ToolsPage() {
       <SiteHeader />
 
       <main className="mx-auto max-w-6xl px-6 pb-24 pt-6">
+        {/*
+          What these are, rather than what they cost.
+
+          The page opened on "Free tools, and what to do with the answer",
+          under it "None of these is a diagnosis". Two problems in three lines.
+          "Free" is the word every content farm leads with, and leading on the
+          price of something is an admission that the thing itself is not the
+          argument. Then the first real sentence was a denial — the page told
+          you what it was not before it had said what it was, which is how a
+          reader decides it is probably worth nothing.
+
+          What replaces it is the method. A named set of questions, scored
+          against a stated model, on the screen. That is either interesting or
+          it is not, and it is the same claim the disclaimer at the foot of the
+          page makes — said once, in the affirmative, where somebody is
+          deciding whether to start.
+        */}
         <h1
           className="max-w-xl text-[34px] leading-[1.08] sm:text-[42px]"
           style={{ fontFamily: "var(--font-dm-serif)", color: "#0F2F55" }}
         >
-          Free tools, and
+          Assessments,
           <br />
           <em className="italic" style={{ color: "#0EA5E9" }}>
-            what to do with the answer.
+            and how each one is scored.
           </em>
         </h1>
 
         <p className="mt-4 max-w-xl text-[16.5px] leading-[1.7]" style={{ color: "#33404F" }}>
-          None of these is a diagnosis. They score what you tell them about your own week and give
-          you somewhere sensible to start.
-        </p>
-
-        {/*
-          Counted rather than written down. A hub that says nine and shows
-          eight is the first thing a careful reader notices, and the number
-          changes whenever a tool goes live.
-        */}
-        <p className="mt-4 flex flex-wrap gap-x-2.5 gap-y-1 text-[14px]" style={{ color: "#4A5765" }}>
-          <span>{LIVE_COUNT} free tools</span>
-          <span aria-hidden style={{ color: "#DDE7F1" }}>·</span>
-          <span>No account</span>
-          <span aria-hidden style={{ color: "#DDE7F1" }}>·</span>
-          <span>Results on the screen</span>
+          Each one asks a set of questions about your own week and scores them against a stated
+          model, on the screen as you answer. No account, and nothing is kept.
         </p>
 
         <Group
-          title="Assessments"
-          note="Twelve or so questions, scored on the screen. Nothing is stored."
+          title="Scored assessments"
+          note="A set of questions, weighted across the dimensions each one names."
           tools={liveToolsOfKind("assessment")}
         />
 
         <Group
           title="Calculators"
-          note="Arithmetic. The answer is on the screen the moment you press it."
+          note="Arithmetic on numbers you already have. The answer appears the moment you press it."
           tools={liveToolsOfKind("calculator")}
         />
 
@@ -106,8 +108,8 @@ export default function ToolsPage() {
 /* ------------------------------------------------------------------ */
 
 function Group({ title, note, tools }: { title: string; note: string; tools: Tool[] }) {
-  // Nothing to head. An empty "Assessments" with white space under it reads
-  // as a page that failed to load rather than one still being written.
+  // Nothing to head. An empty heading with white space under it reads as a
+  // page that failed to load rather than one still being written.
   if (tools.length === 0) return null;
 
   return (
@@ -133,7 +135,7 @@ function Group({ title, note, tools }: { title: string; note: string; tools: Too
 function ToolCard({ tool }: { tool: Tool }) {
   return (
     <Link
-      href={`/tools/${tool.slug}`}
+      href={`/assessments/${tool.slug}`}
       className="flex flex-col rounded-2xl bg-white p-6 transition-colors"
       style={{ border: "1px solid #e7eef6" }}
     >

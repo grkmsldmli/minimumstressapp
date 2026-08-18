@@ -57,7 +57,7 @@ describe("tool pages", () => {
    */
   it("keeps every tool that has a page at its own name", () => {
     for (const page of SHOPIFY_TOOL_PAGES.filter((p) => !WITHOUT_A_PAGE.includes(p))) {
-      expect(destinationFor(`/pages/${page}`), page).toBe(`/tools/${page}`);
+      expect(destinationFor(`/pages/${page}`), page).toBe(`/assessments/${page}`);
     }
   });
 
@@ -67,7 +67,7 @@ describe("tool pages", () => {
   });
 
   it("sends the hub to the hub", () => {
-    expect(destinationFor("/pages/wellness-hub")).toBe("/tools");
+    expect(destinationFor("/pages/wellness-hub")).toBe("/assessments");
   });
 
   /*
@@ -76,8 +76,8 @@ describe("tool pages", () => {
    * Both land on the hub rather than on a 404.
    */
   it("sends the two that were never built to the hub", () => {
-    expect(destinationFor("/pages/nervous-system-assessment")).toBe("/tools");
-    expect(destinationFor("/pages/stress-recovery-assessment")).toBe("/tools");
+    expect(destinationFor("/pages/nervous-system-assessment")).toBe("/assessments");
+    expect(destinationFor("/pages/stress-recovery-assessment")).toBe("/assessments");
   });
 });
 
@@ -90,27 +90,27 @@ describe("articles", () => {
    */
   it("sends an article to the tool on its subject", () => {
     expect(destinationFor("/blogs/wellness/the-burnout-you-dont-see-coming")).toBe(
-      "/tools/burnout-test",
+      "/assessments/burnout-test",
     );
     expect(destinationFor("/blogs/wellness/are-you-really-getting-enough-sleep")).toBe(
-      "/tools/sleep-score",
+      "/assessments/sleep-score",
     );
     expect(destinationFor("/blogs/wellness/is-your-body-older-than-you-think")).toBe(
-      "/tools/biological-age-calculator",
+      "/assessments/biological-age-calculator",
     );
     expect(destinationFor("/blogs/wellness/bmi-is-broken-heres-what-actually-matters")).toBe(
-      "/tools/bmi-calculator",
+      "/assessments/bmi-calculator",
     );
   });
 
   it("works from either of the two blogs", () => {
     expect(destinationFor("/blogs/general-info/scientific-methods-to-reduce-stress")).toBe(
-      "/tools/burnout-test",
+      "/assessments/burnout-test",
     );
   });
 
   it("ignores a trailing slash", () => {
-    expect(destinationFor("/blogs/wellness/why-you-cant-switch-off/")).toBe("/tools/burnout-test");
+    expect(destinationFor("/blogs/wellness/why-you-cant-switch-off/")).toBe("/assessments/burnout-test");
   });
 
   /*
@@ -124,9 +124,9 @@ describe("articles", () => {
     expect(isGone("/blogs/wellness/bay-area-wellness-guide-2026")).toBe(true);
   });
 
-  it("sends both blog indexes to the tools", () => {
-    expect(destinationFor("/blogs/wellness")).toBe("/tools");
-    expect(destinationFor("/blogs/general-info")).toBe("/tools");
+  it("sends both blog indexes to the hub", () => {
+    expect(destinationFor("/blogs/wellness")).toBe("/assessments");
+    expect(destinationFor("/blogs/general-info")).toBe("/assessments");
   });
 });
 
@@ -168,7 +168,7 @@ describe("the shop", () => {
   });
 
   it("leaves our own pages alone", () => {
-    expect(isGone("/tools")).toBe(false);
+    expect(isGone("/assessments")).toBe(false);
     expect(isGone("/articles")).toBe(false);
     expect(isGone("/")).toBe(false);
   });
@@ -177,7 +177,42 @@ describe("the shop", () => {
 describe("everything else", () => {
   it("has no destination, and is left to 404 honestly", () => {
     expect(destinationFor("/")).toBeNull();
-    expect(destinationFor("/tools")).toBeNull();
+    expect(destinationFor("/assessments")).toBeNull();
     expect(destinationFor("/pages/a-page-that-never-existed")).toBeNull();
+  });
+});
+
+/**
+ * The rename we did to ourselves.
+ *
+ * Everything above is Shopify's addresses. This is ours: /tools became
+ * /assessments a month after launch, and the old URL had already been
+ * published, linked and indexed. The reason it redirects rather than 404s is
+ * the reason the rest of this file exists, so it is tested in the same place.
+ */
+describe("the hub's own move", () => {
+  it("sends the old hub to the new one", () => {
+    expect(destinationFor("/tools")).toBe("/assessments");
+    expect(destinationFor("/tools/")).toBe("/assessments");
+  });
+
+  it("carries every slug across", () => {
+    for (const tool of TOOLS) {
+      expect(destinationFor(`/tools/${tool.slug}`), tool.slug).toBe(
+        `/assessments/${tool.slug}`,
+      );
+    }
+  });
+
+  /*
+   * One hop, not two. A Shopify address that arrived via /pages/burnout-test
+   * used to be sent to /tools/burnout-test, which would now be a second
+   * redirect — search engines follow chains but discount them, and the whole
+   * point of this file is not losing that.
+   */
+  it("does not chain a Shopify address through the old hub", () => {
+    for (const path of ["/pages/burnout-test", "/pages/wellness-hub", "/blogs/wellness"]) {
+      expect(destinationFor(path)?.startsWith("/tools"), path).toBe(false);
+    }
   });
 });

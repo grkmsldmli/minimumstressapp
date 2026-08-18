@@ -59,7 +59,7 @@ export async function generateMetadata({
   return {
     title,
     description:
-      `Treatment rooms, studios and private consulting space in ${row.city}, by the hour. ` +
+      `Treatment rooms, studios and private consulting space in ${row.city}, on your schedule. ` +
       "No lease, and the price you see is the price you pay.",
     alternates: { canonical: `${WEBSITE}/spaces/${state}/${city}` },
     /*
@@ -114,8 +114,8 @@ export default async function CityPage({
 
           <p className="mt-5 text-[16.5px] leading-[1.75]" style={{ color: "#5f6673" }}>
             {row.spaceCount === 1
-              ? "One room, bookable by the hour."
-              : `${row.spaceCount} rooms, bookable by the hour.`}{" "}
+              ? "One room, open to book."
+              : `${row.spaceCount} rooms, open to book.`}{" "}
             No lease and no deposit — you book the hours you need and nothing else.
           </p>
 
@@ -191,7 +191,7 @@ export default async function CityPage({
               className="mt-4 inline-block rounded-full px-6 py-3 text-[14.5px] font-medium text-white"
               style={{ backgroundColor: "#0F2F55" }}
             >
-              See what it could earn
+              Get the quote
             </Link>
           </div>
       </div>

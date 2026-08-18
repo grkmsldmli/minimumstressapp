@@ -23,7 +23,7 @@ import { COLOUR } from "@/lib/site-theme";
 export const metadata: Metadata = {
   title: "Questions",
   description:
-    "How booking a room by the hour works, what it costs, how you get in, and how listing your " +
+    "How booking a room works, what it costs, how you get in, and how listing your " +
     "own space works.",
   alternates: { canonical: `${WEBSITE}/faq` },
 };

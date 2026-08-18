@@ -49,7 +49,7 @@ export const SPACE_TYPES: readonly SpaceType[] = [
     label: "Pilates Studio",
     plural: "Pilates Studios",
     category: "physical",
-    blurb: "Room for reformer or mat work, by the hour, without taking on a studio lease.",
+    blurb: "Room for reformer or mat work, without taking on a studio lease.",
   },
   {
     slug: "yoga-studio",
@@ -70,7 +70,7 @@ export const SPACE_TYPES: readonly SpaceType[] = [
     label: "Massage Room",
     plural: "Massage Rooms",
     category: "traditional",
-    blurb: "A private room with a table, for bodywork by the hour.",
+    blurb: "A private room with a table, for bodywork on your schedule.",
   },
   {
     slug: "treatment-room",
@@ -119,7 +119,7 @@ export const SPACE_TYPES: readonly SpaceType[] = [
      * categories described the practitioner rather than the room.
      */
     category: "traditional",
-    blurb: "Private, quiet and warm, for energy work by the hour.",
+    blurb: "Private, quiet and warm, for energy work, for the time you need.",
   },
 ] as const;
 

@@ -92,13 +92,13 @@ const PAGE_REDIRECTS: Record<string, string> = {
   // A shop's returns policy, on a site that will not be selling anything.
   "/pages/returns-exchanges": "/about",
   "/pages/refund-cancellation-policy": "/about",
-  "/pages/wellness-brief": "/tools",
+  "/pages/wellness-brief": "/assessments",
 
   // Shopify's blog paths. Both indexes land on the one list that replaces them.
-  "/pages/wellness-hub": "/tools",
+  "/pages/wellness-hub": "/assessments",
 
-  "/blogs/wellness": "/tools",
-  "/blogs/general-info": "/tools",
+  "/blogs/wellness": "/assessments",
+  "/blogs/general-info": "/assessments",
 };
 
 /**
@@ -145,6 +145,26 @@ export function destinationFor(pathname: string): string | null {
   const path = pathname.replace(/\/+$/, "") || "/";
 
   /*
+   * /tools became /assessments, and the old address still has to work.
+   *
+   * The word was the problem: "tools" is what a content farm calls a quiz, and
+   * the page is a set of scored instruments. But the ranking on these lives on
+   * the old URL — the Shopify migration above exists precisely because a URL
+   * that starts returning 404 loses a year of writing in a week, and doing
+   * that to ourselves a month later would be the same mistake with less
+   * excuse. So the rename is a 308 rather than a deletion, and the map above
+   * was repointed at /assessments so a Shopify address arrives in one hop
+   * instead of two.
+   *
+   * First, before any other rule. /pages/... and /blogs/... cannot match this
+   * shape, but a later reader adding a rule above it would silently break
+   * every link anybody has ever shared.
+   */
+  if (path === "/tools") return "/assessments";
+  const movedTool = path.match(/^\/tools\/(.+)$/);
+  if (movedTool) return `/assessments/${movedTool[1]}`;
+
+  /*
    * An article goes to the tool on the same subject, or nowhere.
    *
    * Nowhere means 410 rather than a redirect to the homepage: writing that is
@@ -154,7 +174,7 @@ export function destinationFor(pathname: string): string | null {
   const article = path.match(/^\/blogs\/[^/]+\/(.+)$/);
   if (article) {
     const tool = ARTICLE_TO_TOOL[article[1]];
-    return tool ? `/tools/${tool}` : null;
+    return tool ? `/assessments/${tool}` : null;
   }
 
   /*
@@ -168,8 +188,8 @@ export function destinationFor(pathname: string): string | null {
    * land on the hub, where somebody gets the nine that work instead of a 404.
    */
   const toolPage = path.match(/^\/pages\/(.+)$/);
-  if (toolPage && WITHOUT_A_PAGE.has(toolPage[1])) return "/tools";
-  if (toolPage && TOOL_SLUGS.has(toolPage[1])) return `/tools/${toolPage[1]}`;
+  if (toolPage && WITHOUT_A_PAGE.has(toolPage[1])) return "/assessments";
+  if (toolPage && TOOL_SLUGS.has(toolPage[1])) return `/assessments/${toolPage[1]}`;
 
   return PAGE_REDIRECTS[path] ?? null;
 }

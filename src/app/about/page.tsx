@@ -25,7 +25,7 @@ import { CATEGORIES } from "@/lib/taxonomy";
  */
 export const metadata: Metadata = {
   title: "About",
-  description: `${BRAND} is a marketplace for private rooms by the hour — movement, coaching, meditation and healing.`,
+  description: `${BRAND} is a marketplace for private rooms you book for as long as you need — movement, coaching, meditation and healing.`,
   alternates: { canonical: "/about" },
 };
 
@@ -70,7 +70,7 @@ export default function About() {
             {BRAND}
           </h1>
           <p className="font-body font-medium text-[18px] text-white/85 mt-3">
-            Private rooms by the hour.
+            Private rooms, on your schedule.
           </p>
           <p className="font-body font-normal text-[16px] text-white/75 mt-4 leading-relaxed">
             {BRAND} is a marketplace where wellness practitioners rent a room for an hour, and the

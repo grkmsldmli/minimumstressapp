@@ -52,7 +52,7 @@ export default async function SpacesIndex() {
             className="mt-5 text-[38px] leading-[1.1] sm:text-[44px]"
             style={{ fontFamily: "var(--font-dm-serif)", color: "#0F2F55" }}
           >
-            Space by the hour,
+            Space on your schedule,
             <br />
             <em className="italic" style={{ color: "#0EA5E9" }}>
               where you work

@@ -150,7 +150,9 @@ const STEPS = [
 const TRUST = [
   {
     title: "Book only what you need",
-    body: "One hour, a few hours, or the same time every week. No lease, no long-term commitment.",
+    body:
+      "A single session, a group class, or the same time every week. No lease, no long-term " +
+      "commitment.",
   },
   {
     title: "Know what's included",
@@ -205,20 +207,33 @@ function Hero() {
   return (
     <section className="mx-auto grid max-w-6xl items-center gap-12 px-6 pb-16 pt-6 lg:grid-cols-[1fr_1.05fr] lg:pb-24">
       <div>
+        {/*
+          "By the hour" was too narrow a thing to lock the brand to. It is
+          accurate about the unit and wrong about the offer: the same room takes
+          a one-to-one session, a small group, or the same slot every week for a
+          term, and a headline that says "hour" makes the last two sound like
+          they are not on sale.
+          
+          "Several hours" is deliberately not claimed. A session is sixty
+          minutes and consecutive slots are separate bookings, so the half-day
+          this line could have implied is not something the product does yet.
+          The word "hour" stays everywhere it is a fact — the prices, the FAQ,
+          the page titles people actually search.
+        */}
         <h1
           className={TYPE.hero}
           style={{ fontFamily: "var(--font-dm-serif)", color: COLOUR.ink }}
         >
-          Wellness spaces,
+          Wellness space,
           <br />
           <em className="italic" style={{ color: COLOUR.accent }}>
-            by the hour.
+            on your schedule.
           </em>
         </h1>
 
         <p className={`mt-6 max-w-lg ${TYPE.lead}`} style={{ color: COLOUR.body }}>
-          Treatment rooms, studios and private consulting rooms across the Bay Area. Book the
-          hours you need. No lease, no deposit.
+          Private rooms and studios across the Bay Area — for one-to-one sessions, group
+          practice, or the same time every week. No lease, no deposit.
         </p>
 
         <SpaceSearch />

@@ -278,8 +278,8 @@ export function SiteFooter() {
               className="h-11 w-auto"
             />
             <p className="mt-5 max-w-xs" style={{ color: COLOUR.onDarkBody }}>
-              Wellness spaces, by the hour. Private rooms for people who work for themselves —
-              book only the hours you need.
+              Wellness space, on your schedule. Private rooms and studios for people who work
+              for themselves — one session, a group, or every week.
             </p>
             <a
               href={`mailto:${SUPPORT_EMAIL}`}

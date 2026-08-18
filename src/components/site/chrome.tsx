@@ -130,14 +130,6 @@ export function SiteHeader() {
  */
 
 /** The four rooms, in the words the categories now use. */
-const EXPLORE = [
-  { label: "Find a space", href: "/spaces" },
-  { label: "Movement studios", href: "/spaces?type=movement-studio" },
-  { label: "Consultation & coaching rooms", href: "/spaces?type=consultation-room" },
-  { label: "Holistic practice rooms", href: "/spaces?type=treatment-room" },
-  { label: "Meditation & breathwork spaces", href: "/spaces?type=meditation-room" },
-];
-
 /*
  * The two sides, given the same shape.
  *
@@ -285,76 +277,100 @@ export function SiteFooter() {
     <footer className="pt-16 pb-10 text-white" style={{ backgroundColor: COLOUR.dark }}>
       <div className={`mx-auto ${MEASURE} px-6`}>
         {/*
-          The footer opens on the brand rather than on a sitemap.
+          The brand on the left, the two ways to reach us on the right.
 
           It used to be five columns of links with the logo squeezed into the
-          first, which is the shape of a footer built by adding one link at a
-          time. The last thing on every page is now the line the company is
-          actually about, at the size a closing line deserves — and the columns
-          keep their job underneath, where a crawler and somebody hunting for
-          Terms both still find them.
+          first, which is the shape a footer takes when it is built one link at
+          a time. Then it was the same block stacked — logo, slogan, line,
+          rule, contacts — which said the right thing and ran the footer to
+          most of a screen on its own.
+
+          Side by side on a wide viewport, stacked under `lg` where there is no
+          width to share. The contacts sit at the baseline of the slogan rather
+          than the top of the block, so they line up with the sentence instead
+          of floating beside the logo.
         */}
-        <Image
-          src="/photos/logo-lockup.webp"
-          alt={BRAND}
-          width={321}
-          height={120}
-          className="h-12 w-auto sm:h-14"
-        />
+        <div className="flex flex-col gap-10 lg:flex-row lg:items-end lg:justify-between lg:gap-16">
+          <div>
+            <Image
+              src="/photos/logo-lockup.webp"
+              alt={BRAND}
+              width={321}
+              height={120}
+              className="h-11 w-auto sm:h-12"
+            />
 
-        {/*
-          One accent, not a sweep through three.
+            {/*
+              One accent, not a sweep through three.
 
-          A solid colour rather than a gradient clipped to the text: the sweep
-          reads as decoration applied to the sentence, and it takes the words
-          out of every contrast check with it, because no letter then has a
-          colour anything can measure.
-        */}
-        <h2
-          className="mt-12 text-[34px] leading-[1.12] sm:text-[46px]"
-          style={{ fontFamily: "var(--font-dm-serif)" }}
-        >
-          <span style={{ color: "#FFFFFF" }}>Elevate your </span>
-          <span style={{ color: COLOUR.sloganAccent }}>mind, body &amp; spirit</span>
-          <span style={{ color: "#FFFFFF" }}>.</span>
-        </h2>
+              A solid colour rather than a gradient clipped to the text: the
+              sweep reads as decoration applied to the sentence, and it takes
+              the words out of every contrast check with it, because no letter
+              then has a colour anything can measure.
+            */}
+            <h2
+              className="mt-8 text-[30px] leading-[1.12] sm:text-[40px]"
+              style={{ fontFamily: "var(--font-dm-serif)" }}
+            >
+              <span style={{ color: "#FFFFFF" }}>Elevate your </span>
+              {/*
+                Italic on the accent only, which is how the headlines on this
+                site already work — Headline() sets the second half in italic
+                serif and the first upright. The footer was the one place the
+                pattern was not being followed.
+              */}
+              <em className="italic" style={{ color: COLOUR.sloganAccent }}>
+                mind body &amp; spirit
+              </em>
+              <span style={{ color: "#FFFFFF" }}>.</span>
+            </h2>
 
-        <p className={`mt-5 max-w-md ${TYPE.body}`} style={{ color: COLOUR.onDarkBody }}>
-          Flexible spaces for wellness, movement and independent practice.
-        </p>
+            <p className={`mt-4 max-w-md ${TYPE.small}`} style={{ color: COLOUR.onDarkBody }}>
+              Flexible spaces for wellness, movement and independent practice.
+            </p>
+          </div>
 
-        <div
-          className="mt-9 flex flex-wrap items-center gap-x-10 gap-y-4 border-t pt-8"
-          style={{ borderColor: "rgba(255,255,255,.16)" }}
-        >
-          <a
-            href={`mailto:${SUPPORT_EMAIL}`}
-            className={`flex items-center gap-3 hover:underline ${TYPE.body}`}
-            style={{ color: COLOUR.onDarkBody }}
-          >
-            <MailGlyph />
-            {SUPPORT_EMAIL}
-          </a>
+          <div className="flex flex-wrap items-center gap-x-8 gap-y-3 lg:shrink-0">
+            <a
+              href={`mailto:${SUPPORT_EMAIL}`}
+              className={`flex items-center gap-2.5 hover:underline ${TYPE.small}`}
+              style={{ color: COLOUR.onDarkBody }}
+            >
+              <MailGlyph />
+              {SUPPORT_EMAIL}
+            </a>
 
-          {/*
-            A new tab, because it leaves the site — and rel="noreferrer" with
-            it, which is not superstition: a target="_blank" link hands the
-            opened page a handle on this one unless it is told not to.
-          */}
-          <a
-            href={INSTAGRAM_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className={`flex items-center gap-3 hover:underline ${TYPE.body}`}
-            style={{ color: COLOUR.onDarkBody }}
-          >
-            <InstagramGlyph />
-            Instagram
-          </a>
+            {/*
+              A new tab, because it leaves the site — and rel="noreferrer" with
+              it, which is not superstition: a target="_blank" link hands the
+              opened page a handle on this one unless it is told not to.
+            */}
+            <a
+              href={INSTAGRAM_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={`flex items-center gap-2.5 hover:underline ${TYPE.small}`}
+              style={{ color: COLOUR.onDarkBody }}
+            >
+              <InstagramGlyph />
+              Instagram
+            </a>
+          </div>
         </div>
 
-        <div className={`mt-14 grid gap-10 sm:grid-cols-2 lg:grid-cols-4 ${TYPE.small}`}>
-          <Column title="Explore" links={EXPLORE} />
+        {/*
+          Three columns across the full width rather than four.
+
+          "Explore" went, and dropping a column out of a four-up grid leaves
+          the remaining three bunched at one edge with a column of air beside
+          them — so the grid is three now and they spread. Two up on a tablet,
+          stacked on a phone, which is where a four-column footer was always
+          going to end anyway.
+        */}
+        <div
+          className={`mt-12 grid gap-10 border-t pt-10 sm:grid-cols-2 lg:grid-cols-3 ${TYPE.small}`}
+          style={{ borderColor: "rgba(255,255,255,.16)" }}
+        >
           <Column title="Practitioners" {...FOR_PRACTITIONERS} />
           <Column title="Hosts" {...FOR_HOSTS} />
           <Column title="Company" links={COMPANY} />

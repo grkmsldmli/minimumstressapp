@@ -24,6 +24,15 @@
  *   the prompt as a refusal rather than left to judgement.
  */
 
+/**
+ * Jade's face.
+ *
+ * Cropped to a square around the head and served at 256px, because it is
+ * drawn at 28 and 36 — the original was 1122x1402 and 1.8MB, which is a
+ * megabyte and a half to fill a circle the size of a fingernail.
+ */
+export const JADE_AVATAR = "/photos/jade.webp";
+
 /** Where the model call goes. Public endpoint; the key lives on that side. */
 export const CHAT_PROXY_URL = "https://ms-chat-proxy.vercel.app/api/chat";
 export const CHAT_CUSTOMER_URL = "https://ms-chat-proxy.vercel.app/api/customer";

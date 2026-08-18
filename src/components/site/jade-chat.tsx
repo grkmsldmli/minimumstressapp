@@ -1,11 +1,13 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 
 import { SUPPORT_EMAIL } from "@/lib/company";
 import {
   CHAT_CUSTOMER_URL,
   CHAT_PROXY_URL,
+  JADE_AVATAR,
   JADE_GREETING,
   JADE_SYSTEM_PROMPT,
   MAX_MODEL_MESSAGES_PER_DAY,
@@ -270,12 +272,14 @@ export function JadeChat() {
             className="flex shrink-0 items-center gap-3 px-5 py-4"
             style={{ background: "linear-gradient(135deg,#0F2F55,#1a4a7a)" }}
           >
-            <span
-              className="flex h-9 w-9 items-center justify-center rounded-full text-[18px]"
-              style={{ backgroundColor: "rgba(255,255,255,.15)" }}
-            >
-              💚
-            </span>
+            <Image
+              src={JADE_AVATAR}
+              alt=""
+              width={72}
+              height={72}
+              className="h-9 w-9 shrink-0 rounded-full object-cover"
+              style={{ border: "1.5px solid rgba(255,255,255,.25)" }}
+            />
             <div className="flex-1">
               <p className="text-[15px] text-white" style={{ fontFamily: "var(--font-dm-serif)" }}>
                 Jade
@@ -377,14 +381,22 @@ export function JadeChat() {
   );
 }
 
+/**
+ * Decorative, so the alt is empty on purpose.
+ *
+ * It sits beside every message she sends, and a screen reader announcing
+ * "Jade" before each one would read the same word a dozen times down a
+ * transcript that already attributes them.
+ */
 function Avatar() {
   return (
-    <span
-      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[13px]"
-      style={{ background: "linear-gradient(135deg,#0F2F55,#0EA5E9)" }}
-    >
-      💚
-    </span>
+    <Image
+      src={JADE_AVATAR}
+      alt=""
+      width={56}
+      height={56}
+      className="h-7 w-7 shrink-0 rounded-full object-cover"
+    />
   );
 }
 

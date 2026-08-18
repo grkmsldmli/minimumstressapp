@@ -189,7 +189,15 @@ async function payHostsForFinishedSessions(
     )
     .lte("starts_at", now.toISOString())
     .not("captured_at", "is", null)
-    .is("refunded_at", null)
+    /*
+     * Not `refunded_at is null`. That excluded a booking after any refund of
+     * any size, and `our_fee` refunds the platform's share while leaving the
+     * host's rate owed — so the outcome staff are told is the fairest one was
+     * also the one that stopped the host being paid, permanently and with no
+     * retry. See 0046: the column answers whether the refund reached the
+     * host's own money.
+     */
+    .eq("host_rate_refunded", false)
     .is("host_paid_at", null)
     .in("status", ["upcoming", "completed", "cancelled_by_practitioner", "no_show"]);
 

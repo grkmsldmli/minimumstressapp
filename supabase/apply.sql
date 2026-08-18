@@ -4330,3 +4330,95 @@ create view spaces_public as
 
 grant select on spaces_public to anon, authenticated;
 grant select on spaces_public to service_role;
+
+
+-- ===================================================================
+-- 0046_a_part_refund_still_owes_the_host.sql
+-- ===================================================================
+
+-- A partial refund does not mean the host is owed nothing.
+--
+-- The payout sweep asked one question — `refunded_at is null` — and treated it
+-- as "was any money returned". Refunds are not binary. `our_fee` returns the
+-- platform's share and leaves the host's rate untouched, and src/lib/refunds.ts
+-- describes it as the honest middle and the outcome most disputes deserve. It
+-- is one of the three buttons staff are given.
+--
+-- So the recommended decision was also the one that stopped the host ever being
+-- paid. `refunded_at` gets written for a refund of any size, the sweep excludes
+-- the row from then on, and nothing retries. The dashboard's own "finished
+-- sessions the studio has not been paid for" counter filtered the same way, so
+-- the alert built to catch exactly this could not see it either.
+--
+-- The right question is not whether money went back. It is whether the money
+-- that went back was the host's.
+--
+-- Answered here rather than in the sweep, because two places already asked it
+-- and a third would have been the reporting query. A generated column is
+-- computed by Postgres from the row itself: it cannot be forgotten by a caller,
+-- it cannot drift from the index built on it, and a refund written by any path
+-- updates it.
+
+alter table bookings
+  add column if not exists host_rate_refunded boolean
+  generated always as (
+    /*
+     * `total_cents - host_rate_cents` is the platform's share of the booking:
+     * the service fee, plus the instant fee where there was one. A refund of
+     * exactly that is `our_fee` and leaves the host whole. Anything larger has
+     * reached into the host's rate.
+     *
+     * `refunded_cents` is nullable — nothing has been refunded on most rows —
+     * so it is coalesced rather than compared as null.
+     */
+    coalesce(refunded_cents, 0) > total_cents - host_rate_cents
+  ) stored;
+
+comment on column bookings.host_rate_refunded is
+  'True once a refund has reached into the host''s own rate. A partial refund of the platform''s share leaves this false and the host still payable.';
+
+/*
+ * The index the sweep runs on, rebuilt against the new question.
+ *
+ * Dropped rather than left beside a second one: an index whose predicate no
+ * longer matches the query is an index the planner ignores, and the old
+ * predicate is the bug.
+ */
+drop index if exists bookings_awaiting_payout;
+
+create index if not exists bookings_awaiting_payout
+  on bookings (starts_at)
+  where host_paid_at is null and captured_at is not null and host_rate_refunded is false;
+
+
+-- ===================================================================
+-- 0047_a_host_can_edit_what_they_listed.sql
+-- ===================================================================
+
+-- The five columns a host was allowed to fill in and never allowed to change.
+--
+-- 0019 revoked blanket update on `spaces` and granted it column by column, so
+-- a host can correct their own listing and nothing else. Every migration since
+-- that added a host-writable column re-granted it: 0026, 0028, 0029, 0031,
+-- 0035, 0037. 0043 and 0045 added five and granted none.
+--
+-- Postgres checks UPDATE privilege on every column in the SET list, and
+-- `editSpace` puts `suitable_for` and `room_setup` in every patch it builds.
+-- So the failure is not confined to the new fields: the whole statement is
+-- refused, and a host correcting their rate, their photographs' order, their
+-- name or their entry instructions got `permission denied for table spaces`.
+--
+-- Which makes this the worse half of it. Entry instructions are the way into
+-- somebody's building, and the reason a host changes them is usually that
+-- somebody should no longer be able to get in. That revocation had no path.
+--
+-- Insert was never affected — 0002 grants it wholesale — so listings could be
+-- created and then never corrected, which is why nothing caught it.
+
+grant update (
+  city,
+  state,
+  postal_code,
+  suitable_for,
+  room_setup
+) on spaces to authenticated;

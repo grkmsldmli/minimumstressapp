@@ -1630,3 +1630,80 @@ describe("what people searched for stays private", () => {
     ).rejects.toThrow();
   });
 });
+
+/**
+ * Every column `editSpace` writes, and whether a host may actually write it.
+ *
+ * 0019 revoked blanket update on `spaces` and granted it column by column.
+ * That is the right shape and it has one failure mode: a later migration adds
+ * a host-writable column and forgets the grant. It happened twice — 0043 added
+ * four and 0045 added one, and neither granted anything.
+ *
+ * The damage is not limited to the new fields. Postgres checks the privilege
+ * on every column in the SET list, and `editSpace` builds one statement, so a
+ * single ungranted column refuses the whole edit: the rate, the name, the
+ * photographs, the entry instructions. Entry instructions are the way into
+ * somebody's building, and a host changes them when somebody should stop being
+ * able to get in — so the revocation path was the thing that broke.
+ *
+ * The column list is read out of the repository rather than written here. A
+ * list in a test is a list that goes stale the same way the grants did, and
+ * this test exists precisely because somebody has to notice.
+ */
+describe("a host can edit every column the app writes", () => {
+  const columnsEditSpaceWrites = (): string[] => {
+    const source = readFileSync("src/lib/supabase-repository.ts", "utf8");
+    const editSpace = source.slice(
+      source.indexOf("async editSpace("),
+      source.indexOf("async updateSpaceAvailability("),
+    );
+    return [...new Set([...editSpace.matchAll(/patch\.([a-z_]+) =/g)].map((m) => m[1]))].sort();
+  };
+
+  it("finds the columns to check", () => {
+    // A regex that silently matched nothing would make every assertion below
+    // pass while proving only that the parser is broken.
+    expect(columnsEditSpaceWrites().length).toBeGreaterThan(15);
+  });
+
+  /**
+   * The assertion is about privilege, not about whether the write is allowed.
+   *
+   * A host may be refused for good reasons — 0019 refuses to move a listing
+   * that has sessions booked against it, and a not-null column refuses a null.
+   * Those are the rules working. "permission denied" is the missing grant, and
+   * it is the only failure this is looking for. Asserting success instead
+   * would tie the test to every business rule the trigger enforces.
+   */
+  const deniedByPrivilege = async (sql: string): Promise<boolean> => {
+    try {
+      await asUser(HOST, sql);
+      return false;
+    } catch (error) {
+      return /permission denied/i.test((error as Error).message);
+    }
+  };
+
+  it.each(columnsEditSpaceWrites())("grants update on %s", async (column) => {
+    expect(await deniedByPrivilege(`update spaces set ${column} = ${column} where id = '${SPACE}'`)).toBe(
+      false,
+    );
+  });
+
+  /*
+   * And every column at once, which is the statement the app actually sends:
+   * `editSpace` builds one patch and issues one update, so a single ungranted
+   * column refuses the whole edit — the rate, the name, the photographs, and
+   * the entry instructions a host is changing because somebody should no
+   * longer be able to get in.
+   */
+  it("accepts the whole patch, as editSpace sends it", async () => {
+    const assignments = columnsEditSpaceWrites()
+      .map((column) => `${column} = ${column}`)
+      .join(", ");
+
+    expect(await deniedByPrivilege(`update spaces set ${assignments} where id = '${SPACE}'`)).toBe(
+      false,
+    );
+  });
+});

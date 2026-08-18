@@ -423,7 +423,7 @@ export async function loadQueue(admin: SupabaseClient): Promise<AdminQueue> {
     admin
       .from("bookings")
       .select(
-        "id, space_id, practitioner_id, starts_at, ends_at, status, captured_at, refunded_at, host_paid_at, cancelled_at, total_cents, host_rate_cents, platform_cents",
+        "id, space_id, practitioner_id, starts_at, ends_at, status, captured_at, refunded_at, host_rate_refunded, host_paid_at, cancelled_at, total_cents, host_rate_cents, platform_cents",
       )
       .order("starts_at", { ascending: false }),
 
@@ -925,10 +925,16 @@ export async function loadQueue(admin: SupabaseClient): Promise<AdminQueue> {
       upcomingSessions: rows.filter(
         (b) => b.status === "upcoming" && new Date(b.starts_at as string) > now,
       ).length,
+      /*
+       * The same question the payout sweep asks, and for the same reason it
+       * had to change: filtering on `refunded_at` hid every booking where a
+       * partial refund had left the host unpaid — which is precisely the
+       * failure this counter exists to surface.
+       */
       hostsUnpaid: rows.filter(
         (b) =>
           b.captured_at !== null &&
-          b.refunded_at === null &&
+          b.host_rate_refunded !== true &&
           b.host_paid_at === null &&
           new Date(b.starts_at as string) < now,
       ).length,

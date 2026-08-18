@@ -27,7 +27,7 @@ export default function TrustPage() {
     <PageShell
       eyebrow="Trust & safety"
       title={<>You are letting a stranger in. Here is what we do about that.</>}
-      standfirst="Every room is checked, every booking is paid for, and everyone who books carries their own insurance."
+      standfirst="What we look at before a room is listed, who can get in, and what happens if something goes wrong."
     >
       <Section title="Before a room goes live">
         <p>

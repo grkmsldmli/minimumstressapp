@@ -3,7 +3,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 
 import { SiteFooter, SiteHeader } from "@/components/site/chrome";
-import { APP_URL, BRAND } from "@/lib/company";
+import { APP_URL } from "@/lib/company";
 import { hostPages } from "@/lib/host-pages";
 
 /**
@@ -207,8 +207,9 @@ export default function ForHostsPage() {
                 When am I paid?
               </dt>
               <dd className="mt-1">
-                After each session, to your own bank account, through Stripe. {BRAND} never holds
-                your money and never sees your bank details.
+                After each session, to your own bank account, through Stripe. The practitioner
+                pays when they book and the money is held until the session has happened, so a
+                cancellation never has to come back out of your account.
               </dd>
             </div>
           </dl>

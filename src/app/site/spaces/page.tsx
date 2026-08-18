@@ -14,8 +14,8 @@ import { citiesWithSpaces } from "@/lib/directory-data";
  *
  * The parent of every generated address, and the page that has to be honest
  * when there is nothing under it. Today that is the whole of its job: no
- * listings means no towns, and a directory that invents a page per Bay Area
- * town regardless would be the failure this part of the site is built to
+ listings means no towns, and a directory that invents a page per town
+ * regardless would be the failure this part of the site is built to
  * avoid — a hundred addresses with nothing behind them, teaching a search
  * engine what to think of the rest.
  *
@@ -28,8 +28,8 @@ export const revalidate = 3600;
 export const metadata: Metadata = {
   title: "Wellness Spaces for Rent by the Hour",
   description:
-    "Treatment rooms, studios and private consulting rooms across the Bay Area, rented by " +
-    "the hour. No lease, no deposit.",
+    "Treatment rooms, studios and private consulting rooms, rented by the hour. No lease, " +
+    "no deposit.",
   alternates: { canonical: `${WEBSITE}/spaces` },
 };
 

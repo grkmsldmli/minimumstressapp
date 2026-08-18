@@ -67,8 +67,17 @@ export function SpaceCarousel({ slides }: { slides: Slide[] }) {
   };
 
   return (
+    /*
+      One frame, whatever shape the photograph is.
+      
+      The active slide used to sit in normal flow and set the height itself, so
+      the box grew and shrank as the rotation passed between a 16:9 room and a
+      4:3 one — the page jumping every six seconds. Every slide is absolute
+      now and the container holds the ratio, so they all crop to the same
+      window.
+    */
     <div
-      className="relative overflow-hidden rounded-3xl"
+      className="relative aspect-[4/3] overflow-hidden rounded-3xl sm:aspect-[3/2]"
       onMouseEnter={() => setPaused(true)}
       onFocus={() => setPaused(true)}
       role="group"
@@ -78,7 +87,7 @@ export function SpaceCarousel({ slides }: { slides: Slide[] }) {
       {slides.map((slide, position) => (
         <div
           key={slide.src}
-          className={position === index ? "" : "absolute inset-0"}
+          className="absolute inset-0"
           style={{
             opacity: position === index ? 1 : 0,
             transition: "opacity 600ms ease",
@@ -89,11 +98,10 @@ export function SpaceCarousel({ slides }: { slides: Slide[] }) {
           <Image
             src={slide.src}
             alt={slide.alt}
-            width={1672}
-            height={941}
+            fill
             priority={position === 0}
-            sizes="(min-width: 1024px) 55vw, 100vw"
-            className="h-full w-full object-cover"
+            sizes="(min-width: 1024px) 58vw, 100vw"
+            className="object-cover"
           />
 
           {/*

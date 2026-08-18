@@ -205,7 +205,7 @@ function Eyebrow({ children }: { children: React.ReactNode }) {
 
 function Hero() {
   return (
-    <section className="mx-auto grid max-w-6xl items-center gap-12 px-6 pb-16 pt-6 lg:grid-cols-[1fr_1.05fr] lg:pb-24">
+    <section className="mx-auto grid max-w-6xl items-center gap-12 px-6 pb-16 pt-6 lg:grid-cols-[1fr_1.25fr] lg:pb-24">
       <div>
         {/*
           "By the hour" was too narrow a thing to lock the brand to. It is
@@ -232,8 +232,8 @@ function Hero() {
         </h1>
 
         <p className={`mt-6 max-w-lg ${TYPE.lead}`} style={{ color: COLOUR.body }}>
-          Private rooms and studios across the Bay Area — for one-to-one sessions, group
-          practice, or the same time every week. No lease, no deposit.
+          Private rooms and studios for one-to-one sessions, group practice, or the same time
+          every week. No lease, no deposit.
         </p>
 
         <SpaceSearch />
@@ -326,7 +326,7 @@ function HowItWorks() {
           </div>
         </Reveal>
 
-        <div className="mt-14 grid gap-12 sm:grid-cols-3 sm:gap-8">
+        <div className="mt-12 grid grid-cols-3 gap-4 sm:mt-14 sm:gap-8">
           {STEPS.map((step, index) => (
             <Reveal key={step.n} delay={index * 110} className="relative">
               {/*
@@ -346,21 +346,27 @@ function HowItWorks() {
               {index < STEPS.length - 1 && (
                 <span
                   aria-hidden
-                  className="absolute left-[52px] top-[22px] hidden h-px sm:block"
+                  className="absolute left-[42px] top-[18px] h-px sm:left-[52px] sm:top-[22px]"
                   style={{ right: "-2rem", backgroundColor: COLOUR.line }}
                 />
               )}
 
               <span
-                className="relative flex h-11 w-11 items-center justify-center rounded-full text-[17px] font-medium text-white"
+                className="relative flex h-9 w-9 items-center justify-center rounded-full text-[15px] font-medium text-white sm:h-11 sm:w-11 sm:text-[17px]"
                 style={{ backgroundColor: COLOUR.accent }}
               >
                 {step.n}
               </span>
-              <h3 className={`mt-5 ${TYPE.h3}`} style={{ color: COLOUR.ink }}>
+              <h3
+                className="mt-4 text-[16px] font-medium sm:mt-5 sm:text-[21px]"
+                style={{ color: COLOUR.ink }}
+              >
                 {step.title}
               </h3>
-              <p className={`mt-2 ${TYPE.body}`} style={{ color: COLOUR.body }}>
+              <p
+                className="mt-1.5 text-[13.5px] leading-[1.55] sm:mt-2 sm:text-[17px] sm:leading-[1.75]"
+                style={{ color: COLOUR.body }}
+              >
                 {step.body}
               </p>
             </Reveal>

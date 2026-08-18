@@ -81,7 +81,7 @@ export function RequestSpace() {
         </p>
         <p className="mt-2 text-[15px] leading-[1.75]" style={{ color: "#1a5c3a" }}>
           {email
-            ? "We will email you when a room that fits appears, and about nothing else."
+            ? "We have your details."
             : "It still counts without an address — this is how we decide where to open next."}
         </p>
       </div>
@@ -98,8 +98,7 @@ export function RequestSpace() {
         Tell us what you are looking for
       </h2>
       <p className="mt-2 text-[15px] leading-[1.75]" style={{ color: "#5f6673" }}>
-        We will email you the moment a room that fits appears. It also tells us where to open
-        next — rooms get listed where people are asking.
+        We use this to see which rooms are needed, and where.
       </p>
 
       <div className="mt-5 grid gap-3 sm:grid-cols-2">
@@ -169,7 +168,7 @@ export function RequestSpace() {
       </button>
 
       <p className="mt-3 text-[13px] leading-[1.7]" style={{ color: "#8a94a3" }}>
-        One email when a room appears. Nothing else, ever.
+        Your email is optional, and only used to reply about this.
       </p>
     </form>
   );

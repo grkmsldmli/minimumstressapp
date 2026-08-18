@@ -1,135 +1,199 @@
-import Link from "next/link";
 import type { Metadata } from "next";
 
-import { PageShell, QA, Section } from "@/components/site/page-shell";
-import { APP_URL, BRAND, WEBSITE } from "@/lib/company";
-import {
-  BOOKING_HORIZON_DAYS,
-  FREE_CANCEL_WINDOW_MS,
-  INSTANT_FEE_CENTS,
-  PRO_BOOKING_HORIZON_DAYS,
-  formatCents,
-} from "@/lib/money";
-import { COLOUR } from "@/lib/site-theme";
+import { Onward, PageShell, QA, Section } from "@/components/site/page-shell";
+import { BRAND, SUPPORT_EMAIL, WEBSITE } from "@/lib/company";
+import { PROHIBITED_USES } from "@/lib/booking-use";
 
 /**
- * Split by side, because nobody arrives with a general interest in the
- * marketplace. They arrive as one of two people with about six questions.
+ * Three groups, with the answers closed until somebody asks one.
  *
- * Numbers come from lib/money, so this cannot drift from what the app charges.
+ * The old page was written for the marketplace we thought we had. It answered
+ * as though every guest were a practitioner, quoted the service fee as a
+ * percentage twice, priced the Pro subscription, explained the last-minute
+ * charge and linked to a pricing page that spelled out the whole model. All of
+ * that is money at the wrong moment: somebody reading the FAQ has not decided
+ * to book anything, and those numbers belong on the slot, at checkout, and at
+ * the limit Pro lifts — where they change a decision instead of describing a
+ * business.
+ *
+ * What is left is what the page is for. What a space may be used for, who
+ * decides, how you get in, and what happens when something goes wrong.
+ *
+ * Three answers say less than the brief for them wanted, because the fuller
+ * version would have described things the app does not do. Each is marked
+ * where it appears.
  */
 
 export const metadata: Metadata = {
   title: "Questions",
   description:
-    "How booking a room works, what it costs, how you get in, and how listing your " +
-    "own space works.",
+    "How booking a space works, what you can use one for, how to list your own, " +
+    "and the rules that apply to both sides.",
   alternates: { canonical: `${WEBSITE}/faq` },
 };
-
-const CANCEL_HOURS = FREE_CANCEL_WINDOW_MS / 3_600_000;
-
-function Inline({ href, children }: { href: string; children: React.ReactNode }) {
-  return href.startsWith("/") ? (
-    <Link href={href} className="underline underline-offset-2" style={{ color: COLOUR.link }}>
-      {children}
-    </Link>
-  ) : (
-    <a href={href} className="underline underline-offset-2" style={{ color: COLOUR.link }}>
-      {children}
-    </a>
-  );
-}
 
 export default function FaqPage() {
   return (
     <PageShell
-      eyebrow="Questions"
-      title={<>Everything you might ask.</>}
-      standfirst="Booking a room comes first, letting one comes second. Most people only need one half."
+      eyebrow="FAQ"
+      title={<>Questions, answered.</>}
+      standfirst="The basics about booking a space, listing one, and what happens in between."
     >
-      <Section title="Booking a room">
-        <dl className="space-y-6">
-          <QA q="Do I need an account to look?">No. You only need one to book.</QA>
-
-          <QA q="What does it cost?">
-            The price on the listing, and nothing more. Nothing is added at checkout. Booking
-            something starting within two hours adds {formatCents(INSTANT_FEE_CENTS)}, and that is
-            marked on the slot before you pick it.
+      <Section title="Booking a space">
+        <dl>
+          <QA q="Do I need an account to browse?">
+            No. You can explore spaces without an account. You will need one when you are ready to
+            book.
           </QA>
 
-          <QA q="How do I get in?">
-            Everything you need to enter appears in the app shortly before your session. The
-            listing tells you what kind of entry the room has.
+          <QA q="What can I book a space for?">
+            That depends on the space and what the host allows. Uses may include personal practice,
+            dance or movement rehearsal, private sessions, small group classes, meditation,
+            breathwork, coaching and workshops.
+            <br />
+            <br />
+            You say what you plan to use the space for before you book.
           </QA>
 
-          <QA q="Can I book the same hour every week?">
-            Yes. Book several weeks at once, same room and same time — ideal if your clients come
-            to you regularly.
+          {/*
+            "Book the amount of time you need" is what the brief asked for, and
+            the booking form cannot do it: SESSION_MINUTES is 60 and a session
+            is one hour. Somebody would have found that out at the moment they
+            tried, which is the worst place to learn it.
+
+            Recurring is real, but it is not a property of the space — booking
+            more than one week at a time is what Pro lifts. Said the way it
+            works rather than the way it reads better.
+          */}
+          <QA q="How long is a booking?">
+            One hour. Take the slots next to each other when you need longer.
+            <br />
+            <br />
+            You can also book the same time each week for a run of weeks, which is part of Pro.
           </QA>
 
-          <QA q="How far ahead can I book?">
-            {BOOKING_HORIZON_DAYS} days, or {PRO_BOOKING_HORIZON_DAYS} days with Pro.
+          <QA q="Can I bring clients or participants?">
+            Yes, where the space allows it. Your booking has to stay within the listed capacity and
+            the use you declared when you booked.
           </QA>
 
-          <QA q="What if I need to cancel?">
-            Cancel {CANCEL_HOURS} hours or more ahead and you are refunded, apart from the card
-            processing fee. Inside that window the booking stands, because the host kept the hour
-            free for you.
+          {/*
+            The brief said proof of liability insurance "may be required before
+            the booking can be confirmed". Nothing requires it: a certificate is
+            an optional upload and no booking is gated on one. Writing it would
+            have invented a safeguard, which is the kind of copy that costs
+            somebody something on the day they find out it was not there.
+
+            The page it replaces claimed "every practitioner carries their own
+            insurance", which was the same invention stated as fact.
+          */}
+          <QA q="Do I need insurance?">
+            We do not require it and we do not check it. If you are working with paying clients,
+            your own cover is your responsibility — and a host may ask to see it before agreeing to
+            a booking.
           </QA>
 
-          <QA q="Can I bring my own clients?">
-            Yes. The room is yours for the hour — your clients, your practice, your way of working.
+          <QA q="How do I get into the space?">
+            Every listing explains how access works, and the entry details reach you for a
+            confirmed booking at the right time.
+            <br />
+            <br />
+            Some spaces use a keypad or a lockbox; at others the host meets you.
+          </QA>
+
+          <QA q="What will I find in the room?">
+            Each listing shows its setup, capacity, amenities, access details and what is included.
+            Read it before booking, so you know what is there and what to bring.
+          </QA>
+
+          <QA q="Can I cancel?">
+            Yes. The cancellation terms are shown before you confirm the booking.
           </QA>
         </dl>
       </Section>
 
-      <Section title="Listing your space">
-        <dl className="space-y-6">
-          <QA q="What do you take?">
-            Nothing from your rate. What you set is what you receive, and listing is free.
+      <Section title="Listing a space">
+        <dl>
+          <QA q="What kinds of spaces can I list?">
+            Movement studios, consultation and coaching rooms, holistic practice rooms, meditation
+            and breathwork spaces, and other suitable wellness spaces.
           </QA>
 
-          <QA q="When am I paid?">
-            After each session, straight to your bank through Stripe.
+          <QA q="Who decides what my space can be used for?">
+            You do, within the {BRAND} rules that apply to every space. You choose the activities
+            you allow, your capacity, your available times and your house rules.
           </QA>
 
-          <QA q="Who decides the hours?">
-            You do. Nothing outside the hours you choose can be booked.
+          <QA q="Can I approve bookings myself?">
+            Yes. You choose how bookings reach you when you list. Where you have asked to approve
+            them, you see the declared use and the booking details before you accept.
           </QA>
 
-          <QA q="What do I need to list?">
-            Photographs, the address, your rate, your hours, and a document showing you can let the
-            room. About ten minutes. We review it before it goes live, usually within a day.
+          <QA q="Who decides my availability?">
+            You do. Only the times you make available can be booked.
           </QA>
 
-          <QA q="Do I have to be there?">
-            Only if you want to be. If you would rather let people in yourself, set the room up
-            that way and it can only be booked when you are free.
+          <QA q="Who sets the price?">
+            You set your own rate, and what you receive is shown while you are setting it.
           </QA>
 
-          <QA q="What if something gets damaged?">
-            You have 48 hours after a session to tell us, and we hold that payout while we look
-            into it. Every practitioner carries their own insurance. More on{" "}
-            <Inline href="/trust">trust &amp; safety</Inline>.
+          <QA q="Do I need to be there?">
+            Not necessarily. You decide how guests get in, and provide the access instructions for
+            confirmed bookings.
           </QA>
 
-          <QA q="What could my room earn?">
-            Put your rate and your free hours into{" "}
-            <Inline href="/rent-out-your">the calculator</Inline> and see.
+          <QA q="What if someone uses my space for something I did not allow?">
+            Everybody declares what they are booking for, and agrees to follow the rules of the
+            space and of {BRAND}. Misrepresenting the purpose of a booking, or using a space for a
+            prohibited activity, can end the booking and restrict the account.
+          </QA>
+
+          <QA q="What if something is damaged?">
+            Report it through {BRAND} as soon as you can after the booking. The claim process and
+            its deadlines are explained in the app and in the terms.
           </QA>
         </dl>
       </Section>
 
-      <Section title="Still need help?">
+      <Section title="Safety and permitted use">
+        <dl>
+          <QA q="Are all activities allowed?">
+            No. {BRAND} does not permit illegal activity, sexual services, adult-content
+            production, parties, or other prohibited or unsafe uses. Hosts may add rules of their
+            own on top of that.
+            {/*
+              Read from the same list the booking rules and the terms use, so
+              this page cannot end up describing something different from what
+              is actually enforced.
+            */}
+            <br />
+            <br />
+            <span style={{ opacity: 0.85 }}>{PROHIBITED_USES.slice(0, 4).join(" · ")}</span>
+          </QA>
+
+          <QA q={`Does ${BRAND} certify professionals?`}>
+            No. {BRAND} provides the marketplace and the booking infrastructure. Anybody working
+            professionally stays responsible for their own qualifications, licences, insurance and
+            anything else that applies to their work.
+          </QA>
+
+          <QA q={`Does ${BRAND} own the spaces?`}>
+            No. Spaces are offered by independent hosts. {BRAND} provides the platform that helps
+            people find, book and get into them.
+          </QA>
+        </dl>
+      </Section>
+
+      <Section title="Still have a question?">
         <p>
-          Write to us — <Inline href="/contact">contact</Inline> has the address and what to
-          include.
+          Write to{" "}
+          <a href={`mailto:${SUPPORT_EMAIL}`} className="underline underline-offset-2">
+            {SUPPORT_EMAIL}
+          </a>{" "}
+          and we will help you figure it out.
         </p>
-        <p>
-          {BRAND} does not own the rooms and provides no medical or health service. Full terms are{" "}
-          <Inline href={`${APP_URL}/terms`}>in the app</Inline>.
-        </p>
+
+        <Onward href="/spaces">Find a space</Onward>
       </Section>
     </PageShell>
   );

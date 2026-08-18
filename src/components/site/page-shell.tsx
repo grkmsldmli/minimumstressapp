@@ -107,17 +107,45 @@ export function Figure({
   );
 }
 
-/** A question and its answer, used on more than one of these pages. */
+/**
+ * A question, and its answer behind a tap.
+ *
+ * `<details>` rather than a React accordion, and it is not laziness. It works
+ * with JavaScript off, it opens to whichever question a deep link points at,
+ * find-in-page reaches text inside a closed one, and a crawler reads the
+ * answers whether they are open or not — four things a state hook would each
+ * have to be made to do.
+ *
+ * The questions used to sit open in a column, every answer visible at once,
+ * which on a phone is a page somebody scrolls past rather than reads. Closed
+ * by default means the list of questions is the page, and the answer arrives
+ * when somebody has asked for it.
+ */
 export function QA({ q, children }: { q: string; children: React.ReactNode }) {
   return (
-    <div>
-      <dt className={`font-medium ${TYPE.body}`} style={{ color: COLOUR.ink }}>
+    <details className="group border-b" style={{ borderColor: COLOUR.line }}>
+      <summary
+        className={`flex cursor-pointer list-none items-center justify-between gap-4 py-4 font-medium ${TYPE.body}`}
+        style={{ color: COLOUR.ink }}
+      >
         {q}
-      </dt>
-      <dd className={`mt-2 ${TYPE.body}`} style={{ color: COLOUR.body }}>
+        {/*
+          Rotated with CSS on the open state rather than tracked in React —
+          the element already knows whether it is open, and asking it is one
+          fewer thing that can disagree with what is on screen.
+        */}
+        <span
+          aria-hidden
+          className="shrink-0 text-[13px] transition-transform duration-200 group-open:rotate-180"
+          style={{ color: COLOUR.muted }}
+        >
+          ▾
+        </span>
+      </summary>
+      <div className={`pb-5 ${TYPE.body}`} style={{ color: COLOUR.body }}>
         {children}
-      </dd>
-    </div>
+      </div>
+    </details>
   );
 }
 

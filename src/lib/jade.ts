@@ -265,16 +265,43 @@ const ROUTES: { match: readonly string[]; answer: LocalAnswer }[] = [
   },
 ];
 
-export function detectLanguage(text: string): Language {
-  const t = String(text || "").toLowerCase();
-  if (/[ğüşöçıİ]/.test(String(text || ""))) return "tr";
+/**
+ * Which language to answer in.
+ *
+ * Two signals, because the first one alone was not enough. Turkish written
+ * without its own letters is ordinary — "sen ne ise yariyorsun" has no ı, ş or
+ * ğ in it — and a keyword list of nouns like "mekân" and "rezervasyon" misses
+ * every sentence that is a question rather than a request. That one came back
+ * in English.
+ *
+ * So: the letters, a set of function words that exist in Turkish and not in
+ * English, and the verb endings. A sentence needs only one of them. The words
+ * are matched whole, because "var" inside "variable" and "bir" inside "bird"
+ * would otherwise answer an English question in Turkish.
+ */
+const TURKISH_WORDS = [
+  "sen", "ben", "biz", "siz", "ne", "neden", "niye", "nedir", "nasil", "nasıl",
+  "kim", "hangi", "nerede", "icin", "için", "ile", "bir", "cok", "çok", "daha",
+  "gibi", "kadar", "sonra", "once", "önce", "ama", "veya", "degil", "değil",
+  "yok", "var", "mi", "mı", "mu", "mü", "misin", "mısın", "musun", "lazim",
+  "lazım", "gerek", "istiyorum", "merhaba", "selam", "tesekkur", "teşekkür",
+  "mekan", "mekân", "oda", "yer", "kirala", "rezervasyon", "iptal", "iade",
+  "sikayet", "şikayet", "destek", "yardim", "yardım", "ucretsiz", "ücretsiz",
+];
 
-  const turkish = [
-    "merhaba", "selam", "nasil", "nasıl", "nedir", "yardim", "yardım", "mekan",
-    "mekân", "oda", "kirala", "rezervasyon", "iptal", "iade", "sikayet", "şikayet",
-    "destek", "ucretsiz", "ücretsiz", "istiyorum", "misin", "mısın", "var mi", "var mı",
-  ];
-  return turkish.some((word) => t.includes(word)) ? "tr" : "en";
+/** -yorum, -yorsun, -iyor, -mek, -mak, -dir: endings English does not have. */
+const TURKISH_ENDINGS =
+  /\w+(yorum|yorsun|yoruz|iyor|ıyor|uyor|üyor|mek|mak|malı|meli|dir|dır|lar|ler)/;
+
+export function detectLanguage(text: string): Language {
+  const raw = String(text || "");
+  if (/[ğüşöçıİĞÜŞÖÇ]/.test(raw)) return "tr";
+
+  const t = raw.toLowerCase();
+  if (TURKISH_ENDINGS.test(t)) return "tr";
+
+  const words = t.split(/[^a-zçğıöşü]+/).filter(Boolean);
+  return words.some((word) => TURKISH_WORDS.includes(word)) ? "tr" : "en";
 }
 
 /**

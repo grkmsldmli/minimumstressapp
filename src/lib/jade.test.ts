@@ -153,3 +153,35 @@ describe("reading the visitor", () => {
     expect(isDecline("no idea where to start")).toBe(false);
   });
 });
+
+/**
+ * Turkish that does not look Turkish.
+ *
+ * The first detector was a list of nouns — mekân, rezervasyon, şikayet — and
+ * it read "sen ne ise yariyorsun" as English, because that sentence contains
+ * no Turkish letters and asks a question rather than naming a thing. Somebody
+ * writing without an ı on their keyboard got answered in the wrong language.
+ */
+describe("reading Turkish written plainly", () => {
+  it.each([
+    "sen ne ise yariyorsun",
+    "burada ne yapabilirim",
+    "bir oda ariyorum",
+    "nasil calisiyor bu",
+    "bana yardim eder misin",
+    "mekanimi listelemek istiyorum",
+  ])("reads %s as Turkish", (line) => {
+    expect(detectLanguage(line)).toBe("tr");
+  });
+
+  /* And does not start answering English in Turkish. */
+  it.each([
+    "what can I book a space for",
+    "I need a bigger room",
+    "is there a variable rate",
+    "do you have anything in Berkeley",
+    "how many people fit",
+  ])("leaves %s in English", (line) => {
+    expect(detectLanguage(line)).toBe("en");
+  });
+});

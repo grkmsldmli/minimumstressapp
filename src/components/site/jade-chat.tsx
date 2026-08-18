@@ -202,7 +202,24 @@ export function JadeChat() {
       const data: unknown = await response.json().catch(() => null);
       const reply = readReply(data);
 
-      if (!response.ok || !reply) throw new Error("no reply");
+      if (!response.ok || !reply) {
+        /*
+         * Named in the console, because the two failures look identical from
+         * the outside and lead to completely different places.
+         *
+         * The proxy keeps an allowlist of origins. A site served from any
+         * hostname it does not know — a staging subdomain, www — gets a 403,
+         * and the visitor sees "connection issue" while the network is fine.
+         * Anybody debugging that from the message alone looks at the wrong
+         * thing for an hour.
+         */
+        console.error(
+          response.status === 403
+            ? `Jade: the chat proxy refused ${window.location.origin}. Add it to the allowlist on the proxy.`
+            : `Jade: chat proxy returned ${response.status}`,
+        );
+        throw new Error("no reply");
+      }
       say(reply);
     } catch {
       say(

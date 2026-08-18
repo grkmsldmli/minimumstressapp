@@ -75,9 +75,10 @@ export const JADE_SYSTEM_PROMPT = [
   "- Never end on a dead stop. Leave them something to answer or somewhere to go.",
 
   "WHAT MINIMUM STRESS IS:",
-  "- A marketplace for private wellness space. People book a room; hosts list a room they already have.",
+  "- A marketplace for studios and private workout and session spaces. People book the hours they need; hosts open up the hours their space is standing empty.",
+  "- Nobody is letting a home, a flat or a room in a house, and nobody signs a lease. What is bought and sold is an hour in a working space. Say 'studio' or 'space', not 'room'.",
   "- A booking is one hour. Somebody who needs longer books consecutive hours. There is no daily rate, no weekly rate, no monthly rate and no lease — never offer one.",
-  "- Rooms are used for personal practice, dance and movement rehearsal, yoga and Pilates, meditation and breathwork, private client sessions, coaching, small group classes and workshops.",
+  "- Spaces are used for personal practice, dance and movement rehearsal, yoga and Pilates, meditation and breathwork, private client sessions, coaching, small group classes and workshops.",
   "- It is for anybody, not only professionals. Two friends who want a floor to rehearse on are exactly the point.",
   "- We also publish free self-scored assessments.",
 
@@ -99,7 +100,7 @@ export const JADE_SYSTEM_PROMPT = [
   "- If somebody asks whether one of these is allowed, say plainly that it is not.",
 
   "HOSTS:",
-  "- A host sets their own rate, their own hours, and chooses which uses they allow.",
+  "- A host runs a studio, a treatment space or a practice room of their own and opens its empty hours. They set their own rate and choose which uses they allow.",
   "- They can approve each request themselves or let matching bookings through.",
   "- Send them to the quote calculator to see what a room could earn.",
 
@@ -133,8 +134,11 @@ export const JADE_SYSTEM_PROMPT = [
   "TURKISH, WHEN YOU WRITE IT:",
   "- Address one person as 'sen' and stay there. Never drift into 'siz' halfway through a reply.",
   "- Write Turkish, not translated English. Check the case endings: 'kendi odan yoksa', not 'kendi odana yoksa'. 'Orayı da kullanabilirsin', not 'orası da kullanabilirsiniz'.",
-  "- Use these words and no invented ones: mekân or oda for a space, ev sahibi for a host, misafir for the person booking, rezervasyon for a booking, seans for a session.",
-  "- Never coin a term for a role. There is no such thing as 'alan olmak'. The two sides are 'misafir' and 'ev sahibi'.",
+  "- Say 'stüdyo', 'çalışma alanı' or 'alan'. Do not say 'oda' — it makes this sound like a room in somebody's house.",
+  "- Say 'mekân sahibi', never 'ev sahibi'. Nobody here is letting a home.",
+  "- Say 'saat ayırtmak' or 'rezervasyon yapmak'. 'Kiralamak' on its own suggests a lease; if you use it, say 'saatlik kiralamak'.",
+  "- The two sides are 'misafir' and 'mekân sahibi'. Never coin a third — there is no such thing as 'alan olmak'.",
+  "- 'Seans' for a session, 'rezervasyon' for a booking.",
 
   "LANGUAGE — this overrides everything above:",
   "- Reply in the same language as the visitor's most recent message, and nothing else.",
@@ -206,7 +210,7 @@ const ROUTES: { match: readonly string[]; answer: LocalAnswer }[] = [
     ],
     answer: {
       en: "Have a look at [what is available](/spaces) 🌿 You can filter by the kind of room and the time you need. What are you planning to use it for?",
-      tr: "[Açık olan mekânlara](/spaces) göz atabilirsin 🌿 Oda tipine ve ihtiyacın olan saate göre filtreleyebilirsin. Ne için kullanmayı düşünüyorsun?",
+      tr: "[Açık olan alanlara](/spaces) göz atabilirsin 🌿 Stüdyo tipine ve ihtiyacın olan saate göre filtreleyebilirsin. Ne için kullanmayı düşünüyorsun?",
     },
   },
   {
@@ -218,7 +222,7 @@ const ROUTES: { match: readonly string[]; answer: LocalAnswer }[] = [
     ],
     answer: {
       en: "It depends on the room and what the host allows — personal practice, dance or movement rehearsal, yoga and Pilates, meditation, private client sessions, coaching, small groups and workshops are all normal. You say what you are planning before you book. [What is available](/spaces).",
-      tr: "Odaya ve ev sahibinin izin verdiğine bağlı — kişisel çalışma, dans veya hareket provası, yoga ve Pilates, meditasyon, birebir danışan görüşmesi, koçluk, küçük gruplar ve atölyeler normal kullanımlar. Rezervasyondan önce ne yapacağını yazıyorsun. [Açık mekânlar](/spaces).",
+      tr: "Alana ve mekân sahibinin izin verdiğine bağlı — kişisel çalışma, dans veya hareket provası, yoga ve Pilates, meditasyon, birebir danışan görüşmesi, koçluk, küçük gruplar ve atölyeler normal kullanımlar. Rezervasyondan önce ne yapacağını yazıyorsun. [Açık mekânlar](/spaces).",
     },
   },
   {
@@ -228,7 +232,7 @@ const ROUTES: { match: readonly string[]; answer: LocalAnswer }[] = [
     ],
     answer: {
       en: "Good — [see what your space could earn](/rent-out-your) with your own rate and hours 🌿 You choose which uses you allow and whether you approve each booking yourself. [How hosting works](/for-hosts).",
-      tr: "Güzel — kendi fiyatın ve saatlerinle [mekânının ne kazanabileceğine](/rent-out-your) bakabilirsin 🌿 Hangi kullanımlara izin vereceğine ve her rezervasyonu kendin onaylayıp onaylamayacağına sen karar veriyorsun. [Ev sahipliği nasıl işliyor](/for-hosts).",
+      tr: "Güzel — kendi fiyatın ve saatlerinle [alanının ne kazanabileceğine](/rent-out-your) bakabilirsin 🌿 Hangi kullanımlara izin vereceğine ve her rezervasyonu kendin onaylayıp onaylamayacağına sen karar veriyorsun. Uzun dönem kiraya verme değil bu — sadece boş saatlerini açıyorsun. [Nasıl işliyor](/for-hosts).",
       intake: "host_interest",
     },
   },
@@ -239,7 +243,7 @@ const ROUTES: { match: readonly string[]; answer: LocalAnswer }[] = [
     ],
     answer: {
       en: "Pick a space and a time, say what you will use it for and how many are coming, then pay. On rooms where the host accepts bookings themselves, your card is held and only charged if they accept. Entry details reach you before the session. More in the [questions](/faq).",
-      tr: "Bir mekân ve saat seç, ne için kullanacağını ve kaç kişi olacağınızı yaz, sonra öde. Ev sahibinin kendisi onayladığı odalarda kartın bloke edilir ve yalnızca kabul ederse çekilir. Giriş bilgileri seanstan önce sana ulaşır. Detaylar [sorularda](/faq).",
+      tr: "Bir alan ve saat seç, ne için kullanacağını ve kaç kişi olacağınızı yaz, sonra öde. Mekân sahibinin kendisi onayladığı yerlerde kartın bloke edilir ve yalnızca kabul ederse çekilir. Giriş bilgileri seanstan önce sana ulaşır. Detaylar [sorularda](/faq).",
     },
   },
   {
@@ -259,7 +263,7 @@ const ROUTES: { match: readonly string[]; answer: LocalAnswer }[] = [
     ],
     answer: {
       en: "Everybody says what they are booking a space for before they pay, and hosts choose which uses they allow — that is the core of it. [Trust and safety](/trust) has the rest.",
-      tr: "Herkes ödemeden önce mekânı ne için kullanacağını yazıyor ve ev sahipleri hangi kullanımlara izin vereceklerini kendileri seçiyor — işin özü bu. Gerisi [güven ve güvenlik](/trust) sayfasında.",
+      tr: "Herkes ödemeden önce alanı ne için kullanacağını yazıyor ve mekân sahipleri hangi kullanımlara izin vereceklerini kendileri seçiyor — işin özü bu. Gerisi [güven ve güvenlik](/trust) sayfasında.",
     },
   },
   {
@@ -291,8 +295,8 @@ const ROUTES: { match: readonly string[]; answer: LocalAnswer }[] = [
       "burasi ne", "burası ne", "ne yapiyorsunuz", "ne yapıyorsunuz",
     ],
     answer: {
-      en: "We're a marketplace for private wellness space 🌿 You book somebody's room by the hour — to practise, rehearse, teach, or see your own clients — and hosts list a room they already have. [Have a look](/spaces).",
-      tr: "Özel wellness mekânları için bir pazar yeriyiz 🌿 Birinin odasını saatlik kiralıyorsun — çalışmak, prova yapmak, ders vermek ya da kendi danışanlarını görmek için — ev sahipleri de ellerindeki odayı listeliyor. [Göz at](/spaces).",
+      en: "We're a marketplace for studios and private workout spaces 🌿 You book the hours you need — to practise, rehearse, teach, or see your own clients — and hosts open up the hours their space is standing empty. [Have a look](/spaces).",
+      tr: "Stüdyo ve çalışma alanları için bir pazar yeriyiz 🌿 Saatini ayırtıp kullanıyorsun — çalışmak, prova yapmak, ders vermek ya da kendi danışanlarını görmek için. Mekân sahipleri de boş saatlerini listeliyor. [Göz at](/spaces).",
     },
   },
   /*
@@ -307,8 +311,8 @@ const ROUTES: { match: readonly string[]; answer: LocalAnswer }[] = [
       "hangisi", "ikisi de mi", "misafir mi ev sahibi mi",
     ],
     answer: {
-      en: "Two sides. You can book somebody's room for a session — that makes you a guest. Or you can list a room you already have and be paid for the hours somebody else uses it — that makes you a host. [Find a space](/spaces) or [list one](/rent-out-your).",
-      tr: "İki taraf var. Birinin odasını seans için kiralayabilirsin — o zaman misafir olursun. Ya da elindeki bir odayı listeleyip başkasının kullandığı saatler için para kazanırsın — o zaman ev sahibi olursun. [Mekân bul](/spaces) ya da [odanı listele](/rent-out-your).",
+      en: "Two sides. You book the hours you need in somebody's studio and run your session there — that makes you a guest. Or you open up the empty hours in a space you already run, and are paid for the ones somebody books — that makes you a host. Nobody is letting a home or signing a lease; what is bought and sold is an hour. [Find a space](/spaces) or [list yours](/rent-out-your).",
+      tr: "İki taraf var. Bir stüdyonun saatini ayırtıp seansını orada yaparsın — o zaman misafirsin. Ya da elindeki çalışma alanının boş saatlerini listeler, kullanıldığı saatler için kazanırsın — o zaman mekân sahibisin. Kimse ev ya da uzun dönem kiralamıyor; alınıp satılan şey saat. [Mekân bul](/spaces) ya da [alanını listele](/rent-out-your).",
     },
   },
   /*
@@ -323,7 +327,7 @@ const ROUTES: { match: readonly string[]; answer: LocalAnswer }[] = [
     ],
     answer: {
       en: "A booking is one hour. If you need longer, take the hours next to each other. There is no daily or weekly rate and no lease — you pay for the hours you book and nothing else.",
-      tr: "Bir rezervasyon bir saat. Daha uzun süre gerekiyorsa yan yana saatleri alırsın. Günlük ya da haftalık fiyat yok, kira sözleşmesi de yok — sadece aldığın saatleri ödersin.",
+      tr: "Bir rezervasyon bir saat. Daha uzun süre gerekiyorsa yan yana saatleri ayırtırsın. Günlük ya da haftalık fiyat yok, kira sözleşmesi de yok — sadece ayırttığın saati ödersin.",
     },
   },
   /*

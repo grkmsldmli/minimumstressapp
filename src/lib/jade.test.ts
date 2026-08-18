@@ -302,7 +302,12 @@ describe("the questions that were being made up", () => {
   it("names the two sides with the words that exist", () => {
     const answer = answerLocally("oda mi alan mi");
     expect(answer?.tr).toContain("misafir");
-    expect(answer?.tr).toContain("ev sahibi");
+    /*
+     * "mekân sahibi", not "ev sahibi". The literal translation of host is
+     * landlord, and beside "oda kiralamak" it described a room in somebody's
+     * house on a lease — a different business entirely.
+     */
+    expect(answer?.tr).toContain("mekân sahibi");
     expect(answer?.tr).not.toContain("alan olmak");
   });
 
@@ -312,5 +317,49 @@ describe("the questions that were being made up", () => {
       const tr = answerLocally(question)?.tr ?? "";
       expect(tr, question).not.toMatch(/\b(siniz|sınız|sunuz|sünüz)\b/);
     }
+  });
+});
+
+/**
+ * Nobody is letting a house.
+ *
+ * "Birinin odasını kiralıyorsun" and "ev sahibi" are the literal translations
+ * of room and host, and together they describe a completely different
+ * business — a room in somebody's home, on a lease. What is actually sold
+ * here is an hour in a working studio.
+ *
+ * The English half of the prompt is where the Turkish came from, so both are
+ * checked. "Room" survives only in the match lists, which are the words a
+ * visitor might type at us rather than the words we say back.
+ */
+describe("the words for what this is", () => {
+  const spoken = [
+    ...[
+      "find a space", "what can i book", "list my space", "how does booking work",
+      "what is minimum stress", "oda mi alan mi", "kac saat", "is it safe",
+    ].flatMap((ask) => {
+      const answer = answerLocally(ask);
+      return answer ? [answer.en, answer.tr] : [];
+    }),
+  ].join(" ");
+
+  it("never calls it a room in Turkish", () => {
+    expect(spoken).not.toMatch(/\bOda\b|\bodası\b|\bodayı\b|\bodanı\b/);
+  });
+
+  it("never calls a host a landlord", () => {
+    expect(spoken).not.toContain("ev sahib");
+  });
+
+  it("says studio, space or alan instead", () => {
+    expect(spoken).toMatch(/stüdyo|çalışma alanı|alan/i);
+    expect(spoken).toMatch(/studio|space/i);
+  });
+
+  it("tells the model the same thing", () => {
+    expect(JADE_SYSTEM_PROMPT).toContain("Do not say 'oda'");
+    expect(JADE_SYSTEM_PROMPT).toContain("never 'ev sahibi'");
+    expect(JADE_SYSTEM_PROMPT).toContain("Say 'studio' or 'space', not 'room'");
+    expect(JADE_SYSTEM_PROMPT).toContain("nobody signs a lease");
   });
 });

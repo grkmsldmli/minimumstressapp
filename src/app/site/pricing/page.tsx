@@ -45,8 +45,7 @@ export default function PricingPage() {
     >
       <Section title="Booking a room">
         <p>
-          You see one price and you pay that price. Everything is included, so nothing new appears
-          at checkout.
+          You see one price and you pay that price. Our fee is already inside it.
         </p>
 
         <div className="grid gap-3 pt-2 sm:grid-cols-3">
@@ -69,7 +68,8 @@ export default function PricingPage() {
 
         <p>
           You are charged when you book. Cancel {CANCEL_HOURS} hours or more before your session
-          and you are not charged at all.
+          and the session is refunded — the card processing fee is the only thing kept, and Pro
+          covers that too.
         </p>
         <p>
           Booking a room that starts within the next two hours adds{" "}
@@ -115,12 +115,13 @@ export default function PricingPage() {
       <Section title="Common questions">
         <dl className="space-y-6">
           <QA q="Is there a booking fee I will see later?">
-            No. The price on the listing is the total, and the breakdown is shown before you
-            confirm.
+            No. The listing price is the total for that room, and the breakdown is shown before
+            you confirm. The one thing that can add to it is booking a slot starting within two
+            hours, which is marked on the slot itself.
           </QA>
           <QA q="When am I charged?">
-            When you book. Cancel more than {CANCEL_HOURS} hours ahead and the payment is voided,
-            so nothing appears on your statement.
+            When you book. Cancel more than {CANCEL_HOURS} hours ahead and you are refunded, apart
+            from the card processing fee.
           </QA>
           <QA q="Does the host lose out if I cancel?">
             No. Hosts are paid for sessions that happen, and a refund comes from us.

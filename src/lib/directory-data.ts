@@ -1,6 +1,7 @@
 import "server-only";
 
 import { type CityRow, type CityTypeRow, indexablePaths } from "./directory";
+import { idFromSlug, listingPath } from "./listing-url";
 import { isSupabaseConfigured } from "./supabase/env";
 import { supabasePublic } from "./supabase/server";
 
@@ -146,6 +147,129 @@ export async function spacesIn(
  * Today this is empty, and that is the engine working rather than failing.
  */
 export async function generatedPaths(): Promise<string[]> {
-  const [cities, types] = await Promise.all([citiesWithSpaces(), cityTypesWithSpaces()]);
-  return indexablePaths(cities, types);
+  const [cities, types, listings] = await Promise.all([
+    citiesWithSpaces(),
+    cityTypesWithSpaces(),
+    listingPaths(),
+  ]);
+  return [...indexablePaths(cities, types), ...listings];
+}
+
+
+/**
+ * One room, with everything a public page may show.
+ *
+ * Read from spaces_public, which only ever contains active listings — so a
+ * delisted room resolves to nothing here and its page 404s, without this
+ * having to remember to ask about status.
+ */
+export interface DirectoryListing extends DirectorySpace {
+  roomSetup: string;
+  amenities: string[];
+  requirements: string[];
+  houseRules: string;
+  addressLine: string | null;
+  floorAreaSqft: number | null;
+  bufferMinutes: number;
+  photos: string[];
+  reviewCount: number;
+  averageRating: number | null;
+}
+
+const LISTING_COLUMNS =
+  "id, name, category, hourly_rate_cents, capacity, city, state, area, description, " +
+  "suitable_for, room_setup, amenities, requirements, house_rules, address_line, " +
+  "floor_area_sqft, buffer_minutes";
+
+/**
+ * The room behind a slug, found by the id on the end of it.
+ *
+ * Only the id is trusted. The words in front are the host's name for the room
+ * at the time somebody made the link, and they are allowed to have changed —
+ * that is the whole reason the id is there.
+ */
+export async function listingBySlug(slug: string): Promise<DirectoryListing | null> {
+  if (!isSupabaseConfigured()) return null;
+
+  const short = idFromSlug(slug);
+  if (!short) return null;
+
+  const db = supabasePublic();
+
+  /*
+   * Matched on the id's opening characters rather than on the whole thing,
+   * because only eight of them are in the URL. `like` on a uuid uses the
+   * primary key index as a prefix scan, so this is not the table scan it
+   * looks like.
+   */
+  const { data, error } = await db
+    .from("spaces_public")
+    .select(LISTING_COLUMNS)
+    .like("id", `${short}%`)
+    .limit(2);
+
+  if (error || !data || data.length !== 1) return null;
+
+  const row = data[0] as unknown as Record<string, unknown>;
+  const id = String(row.id);
+
+  const [{ data: media }, { data: rating }] = await Promise.all([
+    db.from("space_media_public").select("storage_path, kind, position").eq("space_id", id).order("position"),
+    db.from("space_ratings").select("review_count, average_rating").eq("space_id", id).maybeSingle(),
+  ]);
+
+  return {
+    id,
+    name: String(row.name ?? ""),
+    category: String(row.category ?? ""),
+    hourlyRateCents: Number(row.hourly_rate_cents ?? 0),
+    capacity: Number(row.capacity ?? 0),
+    city: String(row.city ?? ""),
+    state: String(row.state ?? ""),
+    area: (row.area as string | null) ?? null,
+    description: String(row.description ?? ""),
+    suitableFor: Array.isArray(row.suitable_for) ? (row.suitable_for as string[]) : [],
+    roomSetup: String(row.room_setup ?? "private_room"),
+    amenities: Array.isArray(row.amenities) ? (row.amenities as string[]) : [],
+    requirements: Array.isArray(row.requirements) ? (row.requirements as string[]) : [],
+    houseRules: String(row.house_rules ?? ""),
+    addressLine: (row.address_line as string | null) ?? null,
+    floorAreaSqft: row.floor_area_sqft === null ? null : Number(row.floor_area_sqft),
+    bufferMinutes: Number(row.buffer_minutes ?? 0),
+    // Photographs only. A video needs a player and a poster frame, and a page
+    // that has to run JavaScript to show its first picture is a page a crawler
+    // reads as having none.
+    photos: ((media ?? []) as { storage_path: string; kind: string }[])
+      .filter((item) => item.kind === "image")
+      .map((item) => db.storage.from("space-media").getPublicUrl(item.storage_path).data.publicUrl),
+    reviewCount: Number((rating as { review_count?: number } | null)?.review_count ?? 0),
+    averageRating:
+      (rating as { average_rating?: number } | null)?.average_rating != null
+        ? Number((rating as { average_rating: number }).average_rating)
+        : null,
+  };
+}
+
+/**
+ * Every listing that has a page, for the sitemap.
+ *
+ * Not gated on a threshold the way the town pages are. One room is a complete
+ * answer to "what is this room" — the thin-page problem is a page that
+ * promises a list and delivers nothing, and a listing promises one room.
+ */
+export async function listingPaths(): Promise<string[]> {
+  if (!isSupabaseConfigured()) return [];
+
+  const { data, error } = await supabasePublic()
+    .from("spaces_public")
+    .select("id, name, city, state");
+
+  if (error || !data) return [];
+
+  return (data as { id: string; name: string; city: string | null; state: string | null }[])
+    .flatMap((row) => {
+      const path = listingPath(row);
+      return path ? [path] : [];
+    })
+    .sort();
 }

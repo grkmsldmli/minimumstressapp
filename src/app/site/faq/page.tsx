@@ -76,8 +76,9 @@ export default function FaqPage() {
           </QA>
 
           <QA q="What if I need to cancel?">
-            Cancel {CANCEL_HOURS} hours or more ahead and you are not charged. Inside that window
-            the booking stands, because the host kept the hour free for you.
+            Cancel {CANCEL_HOURS} hours or more ahead and you are refunded, apart from the card
+            processing fee. Inside that window the booking stands, because the host kept the hour
+            free for you.
           </QA>
 
           <QA q="Can I bring my own clients?">

@@ -15,8 +15,11 @@ import {
   priceRange,
   stateSlug,
 } from "@/lib/directory";
-import { citiesWithSpaces, cityTypesWithSpaces, spacesIn } from "@/lib/directory-data";
+import { citiesWithSpaces, cityTypesWithSpaces, listingBySlug, spacesIn } from "@/lib/directory-data";
+import { ListingPage } from "@/components/site/listing-page";
+import { isListingSlug, listingSlug } from "@/lib/listing-url";
 import { formatCents } from "@/lib/money";
+import { type CategoryKey, roomTypeFor } from "@/lib/taxonomy";
 import { spaceTypeBySlug } from "@/lib/space-types";
 
 /**
@@ -60,6 +63,27 @@ export async function generateMetadata({
   params: Promise<{ state: string; city: string; type: string }>;
 }): Promise<Metadata> {
   const { state, city, type } = await params;
+
+  /*
+   * One room rather than a category of them. Checked first because it is the
+   * cheaper question — a use slug is one of ten names we control, so anything
+   * ending in an id is a listing and nothing else can be.
+   */
+  if (isListingSlug(type)) {
+    const listing = await listingBySlug(type);
+    if (!listing) return {};
+
+    return {
+      title: `${listing.name} — ${listing.city}, ${listing.state}`,
+      description:
+        `${roomTypeFor(listing.category as CategoryKey)} in ${listing.city}, ` +
+        `${formatCents(listing.hourlyRateCents)} an hour. ${listing.description}`.slice(0, 200),
+      alternates: {
+        canonical: `${WEBSITE}/spaces/${state}/${city}/${listingSlug(listing.name, listing.id)}`,
+      },
+    };
+  }
+
   const found = await resolve(state, city, type);
   if (!found) return {};
 
@@ -88,6 +112,13 @@ export default async function CityTypePage({
   params: Promise<{ state: string; city: string; type: string }>;
 }) {
   const { state, city, type } = await params;
+
+  if (isListingSlug(type)) {
+    const listing = await listingBySlug(type);
+    if (!listing) notFound();
+    return <ListingPage listing={listing} />;
+  }
+
   const found = await resolve(state, city, type);
   if (!found) notFound();
 

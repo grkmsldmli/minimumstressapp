@@ -134,11 +134,13 @@ const STEPS = [
 const TRUST = [
   {
     title: "One price",
-    body: "What you see on the listing is what you pay. Nothing is added at checkout.",
+    body:
+      "The listing price already includes our fee. The only extra is $5 if you book a slot " +
+      "starting within two hours.",
   },
   {
     title: "No minimum",
-    body: "Book one hour or twenty. There is no contract and nothing to sign.",
+    body: "Book a single hour. No contract, no notice period, nothing to sign.",
   },
   {
     title: "Every room is checked",
@@ -146,7 +148,7 @@ const TRUST = [
   },
   {
     title: "Free cancellation",
-    body: "Cancel 24 hours ahead and you are not charged.",
+    body: "Cancel 24 hours ahead and the session is refunded — only the card fee is kept.",
   },
 ];
 

@@ -61,8 +61,9 @@ export default function TrustPage() {
 
       <Section title="Cancelling">
         <p>
-          Cancel {CANCEL_HOURS} hours or more before your session and you are not charged. Inside
-          that window the booking stands, because the host kept the hour free for you.
+          Cancel {CANCEL_HOURS} hours or more before your session and you are refunded, apart
+          from the card processing fee. Inside that window the booking stands, because the host
+          kept the hour free for you.
         </p>
         <p>If a host cancels on you, you are refunded in full, whenever it happens.</p>
       </Section>

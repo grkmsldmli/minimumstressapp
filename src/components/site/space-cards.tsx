@@ -1,4 +1,7 @@
+import Link from "next/link";
+
 import { APP_URL } from "@/lib/company";
+import { listingPath } from "@/lib/listing-url";
 import type { DirectorySpace } from "@/lib/directory-data";
 import { formatCents } from "@/lib/money";
 import { spaceTypeBySlug } from "@/lib/space-types";
@@ -26,6 +29,7 @@ export function SpaceCards({ spaces }: { spaces: DirectorySpace[] }) {
   return (
     <ul className="space-y-3">
       {spaces.map((space) => {
+        const path = listingPath(space);
         const uses = space.suitableFor
           .map(spaceTypeBySlug)
           .flatMap((type) => (type ? [type.label] : []));
@@ -60,17 +64,26 @@ export function SpaceCards({ spaces }: { spaces: DirectorySpace[] }) {
             )}
 
             {/*
-              Into the app, where booking actually happens. A real href rather
-              than a button: this is how a crawler gets from a town page to a
-              listing at all, and a click handler is invisible to it.
+              To the room's own page, which is how a crawler reaches it and
+              how somebody reads the whole listing before deciding. Booking is
+              a step further on, in the app.
+
+              A room with no town has no page — it is bookable and simply not
+              addressable out here — so that one still links into the app.
             */}
-            <a
-              href={`${APP_URL}?space=${encodeURIComponent(space.id)}`}
-              className="mt-4 inline-block text-[14px]"
-              style={{ color: "#0EA5E9" }}
-            >
-              See hours and book →
-            </a>
+            {path ? (
+              <Link href={path} className="mt-4 inline-block text-[14px]" style={{ color: "#0EA5E9" }}>
+                See the room →
+              </Link>
+            ) : (
+              <a
+                href={`${APP_URL}?space=${encodeURIComponent(space.id)}`}
+                className="mt-4 inline-block text-[14px]"
+                style={{ color: "#0EA5E9" }}
+              >
+                See hours and book →
+              </a>
+            )}
           </li>
         );
       })}

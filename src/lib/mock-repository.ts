@@ -48,7 +48,7 @@ import type { AccessDetails } from "./access-details";
 import type { MediaKind, SpaceEdit } from "./domain";
 import type { NotificationEntry } from "./notify/history";
 import { knownSpaceTypes } from "./space-types";
-import { type CategoryKey, roomTypeFor } from "./taxonomy";
+import { type CategoryKey, type RoomSetupKey, roomTypeFor } from "./taxonomy";
 import { SESSION_MINUTES } from "./session";
 import { FALLBACK_ZONE, addDays, civilIn } from "./timezone";
 import { rejectionReason } from "./uploads";
@@ -83,6 +83,8 @@ interface SeedSpace {
   category: CategoryKey;
   /** What the room is bookable for — slugs from lib/space-types. */
   suitableFor: string[];
+  /** Private room, a room in a shared studio, or the whole place. */
+  roomSetup: RoomSetupKey;
   /**
    * The host's rate — what they receive. The prototype stored the all-in
    * price here and divided it back out by 1.2, which shorted the host and
@@ -111,13 +113,14 @@ interface SeedSpace {
 const SEED_SPACES: SeedSpace[] = [
   {
     name: "Willow",
+    roomSetup: "whole_studio",
     suitableFor: ["pilates-studio", "movement-studio"],
     category: "physical",
     hourlyRateCents: 4500,
     capacity: 3,
     description:
       "A quiet reformer studio above a garden courtyard. Mirrors on one wall, ivy on the other.",
-    amenities: ["Mirrors", "Sound system", "Natural light", "Storage"],
+    amenities: ["mirrors", "sound_system", "natural_light", "storage", "reformers", "mats"],
     requirements: ["grip_socks", "indoor_shoes", "no_food_drink"],
     houseRules: "Reformer springs are colour-coded by resistance — please reset them to red before you leave.",
     accessible: true,
@@ -135,14 +138,15 @@ const SEED_SPACES: SeedSpace[] = [
   },
   {
     name: "The Annex",
+    roomSetup: "private_room",
     suitableFor: ["consultation-room"],
     category: "social",
     hourlyRateCents: 2200,
     capacity: 3,
     description:
       "Two armchairs, a low table, and real privacy. A neutral, calm room for 1:1 coaching.",
-    amenities: ["Soundproofed", "Climate control", "Natural light"],
-    requirements: ["quiet_building", "no_waiting_area"],
+    amenities: ["soundproofed", "climate_control", "natural_light", "seating", "waiting_area"],
+    requirements: ["quiet_building"],
     houseRules: "",
     accessible: false,
     restroom: "Shared",
@@ -159,13 +163,14 @@ const SEED_SPACES: SeedSpace[] = [
   },
   {
     name: "Still Room",
+    roomSetup: "private_room",
     suitableFor: ["meditation-room", "reiki-room"],
     category: "spirit",
     hourlyRateCents: 2600,
     capacity: 6,
     description:
       "Soundproofed, cushioned, and candle-lit on request. Hosts meditation, breathwork, and reiki.",
-    amenities: ["Soundproofed", "Climate control", "Storage"],
+    amenities: ["soundproofed", "climate_control", "storage", "cushions", "props"],
     requirements: ["indoor_shoes", "no_open_flame", "quiet_building"],
     houseRules: "Cushions and bolsters live in the cupboard by the door. Please stack them back the way you found them.",
     accessible: true,
@@ -183,12 +188,13 @@ const SEED_SPACES: SeedSpace[] = [
   },
   {
     name: "Sage House",
+    roomSetup: "private_room",
     suitableFor: ["massage-room", "treatment-room", "acupuncture-room"],
     category: "traditional",
     hourlyRateCents: 3500,
     capacity: 2,
     description: "Heated table, linen service, herb storage, and its own entrance.",
-    amenities: ["Sink access", "Climate control", "Private entrance"],
+    amenities: ["sink", "climate_control", "private_entrance", "treatment_table", "linens", "changing_area"],
     requirements: ["own_linens", "no_scents", "wipe_down"],
     houseRules: "",
     accessible: false,
@@ -206,13 +212,14 @@ const SEED_SPACES: SeedSpace[] = [
   },
   {
     name: "Meridian",
+    roomSetup: "whole_studio",
     suitableFor: ["yoga-studio", "movement-studio"],
     category: "physical",
     hourlyRateCents: 3000,
     capacity: 8,
     description:
       "Sprung floor, wall of mirrors, and a sound system that fills the room without shouting.",
-    amenities: ["Mirrors", "Sound system", "Storage"],
+    amenities: ["mirrors", "sound_system", "storage", "mats", "props"],
     requirements: ["grip_socks", "no_outside_equipment", "take_rubbish"],
     houseRules: "",
     accessible: true,
@@ -230,6 +237,7 @@ const SEED_SPACES: SeedSpace[] = [
   },
   {
     name: "Hearth",
+    roomSetup: "private_room",
     suitableFor: ["meditation-room"],
     category: "spirit",
     hourlyRateCents: 2400,
@@ -334,6 +342,7 @@ export class MockRepository implements Repository {
         city: "San Mateo",
         state: "CA",
         suitableFor: seed.suitableFor,
+        roomSetup: seed.roomSetup,
         addressLine: seed.addressLine,
         lat: seed.lat,
         lng: seed.lng,
@@ -762,6 +771,7 @@ export class MockRepository implements Repository {
       city: input.city,
       state: input.state,
       suitableFor: knownSpaceTypes(input.suitableFor),
+      roomSetup: input.roomSetup,
       // The old boolean, still on the type and still written by nothing. See
       // the note on NewSpaceInput.access.
       accessible: null,

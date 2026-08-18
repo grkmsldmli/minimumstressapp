@@ -82,6 +82,7 @@ beforeAll(async () => {
     state: "CA",
     postalCode: "94061",
     suitableFor: [],
+      roomSetup: "private_room" as const,
     lat: 37.48,
     lng: -122.23,
     mapX: 0.5,

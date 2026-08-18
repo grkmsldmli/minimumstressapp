@@ -1,5 +1,4 @@
 "use client";
-
 import { useEffect, useState } from "react";
 import {
   AlertTriangle,
@@ -11,7 +10,6 @@ import {
   Timer,
   Users,
 } from "lucide-react";
-
 import { AddressAutocomplete } from "@/components/address-autocomplete";
 import { Ambient, BreathingLogo, CatIcon, Headline } from "@/components/brand";
 import { LocationMap } from "@/components/location-map";
@@ -40,7 +38,10 @@ import { type LatLng, toBrowsePosition } from "@/lib/geo";
 import { formatCents, isViableHostRate, minViableHostRateCents, quote } from "@/lib/money";
 import {
   ACCESS_TYPES,
-  AMENITIES,
+  AMENITY_GROUPS,
+  ROOM_SETUPS,
+  type RoomSetupKey,
+  amenitiesIn,
   BUFFER_OPTIONS,
   CATEGORIES,
   REQUIREMENTS,
@@ -52,10 +53,8 @@ import {
   formatBuffer,
 } from "@/lib/taxonomy";
 import { spaceTypesFor } from "@/lib/space-types";
-
 const MAX_MEDIA = 6;
 const STEP_LABELS = ["Basics", "Photos & extras", "Verify"] as const;
-
 export function AddSpace({
   onBack,
   onListed,
@@ -67,7 +66,6 @@ export function AddSpace({
   const [listed, setListed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-
   // Step 1 — every field here is required by the brief.
   const [name, setName] = useState("");
   /**
@@ -104,11 +102,12 @@ export function AddSpace({
    * host who teaches neither still knows which their floor suits.
    */
   const [suitableFor, setSuitableFor] = useState<string[]>([]);
+  /** Whether the room is theirs for the hour, or a corner of somewhere busier. */
+  const [roomSetup, setRoomSetup] = useState<RoomSetupKey>("private_room");
   const [rate, setRate] = useState("");
   const [capacity, setCapacity] = useState("");
   const [accessType, setAccessType] = useState<AccessTypeKey | null>(null);
   const [entryInstructions, setEntryInstructions] = useState("");
-
   // Step 2 — only the media is required.
   const [media, setMedia] = useState<PickedMedia[]>([]);
   const [amenities, setAmenities] = useState<string[]>([]);
@@ -127,12 +126,10 @@ export function AddSpace({
   const [restroom, setRestroom] = useState<RestroomOption | null>(null);
   const [blocks, setBlocks] = useState<AvailabilityBlock[]>([]);
   const [bufferMinutes, setBufferMinutes] = useState<number>(0);
-
   // Step 3
   const [subleaseDoc, setSubleaseDoc] = useState<File | null>(null);
   const [insuranceDoc, setInsuranceDoc] = useState<File | null>(null);
   const [agreed, setAgreed] = useState(false);
-
   // Release every preview URL when the wizard unmounts, whether the listing
   // was submitted or abandoned.
   useEffect(
@@ -143,10 +140,8 @@ export function AddSpace({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );
-
   const rateCents = Math.round(Number(rate) * 100);
   const rateIsNumber = rate !== "" && Number.isFinite(Number(rate)) && rateCents > 0;
-
   /*
    * Checked here rather than at submit.
    *
@@ -157,7 +152,6 @@ export function AddSpace({
    */
   const outsideBy = point ? milesOutside(point) : 0;
   const outside = point !== null && outsideBy > 0;
-
   const canStep1 =
     name.trim() !== "" &&
     point !== null &&
@@ -179,7 +173,6 @@ export function AddSpace({
     media.length >= 1 && isValidSchedule(blocks) && describesTheRoom(description);
   const canSubmit = subleaseDoc !== null && agreed;
   const canAdvance = step === 1 ? canStep1 : step === 2 ? canStep2 : canSubmit;
-
   /*
    * What is still missing, named.
    *
@@ -205,17 +198,14 @@ export function AddSpace({
     if (subleaseDoc === null) missing.push("proof you can sublet the room");
     if (!agreed) missing.push("the acknowledgement");
   }
-
   const addMedia = (file: File) => {
     if (media.length >= MAX_MEDIA) return;
     setMedia((m) => [...m, createPickedMedia(file)]);
   };
-
   const removeMedia = (item: PickedMedia) => {
     releasePickedMedia(item);
     setMedia((m) => m.filter((i) => i.id !== item.id));
   };
-
   /**
    * Listing is the one action here that reaches a database, a storage bucket
    * and back — so it is the one that can fail for reasons a host cannot guess.
@@ -224,7 +214,6 @@ export function AddSpace({
    */
   const submit = async () => {
     if (!canSubmit || !category || !accessType || !point || submitting) return;
-
     setSubmitError(null);
     setSubmitting(true);
     try {
@@ -242,6 +231,7 @@ export function AddSpace({
         state: place?.state ?? null,
         postalCode: place?.postalCode ?? null,
         suitableFor,
+        roomSetup,
         timeZone,
         // Where the pin sits on the illustrated browse map, which is a separate
         // question from where the studio is — see toBrowsePosition.
@@ -271,7 +261,6 @@ export function AddSpace({
       setSubmitting(false);
     }
   };
-
   if (listed) {
     return (
       <div
@@ -303,7 +292,6 @@ export function AddSpace({
       </div>
     );
   }
-
   return (
     <div className="h-full flex flex-col screen-in bg-white">
       <div
@@ -341,13 +329,11 @@ export function AddSpace({
           ))}
         </div>
       </div>
-
       <div className="flex-1 overflow-y-auto px-6 pt-5 pb-8">
         {step === 1 && (
           <div className="card-in">
             <SectionLabel>Space name</SectionLabel>
             <TextInput value={name} onChange={setName} placeholder="e.g. Willow Reformer Studio" />
-
             <SectionLabel className="mt-6">Location</SectionLabel>
             <AddressAutocomplete
               value={address}
@@ -392,7 +378,6 @@ export function AddSpace({
               is below: the entry instructions and the code go only to the practitioner
               who booked, shortly before their session.
             </p>
-
             {/*
               Where we are, not only where we are not. A refusal with no map of
               its own edges reads as a fault in the app, and the number is what
@@ -419,11 +404,9 @@ export function AddSpace({
                 </p>
               </div>
             )}
-
             <div className="mt-3">
               <LocationMap point={point} onPick={point ? setPoint : undefined} />
             </div>
-
             {/*
               Two rows of chips, and four labels appear in both: a Treatment
               Room is a room type above and a use below. That is not a mistake
@@ -454,13 +437,11 @@ export function AddSpace({
                 </Chip>
               ))}
             </div>
-
             {/*
               What the room is bookable for, which is a different question from
               what kind of room it is — and the one a practitioner actually
               searches with. Nobody looks for a "movement studio"; they look
               for a pilates studio, and the same floor is both.
-
               Optional. A host who does not tick anything still gets a
               listing; it appears in browse and on its own page, and only
               misses the pages built around a use. Making it required would
@@ -494,7 +475,6 @@ export function AddSpace({
                 </p>
               </>
             )}
-
             <div className="grid grid-cols-2 gap-3 mt-5">
               <div>
                 <FieldLabel>
@@ -555,7 +535,6 @@ export function AddSpace({
                 </div>
               </div>
             </div>
-
             {rateIsNumber && !isViableHostRate(rateCents) && (
               <p
                 className="font-body font-normal text-[13.5px] mt-2 rounded-xl p-3 leading-relaxed"
@@ -565,7 +544,6 @@ export function AddSpace({
                 {formatCents(minViableHostRateCents())} an hour.
               </p>
             )}
-
             {/* Required by the brief, and absent from the prototype's step 1. */}
             <SectionLabel className="mt-6">How does a practitioner get in?</SectionLabel>
             <div className="flex flex-wrap gap-2">
@@ -599,7 +577,6 @@ export function AddSpace({
             </p>
           </div>
         )}
-
         {step === 2 && (
           <div className="card-in">
             <SectionLabel>Photos &amp; video</SectionLabel>
@@ -614,7 +591,6 @@ export function AddSpace({
             <p className="font-body font-normal text-[13.5px] mt-2 text-ink-faint">
               At least one photo or video to continue — up to {MAX_MEDIA}, mixed freely.
             </p>
-
             <SectionLabel className="mt-6">About this room</SectionLabel>
             <textarea
               value={description}
@@ -634,28 +610,65 @@ export function AddSpace({
                 ? `${description.length}/1200`
                 : `${description.trim().length} of ${MIN_DESCRIPTION_CHARS} characters — a sentence is enough`}
             </p>
-
-            <SectionLabel className="mt-6">
-              Amenities <OptionalTag />
-            </SectionLabel>
-            <div className="flex flex-wrap gap-2">
-              {AMENITIES.map((amenity) => (
-                <Chip
-                  key={amenity}
-                  active={amenities.includes(amenity)}
-                  onClick={() =>
-                    setAmenities((list) =>
-                      list.includes(amenity)
-                        ? list.filter((a) => a !== amenity)
-                        : [...list, amenity],
-                    )
+            {/*
+              Grouped, because a host ticking "reformers" and a host ticking
+              "natural light" are answering two different questions — what a
+              practitioner will find waiting for them, and what the room is
+              like around it. Twenty chips in one heap is a list nobody reads
+              to the end of.
+            */}
+            {AMENITY_GROUPS.map((group) => (
+              <div key={group.group}>
+                <SectionLabel className="mt-6">
+                  {group.heading} <OptionalTag />
+                </SectionLabel>
+                <div className="flex flex-wrap gap-2">
+                  {amenitiesIn(group.group).map((amenity) => (
+                    <Chip
+                      key={amenity.key}
+                      active={amenities.includes(amenity.key)}
+                      onClick={() =>
+                        setAmenities((list) =>
+                          list.includes(amenity.key)
+                            ? list.filter((a) => a !== amenity.key)
+                            : [...list, amenity.key],
+                        )
+                      }
+                    >
+                      {amenity.label}
+                    </Chip>
+                  ))}
+                </div>
+              </div>
+            ))}
+            {/*
+              Whether the room is theirs for the hour. Straight after the
+              price, this is what somebody seeing one client at a time wants
+              to know, and nothing here said it.
+            */}
+            <SectionLabel className="mt-6">Room setup</SectionLabel>
+            <div className="flex flex-col gap-2">
+              {ROOM_SETUPS.map((setup) => (
+                <button
+                  key={setup.key}
+                  type="button"
+                  onClick={() => setRoomSetup(setup.key)}
+                  className="rounded-2xl px-4 py-3 text-left press"
+                  style={
+                    roomSetup === setup.key
+                      ? { backgroundColor: "#EAF4FD", border: "1px solid #2578C2" }
+                      : { border: "1px solid #DCE7F2" }
                   }
                 >
-                  {amenity}
-                </Chip>
+                  <span className="block font-body font-medium text-[15px] text-navy">
+                    {setup.label}
+                  </span>
+                  <span className="block font-body font-normal text-[13.5px] text-ink-soft mt-0.5">
+                    {setup.detail}
+                  </span>
+                </button>
               ))}
             </div>
-
             <FieldLabel className="mt-5">
               Floor area <OptionalTag />
             </FieldLabel>
@@ -680,7 +693,6 @@ export function AddSpace({
             <p className="font-body font-normal text-[13.5px] mt-1.5 text-ink-faint">
               The usable floor, if you know it. Leave blank rather than guess.
             </p>
-
             <SectionLabel className="mt-6">Parking</SectionLabel>
             <p className="font-body font-normal text-[13.5px] mb-3 text-ink-faint">
               Pick everything that applies — a room can have its own spaces and a street anybody
@@ -709,7 +721,6 @@ export function AddSpace({
                 </Chip>
               ))}
             </div>
-
             {parking.length > 0 && !parking.includes("none") && (
               <>
                 <FieldLabel className="mt-5">How long can a car stay?</FieldLabel>
@@ -742,7 +753,6 @@ export function AddSpace({
                 )}
               </>
             )}
-
             {/*
               The four questions the listing actually shows.
               
@@ -758,7 +768,6 @@ export function AddSpace({
               &ldquo;accessible&rdquo;, and a shallow step at the door is neither yes nor no.
             </p>
             <AccessEditor details={access} onChange={setAccess} />
-
             <FieldLabel className="mt-4">
               Restroom <OptionalTag />
             </FieldLabel>
@@ -770,7 +779,6 @@ export function AddSpace({
                 </Chip>
               ))}
             </div>
-
             {/*
               House rules go on step 2 with the rest of the listing detail, and
               they surface on the listing itself rather than in a confirmation
@@ -784,7 +792,6 @@ export function AddSpace({
               Anything a practitioner needs to know before they book. Shown on your listing, not
               sprung on them afterwards.
             </p>
-
             {REQUIREMENT_GROUPS.map(({ kind, heading }) => (
               <div key={kind} className="mb-4">
                 <FieldLabel>{heading}</FieldLabel>
@@ -807,7 +814,6 @@ export function AddSpace({
                 </div>
               </div>
             ))}
-
             <textarea
               value={houseRules}
               onChange={(e) => setHouseRules(e.target.value)}
@@ -822,7 +828,6 @@ export function AddSpace({
               For what is genuinely particular to your room. Rules must be about the space and how
               it is used — not about who may use it.
             </p>
-
             <SectionLabel className="mt-6">
               Availability <OptionalTag />
             </SectionLabel>
@@ -833,7 +838,6 @@ export function AddSpace({
               somewhere else sees these hours converted to theirs.
             </p>
             <WeekSchedule blocks={blocks} onChange={setBlocks} />
-
             <FieldLabel className="mt-5">
               Turnover time between bookings <OptionalTag />
             </FieldLabel>
@@ -851,7 +855,6 @@ export function AddSpace({
             </div>
           </div>
         )}
-
         {step === 3 && (
           <div className="card-in">
             <SectionLabel>Verify your space</SectionLabel>
@@ -872,7 +875,6 @@ export function AddSpace({
                 onRemove={() => setInsuranceDoc(null)}
               />
             </div>
-
             <button
               type="button"
               onClick={() => setAgreed((v) => !v)}
@@ -898,7 +900,6 @@ export function AddSpace({
                 for anything damaged during a booking.
               </span>
             </button>
-
             <div
               className="mt-5 rounded-2xl p-4"
               style={{ backgroundColor: "#F9FAFB", border: "1px solid #E7EEF6" }}
@@ -938,7 +939,6 @@ export function AddSpace({
           </div>
         )}
       </div>
-
       <div className="px-6 pt-3 pb-6 shrink-0" style={{ borderTop: "1px solid #F0ECE0" }}>
         {submitError && (
           <div
@@ -970,9 +970,7 @@ export function AddSpace({
     </div>
   );
 }
-
 /* ------------------------------------------------------------------ */
-
 function SectionLabel({
   children,
   className = "",
@@ -992,7 +990,6 @@ function SectionLabel({
     </p>
   );
 }
-
 function FieldLabel({
   children,
   className = "",
@@ -1004,11 +1001,9 @@ function FieldLabel({
     <p className={`font-body text-[13.5px] mb-1.5 text-ink-soft ${className}`}>{children}</p>
   );
 }
-
 function OptionalTag() {
   return <span className="normal-case font-normal text-ink-faint">— optional</span>;
 }
-
 function TextInput({
   value,
   onChange,
@@ -1029,7 +1024,6 @@ function TextInput({
     />
   );
 }
-
 function Chip({
   active,
   onClick,

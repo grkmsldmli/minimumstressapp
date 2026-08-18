@@ -174,6 +174,7 @@ describe("listing a space", () => {
       state: "CA",
       postalCode: "94404",
       suitableFor: [],
+      roomSetup: "private_room" as const,
       timeZone: "America/Los_Angeles",
       parking: { options: [], limitMinutes: null },
       floorAreaSqft: null,
@@ -214,6 +215,7 @@ describe("listing a space", () => {
       state: "CA",
       postalCode: "94404",
       suitableFor: [],
+      roomSetup: "private_room" as const,
       timeZone: "America/Los_Angeles",
       parking: { options: [], limitMinutes: null },
       floorAreaSqft: null,
@@ -253,6 +255,7 @@ describe("listing a space", () => {
       state: "CA",
       postalCode: "94404",
       suitableFor: [],
+      roomSetup: "private_room" as const,
       timeZone: "America/Los_Angeles",
       parking: { options: [], limitMinutes: null },
       floorAreaSqft: null,
@@ -294,6 +297,7 @@ describe("simulated inbound bookings pay the host their rate", () => {
       state: "CA",
       postalCode: "94404",
       suitableFor: [],
+      roomSetup: "private_room" as const,
       timeZone: "America/Los_Angeles",
       parking: { options: [], limitMinutes: null },
       floorAreaSqft: null,
@@ -341,6 +345,7 @@ describe("simulated inbound bookings pay the host their rate", () => {
       state: "CA",
       postalCode: "94404",
       suitableFor: [],
+      roomSetup: "private_room" as const,
       timeZone: "America/Los_Angeles",
       parking: { options: [], limitMinutes: null },
       floorAreaSqft: null,
@@ -424,6 +429,7 @@ describe("keeping a listing's town and its uses", () => {
       state: "CA",
       postalCode: "94404",
       suitableFor: ["pilates-studio"],
+      roomSetup: "private_room" as const,
       timeZone: "America/Los_Angeles",
       parking: { options: [], limitMinutes: null },
       floorAreaSqft: null,
@@ -455,6 +461,7 @@ describe("keeping a listing's town and its uses", () => {
     const space = await listing();
     const edited = await repo.editSpace(space.id, {
       suitableFor: ["yoga-studio", "movement-studio"],
+      roomSetup: "private_room" as const,
     });
     expect(edited.suitableFor).toEqual(["yoga-studio", "movement-studio"]);
   });
@@ -468,6 +475,7 @@ describe("keeping a listing's town and its uses", () => {
     const space = await listing();
     const edited = await repo.editSpace(space.id, {
       suitableFor: ["yoga-studio", "therapy-office"],
+      roomSetup: "private_room" as const,
     });
     expect(edited.suitableFor).toEqual(["yoga-studio"]);
   });

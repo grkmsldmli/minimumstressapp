@@ -16,7 +16,13 @@ import { MIN_DESCRIPTION_CHARS, describesTheRoom } from "@/lib/listing-quality";
 import { PARKING_LIMIT_OPTIONS, PARKING_OPTIONS, limitOutlastsSession } from "@/lib/parking";
 import { formatCents, quote } from "@/lib/money";
 import { spaceTypesFor } from "@/lib/space-types";
-import { type CategoryKey, CATEGORY_KEYS, roomTypeFor } from "@/lib/taxonomy";
+import {
+  type CategoryKey,
+  CATEGORY_KEYS,
+  ROOM_SETUPS,
+  type RoomSetupKey,
+  roomTypeFor,
+} from "@/lib/taxonomy";
 import { usePointZone } from "@/lib/use-point-zone";
 
 /**
@@ -80,6 +86,8 @@ export function EditSpace({
   } | null>(null);
   /** What the room is bookable for. Free to change, bookings or not. */
   const [suitableFor, setSuitableFor] = useState<string[]>(space.suitableFor);
+  /** Describes the room, not a booking anybody agreed to — so never locked. */
+  const [roomSetup, setRoomSetup] = useState<RoomSetupKey>(space.roomSetup);
   const [point, setPoint] = useState<LatLng | null>(
     space.lat !== null && space.lng !== null ? { lat: space.lat, lng: space.lng } : null,
   );
@@ -135,7 +143,8 @@ export function EditSpace({
     floorArea !== (space.floorAreaSqft === null ? "" : String(space.floorAreaSqft)) ||
     parking.join() !== space.parking.options.join() ||
     parkingLimit !== space.parking.limitMinutes ||
-    suitableFor.join() !== space.suitableFor.join();
+    suitableFor.join() !== space.suitableFor.join() ||
+    roomSetup !== space.roomSetup;
 
   const toggleListed = async () => {
     setError(null);
@@ -182,6 +191,7 @@ export function EditSpace({
         // room being marked good for pilates, so this is free to change even
         // while the address is locked.
         suitableFor,
+        roomSetup,
         // Only sent when they are actually free to change, so a locked
         // listing cannot be moved by a stale value sitting in a field.
         ...(locked
@@ -398,6 +408,31 @@ export function EditSpace({
           should be able to say so today.
         */}
         <SuitableFor category={category} value={suitableFor} onChange={setSuitableFor} />
+
+        {/* Describes the room rather than a booking, so it is never locked. */}
+        <Label>Room setup</Label>
+        <div className="flex flex-col gap-2">
+          {ROOM_SETUPS.map((setup) => (
+            <button
+              key={setup.key}
+              type="button"
+              onClick={() => setRoomSetup(setup.key)}
+              className="rounded-2xl px-4 py-3 text-left press"
+              style={
+                roomSetup === setup.key
+                  ? { backgroundColor: "#EAF4FD", border: "1px solid #2578C2" }
+                  : { border: "1px solid #DCE7F2" }
+              }
+            >
+              <span className="block font-body font-medium text-[15px] text-navy">
+                {setup.label}
+              </span>
+              <span className="block font-body font-normal text-[13.5px] text-ink-soft mt-0.5">
+                {setup.detail}
+              </span>
+            </button>
+          ))}
+        </div>
 
         {locked ? (
           /*

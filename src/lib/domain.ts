@@ -9,7 +9,7 @@
 import type { AccessDetails } from "./access-details";
 import type { Parking } from "./parking";
 import type { AvailabilityBlock } from "./availability";
-import type { AccessTypeKey, CategoryKey, RestroomOption } from "./taxonomy";
+import type { AccessTypeKey, CategoryKey, RestroomOption, RoomSetupKey } from "./taxonomy";
 
 export type SpaceStatus = "pending" | "active" | "delisted";
 export type MediaKind = "image" | "video";
@@ -172,6 +172,8 @@ export interface PublicSpace {
    * built around a particular use.
    */
   suitableFor: string[];
+  /** Private room, a room inside a shared studio, or the whole place. */
+  roomSetup: RoomSetupKey;
   /**
    * The street, and where it is on a map.
    *
@@ -377,6 +379,8 @@ export interface SpaceEdit {
    * has started teaching something else should be able to say so.
    */
   suitableFor?: string[];
+  /** Free to change: it describes the room, not a booking anybody agreed to. */
+  roomSetup?: RoomSetupKey;
   /** Re-resolved whenever the coordinates above change, never typed. */
   timeZone?: string;
   /** Derived from lat/lng by toBrowsePosition, and granted in 0037. */
@@ -490,6 +494,13 @@ export interface NewSpaceInput {
    * label would be both less true and fewer pages for the same room.
    */
   suitableFor: string[];
+  /**
+   * Whether the room is theirs for the hour, or a corner of somewhere busier.
+   *
+   * Capacity and category hint at this and neither says it, and for anybody
+   * seeing one person at a time it decides whether the room is usable at all.
+   */
+  roomSetup: RoomSetupKey;
   mapX: number;
   mapY: number;
   /** Resolved from the coordinates above, server-side. See zone-for-point.ts. */

@@ -40,6 +40,7 @@ async function aSpace(suitableFor = ["pilates-studio"]): Promise<HostSpace> {
   return repo.createSpace({
     name: "Garden Room",
     category: "physical",
+    roomSetup: "private_room",
     hourlyRateCents: 4500,
     capacity: 2,
     accessType: seed.accessType,

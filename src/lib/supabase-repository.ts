@@ -67,7 +67,7 @@ import type {
 import type { CancellationEvent } from "./reliability";
 import type { CreateBookingInput, Repository, ReviewInput } from "./repository";
 import { knownSpaceTypes } from "./space-types";
-import { type CategoryKey, roomTypeFor } from "./taxonomy";
+import { type CategoryKey, isRoomSetupKey, roomTypeFor } from "./taxonomy";
 import { type ClaimKind, claimType, overstayCents } from "./claims";
 import { type RefundReason, questionFor } from "./refunds";
 import { FALLBACK_ZONE } from "./timezone";
@@ -101,6 +101,7 @@ interface SpaceRow {
   state?: string | null;
   postal_code?: string | null;
   suitable_for?: string[] | null;
+  room_setup?: string | null;
   entry_instructions?: string;
   sublease_doc_path?: string;
   insurance_doc_path?: string | null;
@@ -460,6 +461,10 @@ export class SupabaseRepository implements Repository {
       city: (row.city as string | null) ?? null,
       state: (row.state as string | null) ?? null,
       suitableFor: knownSpaceTypes((row.suitable_for as string[] | null) ?? []),
+      // Defaulted rather than left null: a listing with no answer here is a
+      // private room, which is what every one of them was before the column
+      // existed.
+      roomSetup: isRoomSetupKey(row.room_setup) ? row.room_setup : "private_room",
       access: {
         entrance: (row.entrance_access as AccessDetails["entrance"]) ?? null,
         floor: (row.floor_access as AccessDetails["floor"]) ?? null,
@@ -983,6 +988,7 @@ export class SupabaseRepository implements Repository {
     if (edit.postalCode !== undefined) patch.postal_code = edit.postalCode;
     // Not part of the move, and not locked by bookings — see SpaceEdit.
     if (edit.suitableFor !== undefined) patch.suitable_for = knownSpaceTypes(edit.suitableFor);
+    if (edit.roomSetup !== undefined) patch.room_setup = edit.roomSetup;
     // Moves with the address. A room that crossed a zone boundary and kept its
     // old zone would quietly shift every future booking by an hour.
     if (edit.timeZone !== undefined) patch.timezone = edit.timeZone;
@@ -1140,6 +1146,7 @@ export class SupabaseRepository implements Repository {
         // Filtered against the same list the database constrains, so a stale
         // tab posting a renamed use loses the use rather than the listing.
         suitable_for: knownSpaceTypes(input.suitableFor),
+        room_setup: input.roomSetup,
         // The coarse, public derivation of lat/lng — see 0008.
         map_x: input.mapX,
         map_y: input.mapY,

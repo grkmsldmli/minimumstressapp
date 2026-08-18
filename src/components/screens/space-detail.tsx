@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, Check, Key, MapPin, Repeat, Ruler, Sun, Users, Zap } from "lucide-react";
 
 import { AccessPanel } from "@/components/access-panel";
@@ -23,7 +23,7 @@ import {
 } from "@/lib/money";
 import { LATE_CANCELLATION_HOURS } from "@/lib/reliability";
 import { spaceTypeBySlug } from "@/lib/space-types";
-import { ACCESS_TYPES, requirementsByKind, roomTypeFor } from "@/lib/taxonomy";
+import { ACCESS_TYPES, amenitiesIn, AMENITY_GROUPS, requirementsByKind, ROOM_SETUPS, roomTypeFor } from "@/lib/taxonomy";
 import {
   type CivilDate,
   civilIn,
@@ -318,16 +318,38 @@ export function SpaceDetail({
           </>
         )}
 
-        {space.amenities.length > 0 && (
-          <>
-            <Label>Good to know</Label>
-            <div className="flex flex-wrap gap-1.5">
-              {space.amenities.map((amenity) => (
-                <Tag key={amenity}>{amenity}</Tag>
-              ))}
-            </div>
-          </>
-        )}
+        {/*
+          Split into what is in the room and what the room is like.
+
+          It was one heap headed "Good to know", which is where "Reformers"
+          and "Natural light" read as the same kind of fact. They are not: one
+          decides whether the work can happen at all, the other decides
+          whether it is pleasant. The first is why somebody books.
+        */}
+        {AMENITY_GROUPS.map((group) => {
+          const shown = amenitiesIn(group.group).filter((a) => space.amenities.includes(a.key));
+          if (shown.length === 0) return null;
+          return (
+            <Fragment key={group.group}>
+              <Label>{group.heading}</Label>
+              <div className="flex flex-wrap gap-1.5">
+                {shown.map((amenity) => (
+                  <Tag key={amenity.key}>{amenity.label}</Tag>
+                ))}
+              </div>
+            </Fragment>
+          );
+        })}
+
+        {/*
+          Whether the room is theirs for the hour. For anybody seeing one
+          person at a time this decides whether the room is usable, and until
+          now it was left to be guessed from the capacity.
+        */}
+        <Label>The space</Label>
+        <p className="font-body font-normal text-[15px] leading-relaxed text-ink-muted">
+          {ROOM_SETUPS.find((setup) => setup.key === space.roomSetup)?.detail}
+        </p>
 
         {/*
           Above the slot grid on purpose. These are the things that would make

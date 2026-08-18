@@ -197,7 +197,6 @@ export const REQUIREMENTS = [
   { key: "no_filming", kind: "avoid", label: "No filming or photography" },
 
   { key: "quiet_building", kind: "know", label: "Quiet building — keep noise down" },
-  { key: "no_waiting_area", kind: "know", label: "No waiting area for clients" },
   { key: "stairs_only", kind: "know", label: "Stairs only, no lift" },
   { key: "wipe_down", kind: "know", label: "Wipe down equipment after use" },
   { key: "take_rubbish", kind: "know", label: "Take your rubbish with you" },
@@ -228,17 +227,125 @@ export function requirementsByKind(keys: readonly string[]) {
   })).filter((group) => group.items.length > 0);
 }
 
-export const AMENITIES = [
-  "Mirrors",
-  "Sound system",
-  "Climate control",
-  "Soundproofed",
-  "Sink access",
-  "Natural light",
-  "Storage",
-  "Private entrance",
+/**
+ * What is in the room, and what the room itself is like.
+ *
+ * These were eight strings and every one of them described the building:
+ * mirrors, climate control, natural light, soundproofing. Nothing described
+ * the things a practitioner actually needs to find in there. Somebody looking
+ * at a Holistic Practice Room could not tell whether it had a treatment table;
+ * somebody looking at a movement studio could not tell whether the reformers
+ * were included or the host expected them to bring their own.
+ *
+ * That is the first question after the price, and it was unanswerable.
+ *
+ * So the list carries a group. "Equipment" is what you will find waiting for
+ * you; "room" is what the space is like around it. One column still, because a
+ * host ticks one set of boxes and a reader scans one list — the group only
+ * decides which heading each lands under.
+ */
+export interface Amenity {
+  key: string;
+  label: string;
+  group: "equipment" | "room";
+}
+
+export const AMENITIES: readonly Amenity[] = [
+  // Movement.
+  { key: "reformers", label: "Reformers", group: "equipment" },
+  { key: "mats", label: "Yoga mats", group: "equipment" },
+  { key: "props", label: "Blocks, straps and bolsters", group: "equipment" },
+  { key: "weights", label: "Weights", group: "equipment" },
+
+  // Hands-on work.
+  { key: "treatment_table", label: "Treatment table", group: "equipment" },
+  { key: "linens", label: "Fresh linens and towels", group: "equipment" },
+
+  // Sitting down with somebody.
+  { key: "seating", label: "Chairs for two", group: "equipment" },
+  { key: "desk", label: "Desk or table", group: "equipment" },
+  { key: "cushions", label: "Meditation cushions", group: "equipment" },
+
+  // Shared.
+  { key: "sound_system", label: "Sound system", group: "equipment" },
+  { key: "storage", label: "Storage for your things", group: "equipment" },
+  { key: "water", label: "Drinking water", group: "equipment" },
+
+  // The room itself.
+  { key: "mirrors", label: "Mirrors", group: "room" },
+  { key: "natural_light", label: "Natural light", group: "room" },
+  { key: "climate_control", label: "Climate control", group: "room" },
+  { key: "soundproofed", label: "Soundproofed", group: "room" },
+  { key: "sink", label: "Sink in the room", group: "room" },
+  { key: "private_entrance", label: "Private entrance", group: "room" },
+  /*
+   * Both of these existed only as a warning — "No waiting area for clients"
+   * sat in the requirements and there was no way to say the opposite. A host
+   * with somewhere for clients to sit could not mention it, which is the
+   * wrong way round: the thing worth advertising was the one that could only
+   * be admitted.
+   */
+  { key: "waiting_area", label: "Waiting area for clients", group: "room" },
+  { key: "changing_area", label: "Somewhere to change", group: "room" },
 ] as const;
-export type Amenity = (typeof AMENITIES)[number];
+
+export const AMENITY_GROUPS: { group: Amenity["group"]; heading: string }[] = [
+  { group: "equipment", heading: "What's in the room" },
+  { group: "room", heading: "The room itself" },
+];
+
+export function amenitiesIn(group: Amenity["group"]): Amenity[] {
+  return AMENITIES.filter((amenity) => amenity.group === group);
+}
+
+export function amenityLabel(key: string): string | null {
+  return AMENITIES.find((amenity) => amenity.key === key)?.label ?? null;
+}
+
+/** Drops anything not on the list, so a stale tab cannot cost a listing. */
+export function knownAmenities(keys: readonly string[]): string[] {
+  const seen = new Set<string>();
+  return keys.filter((key) => {
+    if (!AMENITIES.some((a) => a.key === key) || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/**
+ * Whether the room is yours for the hour, or a corner of somewhere busier.
+ *
+ * Absent until now, and it is the question straight after the price for
+ * anybody seeing one person at a time. Capacity and category hint at it;
+ * neither says it.
+ */
+export const ROOM_SETUPS = [
+  {
+    key: "private_room",
+    label: "Private room",
+    detail: "A room with a door, yours for the hour.",
+  },
+  {
+    key: "room_in_studio",
+    label: "Room in a shared studio",
+    detail: "Your own room, with other people working in the building.",
+  },
+  {
+    key: "whole_studio",
+    label: "The whole studio",
+    detail: "The entire space is yours while you are booked.",
+  },
+] as const;
+
+export type RoomSetupKey = (typeof ROOM_SETUPS)[number]["key"];
+
+export function roomSetupLabel(key: string | null): string | null {
+  return ROOM_SETUPS.find((setup) => setup.key === key)?.label ?? null;
+}
+
+export function isRoomSetupKey(value: unknown): value is RoomSetupKey {
+  return ROOM_SETUPS.some((setup) => setup.key === value);
+}
 
 /** Turnover buffer between bookings, in minutes. */
 export const BUFFER_OPTIONS = [0, 15, 30] as const;

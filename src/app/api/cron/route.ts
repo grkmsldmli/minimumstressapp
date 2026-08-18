@@ -249,16 +249,43 @@ async function payHostsForFinishedSessions(
        * and the next sweep tries again. The transfer itself is idempotent on
        * the booking id, so a crash between the two cannot pay twice.
        */
+      /*
+       * The status is written under the status it was read under.
+       *
+       * Every other writer in this codebase guards this way — the abandoned
+       * reaper, the webhook, the checkout release — and this one matched on
+       * the id alone while deciding the new status from a value read earlier
+       * in the loop. A practitioner cancelling while the transfer was in
+       * flight got `completed` written over `cancelled_by_practitioner`, on a
+       * row that already carried `cancelled_at` and had already sent the
+       * cancellation email. `canReview` decides on the status, so both sides
+       * were then invited to review a session that never happened.
+       *
+       * The payment fields are written either way: the money did move, and
+       * losing that record would pay the host twice on the next sweep.
+       */
+      const paidFields = {
+        host_paid_at: new Date().toISOString(),
+        stripe_transfer_id: transferId,
+      };
+
+      if (booking.status === "upcoming") {
+        const { error: statusError } = await admin
+          .from("bookings")
+          .update({ ...paidFields, status: "completed" })
+          .eq("id", booking.id)
+          .eq("status", "upcoming");
+
+        // Cancelled between the read and here. The money still moved, so the
+        // payment fields go on regardless — only the status is surrendered.
+        if (statusError) throw statusError;
+      }
+
       await admin
         .from("bookings")
-        .update({
-          host_paid_at: new Date().toISOString(),
-          stripe_transfer_id: transferId,
-          // A session that ran and was not cancelled is now done. A cancelled
-          // one keeps the status that says who cancelled it.
-          ...(booking.status === "upcoming" ? { status: "completed" } : {}),
-        })
-        .eq("id", booking.id);
+        .update(paidFields)
+        .eq("id", booking.id)
+        .is("host_paid_at", null);
 
       paid += 1;
     } catch (failure) {

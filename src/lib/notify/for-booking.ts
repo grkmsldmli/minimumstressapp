@@ -119,6 +119,17 @@ interface BookingRow {
   };
 }
 
+/**
+ * The booking behind a message that is about to be sent again.
+ *
+ * Filtered rather than fetched, because a retry happens later — sometimes much
+ * later — and the world moves in between. A first attempt that failed on a
+ * provider error is retried against a booking that may since have been
+ * cancelled, and the message being rebuilt may carry the door code. Sending it
+ * then hands the way into a room to somebody whose booking no longer exists.
+ *
+ * The same two conditions as the gates in 0039: paid for, and still standing.
+ */
 async function loadBooking(admin: SupabaseClient, bookingId: string): Promise<BookingRow | null> {
   const { data } = await admin
     .from("bookings")
@@ -126,6 +137,8 @@ async function loadBooking(admin: SupabaseClient, bookingId: string): Promise<Bo
       "id, practitioner_id, starts_at, total_cents, host_rate_cents, access_code, spaces!inner(name, host_id, timezone, address_line, entry_instructions)",
     )
     .eq("id", bookingId)
+    .not("captured_at", "is", null)
+    .in("status", ["upcoming", "completed"])
     .maybeSingle();
 
   return (data as BookingRow | null) ?? null;
@@ -267,6 +280,17 @@ export async function notifyAccessCodesReady(
       "id, practitioner_id, starts_at, total_cents, host_rate_cents, access_code, spaces!inner(name, host_id, address_line, entry_instructions)",
     )
     .eq("status", "upcoming")
+    /*
+     * Paid for, which the two gates in the database have required since 0039
+     * and this job never did.
+     *
+     * An abandoned checkout sits at `upcoming` with a reveal time already in
+     * the past — the row is written before the card is — and the reaper only
+     * runs on the same twice-daily cron. So the app screen correctly showed
+     * nothing while this texted the door code, the address and the entry
+     * instructions for a room nobody had paid for.
+     */
+    .not("captured_at", "is", null)
     .lte("access_code_revealed_at", now.toISOString())
     // Nothing to announce about a session that has already finished.
     .gte("starts_at", new Date(now.getTime() - 60 * 60 * 1000).toISOString());

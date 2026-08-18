@@ -433,6 +433,20 @@ export async function refundRequested(
   amountCents: number,
   hostTransferId: string | null,
   clawBackFromHost: number,
+  /**
+   * The request this refund settles, used as the idempotency key.
+   *
+   * `decideRefund` guards against two staff deciding at once by narrowing its
+   * final update to the states it read — which stops the second row write and
+   * not the second refund, because the money has already left by then. Stripe
+   * only refuses a duplicate when the total would exceed the charge, so two
+   * full refunds collide and two partial ones do not: `our_fee` twice takes
+   * the platform's share twice and records it once.
+   *
+   * `payHost` and `chargeForClaim` have keyed every call since they were
+   * written. This is the one money path that did not.
+   */
+  requestId: string,
 ): Promise<{ refundedCents: number; reversedCents: number }> {
   if (amountCents <= 0) return { refundedCents: 0, reversedCents: 0 };
 
@@ -444,10 +458,13 @@ export async function refundRequested(
     reversedCents = reversal.amount;
   }
 
-  const refund = await stripe().refunds.create({
-    payment_intent: paymentIntentId,
-    amount: amountCents,
-  });
+  const refund = await stripe().refunds.create(
+    {
+      payment_intent: paymentIntentId,
+      amount: amountCents,
+    },
+    { idempotencyKey: `refund_request_${requestId}` },
+  );
 
   return { refundedCents: refund.amount, reversedCents };
 }

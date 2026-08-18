@@ -77,6 +77,13 @@ function explain(reason: SubmitFailure): string {
       // Same wording as not_found on purpose: telling a stranger that a
       // booking exists but is not theirs confirms it exists.
       return "We couldn't find that booking.";
+    case "never_paid":
+      /*
+       * Deliberately the same sentence as a cancelled booking. Both mean
+       * there was no session, and distinguishing them would tell somebody
+       * whether a booking they are guessing at was ever paid for.
+       */
+      return "That session did not go ahead, so there is nothing to review.";
     case "session_not_finished":
       return "You can leave a review once the session has finished.";
     case "window_closed":

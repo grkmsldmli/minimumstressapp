@@ -300,6 +300,7 @@ async function payBack(
     amount,
     booking.stripe_transfer_id,
     clawBack,
+    requestId,
   );
 
   const { error } = await admin
@@ -311,6 +312,5 @@ async function payBack(
     .eq("id", booking.id);
   if (error) throw error;
 
-  void requestId;
   return refundedCents;
 }

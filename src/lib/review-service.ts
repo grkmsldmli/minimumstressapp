@@ -30,6 +30,7 @@ export type SubmitFailure =
   | "window_closed"
   | "already_reviewed"
   | "booking_cancelled"
+  | "never_paid"
   | "invalid_rating";
 
 export type SubmitResult =
@@ -52,6 +53,8 @@ interface BookingRow {
   practitioner_id: string;
   ends_at: string;
   status: string;
+  /** Null until the money is taken. See canReview — an unpaid hour is not reviewable. */
+  captured_at: string | null;
   spaces: { host_id: string; name: string } | null;
 }
 
@@ -65,7 +68,7 @@ export async function submitReview(
 
   const { data, error } = await admin
     .from("bookings")
-    .select("id, space_id, practitioner_id, ends_at, status, spaces(host_id, name)")
+    .select("id, space_id, practitioner_id, ends_at, status, captured_at, spaces(host_id, name)")
     .eq("id", submission.bookingId)
     .maybeSingle();
 
@@ -101,7 +104,11 @@ export async function submitReview(
   if (countError) throw countError;
 
   const eligibility = canReview(
-    { endsAt: new Date(booking.ends_at), status: booking.status },
+    {
+      endsAt: new Date(booking.ends_at),
+      status: booking.status,
+      capturedAt: booking.captured_at ? new Date(booking.captured_at) : null,
+    },
     (count ?? 0) > 0,
     now,
   );

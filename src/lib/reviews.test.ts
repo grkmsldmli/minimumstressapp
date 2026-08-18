@@ -21,7 +21,12 @@ const DAY = 24 * 60 * 60 * 1000;
 const at = (ms: number) => new Date(ms);
 const NOON = new Date("2026-08-04T12:00:00Z").getTime();
 
-const session = (endsAt: number, status = "completed") => ({ endsAt: at(endsAt), status });
+/** Paid unless a test says otherwise — an unpaid booking is the exception. */
+const session = (endsAt: number, status = "completed", capturedAt: Date | null = at(0)) => ({
+  endsAt: at(endsAt),
+  status,
+  capturedAt,
+});
 
 describe("isRating", () => {
   it.each([1, 2, 3, 4, 5])("accepts %i", (n) => expect(isRating(n)).toBe(true));
@@ -228,5 +233,43 @@ describe("summariseAggregate", () => {
   it("rounds to one decimal", () => {
     expect(summariseAggregate(4, 4.25).average).toBe(4.3);
     expect(summariseAggregate(7, 3.9166).average).toBe(3.9);
+  });
+});
+
+/**
+ * A review needs a session, and a session needs money to have moved.
+ *
+ * This is the same correction claims.ts already carries and explains at
+ * length: an abandoned checkout keeps `upcoming` and its payment-intent id,
+ * and only `captured_at` distinguishes it from a booking somebody paid for.
+ * The reaper that clears those runs twice a day, so once the hour passes every
+ * other test in canReview says yes.
+ *
+ * What made it worth fixing rather than noting is the escalation path. A low
+ * rating or a ticked safety box on such a review files a safety report against
+ * an hour that did not happen, and somebody has to answer it.
+ */
+describe("a session nobody paid for", () => {
+  it("cannot be reviewed", () => {
+    expect(canReview(session(NOON - DAY, "upcoming", null), false, at(NOON))).toEqual({
+      allowed: false,
+      reason: "never_paid",
+    });
+  });
+
+  /*
+   * Checked before the status, so an abandoned checkout is refused for the
+   * reason that is true of it rather than for whichever test it happens to
+   * fail second.
+   */
+  it("is refused for not being paid, not for its status", () => {
+    expect(canReview(session(NOON - DAY, "completed", null), false, at(NOON))).toEqual({
+      allowed: false,
+      reason: "never_paid",
+    });
+  });
+
+  it("still allows a paid one", () => {
+    expect(canReview(session(NOON - DAY, "completed"), false, at(NOON))).toEqual({ allowed: true });
   });
 });

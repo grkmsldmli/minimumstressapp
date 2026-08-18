@@ -80,7 +80,15 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 export type ReviewEligibility =
   | { allowed: true }
-  | { allowed: false; reason: "session_not_finished" | "window_closed" | "already_reviewed" | "booking_cancelled" };
+  | {
+      allowed: false;
+      reason:
+        | "session_not_finished"
+        | "window_closed"
+        | "already_reviewed"
+        | "booking_cancelled"
+        | "never_paid";
+    };
 
 /**
  * Whether this person may review this booking right now.
@@ -91,10 +99,26 @@ export type ReviewEligibility =
  * canceller is dealt with.
  */
 export function canReview(
-  booking: { endsAt: Date; status: string },
+  booking: { endsAt: Date; status: string; capturedAt: Date | null },
   alreadySubmitted: boolean,
   now: Date,
 ): ReviewEligibility {
+  /*
+   * Paid for, which is the same correction claims.ts already carries.
+   *
+   * An abandoned checkout sits at `upcoming` with no money taken, and the
+   * reaper that clears it runs twice a day — so once its hour passes, every
+   * other test here says yes. A review could be written about a session
+   * nobody paid for and nobody attended, and a low one or a ticked safety box
+   * would raise an escalation against it: a safety report about an hour that
+   * did not happen, which costs a real person a real answer.
+   *
+   * `captured_at` is the column that means money was taken. The status does
+   * not distinguish a paid booking from an abandoned one.
+   */
+  if (booking.capturedAt === null) {
+    return { allowed: false, reason: "never_paid" };
+  }
   if (booking.status.startsWith("cancelled")) {
     return { allowed: false, reason: "booking_cancelled" };
   }

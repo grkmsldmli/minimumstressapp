@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  JADE_GREETING,
   JADE_SYSTEM_PROMPT,
   QUICK_REPLIES,
   answerLocally,
   detectLanguage,
   extractEmail,
   isDecline,
+  languageDirective,
 } from "./jade";
 
 /**
@@ -183,5 +185,51 @@ describe("reading Turkish written plainly", () => {
     "how many people fit",
   ])("leaves %s in English", (line) => {
     expect(detectLanguage(line)).toBe("en");
+  });
+});
+
+/**
+ * "hello" came back in Turkish.
+ *
+ * The language rule was at the top of the prompt, under a heading, followed by
+ * sixty lines about rooms and prohibited uses — and a rule about *how* to
+ * answer loses to every rule about *what* to answer that comes after it. It is
+ * the last line now, and the route hands the detected language over as a fact
+ * on top of that.
+ */
+describe("the language instruction", () => {
+  it("is the last thing in the prompt", () => {
+    const lines = JADE_SYSTEM_PROMPT.trim().split("\n").filter(Boolean);
+    const heading = lines.findIndex((line) => line.startsWith("LANGUAGE"));
+    expect(heading).toBeGreaterThan(-1);
+    // Nothing but its own bullets may follow it.
+    for (const line of lines.slice(heading + 1)) {
+      expect(line.startsWith("-"), `"${line}" follows the language rule`).toBe(true);
+    }
+  });
+
+  it("names the language rather than asking the model to work it out", () => {
+    expect(languageDirective("en")).toContain("Reply in English");
+    expect(languageDirective("tr")).toContain("Reply in Turkish");
+  });
+
+  it("puts it after everything else when the two are joined", () => {
+    const full = JADE_SYSTEM_PROMPT + languageDirective("en");
+    expect(full.trim().endsWith("in no other language.")).toBe(true);
+  });
+});
+
+describe("how she talks", () => {
+  /* The half the short prompt lost: it could route, but it could not converse. */
+  it("is told to greet, to ask one question, and to follow the visitor", () => {
+    const prompt = JADE_SYSTEM_PROMPT.toLowerCase();
+    expect(prompt).toContain("greet somebody who greets you");
+    expect(prompt).toContain("ask one specific question");
+    expect(prompt).toContain("use what they already told you");
+    expect(prompt).toContain("never repeat a suggestion they turned down");
+  });
+
+  it("opens with a line that asks rather than announces", () => {
+    expect(JADE_GREETING).toContain("How can I assist you today");
   });
 });

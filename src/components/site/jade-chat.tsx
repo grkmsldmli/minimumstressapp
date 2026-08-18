@@ -334,9 +334,15 @@ export function JadeChat() {
             sets is a render loop waiting for a second condition to go wrong,
             and there is nothing async here to wait for.
           */
-          if (messages.length === 0) {
-            setMessages([{ role: "bot", text: JADE_GREETING }]);
-          }
+          /*
+            The greeting types too.
+
+            It was set straight into state, so the panel opened with a
+            finished paragraph already sitting in it — the one message a
+            visitor is guaranteed to see, and the one that set the
+            expectation that this thing answers before it is asked.
+          */
+          if (messages.length === 0) void say(JADE_GREETING);
         }}
         aria-label="Chat with Jade"
         aria-expanded={open}

@@ -3,7 +3,7 @@ import type { NextRequest } from "next/server";
 import { LIMITS, check, identify, tooManyRequests } from "@/lib/api/rate-limit";
 import { handled, jsonError } from "@/lib/api/session";
 import { jsonObject } from "@/lib/api/validate";
-import { CHAT_PROXY_URL, JADE_SYSTEM_PROMPT } from "@/lib/jade";
+import { CHAT_PROXY_URL, JADE_SYSTEM_PROMPT, detectLanguage, languageDirective } from "@/lib/jade";
 
 /**
  * The chat call, made from here rather than from the browser.
@@ -65,7 +65,18 @@ export async function POST(request: NextRequest): Promise<Response> {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         max_tokens: 180,
-        system: JADE_SYSTEM_PROMPT,
+        /*
+         * The language, detected from the last thing they wrote and stated as
+         * a fact at the end of the prompt.
+         *
+         * Asking the model to match the visitor was not enough on its own —
+         * "hello" came back in Turkish. Detected here rather than taken from
+         * the body, because it is the sort of field a caller could set to
+         * anything and there is no reason to let them.
+         */
+        system:
+          JADE_SYSTEM_PROMPT +
+          languageDirective(detectLanguage(turns[turns.length - 1]?.content ?? "")),
         messages: turns,
       }),
     });

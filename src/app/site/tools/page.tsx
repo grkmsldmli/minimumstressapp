@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 
 import { SiteFooter, SiteHeader } from "@/components/site/chrome";
 import { BRAND } from "@/lib/company";
-import { type Tool, liveToolsOfKind } from "@/lib/tools";
+import { TOOLS, type Tool, liveToolsOfKind } from "@/lib/tools";
 
 /**
  * The Wellness Hub.
@@ -25,6 +25,8 @@ export const metadata: Metadata = {
     "and nothing stored.",
 };
 
+const LIVE_COUNT = TOOLS.filter((tool) => tool.live).length;
+
 export default function ToolsPage() {
   return (
     <>
@@ -32,7 +34,7 @@ export default function ToolsPage() {
 
       <main className="mx-auto max-w-6xl px-6 pb-24 pt-6">
         <h1
-          className="max-w-lg text-[40px] leading-[1.08] sm:text-[48px]"
+          className="max-w-xl text-[34px] leading-[1.08] sm:text-[42px]"
           style={{ fontFamily: "var(--font-dm-serif)", color: "#0F2F55" }}
         >
           Free tools, and
@@ -42,9 +44,22 @@ export default function ToolsPage() {
           </em>
         </h1>
 
-        <p className="mt-5 max-w-xl text-[16.5px] leading-[1.75]" style={{ color: "#5f6673" }}>
-          None of these is a diagnosis. They score what you tell us about your own week and give
-          you somewhere sensible to start. Free, and no account.
+        <p className="mt-4 max-w-xl text-[16.5px] leading-[1.7]" style={{ color: "#33404F" }}>
+          None of these is a diagnosis. They score what you tell them about your own week and give
+          you somewhere sensible to start.
+        </p>
+
+        {/*
+          Counted rather than written down. A hub that says nine and shows
+          eight is the first thing a careful reader notices, and the number
+          changes whenever a tool goes live.
+        */}
+        <p className="mt-4 flex flex-wrap gap-x-2.5 gap-y-1 text-[14px]" style={{ color: "#4A5765" }}>
+          <span>{LIVE_COUNT} free tools</span>
+          <span aria-hidden style={{ color: "#DDE7F1" }}>·</span>
+          <span>No account</span>
+          <span aria-hidden style={{ color: "#DDE7F1" }}>·</span>
+          <span>Results on the screen</span>
         </p>
 
         <Group
@@ -60,6 +75,27 @@ export default function ToolsPage() {
         />
 
         <Disclaimer />
+
+        {/*
+          The tools are not the product, and a page that ends on a disclaimer
+          says nothing about what is. One line, and somewhere to go.
+        */}
+        <section
+          className="mt-10 flex flex-wrap items-center justify-between gap-4 rounded-2xl p-6"
+          style={{ backgroundColor: "#F4F8FC", border: "1px solid #DDE7F1" }}
+        >
+          <p className="text-[16px] leading-[1.7]" style={{ color: "#33404F" }}>
+            Minimum Stress is a marketplace for private wellness space.
+          </p>
+          <div className="flex flex-wrap gap-5 text-[15px] font-medium">
+            <Link href="/spaces" style={{ color: "#0A6390" }}>
+              Find a space →
+            </Link>
+            <Link href="/rent-out-your" style={{ color: "#0A6390" }}>
+              List your space →
+            </Link>
+          </div>
+        </section>
       </main>
 
       <SiteFooter />
@@ -112,11 +148,20 @@ function ToolCard({ tool }: { tool: Tool }) {
         {tool.name}
       </h3>
 
-      <p className="mt-2 flex-1 text-[14.5px] leading-[1.7]" style={{ color: "#5f6673" }}>
+      <p className="mt-2 flex-1 text-[14.5px] leading-[1.7]" style={{ color: "#33404F" }}>
         {tool.blurb}
       </p>
 
-      <span className="mt-4 text-[14px] font-medium" style={{ color: "#0F2F55" }}>
+      <span
+        className="mt-4 border-t pt-3 text-[13.5px] leading-[1.6]"
+        style={{ borderColor: "#DDE7F1", color: "#4A5765" }}
+      >
+        {tool.kind === "assessment"
+          ? "You get a score, what it means, and where to start."
+          : "You get the number, and what it does and does not tell you."}
+      </span>
+
+      <span className="mt-3 text-[14px] font-medium" style={{ color: "#0F2F55" }}>
         Start →
       </span>
     </Link>

@@ -13,7 +13,9 @@
 workflows:
   android-debug:
     name: Android debug (test build, no signing)
-    instance_type: linux_x2
+    # macOS M2 is the instance the free plan provides; Android builds run on it
+    # fine (the Android SDK is preinstalled). linux_x2 needs a paid plan.
+    instance_type: mac_mini_m2
     max_build_duration: 60
     environment:
       node: 22

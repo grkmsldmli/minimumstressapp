@@ -26,15 +26,19 @@ workflows:
         script: npx cap sync android
       - name: Build debug APK
         script: |
-          # Capacitor 8's Android library compiles at Java 21, so point the
-          # build at JDK 21 (the macOS runner defaults to an older one).
+          # Capacitor 8's Android library compiles at Java 21. Show what the
+          # runner has, select JDK 21, and force Gradle to use that exact JDK
+          # (not just the ambient JAVA_HOME) with no reused daemon.
+          echo "=== JDKs available on this runner ==="
+          /usr/libexec/java_home -V 2>&1 || true
           export JAVA_HOME=$(/usr/libexec/java_home -v 21)
-          java -version
+          echo "Using JAVA_HOME=$JAVA_HOME"
+          "$JAVA_HOME/bin/java" -version
           cd android
           # gradlew is committed from Windows without the executable bit, so the
           # macOS runner can't run it directly. Grant it here.
           chmod +x ./gradlew
-          ./gradlew assembleDebug
+          ./gradlew assembleDebug -Dorg.gradle.java.home="$JAVA_HOME" --no-daemon
     artifacts:
       - android/app/build/outputs/**/*.apk
 

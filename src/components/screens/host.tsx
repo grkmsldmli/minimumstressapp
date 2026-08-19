@@ -35,6 +35,7 @@ import { PAYOUT_DELAY_DAYS, describeSpeed } from "@/lib/payouts";
 import type { Standing } from "@/lib/reliability";
 import type { MilestoneKey } from "@/lib/milestones";
 import { claimWindowEndsAt } from "@/lib/claims";
+import { HOST_TERMS_VERSION, hasAcceptedHostTerms } from "@/lib/host-terms";
 import { listingGaps } from "@/lib/listing-quality";
 import { FALLBACK_ZONE, zoneAbbreviation } from "@/lib/timezone";
 import { sessionDate, sessionTime } from "@/lib/when";
@@ -75,11 +76,20 @@ export function HostDashboard({
   onReviewBooking,
   onReportProblem,
   onMessageBooking,
+  hostTermsVersion,
+  hostTermsAcceptedAt,
 }: {
   spaces: HostSpace[];
   bookings: HostBooking[];
   /** Waiting on the host. Empty on every listing that books instantly. */
   requests: BookingRequest[];
+  /**
+   * The Host Terms this host has accepted, and when — from their profile. Null
+   * on an account that has never accepted (an existing host from before the
+   * Host Terms), which the Legal card names rather than hides.
+   */
+  hostTermsVersion: number | null;
+  hostTermsAcceptedAt: Date | null;
   onAnswerRequest: (
     bookingId: string,
     decision: "approve" | "decline",
@@ -476,9 +486,83 @@ export function HostDashboard({
                 </div>
               </>
             )}
+
+            <HostLegalCard version={hostTermsVersion} acceptedAt={hostTermsAcceptedAt} />
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+/**
+ * The host's legal standing, on their own dashboard.
+ *
+ * One card that answers "what have I agreed to, and is it current" — the
+ * version and date of the Host Terms this host accepted, a link to read them,
+ * and a plain note when a newer version is in force. It does not itself
+ * re-collect acceptance: that happens at the point of listing, where the
+ * server gate is, so there is one place a host accepts and one place it is
+ * enforced. This is the record of it, not a second door to it.
+ */
+function HostLegalCard({
+  version,
+  acceptedAt,
+}: {
+  version: number | null;
+  acceptedAt: Date | null;
+}) {
+  const accepted = hasAcceptedHostTerms({ hostTermsVersion: version });
+  // Accepted, but behind the version now in force — re-asked at the next listing.
+  const outdated = version !== null && !accepted;
+  const dateLabel = acceptedAt
+    ? acceptedAt.toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })
+    : null;
+
+  return (
+    <div className="mt-7">
+      <p className="font-body font-semibold text-[12px] uppercase tracking-[0.2em] text-sky-text mb-3">
+        Legal
+      </p>
+      <div className="rounded-2xl p-4" style={{ border: "1px solid #E7EEF6" }}>
+        <div className="flex items-start gap-3">
+          <span
+            className="w-9 h-9 rounded-full flex items-center justify-center shrink-0"
+            style={{ backgroundColor: "#F4F8FC" }}
+          >
+            <ScrollText size={16} color="#3B9BE8" />
+          </span>
+          <div className="min-w-0">
+            <p className="font-body font-medium text-[15px] text-navy">Host Terms</p>
+            {accepted && (
+              <p className="font-body font-normal text-[13.5px] mt-0.5 text-ink-soft">
+                Accepted · version {version}
+                {dateLabel ? ` · ${dateLabel}` : ""}
+              </p>
+            )}
+            {outdated && (
+              <p className="font-body font-normal text-[13.5px] mt-0.5 text-ink-soft">
+                You accepted version {version}. Version {HOST_TERMS_VERSION} is now in effect —
+                you&apos;ll be asked to accept it the next time you list a space.
+              </p>
+            )}
+            {version === null && (
+              <p className="font-body font-normal text-[13.5px] mt-0.5 text-ink-soft">
+                You haven&apos;t accepted the current Host Terms yet. You&apos;ll be asked the next
+                time you list a space. Your existing listings are unaffected.
+              </p>
+            )}
+            <a
+              href="/host-terms"
+              target="_blank"
+              rel="noreferrer"
+              className="font-body text-[13.5px] mt-1.5 inline-flex items-center gap-1 text-sky-text"
+            >
+              View Host Terms <ChevronRight size={11} />
+            </a>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

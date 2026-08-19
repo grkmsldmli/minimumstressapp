@@ -3,6 +3,7 @@ import { join } from "node:path";
 
 import { PGlite } from "@electric-sql/pglite";
 import { indexableCity, indexableCityType, indexablePaths } from "../src/lib/directory";
+import { HOST_TERMS_VERSION } from "../src/lib/host-terms";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 /**
@@ -904,5 +905,65 @@ describe("the indexing rule, on rows the database produced", () => {
       "/spaces/ca/atherton/massage-room",
       "/spaces/ca/atherton/pilates-studio",
     ]);
+  });
+});
+
+describe("0052 — the Host Terms are versioned the same on both sides", () => {
+  /*
+   * The client checks HOST_TERMS_VERSION to decide whether to ask a host to
+   * accept again; the acceptance trigger stamps required_host_terms_version()
+   * as the value recorded. They are the same fact read from two sides, so if
+   * they disagree a host could be asked for one version and have another
+   * written — this pins them together, and fails whichever bumps without the
+   * other.
+   */
+  it("keeps HOST_TERMS_VERSION equal to required_host_terms_version()", async () => {
+    const [row] = await rows<{ version: number }>(`select required_host_terms_version() as version`);
+    expect(row.version).toBe(HOST_TERMS_VERSION);
+  });
+
+  /*
+   * CASE D: the migration adds the columns null and backfills nothing. An
+   * account that existed before the Host Terms carries no acceptance it never
+   * made — the record exists precisely so it cannot claim one.
+   */
+  it("leaves existing accounts with no acceptance", async () => {
+    const host = await hostFor("Grandfathered Studio");
+    const [row] = await rows<{ v: number | null; at: string | null }>(
+      `select host_terms_version as v, host_terms_accepted_at as at
+       from profiles where id = '${host}'`,
+    );
+    expect(row.v).toBeNull();
+    expect(row.at).toBeNull();
+  });
+
+  /*
+   * And an existing listing keeps running. The gate is on INSERT, so a space
+   * that was live before the Host Terms stays live and editable regardless of
+   * whether its host has accepted them yet.
+   */
+  it("does not disturb a listing whose host has not accepted", async () => {
+    const host = await hostFor("Still Live Studio");
+    await db.exec(`
+      insert into spaces (
+        id, host_id, name, category, hourly_rate_cents, capacity, access_type,
+        entry_instructions, address_line, status, sublease_doc_path, legal_ack_at,
+        sublease_doc_state, sublease_doc_reviewed_at
+      ) values (
+        '0000d052-0000-4000-8000-000000000001', '${host}', 'Live', 'physical', 4200, 2,
+        'keypad', 'By the door', '3 Old Road', 'active',
+        'space/o/lease.pdf', now(), 'verified', now()
+      );
+    `);
+    await db.exec(
+      `update spaces set hourly_rate_cents = 4300
+       where id = '0000d052-0000-4000-8000-000000000001'`,
+    );
+    const [row] = await rows<{ status: string; rate: number }>(
+      `select status, hourly_rate_cents as rate from spaces
+       where id = '0000d052-0000-4000-8000-000000000001'`,
+    );
+    expect(row.status).toBe("active");
+    expect(row.rate).toBe(4300);
   });
 });

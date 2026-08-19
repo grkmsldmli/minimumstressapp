@@ -221,6 +221,13 @@ export default function ForHostsPage() {
           >
             List your space
           </a>
+          <p className="mt-4 text-[13.5px]" style={{ color: "#8a94a3" }}>
+            By listing, you agree to our{" "}
+            <a href={`${APP_URL}/host-terms`} className="underline" style={{ color: "#5f6673" }}>
+              Host Terms
+            </a>
+            .
+          </p>
         </section>
       </main>
 

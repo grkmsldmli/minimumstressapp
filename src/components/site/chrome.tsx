@@ -175,6 +175,13 @@ const COMPANY = [
    */
   { label: "Assessments", href: "/assessments" },
   { label: "Terms", href: `${APP_URL}/terms` },
+  /*
+   * The second agreement, the one only a host accepts. It sits beside Terms
+   * rather than under Hosts because it is a published document at its own
+   * address, not a host feature — a host deciding whether to list reads it
+   * before they have an account.
+   */
+  { label: "Host Terms", href: `${APP_URL}/host-terms` },
   { label: "Privacy", href: `${APP_URL}/privacy` },
   /*
    * A legal fixture for a company operating in California, and one worth
@@ -393,6 +400,7 @@ export function SiteFooter() {
             <FooterLink href={`${APP_URL}/privacy`}>Privacy</FooterLink>
             <FooterLink href="/privacy-choices">YOUR PRIVACY CHOICES</FooterLink>
             <FooterLink href={`${APP_URL}/terms`}>Terms</FooterLink>
+            <FooterLink href={`${APP_URL}/host-terms`}>Host Terms</FooterLink>
             <FooterLink href="/contact">Support</FooterLink>
           </nav>
         </div>

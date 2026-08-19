@@ -196,6 +196,10 @@ export class SupabaseRepository implements Repository {
       searchPostcode: data?.search_postcode ?? null,
       termsVersion: data?.terms_version ?? null,
       termsAcceptedAt: data?.terms_accepted_at ? new Date(data.terms_accepted_at) : null,
+      hostTermsVersion: data?.host_terms_version ?? null,
+      hostTermsAcceptedAt: data?.host_terms_accepted_at
+        ? new Date(data.host_terms_accepted_at)
+        : null,
       milestonesSeen: (data?.milestones_seen as string[] | null) ?? [],
       // Read back only for its owner — this query runs as the signed-in user,
       // and no policy lets anyone select another person's profile row.
@@ -235,6 +239,12 @@ export class SupabaseRepository implements Repository {
      * server clock, so a client cannot record that somebody agreed last year.
      */
     if (patch.termsVersion !== undefined) row.terms_version = patch.termsVersion;
+    /*
+     * Sent by the client, but the database decides the number: a trigger in
+     * 0052 clamps whatever arrives to the current required version and stamps
+     * the moment, so a caller cannot record a version they were not shown.
+     */
+    if (patch.hostTermsVersion !== undefined) row.host_terms_version = patch.hostTermsVersion;
     // Dismissing a card is the person's own action, and nothing downstream
     // reads this for money or access.
     if (patch.milestonesSeen !== undefined) row.milestones_seen = patch.milestonesSeen;

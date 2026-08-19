@@ -54,14 +54,27 @@ import {
 } from "@/lib/taxonomy";
 import { spaceTypesFor } from "@/lib/space-types";
 import { HOST_USES, OPT_IN_USES, defaultUsesFor } from "@/lib/booking-use";
+import { HOST_TERMS_CONFIRMATION } from "@/lib/host-terms";
 const MAX_MEDIA = 6;
 const STEP_LABELS = ["Basics", "Photos & extras", "Verify"] as const;
 export function AddSpace({
   onBack,
   onListed,
+  hostTermsAccepted,
+  onAcceptHostTerms,
 }: {
   onBack: () => void;
   onListed: (input: NewSpaceInput) => Promise<void>;
+  /**
+   * Whether this host has already accepted the current Host Terms. A host who
+   * has listed before, and accepted the version in force, is not asked again;
+   * a first-time host, or one whose acceptance is behind a newer version, sees
+   * the acceptance step and cannot publish without it. The server enforces the
+   * same gate (RLS on the spaces insert), so this only decides what to show.
+   */
+  hostTermsAccepted: boolean;
+  /** Records the acceptance. Runs before the listing, so the gate is already open. */
+  onAcceptHostTerms: () => Promise<void>;
 }) {
   const [step, setStep] = useState(1);
   const [listed, setListed] = useState(false);
@@ -152,6 +165,16 @@ export function AddSpace({
   const [subleaseDoc, setSubleaseDoc] = useState<File | null>(null);
   const [insuranceDoc, setInsuranceDoc] = useState<File | null>(null);
   const [agreed, setAgreed] = useState(false);
+  /*
+   * Accepting the Host Terms, the once. Only asked of a host who has not
+   * accepted the version in force — a returning host who has is not shown this
+   * and does not tick it again. It is a separate consent from the per-listing
+   * acknowledgement above it: that one is about this room, this is about being
+   * a host at all, and it is recorded against a version so it can be re-asked
+   * when the terms change.
+   */
+  const needsHostTerms = !hostTermsAccepted;
+  const [hostTermsChecked, setHostTermsChecked] = useState(false);
   // Release every preview URL when the wizard unmounts, whether the listing
   // was submitted or abandoned.
   useEffect(
@@ -193,7 +216,8 @@ export function AddSpace({
    */
   const canStep2 =
     media.length >= 1 && isValidSchedule(blocks) && describesTheRoom(description);
-  const canSubmit = subleaseDoc !== null && agreed;
+  const canSubmit =
+    subleaseDoc !== null && agreed && (!needsHostTerms || hostTermsChecked);
   const canAdvance = step === 1 ? canStep1 : step === 2 ? canStep2 : canSubmit;
   /*
    * What is still missing, named.
@@ -219,6 +243,7 @@ export function AddSpace({
   } else {
     if (subleaseDoc === null) missing.push("proof you can sublet the room");
     if (!agreed) missing.push("the acknowledgement");
+    if (needsHostTerms && !hostTermsChecked) missing.push("your agreement to the Host Terms");
   }
   const addMedia = (file: File) => {
     if (media.length >= MAX_MEDIA) return;
@@ -239,6 +264,10 @@ export function AddSpace({
     setSubmitError(null);
     setSubmitting(true);
     try {
+      // The acceptance first, so the row the listing needs — a host who has
+      // accepted the current Host Terms — exists before the insert the server
+      // gates on it. A returning host who already accepted does neither.
+      if (needsHostTerms) await onAcceptHostTerms();
       await onListed({
         name: name.trim(),
         category,
@@ -996,6 +1025,72 @@ export function AddSpace({
                 for anything damaged during a booking.
               </span>
             </button>
+            {needsHostTerms && (
+              /*
+               * Accepting the Host Terms — shown only to a host who has not
+               * accepted the version in force. The whole agreement is one tap
+               * away; this is the line they actually tick, and it pairs the
+               * acceptance with the representation the document turns on.
+               */
+              <button
+                type="button"
+                onClick={() => setHostTermsChecked((v) => !v)}
+                aria-pressed={hostTermsChecked}
+                className="w-full flex items-start gap-3 mt-3 p-3.5 rounded-2xl text-left press"
+                style={{
+                  backgroundColor: hostTermsChecked ? "#EDF6FE" : "#F4F8FC",
+                  border: `1px solid ${hostTermsChecked ? "#D4E8FA" : "#E7EEF6"}`,
+                }}
+              >
+                <span
+                  className="w-5 h-5 rounded-md flex items-center justify-center shrink-0 mt-0.5"
+                  style={{
+                    backgroundColor: hostTermsChecked ? "#3B9BE8" : "#fff",
+                    border: `1px solid ${hostTermsChecked ? "#3B9BE8" : "#DCE7F2"}`,
+                  }}
+                >
+                  {hostTermsChecked && <Check size={12} color="#fff" />}
+                </span>
+                <span className="font-body font-normal text-[14px] leading-relaxed text-[#2E5578]">
+                  <ShieldCheck size={12} className="inline mr-1 -mt-0.5" color="#3B9BE8" />
+                  {HOST_TERMS_CONFIRMATION}
+                </span>
+              </button>
+            )}
+            {needsHostTerms && (
+              <p className="mt-2 px-1 font-body font-normal text-[12.5px] leading-relaxed text-ink-soft">
+                Read the{" "}
+                <a
+                  href="/host-terms"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-sky-text underline"
+                  // Stop the tap from also toggling nothing; it is its own link.
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  Host Terms
+                </a>
+                , the{" "}
+                <a
+                  href="/terms"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-sky-text underline"
+                >
+                  Terms of Service
+                </a>{" "}
+                and the{" "}
+                <a
+                  href="/privacy"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-sky-text underline"
+                >
+                  Privacy Policy
+                </a>
+                . You accept these once; we&apos;ll only ask again if they change.
+              </p>
+            )}
             <div
               className="mt-5 rounded-2xl p-4"
               style={{ backgroundColor: "#F9FAFB", border: "1px solid #E7EEF6" }}

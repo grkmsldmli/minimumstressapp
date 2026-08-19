@@ -91,6 +91,13 @@ export interface Profile {
   termsVersion: number | null;
   termsAcceptedAt: Date | null;
   /**
+   * The Host Terms, accepted separately and only by someone who lists a space.
+   * Null on every guest and on a host who has not yet listed under the current
+   * agreement. See lib/host-terms.ts and migration 0052.
+   */
+  hostTermsVersion: number | null;
+  hostTermsAcceptedAt: Date | null;
+  /**
    * Milestone keys already shown, so the one full-screen moment appears once.
    *
    * Only "have they seen it" — whether a milestone is *earned* is derived from

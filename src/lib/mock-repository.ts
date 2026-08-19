@@ -285,6 +285,8 @@ export class MockRepository implements Repository {
     searchPostcode: null,
     termsVersion: null,
     termsAcceptedAt: null,
+    hostTermsVersion: null,
+    hostTermsAcceptedAt: null,
     milestonesSeen: [],
   };
 
@@ -366,6 +368,14 @@ export class MockRepository implements Repository {
 
   async updateProfile(patch: Partial<Profile>): Promise<Profile> {
     this.profile = { ...this.profile, ...patch, id: ME };
+    /*
+     * The database stamps the moment when a version is accepted; the mock does
+     * the same so the demo shows an accepted date and hasAcceptedHostTerms sees
+     * a consistent record, the way a real profile read would.
+     */
+    if (patch.hostTermsVersion != null && this.profile.hostTermsAcceptedAt === null) {
+      this.profile = { ...this.profile, hostTermsAcceptedAt: new Date() };
+    }
     return { ...this.profile };
   }
 

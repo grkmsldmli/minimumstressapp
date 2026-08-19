@@ -1707,3 +1707,120 @@ describe("a host can edit every column the app writes", () => {
     );
   });
 });
+
+/**
+ * A space cannot be listed until its host has accepted the Host Terms — and
+ * the version accepted is the database's to decide, not the caller's.
+ *
+ * The gate is in RLS (migration 0052), so a direct insert cannot skip it any
+ * more than the client can. These run the insert as the host would, through
+ * the `authenticated` role, which is the only way the policy is exercised at
+ * all — the beforeAll seed writes as superuser and bypasses it.
+ */
+describe("listing requires accepting the Host Terms", () => {
+  // Fresh accounts, so nothing the earlier blocks did leaks in. Each is a host
+  // by account_type — the account gate is not what these tests are about — and
+  // starts with no Host Terms acceptance.
+  const NEW_HOST = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+  const FORGER = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+  const SEPARATE = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+
+  const listing = (id: string) => `
+    insert into spaces (
+      id, host_id, name, category, hourly_rate_cents, capacity, access_type,
+      entry_instructions, address_line, status, sublease_doc_path, legal_ack_at,
+      sublease_doc_state, sublease_doc_reviewed_at
+    ) values (
+      '${id}', auth.uid(), 'New Room', 'physical', 4000, 3, 'keypad',
+      'Panel by the door', '1 New Street', 'pending',
+      'space/n/lease.pdf', now(), 'pending', null
+    )`;
+
+  beforeAll(async () => {
+    // profiles.id references auth.users(id), so the user has to exist first.
+    // Written as superuser, which is how the real seed is written too.
+    await db.exec(`
+      insert into auth.users (id, email) values
+        ('${NEW_HOST}', 'fresh@example.com'),
+        ('${FORGER}', 'clever@example.com'),
+        ('${SEPARATE}', 'two@example.com');
+
+      insert into profiles (id, display_name, account_type) values
+        ('${NEW_HOST}', 'Fresh Studio', 'host'),
+        ('${FORGER}', 'Clever Studio', 'host'),
+        ('${SEPARATE}', 'Two Studio', 'host');
+    `);
+  });
+
+  /* CASE A: a host account with no Host Terms acceptance cannot publish. */
+  it("refuses the insert when the Host Terms are not accepted", async () => {
+    await expect(
+      asUser(NEW_HOST, listing("d1111111-1111-4111-8111-111111111111")),
+    ).rejects.toThrow(/row-level security/i);
+  });
+
+  /* CASE B: accepting the current version opens the gate. */
+  it("allows the insert once the Host Terms are accepted", async () => {
+    await asUser(
+      NEW_HOST,
+      `insert into profiles (id, host_terms_version) values (auth.uid(), 1)
+         on conflict (id) do update set host_terms_version = 1`,
+    );
+
+    await expect(
+      asUser(NEW_HOST, listing("d2222222-2222-4222-8222-222222222222")),
+    ).resolves.toBeDefined();
+  });
+
+  /*
+   * CASE H: a forged high version is clamped to what the database requires.
+   * The caller cannot record a version they were not shown, so cannot vault
+   * themselves past a future re-acceptance the gate will demand.
+   */
+  it("records the required version, whatever the client sent", async () => {
+    await asUser(
+      FORGER,
+      `insert into profiles (id, host_terms_version) values (auth.uid(), 999)
+         on conflict (id) do update set host_terms_version = 999`,
+    );
+
+    const [row] = await asUser<{ host_terms_version: number; host_terms_accepted_at: string | null }>(
+      FORGER,
+      `select host_terms_version, host_terms_accepted_at from profiles where id = auth.uid()`,
+    );
+
+    expect(row.host_terms_version).toBe(1);
+    expect(row.host_terms_accepted_at).not.toBeNull();
+  });
+
+  /* Accepted terms cannot be withdrawn. */
+  it("refuses to unset an accepted version", async () => {
+    await asUser(
+      NEW_HOST,
+      `update profiles set host_terms_version = 1 where id = auth.uid()`,
+    );
+    await expect(
+      asUser(NEW_HOST, `update profiles set host_terms_version = null where id = auth.uid()`),
+    ).rejects.toThrow(/withdrawn/i);
+  });
+
+  /*
+   * CASE F: the general-terms acceptance is a separate record. Setting one does
+   * not set the other, so a host who accepted the app's terms still has to
+   * accept the Host Terms before listing (and the reverse).
+   */
+  it("keeps Host Terms acceptance separate from general terms", async () => {
+    await asUser(
+      SEPARATE,
+      `insert into profiles (id, terms_version) values (auth.uid(), 1)
+         on conflict (id) do update set terms_version = 1`,
+    );
+
+    const [row] = await asUser<{ terms_version: number; host_terms_version: number | null }>(
+      SEPARATE,
+      `select terms_version, host_terms_version from profiles where id = auth.uid()`,
+    );
+    expect(row.terms_version).toBe(1);
+    expect(row.host_terms_version).toBeNull();
+  });
+});

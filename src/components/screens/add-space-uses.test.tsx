@@ -38,8 +38,16 @@ afterEach(cleanup);
 
 function open() {
   const onListed = vi.fn().mockResolvedValue(undefined);
-  render(<AddSpace onBack={vi.fn()} onListed={onListed} />);
-  return { onListed };
+  const onAcceptHostTerms = vi.fn().mockResolvedValue(undefined);
+  render(
+    <AddSpace
+      onBack={vi.fn()}
+      onListed={onListed}
+      hostTermsAccepted={false}
+      onAcceptHostTerms={onAcceptHostTerms}
+    />,
+  );
+  return { onListed, onAcceptHostTerms };
 }
 
 /**

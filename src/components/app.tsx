@@ -45,6 +45,7 @@ import { rebookable } from "@/lib/rebook";
 import { FALLBACK_ZONE } from "@/lib/timezone";
 import { sessionDayShort } from "@/lib/when";
 import { TERMS_VERSION, hasAcceptedTerms } from "@/lib/terms";
+import { HOST_TERMS_VERSION, hasAcceptedHostTerms } from "@/lib/host-terms";
 
 import { type Screen, useApp } from "./app-state";
 import { AcceptTerms } from "./screens/accept-terms";
@@ -828,6 +829,18 @@ export function App() {
   const renderAddSpace = () => (
         <AddSpace
           onBack={() => go("host")}
+          hostTermsAccepted={hasAcceptedHostTerms(profile)}
+          /*
+           * Record the acceptance before the listing, so the row the insert
+           * gate checks for — a host at the current Host Terms version — is in
+           * place. The database stamps the version and the moment itself; the
+           * value sent here is only a request to accept, which it clamps to
+           * whatever it currently requires.
+           */
+          onAcceptHostTerms={async () => {
+            await repo.updateProfile({ hostTermsVersion: HOST_TERMS_VERSION });
+            refresh();
+          }}
           onListed={async (input) => {
             await repo.createSpace(input);
             refresh();
@@ -926,6 +939,8 @@ export function App() {
             setThreadBookingId(bookingId);
             go("thread");
           }}
+          hostTermsVersion={profile.hostTermsVersion}
+          hostTermsAcceptedAt={profile.hostTermsAcceptedAt}
         />
   );
 

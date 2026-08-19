@@ -49,6 +49,8 @@ Our terms and privacy policy are published at minimumstress.app/terms and /priva
 
 The existing text covers: the marketplace relationship, independent-contractor status, the off-platform booking prohibition, health and wellness disclaimers, cancellation and refund policy, reviews and safety, and a privacy policy naming every third-party processor.
 
+We have since drafted a separate **Host Terms** (published at /host-terms), accepted once by a host before their first listing, on its own version line and its own timestamp — independent of the general Terms above. It is drafted but **not reviewed by counsel**; section 7 sets out what is in it and the specific points we are unsure of.
+
 ## 5. What we are asking you to draft
 
 Our current terms contain **none** of the following. These are what we would like drafted:
@@ -72,7 +74,25 @@ Our current terms contain **none** of the following. These are what we would lik
 
 5. **Anything a marketplace of this shape ordinarily needs that we have not thought of.** Our particular concern is physical risk: a practitioner and their client are alone in a room belonging to a third party, arranged through us.
 
-## 7. What we would like from you
+## 7. Host Terms — a second agreement, drafted and awaiting your review
+
+We drafted a separate Host Terms because listing a space carries obligations a booking guest never takes on, and folding them into the terms everyone accepts would both over-burden guests and leave a host's acceptance of them unprovable. A host accepts these once, before their first listing; acceptance is versioned and timestamped like the general terms, the version is set server-side (a host cannot record a version they were not shown), and a listing cannot be published until it is accepted. The full text is at /host-terms.
+
+The document was written from what the product actually does — the payout model, the claim window, the review step and the account-suspension powers were each traced to code before they were written down. The points below are where the wording turns on a legal judgement rather than a product fact, and where we want your view. They are marked in the source as `REVIEW` at `src/lib/host-terms.ts`.
+
+1. **The whole document.** It has not been reviewed by counsel and should not ship as final until it has. Everything below is a specific worry inside that general one.
+
+2. **"You are an independent operator" (and the platform-role question in 6.4).** The Host Terms deliberately state only that a host is an independent business operating their own space, and deliberately **do not** repeat the general terms' "not a party to the booking" language, because that broader disclaimer is exactly what we have flagged against ourselves in 6.4. Please tell us whether the narrower host-facing wording is right, and keep it consistent with however 6.4 resolves.
+
+3. **Anti-circumvention, restated for hosts.** The Host Terms tell a host they may not take a confirmed booking off-platform, resell it, or arrange outside payment — the same prohibition the general terms already place on everyone. Please confirm the two are consistent and enforceable together, and that restating it against hosts does not weaken it.
+
+4. **Cancellations and standing.** The Host Terms say repeated late cancellations can pause a host's ability to take bookings. This describes the reliability model the app actually enforces (a 90-day window, a threshold, a temporary pause). Please confirm the consequence is stated no more strongly than the system imposes.
+
+5. **Damage and claims.** The Host Terms say a host may report damage within the in-app window and that the outcome depends on the evidence and on what the payment system supports. The app authorises the guest's card at booking, and that authorisation is what a claim can draw on. We have deliberately not asserted any broader recovery power. Please confirm the wording matches the card-on-file mandate and claim process in place (this is the host-side of the same fact as 2, para 28).
+
+6. **Insurance.** The Host Terms place property and business insurance on the host, state that we provide none, and say some uses "may carry their own insurance requirements, which are shown where they apply." Whether client-facing or professional bookings should carry a separate liability-insurance requirement is a product-and-legal decision we have not made or built. Please advise whether we should.
+
+## 8. What we would like from you
 
 - A quote and estimated turnaround for the drafting in section 5.
 - A separate quote for the review in section 6, if you would rather scope them apart.

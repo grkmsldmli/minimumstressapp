@@ -4,6 +4,7 @@ import type { Metadata } from "next";
 import { SiteFooter, SiteHeader } from "@/components/site/chrome";
 import { SleepTool } from "@/components/site/sleep-tool";
 import { BRAND } from "@/lib/company";
+import { Disclaimer } from "@/components/site/disclaimer";
 
 export const metadata: Metadata = {
   title: "Sleep Score",
@@ -48,15 +49,12 @@ export default function SleepScorePage() {
             <SleepTool />
           </div>
 
-          <p
-            className="mt-12 rounded-2xl p-6 text-[14px] leading-[1.75]"
-            style={{ backgroundColor: "#f8fbfd", border: "1px solid #e7eef6", color: "#5f6673" }}
-          >
+          <Disclaimer>
             This is information, not medical advice, and not a diagnosis. Sleep problems can have
             causes a questionnaire cannot see — apnoea, restless legs and thyroid trouble among
             them. {BRAND} is not a medical provider. If your nights have been like this for months,
             or somebody has told you that you stop breathing in your sleep, that is worth a doctor.
-          </p>
+          </Disclaimer>
       </div>
       </main>
 

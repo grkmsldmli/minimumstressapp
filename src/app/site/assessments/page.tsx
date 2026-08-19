@@ -2,8 +2,8 @@ import Link from "next/link";
 import type { Metadata } from "next";
 
 import { SiteFooter, SiteHeader } from "@/components/site/chrome";
-import { BRAND } from "@/lib/company";
 import { type Tool, liveToolsOfKind } from "@/lib/tools";
+import { Disclaimer } from "@/components/site/disclaimer";
 
 /**
  * The Wellness Hub.
@@ -170,22 +170,3 @@ function ToolCard({ tool }: { tool: Tool }) {
   );
 }
 
-/**
- * Said once, at the bottom, in plain words.
- *
- * The old pages each carried a folded-away "Disclaimer & Important
- * Information" button in grey-on-grey at ten percent contrast. A disclaimer
- * nobody can read is not a disclaimer; it is a place to point at afterwards.
- */
-function Disclaimer() {
-  return (
-    <p
-      className="mt-16 rounded-2xl p-6 text-[14px] leading-[1.75]"
-      style={{ backgroundColor: "#f8fbfd", border: "1px solid #e7eef6", color: "#5f6673" }}
-    >
-      These tools are for information, not medical advice. They score self-reported answers and
-      are not clinical measurements — nothing here diagnoses, treats, or rules anything out.{" "}
-      {BRAND} is not a medical provider. If something worries you, see a doctor.
-    </p>
-  );
-}

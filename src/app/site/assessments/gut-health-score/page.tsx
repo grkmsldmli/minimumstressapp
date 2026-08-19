@@ -5,6 +5,7 @@ import { SiteFooter, SiteHeader } from "@/components/site/chrome";
 import { SectionedTool } from "@/components/site/sectioned-tool";
 import { gut } from "@/lib/assessments/gut";
 import { BRAND } from "@/lib/company";
+import { Disclaimer } from "@/components/site/disclaimer";
 
 export const metadata: Metadata = {
   title: "Gut Health Score",
@@ -45,12 +46,9 @@ export default function Page() {
             <SectionedTool assessment={gut} />
           </div>
 
-          <p
-            className="mt-12 rounded-2xl p-6 text-[14px] leading-[1.75]"
-            style={{ backgroundColor: "#f8fbfd", border: "1px solid #e7eef6", color: "#5f6673" }}
-          >
+          <Disclaimer>
             This is information, not medical advice, and not a diagnosis. Persistent digestive symptoms can have causes a questionnaire cannot see — coeliac disease and inflammatory bowel disease among them — and blood in the stool or unexplained weight loss should be seen by a doctor promptly rather than scored here. {BRAND} is not a medical provider.
-          </p>
+          </Disclaimer>
       </div>
       </main>
 

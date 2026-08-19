@@ -5,6 +5,7 @@ import { SiteFooter, SiteHeader } from "@/components/site/chrome";
 import { SectionedTool } from "@/components/site/sectioned-tool";
 import { cortisol } from "@/lib/assessments/cortisol";
 import { BRAND } from "@/lib/company";
+import { Disclaimer } from "@/components/site/disclaimer";
 
 export const metadata: Metadata = {
   title: "Cortisol Assessment",
@@ -45,12 +46,9 @@ export default function Page() {
             <SectionedTool assessment={cortisol} />
           </div>
 
-          <p
-            className="mt-12 rounded-2xl p-6 text-[14px] leading-[1.75]"
-            style={{ backgroundColor: "#f8fbfd", border: "1px solid #e7eef6", color: "#5f6673" }}
-          >
+          <Disclaimer>
             This is information, not medical advice, and it is not a measurement of cortisol — that needs a blood, saliva or urine test. It cannot see thyroid trouble, Cushing&rsquo;s or Addison&rsquo;s, all of which look like this from the outside. If you suspect a hormonal condition, that is a doctor and a laboratory rather than a questionnaire. {BRAND} is not a medical provider.
-          </p>
+          </Disclaimer>
       </div>
       </main>
 

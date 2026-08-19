@@ -4,6 +4,7 @@ import type { Metadata } from "next";
 import { BmiTool } from "@/components/site/bmi-tool";
 import { SiteFooter, SiteHeader } from "@/components/site/chrome";
 import { BRAND } from "@/lib/company";
+import { Disclaimer } from "@/components/site/disclaimer";
 
 export const metadata: Metadata = {
   title: "BMI Calculator",
@@ -44,21 +45,12 @@ export default function BmiPage() {
             <BmiTool />
           </div>
 
-          {/*
-            Said in the open rather than folded behind a grey "Disclaimer &
-            Important Information" button, which is where the Shopify page put it.
-            Somebody who has just been handed a number about their own body is
-            owed the limits of it in the same breath, not one click away.
-          */}
-          <p
-            className="mt-12 rounded-2xl p-6 text-[14px] leading-[1.75]"
-            style={{ backgroundColor: "#f8fbfd", border: "1px solid #e7eef6", color: "#5f6673" }}
-          >
+          <Disclaimer>
             This is information, not medical advice, and not a diagnosis. BMI is a screening ratio
             — athletes read high, and it says nothing about where weight sits on the body, which is
             the part that matters most. {BRAND} is not a medical provider. If you want to know what
             your weight means for your health, that is a conversation with a doctor.
-          </p>
+          </Disclaimer>
       </div>
       </main>
 

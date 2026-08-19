@@ -4,6 +4,7 @@ import type { Metadata } from "next";
 import { BioAgeTool } from "@/components/site/bio-age-tool";
 import { SiteFooter, SiteHeader } from "@/components/site/chrome";
 import { BRAND } from "@/lib/company";
+import { Disclaimer } from "@/components/site/disclaimer";
 
 export const metadata: Metadata = {
   title: "Biological Age Calculator",
@@ -55,16 +56,13 @@ export default function BiologicalAgePage() {
             <BioAgeTool />
           </div>
 
-          <p
-            className="mt-12 rounded-2xl p-6 text-[14px] leading-[1.75]"
-            style={{ backgroundColor: "#f8fbfd", border: "1px solid #e7eef6", color: "#5f6673" }}
-          >
+          <Disclaimer>
             This is information, not medical advice, and not a diagnosis. The number is an
             arithmetic summary of what you told it and is not clinically validated — genetics,
             medical history, medication and everything not asked about here matter too.{" "}
             {BRAND} is not a medical provider. Before making a significant change to how you live,
             particularly if you are managing a condition, talk to a doctor.
-          </p>
+          </Disclaimer>
       </div>
       </main>
 

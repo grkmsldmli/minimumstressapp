@@ -4,6 +4,7 @@ import type { Metadata } from "next";
 import { BodyFatTool } from "@/components/site/body-fat-tool";
 import { SiteFooter, SiteHeader } from "@/components/site/chrome";
 import { BRAND } from "@/lib/company";
+import { Disclaimer } from "@/components/site/disclaimer";
 
 export const metadata: Metadata = {
   title: "Body Fat Calculator",
@@ -44,14 +45,11 @@ export default function BodyFatPage() {
             <BodyFatTool />
           </div>
 
-          <p
-            className="mt-12 rounded-2xl p-6 text-[14px] leading-[1.75]"
-            style={{ backgroundColor: "#f8fbfd", border: "1px solid #e7eef6", color: "#5f6673" }}
-          >
+          <Disclaimer>
             This is information, not medical advice. Circumference methods are estimates and they
             run several points either side of a DEXA scan, particularly at the extremes and for
             people carrying a lot of muscle. {BRAND} is not a medical provider.
-          </p>
+          </Disclaimer>
       </div>
       </main>
 

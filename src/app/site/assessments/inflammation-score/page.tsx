@@ -5,6 +5,7 @@ import { SiteFooter, SiteHeader } from "@/components/site/chrome";
 import { SectionedTool } from "@/components/site/sectioned-tool";
 import { inflammation } from "@/lib/assessments/inflammation";
 import { BRAND } from "@/lib/company";
+import { Disclaimer } from "@/components/site/disclaimer";
 
 export const metadata: Metadata = {
   title: "Inflammation Score",
@@ -45,12 +46,9 @@ export default function Page() {
             <SectionedTool assessment={inflammation} />
           </div>
 
-          <p
-            className="mt-12 rounded-2xl p-6 text-[14px] leading-[1.75]"
-            style={{ backgroundColor: "#f8fbfd", border: "1px solid #e7eef6", color: "#5f6673" }}
-          >
+          <Disclaimer>
             This is information, not medical advice, and not a measurement. Inflammation is measured in blood — hs-CRP and IL-6 — and nothing here is a substitute for that. Joint pain, persistent fatigue and recurring symptoms have many causes, several of them treatable, and they are worth taking to a doctor. {BRAND} is not a medical provider.
-          </p>
+          </Disclaimer>
       </div>
       </main>
 

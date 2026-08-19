@@ -4,6 +4,7 @@ import type { Metadata } from "next";
 import { BurnoutTool } from "@/components/site/burnout-tool";
 import { SiteFooter, SiteHeader } from "@/components/site/chrome";
 import { BRAND } from "@/lib/company";
+import { Disclaimer } from "@/components/site/disclaimer";
 
 export const metadata: Metadata = {
   title: "Burnout Test",
@@ -48,15 +49,12 @@ export default function BurnoutTestPage() {
             <BurnoutTool />
           </div>
 
-          <p
-            className="mt-12 rounded-2xl p-6 text-[14px] leading-[1.75]"
-            style={{ backgroundColor: "#f8fbfd", border: "1px solid #e7eef6", color: "#5f6673" }}
-          >
+          <Disclaimer>
             This is a reflection, not a diagnosis. Burnout is not a medical condition on its own,
             and low mood, exhaustion and detachment have causes a questionnaire cannot see.{" "}
             {BRAND} is not a medical provider. If your stress feels intense or unsafe, please talk
             to a doctor or a mental health professional.
-          </p>
+          </Disclaimer>
       </div>
       </main>
 

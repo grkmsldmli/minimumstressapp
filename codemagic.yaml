@@ -1,0 +1,51 @@
+# Codemagic build for the Capacitor native shell.
+#
+# The app is server-driven: capacitor.config.ts points at minimumstress.app, so
+# the build does NOT compile the Next.js site — it only installs dependencies,
+# syncs Capacitor (which copies the mobile/www fallback and wires the native
+# projects), and builds the native app.
+#
+# Start with `android-debug`: it needs no signing, produces an installable APK
+# to test on a device, and proves the whole thing compiles. `ios-release` and a
+# signed Android release come once the Apple Developer and Play accounts are
+# verified and their signing is connected in the Codemagic UI.
+
+workflows:
+  android-debug:
+    name: Android debug (test build, no signing)
+    instance_type: linux_x2
+    max_build_duration: 60
+    environment:
+      node: 22
+    scripts:
+      - name: Install dependencies
+        script: npm ci
+      - name: Sync Capacitor (Android)
+        script: npx cap sync android
+      - name: Build debug APK
+        script: |
+          cd android
+          ./gradlew assembleDebug
+    artifacts:
+      - android/app/build/outputs/**/*.apk
+
+  ios-release:
+    # Runnable once the Apple Developer account is verified and connected:
+    # add an App Store Connect integration in Codemagic and fill `ios_signing`.
+    name: iOS release (requires Apple signing)
+    instance_type: mac_mini_m2
+    max_build_duration: 90
+    environment:
+      node: 22
+      xcode: latest
+      cocoapods: default
+    scripts:
+      - name: Install dependencies
+        script: npm ci
+      - name: Sync Capacitor (iOS)
+        script: npx cap sync ios
+      - name: Build IPA
+        script: |
+          # Code signing must be configured first (App Store Connect integration
+          # + ios_signing above). Until then this workflow is a placeholder.
+          echo "Connect Apple Developer signing in Codemagic, then enable the archive/export steps."

@@ -26,6 +26,10 @@ workflows:
         script: npx cap sync android
       - name: Build debug APK
         script: |
+          # Capacitor 8's Android library compiles at Java 21, so point the
+          # build at JDK 21 (the macOS runner defaults to an older one).
+          export JAVA_HOME=$(/usr/libexec/java_home -v 21)
+          java -version
           cd android
           # gradlew is committed from Windows without the executable bit, so the
           # macOS runner can't run it directly. Grant it here.

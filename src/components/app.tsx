@@ -36,6 +36,7 @@ import {
 } from "@/lib/supabase/auth";
 
 import { type Provider, enabledProviders } from "@/lib/auth-providers";
+import { isNativeApp } from "@/lib/native";
 import { BOOKING_HORIZON_DAYS } from "@/lib/money";
 import type { NotificationEntry } from "@/lib/notify/history";
 import { ClaimForm } from "@/components/screens/claim-form";
@@ -360,6 +361,15 @@ export function App() {
 
   useEffect(() => {
     if (!onSupabase) return;
+
+    // The native shell signs in by email code only. Third-party OAuth is a
+    // full-page redirect to the provider, and Google refuses that inside a
+    // WebView ("disallowed_useragent"); the email code has no redirect and
+    // works there. Offering only email also keeps the store build clear of
+    // Apple's Sign in with Apple requirement, which is triggered by third-party
+    // social login. So the app skips the provider lookup and the buttons stay
+    // hidden (the state already starts empty); the web keeps all of them.
+    if (isNativeApp()) return;
 
     const stop = new AbortController();
     void enabledProviders(

@@ -5,6 +5,7 @@ import {
   HOST_TERMS_CONTACT,
   HOST_TERMS_ENTITY,
   HOST_TERMS_SECTIONS,
+  HOST_TERMS_SUMMARY,
   HOST_TERMS_VERSION,
   hostTermsEffectiveLabel,
 } from "@/lib/host-terms";
@@ -47,6 +48,53 @@ export function HostTermsDocument() {
 
       <div className="px-6 py-10">
         <div className="mx-auto" style={{ maxWidth: 720 }}>
+          {/*
+            A plain-language summary before the wall of clauses, so a host sees
+            the shape of what they are agreeing to in the first ten seconds. It
+            is a reader's aid, not the agreement — HOST_TERMS_SUMMARY is
+            deliberately outside the binding text and the digest — so it is set
+            apart visually and labelled as a summary, with the full sections
+            immediately below.
+          */}
+          <section
+            className="mb-10 rounded-2xl p-5 sm:p-6"
+            style={{ backgroundColor: "#F4F8FC", border: "1px solid #E7EEF6" }}
+          >
+            <p className="font-body font-semibold text-[12px] uppercase tracking-[0.2em] text-sky-text mb-3.5">
+              Before you list
+            </p>
+            <ul className="flex flex-col gap-3">
+              {HOST_TERMS_SUMMARY.map((point) => (
+                <li key={point} className="flex items-start gap-3">
+                  <span
+                    className="w-5 h-5 rounded-full flex items-center justify-center shrink-0 mt-0.5"
+                    style={{ backgroundColor: "#E3F0FB" }}
+                    aria-hidden
+                  >
+                    <svg
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="#2E7CC4"
+                      strokeWidth="3"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M20 6 9 17l-5-5" />
+                    </svg>
+                  </span>
+                  <p className="font-body font-medium text-[15px] leading-snug text-navy">
+                    {point}
+                  </p>
+                </li>
+              ))}
+            </ul>
+            <p className="font-body font-normal text-[13px] leading-relaxed text-ink-soft mt-4">
+              A plain-language summary. The full terms below are what you accept.
+            </p>
+          </section>
+
           {HOST_TERMS_SECTIONS.map((section) => (
             <section key={section.key} className="mb-9">
               <h2 className="font-display italic font-semibold text-[21px] text-navy mb-3">

@@ -229,6 +229,25 @@ export const HOST_TERMS_SECTIONS: readonly HostTermsSection[] = [
 ];
 
 /**
+ * A plain-language summary, shown above the agreement on the published page.
+ *
+ * Not part of the agreement, and deliberately not part of the digest: it is a
+ * reader's aid so a host understands the shape of what they are signing in the
+ * first ten seconds, before reading the sections that actually bind them. The
+ * binding text is HOST_TERMS_SECTIONS; changing these lines does not change
+ * what a host accepts and must never be treated as if it does — which is why
+ * hostTermsDigest() hashes the sections and not this.
+ *
+ * Each line points at a section below rather than adding anything new to it.
+ */
+export const HOST_TERMS_SUMMARY: readonly string[] = [
+  "You must have the right to offer the space.",
+  "You control availability, rate and allowed uses.",
+  "Guests must declare their booking purpose.",
+  "Platform-wide prohibited uses always apply.",
+];
+
+/**
  * A fingerprint of the exact Host Terms text, pinned in host-terms.test.ts.
  *
  * Same reasoning and same function as termsDigest: editing the agreement

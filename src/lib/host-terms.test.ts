@@ -4,6 +4,7 @@ import { PROHIBITED_USES } from "./booking-use";
 import {
   HOST_TERMS_CONFIRMATION,
   HOST_TERMS_SECTIONS,
+  HOST_TERMS_SUMMARY,
   HOST_TERMS_VERSION,
   hasAcceptedHostTerms,
   hostTermsDigest,
@@ -132,6 +133,29 @@ describe("whether an account has accepted", () => {
   it("is true at the current version or newer", () => {
     expect(hasAcceptedHostTerms({ hostTermsVersion: HOST_TERMS_VERSION })).toBe(true);
     expect(hasAcceptedHostTerms({ hostTermsVersion: HOST_TERMS_VERSION + 1 })).toBe(true);
+  });
+});
+
+describe("the plain-language summary", () => {
+  it("is a reader's aid, kept out of the binding text", () => {
+    // If the summary were part of the agreement it would be in the digest, and
+    // editing it would force a version bump. It is not: the digest hashes the
+    // sections alone, so the summary can be reworded freely without touching
+    // what a stored acceptance stands for. The digest pin above is the guard
+    // that this stays true.
+    const document = HOST_TERMS_SECTIONS.flatMap((s) => [s.title, ...s.points]).join("\n");
+    for (const line of HOST_TERMS_SUMMARY) {
+      expect(document).not.toContain(line);
+    }
+  });
+
+  it("names the four things a host most needs to see first", () => {
+    expect(HOST_TERMS_SUMMARY).toHaveLength(4);
+    const joined = HOST_TERMS_SUMMARY.join(" ").toLowerCase();
+    expect(joined).toContain("right to offer");
+    expect(joined).toContain("availability, rate");
+    expect(joined).toContain("declare their booking");
+    expect(joined).toContain("prohibited uses always apply");
   });
 });
 

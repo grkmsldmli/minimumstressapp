@@ -27,6 +27,9 @@ workflows:
       - name: Build debug APK
         script: |
           cd android
+          # gradlew is committed from Windows without the executable bit, so the
+          # macOS runner can't run it directly. Grant it here.
+          chmod +x ./gradlew
           ./gradlew assembleDebug
     artifacts:
       - android/app/build/outputs/**/*.apk

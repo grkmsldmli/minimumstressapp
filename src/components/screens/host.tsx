@@ -302,7 +302,7 @@ export function HostDashboard({
           */}
           <div className="flex flex-col gap-2.5 mt-6">
             <DocumentStatus
-              label="Proof you can sublease"
+              label="Proof of right to offer the space"
               fileName={active.subleaseDocName}
               review={active.subleaseReview}
               note={active.reviewNote}
@@ -685,7 +685,7 @@ export function EditAvailability({
         <p className="font-body font-normal text-[13.5px] mb-3 text-ink-faint">
           Turn on the days you&apos;re open. This repeats every week until you change it again.
           Times are {zoneAbbreviation(new Date(), space.timeZone)}, taken from the listing&apos;s
-          address — a practitioner elsewhere sees them converted to theirs.
+          address — a guest elsewhere sees them converted to theirs.
         </p>
         <WeekSchedule blocks={blocks} onChange={setBlocks} />
       </div>
@@ -775,7 +775,7 @@ export function Earnings({
     spaces.find((s) => s.id === spaceId)?.timeZone ?? FALLBACK_ZONE;
 
   const exportCsv = () => {
-    const rows: string[][] = [["Date", "Space", "Practitioner", "Type", "Net payout"]];
+    const rows: string[][] = [["Date", "Space", "Guest", "Type", "Net payout"]];
     for (const booking of thisYear) {
       rows.push([
         booking.startsAt.toISOString().slice(0, 10),
@@ -1001,7 +1001,7 @@ export function HostProfile({
         <div className="flex flex-col gap-2.5">
           <SettingToggle
             label="New booking alerts"
-            sub="The moment a practitioner books"
+            sub="The moment someone books"
             on={profile.notifyBookings}
             onToggle={() => onUpdate({ notifyBookings: !profile.notifyBookings })}
           />
@@ -1265,7 +1265,7 @@ function Unfinished({ space, onEdit }: { space: HostSpace; onEdit: () => void })
       style={{ backgroundColor: "#FFF8F1", border: "1px solid #F5DFC4" }}
     >
       <p className="font-body font-medium text-[14.5px]" style={{ color: "#8B6C37" }}>
-        Practitioners look for {gaps.length === 1 ? "one more thing" : `${gaps.length} more things`}
+        Guests look for {gaps.length === 1 ? "one more thing" : `${gaps.length} more things`}
       </p>
 
       <div className="flex flex-col gap-2.5 mt-3">
@@ -1365,7 +1365,7 @@ function HostBookingRow({
 
       {past && cancelled && (
         <p className="font-body font-normal text-[13.5px] mt-2 text-ink-faint">
-          Cancelled by {booking.status === "cancelled_by_host" ? "you" : "the practitioner"}.
+          Cancelled by {booking.status === "cancelled_by_host" ? "you" : "the guest"}.
         </p>
       )}
 

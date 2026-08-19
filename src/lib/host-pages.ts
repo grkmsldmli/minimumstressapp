@@ -76,7 +76,7 @@ const COPY: Record<string, Omit<HostPage, "type">> = {
     concern: {
       question: "What about my equipment?",
       answer:
-        "You say what may be used and what may not, in the listing, and it is on the page before anybody books. Springs, straps and boxes are the usual line — most hosts let the reformers be used and keep the small apparatus out of it. Every practitioner here holds their own insurance, and every booking is a named person with a card on file, not a stranger with a door code.",
+        "You say what may be used and what may not, in the listing, and it is on the page before anybody books. Springs, straps and boxes are the usual line — most hosts let the reformers be used and keep the small apparatus out of it. Every booking is a named person with a card on file, not a stranger with a door code.",
     },
   },
 

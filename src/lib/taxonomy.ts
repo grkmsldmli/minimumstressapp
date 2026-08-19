@@ -323,7 +323,7 @@ export const ROOM_SETUPS = [
   {
     key: "private_room",
     label: "Private room",
-    detail: "A room with a door, yours for the hour.",
+    detail: "A private room with a door, yours during your booking.",
   },
   {
     key: "room_in_studio",

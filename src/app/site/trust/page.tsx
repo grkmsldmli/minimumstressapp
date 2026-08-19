@@ -112,7 +112,7 @@ const DO_NOT = [
 const FAQ = [
   {
     q: "Who is coming into my space?",
-    a: "Someone with an account who has accepted the terms, confirmed their insurance and paid for the hour. You see who booked and can message them beforehand.",
+    a: "Someone with an account who has accepted the terms, said what they are booking for, and paid. You see who booked and can message them beforehand.",
   },
   {
     q: "What if they do not turn up?",

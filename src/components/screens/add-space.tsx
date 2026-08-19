@@ -331,7 +331,7 @@ export function AddSpace({
           </div>
           <p className="font-body font-normal text-[14.5px] text-white/70 leading-relaxed mt-3">
             Your listing is in. We&apos;re reviewing your documents — usually the same day — and
-            we&apos;ll let you know the moment a practitioner books an open hour.
+            we&apos;ll let you know the moment your first booking comes in.
           </p>
           <button
             type="button"
@@ -428,8 +428,8 @@ export function AddSpace({
             */}
             <p className="font-body font-normal text-[13.5px] mt-2 text-ink-faint">
               Shown on your listing, like any studio&apos;s address. What stays private
-              is below: the entry instructions and the code go only to the practitioner
-              who booked, shortly before their session.
+              is below: the entry instructions and the code go only to the guest
+              who booked, shortly before their booking.
             </p>
             {/*
               Where we are, not only where we are not. A refusal with no map of
@@ -442,8 +442,8 @@ export function AddSpace({
                 style={{ backgroundColor: "#FFF7F5", border: "1px solid #F6D5D0" }}
               >
                 <p className="font-body font-medium text-[14.5px] text-navy">
-                  That is about {outsideBy} {outsideBy === 1 ? "mile" : "miles"} outside where we
-                  have practitioners
+                  That is about {outsideBy} {outsideBy === 1 ? "mile" : "miles"} outside the area
+                  we cover
                 </p>
                 <p className="font-body font-normal text-[14px] leading-relaxed mt-1 text-ink-soft">
                   We opened in San Francisco, the peninsula down to San Jose, and the East Bay.
@@ -670,7 +670,7 @@ export function AddSpace({
               </p>
             )}
             {/* Required by the brief, and absent from the prototype's step 1. */}
-            <SectionLabel className="mt-6">How does a practitioner get in?</SectionLabel>
+            <SectionLabel className="mt-6">How do guests get in?</SectionLabel>
             <div className="flex flex-wrap gap-2">
               {ACCESS_TYPES.map((option) => (
                 <Chip
@@ -698,7 +698,7 @@ export function AddSpace({
               style={{ border: "1px solid #DCE7F2" }}
             />
             <p className="font-body font-normal text-[13.5px] mt-2 text-ink-faint">
-              Shared with the practitioner shortly before their session, never publicly.
+              Shared with the guest shortly before their booking, never publicly.
             </p>
           </div>
         )}
@@ -721,7 +721,7 @@ export function AddSpace({
               value={description}
               onChange={(event) => setDescription(event.target.value.slice(0, 1200))}
               rows={4}
-              placeholder="What it's like to work in. Light, floor, quiet, anything a practitioner would want to picture."
+              placeholder="What it's like to work in. Light, floor, quiet, anything a guest would want to picture."
               className="font-body text-[15px] outline-none w-full rounded-xl px-3.5 py-3 resize-none text-navy"
               style={{ border: "1px solid #DCE7F2" }}
             />
@@ -871,8 +871,9 @@ export function AddSpace({
                 */}
                 {parkingLimit !== null && parkingLimit < 75 && (
                   <p className="font-body font-normal text-[13px] mt-2 text-[#8B6C37]">
-                    Sessions are an hour. A {parkingLimit < 60 ? `${parkingLimit}-minute` : "1-hour"}{" "}
-                    limit means moving the car before it ends — worth saying, and practitioners will
+                    A guest may be here more than an hour. A{" "}
+                    {parkingLimit < 60 ? `${parkingLimit}-minute` : "1-hour"}{" "}
+                    limit means moving the car before it ends — worth saying, and guests will
                     see it.
                   </p>
                 )}
@@ -914,7 +915,7 @@ export function AddSpace({
               House rules <OptionalTag />
             </SectionLabel>
             <p className="font-body font-normal text-[13.5px] mb-3 text-ink-faint">
-              Anything a practitioner needs to know before they book. Shown on your listing, not
+              Anything a guest needs to know before they book. Shown on your listing, not
               sprung on them afterwards.
             </p>
             {REQUIREMENT_GROUPS.map(({ kind, heading }) => (
@@ -959,7 +960,7 @@ export function AddSpace({
             <p className="font-body font-normal text-[13.5px] mb-3 text-ink-faint">
               Turn on the days you&apos;re open. Each day can hold several separate blocks, so you
               can keep the gaps for your own use. Times are{" "}
-              {zoneAbbreviation(new Date(), timeZone)}, taken from your address — a practitioner
+              {zoneAbbreviation(new Date(), timeZone)}, taken from your address — a guest
               somewhere else sees these hours converted to theirs.
             </p>
             <WeekSchedule blocks={blocks} onChange={setBlocks} />
@@ -985,7 +986,7 @@ export function AddSpace({
             <SectionLabel>Verify your space</SectionLabel>
             <div className="flex flex-col gap-3">
               <DocumentUpload
-                label="Proof you can sublease"
+                label="Proof of right to offer the space"
                 hint="Lease clause, landlord letter, or deed"
                 required
                 file={subleaseDoc}
@@ -1112,7 +1113,7 @@ export function AddSpace({
                 </span>
               </div>
               <div className="flex items-center justify-between mt-1">
-                <span className="font-body text-[14px] text-ink-soft">Practitioners see</span>
+                <span className="font-body text-[14px] text-ink-soft">Guests see</span>
                 <span className="font-body text-[14px] text-ink-faint">
                   {rateIsNumber
                     ? formatCents(

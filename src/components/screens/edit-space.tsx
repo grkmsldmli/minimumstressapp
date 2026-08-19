@@ -308,7 +308,7 @@ export function EditSpace({
         <Label>Capacity</Label>
         <Text value={capacity} onChange={(v) => setCapacity(v.replace(/[^\d]/g, ""))} />
 
-        <Label>How does a practitioner get in?</Label>
+        <Label>How do guests get in?</Label>
         <Text value={entry} onChange={setEntry} multiline />
 
         <Label>Turnover buffer (minutes)</Label>
@@ -391,8 +391,8 @@ export function EditSpace({
             </div>
             {parkingLimit !== null && !limitOutlastsSession(parkingLimit) && (
               <Note tone="warn">
-                Sessions are an hour. This limit means moving the car before one ends, and
-                practitioners will see that on your listing.
+                A guest may be here more than an hour. This limit means moving the car before
+                their time is up, and guests will see that on your listing.
               </Note>
             )}
           </>
@@ -502,7 +502,7 @@ export function EditSpace({
               }}
             />
             <p className="font-body font-normal text-[13.5px] mt-2 text-ink-faint">
-              Only shown to a practitioner once they&apos;ve booked — never public.
+              Only shown to a confirmed guest after booking — never public.
             </p>
 
             <div className="mt-3">
@@ -525,7 +525,7 @@ export function EditSpace({
         </p>
         <div className="flex flex-col gap-2.5">
           <DocumentStatus
-            label="Proof you can sublease"
+            label="Proof of right to offer the space"
             fileName={space.subleaseDocName}
             review={space.subleaseReview}
             note={space.reviewNote}
@@ -564,7 +564,7 @@ export function EditSpace({
             label="Status"
             value={
               space.status === "active"
-                ? "Live — practitioners can book it"
+                ? "Live — available for booking"
                 : space.status === "pending"
                   ? "Waiting on review"
                   : "Hidden — nobody can book it"

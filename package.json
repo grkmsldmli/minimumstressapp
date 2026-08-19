@@ -12,6 +12,8 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.117.1",
+    "@capacitor/android": "^8.5.0",
+    "@capacitor/core": "^8.5.0",
     "@stripe/react-stripe-js": "^6.8.0",
     "@stripe/stripe-js": "^9.12.1",
     "@supabase/ssr": "^0.12.4",
@@ -24,6 +26,7 @@
     "tz-lookup": "^6.1.25"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.5.0",
     "@electric-sql/pglite": "^0.5.4",
     "@tailwindcss/postcss": "^4",
     "@testing-library/dom": "^10.4.1",

@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Minimum Stress</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #16304e;
+        color: #fff;
+        font-family: system-ui, -apple-system, sans-serif;
+      }
+      .wrap {
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .dot {
+        width: 10px;
+        height: 10px;
+        margin: 0 4px;
+        border-radius: 50%;
+        background: #fff;
+        opacity: 0.4;
+        animation: pulse 1.2s infinite ease-in-out;
+      }
+      .dot:nth-child(2) {
+        animation-delay: 0.2s;
+      }
+      .dot:nth-child(3) {
+        animation-delay: 0.4s;
+      }
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 0.3;
+        }
+        50% {
+          opacity: 1;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <!--
+      This is a fallback only. The native shell loads the live app from
+      server.url (capacitor.config.ts); a viewer normally never sees this.
+      It shows a quiet loading state if the network is slow or unreachable.
+    -->
+    <div class="wrap" role="status" aria-label="Loading">
+      <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+    </div>
+  </body>
+</html>

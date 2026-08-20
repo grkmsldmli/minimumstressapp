@@ -43,22 +43,50 @@ workflows:
       - android/app/build/outputs/**/*.apk
 
   ios-release:
-    # Runnable once the Apple Developer account is verified and connected:
-    # add an App Store Connect integration in Codemagic and fill `ios_signing`.
-    name: iOS release (requires Apple signing)
+    name: iOS — TestFlight
     instance_type: mac_mini_m2
     max_build_duration: 90
+    integrations:
+      # Add an App Store Connect API key in Codemagic (Teams or App settings →
+      # Integrations → App Store Connect) and name it EXACTLY this. It carries
+      # the .p8 key, the Key ID and the Issuer ID, and is what lets Codemagic
+      # sign the build and upload it to TestFlight.
+      app_store_connect: minimumstress_asc
     environment:
       node: 22
       xcode: latest
       cocoapods: default
+      ios_signing:
+        # Automatic signing: Codemagic fetches (or creates) the distribution
+        # certificate and the provisioning profile for this bundle id through
+        # the API key above — no certificates to upload by hand.
+        distribution_type: app_store
+        bundle_identifier: com.minimumstress.app
     scripts:
       - name: Install dependencies
         script: npm ci
-      - name: Sync Capacitor (iOS)
-        script: npx cap sync ios
-      - name: Build IPA
+      - name: Sync Capacitor and install pods
         script: |
-          # Code signing must be configured first (App Store Connect integration
-          # + ios_signing above). Until then this workflow is a placeholder.
-          echo "Connect Apple Developer signing in Codemagic, then enable the archive/export steps."
+          npx cap sync ios
+          cd ios/App && pod install
+      - name: Set up code signing
+        script: xcode-project use-profiles
+      - name: Unique build number
+        # A timestamp guarantees each TestFlight upload gets a higher build
+        # number than the last, without having to look the previous one up.
+        script: |
+          cd ios/App
+          agvtool new-version -all "$(date +%s)"
+      - name: Build the signed IPA
+        script: |
+          xcode-project build-ipa \
+            --workspace "ios/App/App.xcworkspace" \
+            --scheme "App"
+    artifacts:
+      - build/ios/ipa/*.ipa
+    publishing:
+      app_store_connect:
+        auth: integration
+        # Straight to TestFlight so it can be installed on a device; App Store
+        # review is a separate, later step.
+        submit_to_testflight: true

@@ -67,6 +67,9 @@ export async function POST(request: NextRequest): Promise<Response> {
       "approve_account_change",
       "decide_refund",
       "decide_claim",
+      "delist_listing",
+      "relist_listing",
+      "delete_listing",
     ] as const);
     if (!action.ok) return jsonError(action.reason, 400);
 
@@ -257,6 +260,64 @@ export async function POST(request: NextRequest): Promise<Response> {
           }
           throw failure;
         }
+      }
+
+      /**
+       * Taking a listing off the marketplace, from the directory rather than
+       * the review queue. `reject_listing` above is the review decision, which
+       * also stamps the paperwork; this is the plain operator action for a
+       * listing that should not be live — spam, a test, a room a host asked us
+       * to remove — and leaves the documents alone.
+       */
+      case "delist_listing": {
+        const { error } = await admin
+          .from("spaces")
+          .update({ status: "delisted" })
+          .eq("id", id.value);
+        if (error) throw error;
+        return Response.json({ ok: true });
+      }
+
+      /**
+       * Putting one back. The 0018 constraint refuses an active listing whose
+       * sublease is not verified, so a listing that was never approved cannot be
+       * forced live here — that has to go back through the review queue, and the
+       * error says so rather than failing quietly.
+       */
+      case "relist_listing": {
+        const { error } = await admin
+          .from("spaces")
+          .update({ status: "active" })
+          .eq("id", id.value);
+        if (error) {
+          return jsonError(
+            /sublease|verified/i.test(error.message)
+              ? "This listing was never verified, so it cannot be forced live. Approve it from the review queue instead."
+              : error.message,
+            400,
+          );
+        }
+        return Response.json({ ok: true });
+      }
+
+      /**
+       * Erasing one for good. space_media and availability cascade with it;
+       * bookings are ON DELETE RESTRICT, so a listing that anyone has ever
+       * booked cannot be deleted — that record is two people's money and is not
+       * this button's to destroy. The foreign-key refusal is turned into the
+       * plain answer: delist it instead.
+       */
+      case "delete_listing": {
+        const { error } = await admin.from("spaces").delete().eq("id", id.value);
+        if (error) {
+          return jsonError(
+            /foreign key|violates|constraint/i.test(error.message)
+              ? "This listing has bookings, so it cannot be deleted. Delist it instead."
+              : error.message,
+            400,
+          );
+        }
+        return Response.json({ ok: true });
       }
 
       default:

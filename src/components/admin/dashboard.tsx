@@ -6,9 +6,12 @@ import {
   CalendarClock,
   Check,
   ChevronRight,
+  Eye,
+  EyeOff,
   FileText,
   Phone,
   Search,
+  Trash2,
   Users,
   X,
 } from "lucide-react";
@@ -247,7 +250,7 @@ export function AdminDashboard() {
 
         <InTheRoom sessions={queue.liveSessions} />
 
-        <Directory people={queue.people} listings={queue.listings} />
+        <Directory people={queue.people} listings={queue.listings} act={act} busy={busy} />
 
         <div
           className="grid gap-4 mt-6"
@@ -689,10 +692,23 @@ function Party({ role, party }: { role: string; party: SessionParty }) {
   );
 }
 
-function Directory({ people, listings }: { people: Person[]; listings: ListingRow[] }) {
+function Directory({
+  people,
+  listings,
+  act,
+  busy,
+}: {
+  people: Person[];
+  listings: ListingRow[];
+  act: (action: string, id: string) => void | Promise<void>;
+  busy: string | null;
+}) {
   const [tab, setTab] = useState<"people" | "listings">("people");
   const [query, setQuery] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
+  // Arms the permanent delete: the first click sets this to the listing's id,
+  // the second confirms. Reset whenever a row is toggled, so it cannot linger.
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
   const term = query.trim().toLowerCase();
   const match = (...fields: (string | null)[]) =>
@@ -805,7 +821,10 @@ function Directory({ people, listings }: { people: Person[]; listings: ListingRo
                 <Row
                   key={listing.id}
                   open={openId === listing.id}
-                  onToggle={() => setOpenId(openId === listing.id ? null : listing.id)}
+                  onToggle={() => {
+                    setOpenId(openId === listing.id ? null : listing.id);
+                    setConfirmDelete(null);
+                  }}
                   title={listing.name}
                   subtitle={listing.hostEmail}
                   tag={listing.status}
@@ -827,6 +846,47 @@ function Directory({ people, listings }: { people: Person[]; listings: ListingRo
                     ["Listed", date(listing.createdAt)],
                     ["Listing id", listing.id],
                   ]}
+                  actions={
+                    <div className="flex flex-wrap gap-2 pb-3 pl-6">
+                      {listing.status === "delisted" ? (
+                        <Action
+                          disabled={busy === listing.id}
+                          onClick={() => void act("relist_listing", listing.id)}
+                        >
+                          <Eye size={12} /> Put back on the site
+                        </Action>
+                      ) : (
+                        <Action
+                          disabled={busy === listing.id}
+                          onClick={() => void act("delist_listing", listing.id)}
+                        >
+                          <EyeOff size={12} /> Hold — take off the site
+                        </Action>
+                      )}
+                      {listing.sessions === 0 ? (
+                        confirmDelete === listing.id ? (
+                          <Action
+                            danger
+                            disabled={busy === listing.id}
+                            onClick={() => void act("delete_listing", listing.id)}
+                          >
+                            <Trash2 size={12} /> Confirm — delete for good
+                          </Action>
+                        ) : (
+                          <Action danger onClick={() => setConfirmDelete(listing.id)}>
+                            <Trash2 size={12} /> Delete permanently
+                          </Action>
+                        )
+                      ) : (
+                        <span
+                          className="font-body text-[10.5px] self-center"
+                          style={{ color: MUTED }}
+                        >
+                          Has bookings — hold it, it cannot be deleted
+                        </span>
+                      )}
+                    </div>
+                  }
                 />
               ))}
         </div>
@@ -890,6 +950,7 @@ function Row({
   right,
   alert,
   details,
+  actions,
 }: {
   open: boolean;
   onToggle: () => void;
@@ -899,6 +960,8 @@ function Row({
   right: string;
   alert: boolean;
   details: [string, string][];
+  /** Buttons shown under the details when the row is open. */
+  actions?: React.ReactNode;
 }) {
   return (
     <div style={{ borderBottom: `1px solid ${LINE}` }}>
@@ -941,24 +1004,27 @@ function Row({
       </button>
 
       {open && (
-        <div
-          className="grid gap-x-4 gap-y-1.5 pb-3 pl-6"
-          style={{ gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))" }}
-        >
-          {details.map(([label, value]) => (
-            <div key={label}>
-              <p
-                className="font-body font-light text-[9.5px] uppercase tracking-[0.1em]"
-                style={{ color: MUTED }}
-              >
-                {label}
-              </p>
-              <p className="font-body text-[11.5px] break-words" style={{ color: "#fff" }}>
-                {value}
-              </p>
-            </div>
-          ))}
-        </div>
+        <>
+          <div
+            className="grid gap-x-4 gap-y-1.5 pb-3 pl-6"
+            style={{ gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))" }}
+          >
+            {details.map(([label, value]) => (
+              <div key={label}>
+                <p
+                  className="font-body font-light text-[9.5px] uppercase tracking-[0.1em]"
+                  style={{ color: MUTED }}
+                >
+                  {label}
+                </p>
+                <p className="font-body text-[11.5px] break-words" style={{ color: "#fff" }}>
+                  {value}
+                </p>
+              </div>
+            ))}
+          </div>
+          {actions}
+        </>
       )}
     </div>
   );
@@ -1172,11 +1238,13 @@ function Action({
   onClick,
   disabled,
   primary = false,
+  danger = false,
 }: {
   children: React.ReactNode;
   onClick: () => void;
   disabled?: boolean;
   primary?: boolean;
+  danger?: boolean;
 }) {
   return (
     <button
@@ -1187,7 +1255,9 @@ function Action({
       style={
         primary
           ? { backgroundColor: disabled ? "#2A4763" : SKY, color: "#fff" }
-          : { border: `1px solid ${LINE}`, color: MUTED }
+          : danger
+            ? { border: `1px solid ${CORAL}`, color: CORAL }
+            : { border: `1px solid ${LINE}`, color: MUTED }
       }
     >
       {children}

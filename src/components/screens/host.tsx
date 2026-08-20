@@ -341,8 +341,7 @@ export function HostDashboard({
           >
             <p className="font-body font-medium text-[14.5px] text-navy">This space is hidden</p>
             <p className="font-body font-normal text-[14px] leading-relaxed mt-1 text-ink-soft">
-              Nobody can find or book it. Bookings already made are untouched — you can put it
-              back from Your spaces.
+              Nobody can find or book it — you can put it back from Your spaces.
             </p>
           </div>
         )}

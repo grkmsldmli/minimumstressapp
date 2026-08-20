@@ -162,7 +162,7 @@ function SpaceRow({
 
       {hidden && (
         <p className="font-body font-normal text-[13px] leading-relaxed mt-2.5 text-ink-soft">
-          Nobody can find or book this. Bookings already made are untouched.
+          Nobody can find or book this.
         </p>
       )}
 

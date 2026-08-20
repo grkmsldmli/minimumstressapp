@@ -56,12 +56,6 @@ workflows:
       node: 22
       xcode: latest
       cocoapods: default
-      ios_signing:
-        # Automatic signing: Codemagic fetches (or creates) the distribution
-        # certificate and the provisioning profile for this bundle id through
-        # the API key above — no certificates to upload by hand.
-        distribution_type: app_store
-        bundle_identifier: com.minimumstress.app
     scripts:
       - name: Install dependencies
         script: npm ci
@@ -69,8 +63,19 @@ workflows:
         script: |
           npx cap sync ios
           cd ios/App && pod install
-      - name: Set up code signing
-        script: xcode-project use-profiles
+      - name: Set up code signing (create cert + profile if missing)
+        script: |
+          keychain initialize
+          # --create makes the distribution certificate and the App Store
+          # provisioning profile when they do not exist yet — which they do not
+          # on the first build. This is the fix for "No matching profiles
+          # found": the implicit ios_signing block only fetched existing ones,
+          # and on a fresh account there are none to fetch.
+          app-store-connect fetch-signing-files "com.minimumstress.app" \
+            --type IOS_APP_STORE \
+            --create
+          keychain add-certificates
+          xcode-project use-profiles
       - name: Unique build number
         # A timestamp guarantees each TestFlight upload gets a higher build
         # number than the last, without having to look the previous one up.

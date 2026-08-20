@@ -2,6 +2,7 @@
 
 import {
   AlertTriangle,
+  Archive,
   Building2,
   CalendarClock,
   Check,
@@ -706,9 +707,10 @@ function Directory({
   const [tab, setTab] = useState<"people" | "listings">("people");
   const [query, setQuery] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
-  // Arms the permanent delete: the first click sets this to the listing's id,
-  // the second confirms. Reset whenever a row is toggled, so it cannot linger.
+  // Arms a two-click action: the first click sets this to the listing's id, the
+  // second confirms. Reset whenever a row is toggled, so neither can linger.
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [confirmArchive, setConfirmArchive] = useState<string | null>(null);
 
   const term = query.trim().toLowerCase();
   const match = (...fields: (string | null)[]) =>
@@ -824,15 +826,16 @@ function Directory({
                   onToggle={() => {
                     setOpenId(openId === listing.id ? null : listing.id);
                     setConfirmDelete(null);
+                    setConfirmArchive(null);
                   }}
                   title={listing.name}
                   subtitle={listing.hostEmail}
-                  tag={listing.status}
+                  tag={listing.archivedAt ? "archived" : listing.status}
                   right={`${listing.sessions} ${listing.sessions === 1 ? "session" : "sessions"}`}
                   alert={listing.status === "pending"}
                   details={[
                     ["Host", listing.hostEmail ?? "unknown"],
-                    ["Status", listing.status],
+                    ["Status", listing.archivedAt ? "closed (archived)" : listing.status],
                     ["Type", listing.category || "unset"],
                     ["Host rate", `${formatCents(listing.hourlyRateCents)}/hr`],
                     ["Sessions", String(listing.sessions)],
@@ -848,21 +851,43 @@ function Directory({
                   ]}
                   actions={
                     <div className="flex flex-wrap gap-2 pb-3 pl-6">
-                      {listing.status === "delisted" ? (
-                        <Action
-                          disabled={busy === listing.id}
-                          onClick={() => void act("relist_listing", listing.id)}
-                        >
-                          <Eye size={12} /> Put back on the site
-                        </Action>
-                      ) : (
-                        <Action
-                          disabled={busy === listing.id}
-                          onClick={() => void act("delist_listing", listing.id)}
-                        >
-                          <EyeOff size={12} /> Hold — take off the site
-                        </Action>
-                      )}
+                      {/* Hold / resume — the reversible pair, not offered once a
+                          listing has been closed for good. */}
+                      {!listing.archivedAt &&
+                        (listing.status === "delisted" ? (
+                          <Action
+                            disabled={busy === listing.id}
+                            onClick={() => void act("relist_listing", listing.id)}
+                          >
+                            <Eye size={12} /> Put back on the site
+                          </Action>
+                        ) : (
+                          <Action
+                            disabled={busy === listing.id}
+                            onClick={() => void act("delist_listing", listing.id)}
+                          >
+                            <EyeOff size={12} /> Hold — take off the site
+                          </Action>
+                        ))}
+
+                      {/* Close for good — off the site, no new bookings, record
+                          kept. Two-click, and gone once it is already archived. */}
+                      {!listing.archivedAt &&
+                        (confirmArchive === listing.id ? (
+                          <Action
+                            disabled={busy === listing.id}
+                            onClick={() => void act("archive_listing", listing.id)}
+                          >
+                            <Archive size={12} /> Confirm — close for good
+                          </Action>
+                        ) : (
+                          <Action onClick={() => setConfirmArchive(listing.id)}>
+                            <Archive size={12} /> Close permanently
+                          </Action>
+                        ))}
+
+                      {/* Hard delete — cleanup, only for a listing nobody ever
+                          booked. The bookings FK refuses the rest at the database. */}
                       {listing.sessions === 0 ? (
                         confirmDelete === listing.id ? (
                           <Action
@@ -878,12 +903,14 @@ function Directory({
                           </Action>
                         )
                       ) : (
-                        <span
-                          className="font-body text-[10.5px] self-center"
-                          style={{ color: MUTED }}
-                        >
-                          Has bookings — hold it, it cannot be deleted
-                        </span>
+                        !listing.archivedAt && (
+                          <span
+                            className="font-body text-[10.5px] self-center"
+                            style={{ color: MUTED }}
+                          >
+                            Has bookings — hold or close it, it cannot be deleted
+                          </span>
+                        )
                       )}
                     </div>
                   }

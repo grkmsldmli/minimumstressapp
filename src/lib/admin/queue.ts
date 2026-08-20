@@ -142,6 +142,8 @@ export interface ListingRow {
   sessions: number;
   earnedCents: number;
   createdAt: string | null;
+  /** When the listing was closed for good. Null means it is live or merely held. */
+  archivedAt: string | null;
 }
 
 /**
@@ -410,7 +412,7 @@ export async function loadQueue(admin: SupabaseClient): Promise<AdminQueue> {
     admin
       .from("spaces")
       .select(
-        "id, host_id, name, status, created_at, category, hourly_rate_cents, address_line, description, entrance_access, restroom_access, sublease_doc_state, insurance_doc_state, doc_review_note, review_reason, previous_address_line, updated_at",
+        "id, host_id, name, status, created_at, archived_at, category, hourly_rate_cents, address_line, description, entrance_access, restroom_access, sublease_doc_state, insurance_doc_state, doc_review_note, review_reason, previous_address_line, updated_at",
       ),
 
     /**
@@ -846,23 +848,25 @@ export async function loadQueue(admin: SupabaseClient): Promise<AdminQueue> {
     const day = new Date(chartStart.getTime() + i * DAY_MS);
     byDay.set(day.toISOString().slice(0, 10), 0);
   }
-  /*
-   * Money on the same fourteen days as the booking count, so the two charts
-   * line up and a busy day with no revenue — all cancelled, or none captured —
-   * is visible as a gap between them rather than invisible.
-   */
   const moneyDay = new Map<string, { platformCents: number; grossCents: number }>();
   for (const [day] of byDay) moneyDay.set(day, { platformCents: 0, grossCents: 0 });
 
-  for (const booking of rows) {
+  /*
+   * A paid booking is a booking. An abandoned checkout leaves an uncaptured
+   * row — somebody reached the payment sheet and closed the tab — and counting
+   * those drew bars on days nobody actually booked, a chart of tabs opened
+   * rather than sessions sold. So the count comes from the captured rows, the
+   * same ones the money does, and the two charts line up: a day with bookings
+   * but no revenue can only be a day of refunds, not of abandoned checkouts.
+   */
+  for (const booking of paid) {
     const key = new Date(booking.starts_at as string).toISOString().slice(0, 10);
-    if (byDay.has(key)) byDay.set(key, (byDay.get(key) ?? 0) + 1);
+    if (!byDay.has(key)) continue;
+    byDay.set(key, (byDay.get(key) ?? 0) + 1);
 
-    if (booking.captured_at !== null && moneyDay.has(key)) {
-      const bucket = moneyDay.get(key)!;
-      bucket.platformCents += (booking.platform_cents as number) ?? 0;
-      bucket.grossCents += (booking.total_cents as number) ?? 0;
-    }
+    const bucket = moneyDay.get(key)!;
+    bucket.platformCents += (booking.platform_cents as number) ?? 0;
+    bucket.grossCents += (booking.total_cents as number) ?? 0;
   }
 
   return {
@@ -923,7 +927,10 @@ export async function loadQueue(admin: SupabaseClient): Promise<AdminQueue> {
       hosts: (profiles.data ?? []).filter((p) => p.account_type === "host").length,
       sessionsThisMonth: thisMonth.length,
       upcomingSessions: rows.filter(
-        (b) => b.status === "upcoming" && new Date(b.starts_at as string) > now,
+        (b) =>
+          b.captured_at !== null &&
+          b.status === "upcoming" &&
+          new Date(b.starts_at as string) > now,
       ).length,
       /*
        * The same question the payout sweep asks, and for the same reason it
@@ -1013,6 +1020,7 @@ export async function loadQueue(admin: SupabaseClient): Promise<AdminQueue> {
           sessions: totals.sessions,
           earnedCents: totals.earned,
           createdAt: (row.created_at as string) ?? null,
+          archivedAt: (row.archived_at as string) ?? null,
         };
       })
       .sort((a, b) => b.sessions - a.sessions || (b.createdAt ?? "").localeCompare(a.createdAt ?? "")),
@@ -1027,7 +1035,9 @@ export async function loadQueue(admin: SupabaseClient): Promise<AdminQueue> {
       emails,
     }),
 
-    recent: rows.slice(0, 8).map((row) => ({
+    // Paid, for the same reason the chart is: the recent feed is real bookings,
+    // not checkouts somebody abandoned. `paid` keeps the newest-first order.
+    recent: paid.slice(0, 8).map((row) => ({
       id: row.id as string,
       spaceName: spaceName.get(row.space_id as string) ?? "a space",
       startsAt: row.starts_at as string,

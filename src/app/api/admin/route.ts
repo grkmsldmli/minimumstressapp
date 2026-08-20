@@ -69,6 +69,7 @@ export async function POST(request: NextRequest): Promise<Response> {
       "decide_claim",
       "delist_listing",
       "relist_listing",
+      "archive_listing",
       "delete_listing",
     ] as const);
     if (!action.ok) return jsonError(action.reason, 400);
@@ -285,9 +286,11 @@ export async function POST(request: NextRequest): Promise<Response> {
        * error says so rather than failing quietly.
        */
       case "relist_listing": {
+        // Back on the site, and no longer archived — putting a room back is the
+        // one thing that undoes a close, so archived_at is cleared with it.
         const { error } = await admin
           .from("spaces")
-          .update({ status: "active" })
+          .update({ status: "active", archived_at: null })
           .eq("id", id.value);
         if (error) {
           return jsonError(
@@ -297,6 +300,22 @@ export async function POST(request: NextRequest): Promise<Response> {
             400,
           );
         }
+        return Response.json({ ok: true });
+      }
+
+      /**
+       * Closing one for good, keeping the record. It comes off the site and
+       * takes no more bookings — the same delisted status a hold uses, so the
+       * search exclusion and the new-booking gate need nothing new — but
+       * archived_at marks it as a permanent close rather than a pause, and
+       * nothing here touches the bookings, earnings or reviews behind it.
+       */
+      case "archive_listing": {
+        const { error } = await admin
+          .from("spaces")
+          .update({ status: "delisted", archived_at: new Date().toISOString() })
+          .eq("id", id.value);
+        if (error) throw error;
         return Response.json({ ok: true });
       }
 

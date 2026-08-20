@@ -63,16 +63,19 @@ workflows:
         # Podfile. cap sync writes Package.swift, and xcodebuild resolves the
         # SPM packages during the build, so there is nothing to pod install.
         script: npx cap sync ios
-      - name: Set up code signing (create cert + profile if missing)
+      - name: Set up code signing (create cert + profile)
         script: |
           keychain initialize
-          # --create makes the distribution certificate and the App Store
-          # provisioning profile when they do not exist yet — which they do not
-          # on the first build. This is the fix for "No matching profiles
-          # found": the implicit ios_signing block only fetched existing ones,
-          # and on a fresh account there are none to fetch.
+          # A fresh account has no distribution certificate, and creating one
+          # needs a private key to sign the request with. Without it the log
+          # reads "Cannot save Signing Certificates without certificate private
+          # key" and nothing downstream has a profile — which is why the archive
+          # said it needed one. Generate a key, hand it to fetch-signing-files,
+          # and it creates the certificate and the App Store profile together.
+          openssl genrsa -out /tmp/cert_key.pem 2048
           app-store-connect fetch-signing-files "com.minimumstress.app" \
             --type IOS_APP_STORE \
+            --certificate-key @file:/tmp/cert_key.pem \
             --create
           keychain add-certificates
           xcode-project use-profiles

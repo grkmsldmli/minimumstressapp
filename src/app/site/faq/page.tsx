@@ -78,19 +78,19 @@ export default function FaqPage() {
           </QA>
 
           {/*
-            The brief said proof of liability insurance "may be required before
-            the booking can be confirmed". Nothing requires it: a certificate is
-            an optional upload and no booking is gated on one. Writing it would
-            have invented a safeguard, which is the kind of copy that costs
-            somebody something on the day they find out it was not there.
-
-            The page it replaces claimed "every practitioner carries their own
-            insurance", which was the same invention stated as fact.
+            This answer was once "we do not require it and we do not check it".
+            That is no longer true, and saying it would now be the invention:
+            the booking gate refuses a professional booking without verified
+            liability cover that is valid on the session date (lib/insurance.ts,
+            enforced server-side in booking-plan.ts). The copy only says a
+            booking needs it because the gate actually enforces it — the safeguard
+            exists before the sentence claims it does.
           */}
           <QA q="Do I need insurance?">
-            We do not require it and we do not check it. If you are working with paying clients,
-            your own cover is your responsibility — and a host may ask to see it before agreeing to
-            a booking.
+            To confirm a booking as a professional, yes: you need liability cover on file that we
+            verify — active and valid for your session date. You can browse spaces without it, and
+            add or update your certificate any time from your profile. Your cover, your
+            qualifications and your clients remain your own responsibility.
           </QA>
 
           <QA q="How do I get into the space?">

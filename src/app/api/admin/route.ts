@@ -3,7 +3,7 @@ import type { NextRequest } from "next/server";
 import { isStaff } from "@/lib/admin/access";
 import { loadQueue } from "@/lib/admin/queue";
 import { handled, jsonError, requireUser } from "@/lib/api/session";
-import { integer, jsonObject, oneOf, optionalString, uuid } from "@/lib/api/validate";
+import { dateOnly, integer, jsonObject, oneOf, optionalString, uuid } from "@/lib/api/validate";
 import { ClaimError, decideClaim } from "@/lib/claim-service";
 import { CLAIM_CAP_CENTS } from "@/lib/claims";
 import { RefundError, decideRefund } from "@/lib/refund-service";
@@ -71,6 +71,8 @@ export async function POST(request: NextRequest): Promise<Response> {
       "relist_listing",
       "archive_listing",
       "delete_listing",
+      "verify_insurance",
+      "reject_insurance",
     ] as const);
     if (!action.ok) return jsonError(action.reason, 400);
 
@@ -336,6 +338,92 @@ export async function POST(request: NextRequest): Promise<Response> {
             400,
           );
         }
+        return Response.json({ ok: true });
+      }
+
+      /**
+       * Verifying a professional's liability certificate, and the only place a
+       * booking's insurance gate is ever satisfied.
+       *
+       * The two dates are the whole point of the decision: an uploaded file
+       * proves nothing until a person has read the window off it, and the
+       * booking gate refuses a verified row that carries none. Written together
+       * with the state in one update, because 0054 refuses a 'verified' row
+       * without both dates and with an expiry before the start — so a slip is a
+       * 400 here rather than a certificate that reads valid and covers nothing.
+       *
+       * Scoped to a practitioner: only the professional side carries this cover,
+       * and a stray id for a host should change nothing rather than stamp a
+       * column that means nothing on their account.
+       */
+      case "verify_insurance": {
+        const effective = dateOnly(body.value, "effectiveDate");
+        if (!effective.ok) return jsonError(effective.reason, 400);
+
+        const expires = dateOnly(body.value, "expiresAt");
+        if (!expires.ok) return jsonError(expires.reason, 400);
+
+        if (expires.value < effective.value) {
+          return jsonError("The expiry cannot come before the effective date", 400);
+        }
+
+        const insurer = optionalString(body.value, "insurer", { max: 200 });
+        if (!insurer.ok) return jsonError(insurer.reason, 400);
+
+        const policyNumber = optionalString(body.value, "policyNumber", { max: 200 });
+        if (!policyNumber.ok) return jsonError(policyNumber.reason, 400);
+
+        const { error } = await admin
+          .from("profiles")
+          .update({
+            insurance_doc_state: "verified",
+            insurance_doc_reviewed_at: new Date().toISOString(),
+            insurance_effective_date: effective.value,
+            insurance_expires_at: expires.value,
+            insurance_insurer: insurer.value || null,
+            insurance_policy_number: policyNumber.value || null,
+            // A clean slate: whatever a previous rejection said no longer holds.
+            insurance_review_note: null,
+          })
+          .eq("id", id.value)
+          .eq("account_type", "practitioner");
+
+        if (error) {
+          return jsonError(
+            /insurance_dates|check constraint/i.test(error.message)
+              ? "Those dates do not make a valid window — check the certificate."
+              : error.message,
+            400,
+          );
+        }
+        return Response.json({ ok: true });
+      }
+
+      /**
+       * Turning a certificate down. The reason is required and shown to the
+       * professional verbatim, so "the second page is cut off" reaches them
+       * rather than a bare "rejected" they can only guess at. The window is
+       * cleared with it — a rejected certificate has no valid dates, and leaving
+       * stale ones behind is exactly the kind of row the booking gate must never
+       * read as cover.
+       */
+      case "reject_insurance": {
+        if (!note.value || note.value.trim().length < 15) {
+          return jsonError("Say why — it is shown to them", 400);
+        }
+
+        const { error } = await admin
+          .from("profiles")
+          .update({
+            insurance_doc_state: "rejected",
+            insurance_doc_reviewed_at: new Date().toISOString(),
+            insurance_effective_date: null,
+            insurance_expires_at: null,
+            insurance_review_note: note.value,
+          })
+          .eq("id", id.value)
+          .eq("account_type", "practitioner");
+        if (error) throw error;
         return Response.json({ ok: true });
       }
 

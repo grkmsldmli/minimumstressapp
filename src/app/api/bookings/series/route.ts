@@ -5,22 +5,29 @@ import { stripeGateway } from "@/lib/api/stripe-gateway";
 import { handled, jsonError, requireUser } from "@/lib/api/session";
 import { integer, jsonObject, oneOf, timestamp, uuid } from "@/lib/api/validate";
 import { BOOKING_USES, MAX_OTHER_CHARS } from "@/lib/booking-use";
-import { BookingError, createBooking } from "@/lib/booking-service";
+import {
+  BookingError,
+  createBooking,
+  preflightSeries,
+  rollbackSeries,
+} from "@/lib/booking-service";
 import { MAX_SERIES_OCCURRENCES, describeSeries, seriesOccurrences } from "@/lib/series";
 import { supabaseAdmin } from "@/lib/supabase/server";
 
 /**
  * The same hour, every week, booked in one request.
  *
- * Each occurrence goes through `createBooking` exactly as a single booking
- * does — the same availability check, the same price, the same charge. Nothing
- * here is a cheaper path: a series that skipped the rules would be a way to
- * book an hour a host never opened, twelve times over.
+ * Each occurrence goes through the same rules a single booking does — the same
+ * eligibility, cover, availability, price and charge. Nothing here is a cheaper
+ * path: a series that skipped the rules would be a way to book an hour a host
+ * never opened, twelve times over.
  *
- * Partial success is the normal outcome and is reported as such. Somebody
- * booking four Tuesdays will find one taken, and the honest answer is three
- * bookings and a sentence about the fourth — not a refusal of the lot, and not
- * a silent three.
+ * All-or-nothing, from the person's side. The whole run is preflighted before
+ * anything is created or charged, and if any week cannot be booked — a taken
+ * hour, cover that ends mid-series — none is. Booking the covered weeks and
+ * charging for them while reporting the rest is the partial series this refuses:
+ * somebody who asked for twelve weeks got some of them and a bill, and had to
+ * reconcile which. So it is twelve or a clear reason, never a silent subset.
  */
 export async function POST(request: NextRequest): Promise<Response> {
   return handled(async () => {
@@ -77,9 +84,6 @@ export async function POST(request: NextRequest): Promise<Response> {
       return jsonError("None of those weeks are inside your booking window", 409);
     }
 
-    const booked: { startsAt: string; bookingId: string }[] = [];
-    const skipped: { startsAt: string; because: string }[] = [];
-
     /*
      * What the space will be used for. Read here rather than defaulted:
      * planBooking refuses a booking with no declaration, and a route that
@@ -101,50 +105,81 @@ export async function POST(request: NextRequest): Promise<Response> {
         : null;
 
     /*
-     * One at a time, and deliberately not in parallel.
-     *
-     * Each booking charges a card and counts against the concurrent-session
-     * limit, and the limit is read per call — firing twelve at once would let
-     * a free account past a cap the server is supposed to enforce, and would
-     * make twelve simultaneous charges out of one tap.
+     * The same declaration on every week of the run. A series is one intention
+     * repeated, and asking again per occurrence would let the twelfth week carry
+     * a purpose nobody chose for it.
      */
-    for (const occurrence of occurrences) {
-      try {
+    const declared = { purpose: purpose.value, purposeNote, attendees: attendees.value };
+
+    /*
+     * Preflight the whole run before creating or charging any of it.
+     *
+     * This is where all-or-nothing is decided: professional eligibility, cover
+     * for every occurrence's interval, availability and allowed use, judged
+     * against one read of the facts. If any week fails, the run is refused here
+     * — nothing has been created and no card has been touched — naming the week
+     * and the reason.
+     */
+    const preflight = await preflightSeries(
+      admin,
+      stripeGateway,
+      auth.user.id,
+      spaceId.value,
+      occurrences,
+      declared,
+    );
+    if (!preflight.ok) {
+      const when = new Intl.DateTimeFormat("en-US", {
+        timeZone: space.timezone,
+        weekday: "long",
+        month: "short",
+        day: "numeric",
+      }).format(preflight.startsAt);
+      return jsonError(`${when}: ${preflight.message}`, preflight.status);
+    }
+
+    /*
+     * Only now, with the whole run cleared, is anything created or charged.
+     *
+     * One at a time and not in parallel: each booking charges a card and counts
+     * against the concurrent-session limit, both read per call — firing twelve
+     * at once would let an account past a cap the server enforces and make
+     * twelve charges out of one tap. If a later week cannot be committed after
+     * all — an hour taken in the seconds since the preflight — the ones already
+     * made are rolled back, so a half-booked run never survives.
+     */
+    const booked: { startsAt: string; bookingId: string }[] = [];
+    try {
+      for (const occurrence of occurrences) {
         const result = await createBooking(admin, stripeGateway, auth.user.id, {
           spaceId: spaceId.value,
           startsAt: occurrence,
-          /*
-           * The same declaration on every week of the run. A series is one
-           * intention repeated, and asking again per occurrence would let the
-           * twelfth week carry a purpose nobody chose for it.
-           */
-          declared: { purpose: purpose.value, purposeNote, attendees: attendees.value },
+          declared,
         });
         booked.push({ startsAt: occurrence.toISOString(), bookingId: result.bookingId });
-      } catch (failure) {
-        if (failure instanceof BookingError) {
-          skipped.push({ startsAt: occurrence.toISOString(), because: failure.message });
-          continue;
-        }
-        /*
-         * Anything else stops the run rather than being counted as a skip. A
-         * Stripe outage is not "that hour was taken", and continuing would
-         * report eleven polite refusals for a fault on our side.
-         */
-        throw failure;
       }
+    } catch (failure) {
+      await rollbackSeries(
+        admin,
+        stripeGateway,
+        booked.map((b) => b.bookingId),
+      );
+      if (failure instanceof BookingError) return jsonError(failure.message, failure.status);
+      throw failure;
     }
 
     return Response.json(
       {
         booked,
-        skipped,
+        // Always empty now — a series is whole or refused — but kept so an older
+        // client reading it still finds the field it expects.
+        skipped: [],
         summary: describeSeries({
           booked: booked.map((b) => ({ startsAt: new Date(b.startsAt), bookingId: b.bookingId })),
-          skipped: skipped.map((s) => ({ startsAt: new Date(s.startsAt), because: s.because })),
+          skipped: [],
         }),
       },
-      { status: booked.length > 0 ? 201 : 409 },
+      { status: 201 },
     );
   });
 }

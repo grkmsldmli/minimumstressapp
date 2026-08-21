@@ -178,7 +178,7 @@ const COPY: Record<string, Omit<HostPage, "type">> = {
     concern: {
       question: "Different people, different practices — is that a problem?",
       answer:
-        "It is why the listing has house rules, and why they are on the page before anybody books rather than in an email afterwards. No scented oils, no candles, wipe the couch down, take your rubbish — whatever the room actually needs. Every practitioner carries their own insurance and is responsible for their own clients and their own qualifications.",
+        "It is why the listing has house rules, and why they are on the page before anybody books rather than in an email afterwards. No scented oils, no candles, wipe the couch down, take your rubbish — whatever the room actually needs. Every practitioner who books carries their own liability cover — we verify it before they can — and is responsible for their own clients and their own qualifications.",
     },
   },
 

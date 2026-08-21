@@ -184,6 +184,24 @@ export class SupabaseRepository implements Repository {
       avatarUrl: data?.avatar_path ? this.publicUrl("avatars", data.avatar_path) : null,
       isPro: data?.is_pro ?? false,
       insuranceDocName: data?.insurance_doc_path ?? null,
+      // The practitioner's liability cover. Columns added in 0054; a row read
+      // before the migration ran simply has none of them, which reads as an
+      // unreviewed certificate — never as verified.
+      insuranceReview: {
+        state: (data?.insurance_doc_state as DocReviewState | undefined) ?? "pending",
+        reviewedAt: data?.insurance_doc_reviewed_at
+          ? new Date(data.insurance_doc_reviewed_at)
+          : null,
+      },
+      insuranceEffectiveDate: data?.insurance_effective_date
+        ? new Date(data.insurance_effective_date)
+        : null,
+      insuranceExpiresAt: data?.insurance_expires_at
+        ? new Date(data.insurance_expires_at)
+        : null,
+      insuranceInsurer: data?.insurance_insurer ?? null,
+      insurancePolicyNumber: data?.insurance_policy_number ?? null,
+      insuranceReviewNote: data?.insurance_review_note ?? null,
       payoutSchedule: data?.payout_schedule ?? "standard",
       payoutSetup: payoutSetupFrom({
         stripe_connect_account_id: data?.stripe_connect_account_id ?? null,

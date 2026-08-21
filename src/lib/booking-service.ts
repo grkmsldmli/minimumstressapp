@@ -5,7 +5,14 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { DeclaredUse } from "./booking-use";
 
 import { abandonedBefore } from "./abandoned";
-import { explainRejection, planBooking } from "./booking-plan";
+import {
+  explainRejection,
+  planBooking,
+  planSeries,
+  type HostFacts,
+  type PractitionerFacts,
+  type SpaceFacts,
+} from "./booking-plan";
 import { resolveCancellation, type BookingMoney } from "./money";
 import { notifyCancellation } from "./notify/for-booking";
 import { SESSION_MINUTES } from "./session";
@@ -143,19 +150,38 @@ export interface StripeGateway {
   ): Promise<{ transferId: string }>;
 }
 
-export async function createBooking(
+/**
+ * Everything planBooking needs about a room and a booker, read in one place.
+ *
+ * Pulled out of createBooking so the recurring preflight can gather the facts
+ * once and judge every occurrence against them, instead of each occurrence
+ * re-reading — and so the two paths cannot drift on which columns decide a
+ * booking. `stripeCustomerId` is carried through for the commit; nothing else
+ * here is anything the client wrote.
+ */
+interface BookingFacts {
+  space: SpaceFacts | null;
+  host: HostFacts | null;
+  practitioner: PractitionerFacts;
+  takenStarts: Date[];
+  upcomingCount: number;
+  /** The stored Stripe customer, so the card can be kept. Not used by the gate. */
+  stripeCustomerId: string | null;
+}
+
+async function gatherBookingFacts(
   admin: SupabaseClient,
   stripeGateway: StripeGateway,
   practitionerId: string,
-  request: CreateBookingRequest,
-  now = new Date(),
-): Promise<CreateBookingResult> {
+  spaceId: string,
+  now: Date,
+): Promise<BookingFacts> {
   const { data: space, error: spaceError } = await admin
     .from("spaces")
     .select(
       "id, host_id, hourly_rate_cents, buffer_minutes, timezone, status, capacity, allowed_uses, booking_mode",
     )
-    .eq("id", request.spaceId)
+    .eq("id", spaceId)
     .maybeSingle();
   if (spaceError) throw spaceError;
 
@@ -176,52 +202,50 @@ export async function createBooking(
     { data: taken },
     { count: upcomingCount },
   ] = await Promise.all([
-      admin
-        .from("profiles")
-        .select("id, is_pro, stripe_customer_id")
-        .eq("id", practitionerId)
-        .maybeSingle(),
-      space
-        ? admin
-            .from("profiles")
-            .select("stripe_connect_account_id, stripe_connect_charges_enabled")
-            .eq("id", space.host_id)
-            .maybeSingle()
-        : Promise.resolve({ data: null }),
-      space
-        ? admin
-            .from("availability")
-            .select("weekday, start_minute, end_minute")
-            .eq("space_id", space.id)
-        : Promise.resolve({ data: [] }),
-      space
-        ? admin
-            .from("bookings")
-            .select("starts_at")
-            .eq("space_id", space.id)
-            .in("status", ["upcoming", "completed"])
-        : Promise.resolve({ data: [] }),
+    admin
+      .from("profiles")
+      .select(
+        "id, is_pro, stripe_customer_id, account_type, insurance_doc_path, insurance_doc_state, insurance_effective_date, insurance_expires_at",
+      )
+      .eq("id", practitionerId)
+      .maybeSingle(),
+    space
+      ? admin
+          .from("profiles")
+          .select("stripe_connect_account_id, stripe_connect_charges_enabled")
+          .eq("id", space.host_id)
+          .maybeSingle()
+      : Promise.resolve({ data: null }),
+    space
+      ? admin
+          .from("availability")
+          .select("weekday, start_minute, end_minute")
+          .eq("space_id", space.id)
+      : Promise.resolve({ data: [] }),
+    space
+      ? admin
+          .from("bookings")
+          .select("starts_at")
+          .eq("space_id", space.id)
+          .in("status", ["upcoming", "completed"])
+      : Promise.resolve({ data: [] }),
 
-      /*
-       * This practitioner's own sessions still ahead, across every space.
-       *
-       * Counted on the server from rows the client cannot write. A limit the
-       * browser reports on itself is a limit anybody can set to zero, and this
-       * one is what Pro sells.
-       */
-      admin
-        .from("bookings")
-        .select("id", { count: "exact", head: true })
-        .eq("practitioner_id", practitionerId)
-        .eq("status", "upcoming")
-        .gt("starts_at", new Date().toISOString()),
-    ]);
+    /*
+     * This practitioner's own sessions still ahead, across every space.
+     *
+     * Counted on the server from rows the client cannot write. A limit the
+     * browser reports on itself is a limit anybody can set to zero, and this
+     * one is what Pro sells.
+     */
+    admin
+      .from("bookings")
+      .select("id", { count: "exact", head: true })
+      .eq("practitioner_id", practitionerId)
+      .eq("status", "upcoming")
+      .gt("starts_at", new Date().toISOString()),
+  ]);
 
-  // Every rule about what may be booked and for how much lives in planBooking,
-  // so this route and the pricing tests cannot drift apart.
-  const plan = planBooking({
-    upcomingCount: upcomingCount ?? 0,
-    declared: request.declared,
+  return {
     space: space
       ? {
           id: space.id,
@@ -254,8 +278,52 @@ export async function createBooking(
       // From the stored row, never the request — otherwise the Pro discount
       // is free to anyone willing to edit a payload.
       isPro: practitioner?.is_pro ?? false,
+      /*
+       * The account's side and its liability cover, both read from the stored
+       * row for the same reason: only a practitioner may book, and only with
+       * verified cover that is valid for the whole session. A crafted request
+       * cannot assert either — planBooking is what refuses when they are wrong,
+       * and the recurring flow checks each occurrence's interval against this
+       * same window. Columns from 0054; a row read before it ran has no dates,
+       * which reads as unverified rather than as cover.
+       */
+      accountType: (practitioner?.account_type as "practitioner" | "host" | null) ?? null,
+      insurance: {
+        hasCertificate: Boolean(practitioner?.insurance_doc_path),
+        state:
+          (practitioner?.insurance_doc_state as "pending" | "verified" | "rejected") ?? "pending",
+        effectiveDate: practitioner?.insurance_effective_date
+          ? new Date(practitioner.insurance_effective_date)
+          : null,
+        expiresAt: practitioner?.insurance_expires_at
+          ? new Date(practitioner.insurance_expires_at)
+          : null,
+      },
     },
     takenStarts: (taken ?? []).map((b) => new Date(b.starts_at)),
+    upcomingCount: upcomingCount ?? 0,
+    stripeCustomerId: practitioner?.stripe_customer_id ?? null,
+  };
+}
+
+export async function createBooking(
+  admin: SupabaseClient,
+  stripeGateway: StripeGateway,
+  practitionerId: string,
+  request: CreateBookingRequest,
+  now = new Date(),
+): Promise<CreateBookingResult> {
+  const facts = await gatherBookingFacts(admin, stripeGateway, practitionerId, request.spaceId, now);
+
+  // Every rule about what may be booked and for how much lives in planBooking,
+  // so this route and the pricing tests cannot drift apart.
+  const plan = planBooking({
+    space: facts.space,
+    host: facts.host,
+    practitioner: facts.practitioner,
+    takenStarts: facts.takenStarts,
+    upcomingCount: facts.upcomingCount,
+    declared: request.declared,
     startsAt: request.startsAt,
     now,
   });
@@ -266,7 +334,7 @@ export async function createBooking(
   }
 
   const { money, isInstant, needsApproval } = plan;
-  const isPro = practitioner?.is_pro ?? false;
+  const isPro = facts.practitioner.isPro;
   const endsAt = new Date(request.startsAt.getTime() + SESSION_MINUTES * 60_000);
 
   // The booking row goes in first, with no payment intent attached. If the
@@ -355,10 +423,10 @@ export async function createBooking(
       // profiles carries no email; the metadata link is what makes the Stripe
       // row identifiable, and Pro fills the address in if they ever subscribe.
       null,
-      practitioner?.stripe_customer_id ?? null,
+      facts.stripeCustomerId,
     );
 
-    if (customerId !== practitioner?.stripe_customer_id) {
+    if (customerId !== facts.stripeCustomerId) {
       await admin
         .from("profiles")
         .update({ stripe_customer_id: customerId })
@@ -405,6 +473,85 @@ export async function createBooking(
     // that other practitioners could have had.
     await admin.from("bookings").delete().eq("id", booking.id);
     throw error;
+  }
+}
+
+/**
+ * Whether a whole recurring run could be booked, without booking any of it.
+ *
+ * Gathers the room-and-booker facts once and asks planSeries to judge every
+ * occurrence against them — professional eligibility, cover for each week's
+ * interval, availability, allowed use, every rule a single booking passes. The
+ * caller runs this before creating or charging anything, so a run that cannot
+ * be whole is refused before the first week is taken. The failing occurrence is
+ * named, with its reason already turned into words.
+ */
+export async function preflightSeries(
+  admin: SupabaseClient,
+  stripeGateway: StripeGateway,
+  practitionerId: string,
+  spaceId: string,
+  starts: readonly Date[],
+  declared: DeclaredUse,
+  now = new Date(),
+): Promise<{ ok: true } | { ok: false; startsAt: Date; message: string; status: number }> {
+  const facts = await gatherBookingFacts(admin, stripeGateway, practitionerId, spaceId, now);
+
+  const result = planSeries({
+    space: facts.space,
+    host: facts.host,
+    practitioner: facts.practitioner,
+    takenStarts: facts.takenStarts,
+    upcomingCount: facts.upcomingCount,
+    declared,
+    starts,
+    now,
+  });
+
+  if (result.ok) return { ok: true };
+
+  const { message, status } = explainRejection(
+    result.reason,
+    facts.space
+      ? { allowedUses: facts.space.allowedUses, capacity: facts.space.capacity }
+      : undefined,
+  );
+  return { ok: false, startsAt: result.startsAt, message, status };
+}
+
+/**
+ * Undo a batch of bookings created moments ago, best-effort.
+ *
+ * The safety net under an atomic series: if a later occurrence cannot be
+ * committed after earlier ones already were, the earlier ones are taken back so
+ * no partial run survives. Each charge is still an uncaptured intent at this
+ * point — chargeBooking creates it without confirming — so voiding it is clean,
+ * the same undo releaseAbandoned uses. Failures are logged, not thrown: this
+ * runs while already handling a failure, and the caller's error is the one that
+ * should surface.
+ */
+export async function rollbackSeries(
+  admin: SupabaseClient,
+  stripeGateway: StripeGateway,
+  bookingIds: readonly string[],
+): Promise<void> {
+  for (const id of bookingIds) {
+    try {
+      const { data: row } = await admin
+        .from("bookings")
+        .select("stripe_payment_intent_id")
+        .eq("id", id)
+        .maybeSingle();
+      if (row?.stripe_payment_intent_id) {
+        await stripeGateway.settle(row.stripe_payment_intent_id, 0, {
+          action: "void",
+          chargedCents: 0,
+        });
+      }
+      await admin.from("bookings").delete().eq("id", id);
+    } catch (failure) {
+      console.error(`Could not roll back series booking ${id}:`, failure);
+    }
   }
 }
 

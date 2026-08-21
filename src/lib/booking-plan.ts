@@ -29,6 +29,12 @@ import {
   checkDeclaredUse,
   explainUseRejection,
 } from "./booking-use";
+import {
+  type InsuranceFacts,
+  type InsuranceRejection,
+  checkInsuranceForBooking,
+} from "./insurance";
+import { SESSION_MS } from "./session";
 
 export interface SpaceFacts {
   id: string;
@@ -63,12 +69,23 @@ export interface HostFacts {
 export interface PractitionerFacts {
   id: string;
   isPro: boolean;
+  /**
+   * The account's chosen side. Only a professional (practitioner) may book a
+   * space — a host offers space, and an account that never chose has no
+   * professional profile to book against. Read from the stored, immutable
+   * account_type, never from the request.
+   */
+  accountType: "practitioner" | "host" | null;
+  /** The professional's liability cover, as reviewed and dated. */
+  insurance: InsuranceFacts;
 }
 
 export type PlanRejection =
   | UseRejection
+  | InsuranceRejection
   | "space_not_found"
   | "space_not_active"
+  | "professional_profile_required"
   | "host_cannot_be_paid"
   | "slot_in_past"
   | "beyond_booking_horizon"
@@ -134,6 +151,27 @@ export function planBooking(input: {
   if (!host?.stripeAccountId || !host.payable) {
     return { ok: false, reason: "host_cannot_be_paid" };
   }
+
+  /*
+   * Who may book, checked before the slot. A space is booked by an independent
+   * professional for their work; a host offers space and an account that never
+   * chose the practitioner side has no professional profile to book against.
+   * Read from the stored account_type, so a crafted request cannot assert it.
+   */
+  if (practitioner.accountType !== "practitioner") {
+    return { ok: false, reason: "professional_profile_required" };
+  }
+
+  /*
+   * Active liability cover, verified and valid for the whole session.
+   * Browsing needs none of it; confirming a booking does. The interval matters
+   * — cover must be effective by the moment the session starts and still active
+   * when it ends, and cover live today need not reach a session months out —
+   * which is what makes every occurrence of a recurring run its own check.
+   */
+  const endsAt = new Date(startsAt.getTime() + SESSION_MS);
+  const insuranceProblem = checkInsuranceForBooking(practitioner.insurance, startsAt, endsAt, now);
+  if (insuranceProblem) return { ok: false, reason: insuranceProblem };
 
   if (startsAt.getTime() <= now.getTime()) return { ok: false, reason: "slot_in_past" };
 
@@ -218,6 +256,50 @@ export function planBooking(input: {
   };
 }
 
+export type SeriesPlan =
+  | {
+      ok: true;
+      occurrences: { startsAt: Date; plan: Extract<BookingPlan, { ok: true }> }[];
+    }
+  | { ok: false; startsAt: Date; reason: PlanRejection };
+
+/**
+ * The decision for a whole recurring run, before any of it is committed.
+ *
+ * A recurring booking is all-or-nothing from the person's side: the run is
+ * worth booking only if every week of it can be. So this plans every occurrence
+ * first and stops at the first that cannot — professional eligibility, cover for
+ * that week's interval, availability, allowed use, every rule planBooking runs.
+ * The caller creates none rather than booking the covered weeks and charging for
+ * a run that was never whole, and the failing occurrence is named so "your cover
+ * ends before that week" is answerable rather than a silently short series.
+ *
+ * Pure, and separate from the IO that gathers the facts, so the all-or-nothing
+ * rule is testable without a database — the same reason planBooking is pure. The
+ * earlier weeks of the run are added to what is taken as it goes, so two weeks
+ * of one series cannot both claim the same hour.
+ */
+export function planSeries(
+  input: Omit<Parameters<typeof planBooking>[0], "startsAt" | "takenStarts"> & {
+    takenStarts: readonly Date[];
+    /** The start time of each occurrence, in order. */
+    starts: readonly Date[];
+  },
+): SeriesPlan {
+  const { starts, takenStarts, ...shared } = input;
+  const taken = [...takenStarts];
+  const occurrences: { startsAt: Date; plan: Extract<BookingPlan, { ok: true }> }[] = [];
+
+  for (const startsAt of starts) {
+    const plan = planBooking({ ...shared, takenStarts: taken, startsAt });
+    if (!plan.ok) return { ok: false, startsAt, reason: plan.reason };
+    occurrences.push({ startsAt, plan });
+    taken.push(startsAt);
+  }
+
+  return { ok: true, occurrences };
+}
+
 /**
  * Human wording for each refusal, kept next to the reasons they explain.
  *
@@ -236,6 +318,39 @@ export function explainRejection(
     case "attendees_missing":
     case "too_many_attendees":
       return { message: explainUseRejection(reason, rules), status: 409 };
+    case "professional_profile_required":
+      return {
+        message:
+          "Minimum Stress spaces are for independent wellness professionals. Set up your professional profile to book.",
+        status: 403,
+      };
+    case "insurance_required":
+      return {
+        message:
+          "Active liability coverage is required before you can book a space for professional use.",
+        status: 403,
+      };
+    case "insurance_pending":
+      return {
+        message: "Your liability insurance is being reviewed. You can book once it is verified.",
+        status: 403,
+      };
+    case "insurance_rejected":
+      return {
+        message: "Your liability insurance could not be verified. Add a valid certificate to book.",
+        status: 403,
+      };
+    case "insurance_expired":
+      return {
+        message: "Your liability coverage has expired. Renew it before you can book.",
+        status: 403,
+      };
+    case "insurance_not_valid_for_date":
+      return {
+        message:
+          "Your liability coverage does not reach that date. Update it, or choose a date within your coverage.",
+        status: 403,
+      };
     case "space_not_found":
       return { message: "No such space", status: 404 };
     case "space_not_active":

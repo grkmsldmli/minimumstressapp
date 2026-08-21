@@ -25,6 +25,7 @@ import { SavedCard } from "@/components/saved-card";
 import { StandingNotice } from "@/components/standing-notice";
 import { AvatarUpload, DocumentUpload } from "@/components/uploads";
 import type { AccountType, Profile } from "@/lib/domain";
+import { type InsuranceStatus, insuranceStatus } from "@/lib/insurance";
 import { errorMessage } from "@/lib/error-message";
 import type { Standing } from "@/lib/reliability";
 import type { MilestoneKey } from "@/lib/milestones";
@@ -38,19 +39,34 @@ import {
 
 import { NavyScreen } from "./shared";
 
+/** The five-word status turned into the line shown on the profile row. */
+const INSURANCE_LABEL: Record<InsuranceStatus, string> = {
+  not_added: "Not added",
+  pending_review: "In review",
+  verified: "Verified",
+  rejected: "Rejected — re-upload",
+  expired: "Expired — renew",
+};
+
 /* ------------------------------------------------------------------ */
-/*  Insurance upload — optional, never blocks a booking                */
+/*  Insurance upload — optional at onboarding, required before booking  */
 /* ------------------------------------------------------------------ */
 
 export function InsuranceUpload({
   onContinue,
   onBack,
   initialDocName,
+  status = "not_added",
+  reviewNote,
 }: {
   /** Rejects when the record does not save, so this screen does not move on. */
   onContinue: (docName: string | null) => Promise<unknown>;
   onBack?: () => void;
   initialDocName: string | null;
+  /** Where the cover stands, so the screen can say more than "on file". */
+  status?: InsuranceStatus;
+  /** Staff's reason when a certificate was turned down, shown verbatim. */
+  reviewNote?: string | null;
 }) {
   const [file, setFile] = useState<File | null>(null);
   const existingName = file?.name ?? initialDocName;
@@ -79,22 +95,68 @@ export function InsuranceUpload({
         )}
 
         <p className="font-body font-semibold text-[12px] uppercase tracking-[0.2em] text-sky-soft">
-          Optional, takes 10 seconds
+          Optional for now
         </p>
         <div className="mt-2">
           <Headline pre="Add your" accent="insurance?" size={27} light />
         </div>
         {/*
-          The old line said "hosts approve you faster when a certificate is
-          already on file". There is no host approval of practitioners — a
-          booking is direct — and a host never sees this document. It described
-          a mechanism that does not exist.
+          Two earlier lines had to go. "Hosts approve you faster when a
+          certificate is on file" described a host approval of practitioners
+          that does not exist — a booking is direct, and a host never sees this
+          document. "It never blocks a booking" is now simply false: verified
+          liability cover is required before a professional booking is confirmed
+          (see lib/insurance.ts and the booking gate). Optional here means
+          optional at *this step* — you can browse without it — not that it is
+          never needed.
         */}
         <p className="font-body font-normal text-[14px] leading-relaxed text-white/65 mt-3">
-          Many venues require practitioners to carry their own cover. Keeping a certificate here
-          means you have it to hand. You can add it later from your profile, and it never blocks a
-          booking.
+          Independent professionals carry their own liability cover. You can skip this now and
+          keep looking around — but you&rsquo;ll need verified coverage on file before you can
+          confirm a booking. You can add or update it any time from your profile.
         </p>
+
+        {/*
+          Where the cover actually stands. "On file" was silent about the part
+          that decides a booking — a file uploaded is not the same as cover we
+          have verified, and a lapsed one is worse than none because it reads as
+          done. A rejection shows staff's own words so it can be fixed.
+        */}
+        {status === "verified" && (
+          <p
+            className="font-body font-normal text-[13px] leading-relaxed mt-3 rounded-xl px-3 py-2.5"
+            style={{ backgroundColor: "rgba(120,190,140,0.16)", color: "#BFE6C9" }}
+          >
+            Verified — you&rsquo;re covered and can book.
+          </p>
+        )}
+        {status === "pending_review" && (
+          <p
+            className="font-body font-normal text-[13px] leading-relaxed mt-3 rounded-xl px-3 py-2.5"
+            style={{ backgroundColor: "rgba(143,198,245,0.16)", color: "#BFD9F2" }}
+          >
+            In review — we check certificates by hand, and you can book once it is verified.
+          </p>
+        )}
+        {status === "expired" && (
+          <p
+            className="font-body font-normal text-[13px] leading-relaxed mt-3 rounded-xl px-3 py-2.5"
+            style={{ backgroundColor: "rgba(232,163,61,0.16)", color: "#F0CF9A" }}
+          >
+            Your cover has lapsed. Upload a current certificate to book again.
+          </p>
+        )}
+        {status === "rejected" && (
+          <div
+            className="mt-3 rounded-xl px-3 py-2.5"
+            style={{ backgroundColor: "rgba(242,105,92,0.16)", color: "#F2A79E" }}
+          >
+            <p className="font-body font-semibold text-[13px]">Not verified</p>
+            <p className="font-body font-normal text-[13px] leading-relaxed mt-0.5">
+              {reviewNote?.trim() || "Add a valid certificate to book."}
+            </p>
+          </div>
+        )}
 
         <div className="mt-6 rounded-2xl p-4 bg-white">
           <DocumentUpload
@@ -504,7 +566,23 @@ export function PractitionerProfile({
           <ProfileRow
             icon={FileUp}
             label="Insurance certificate"
-            value={profile.insuranceDocName ?? "Not added"}
+            // The status, not the filename: what a professional needs to know
+            // here is whether they can book, and a file on record that is still
+            // in review or has lapsed cannot. Derived from the stored review
+            // state and the clock — see lib/insurance.ts.
+            value={
+              INSURANCE_LABEL[
+                insuranceStatus(
+                  {
+                    hasCertificate: profile.insuranceDocName !== null,
+                    state: profile.insuranceReview.state,
+                    effectiveDate: profile.insuranceEffectiveDate,
+                    expiresAt: profile.insuranceExpiresAt,
+                  },
+                  new Date(),
+                )
+              ]
+            }
             onClick={onGoInsurance}
           />
           {/*

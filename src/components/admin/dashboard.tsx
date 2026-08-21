@@ -19,7 +19,14 @@ import {
 import { useEffect, useState } from "react";
 
 import { errorMessage } from "@/lib/error-message";
-import type { AdminQueue, ListingRow, LiveSession, Person, SessionParty } from "@/lib/admin/queue";
+import type {
+  AdminQueue,
+  ListingRow,
+  LiveSession,
+  PendingInsurance,
+  Person,
+  SessionParty,
+} from "@/lib/admin/queue";
 import { formatCents } from "@/lib/money";
 
 import { DisputeQueue } from "./disputes";
@@ -186,6 +193,7 @@ export function AdminDashboard() {
     urgent.length === 0 &&
     queue.escalations.length === 0 &&
     queue.pendingListings.length === 0 &&
+    queue.pendingInsurance.length === 0 &&
     queue.accountChangeRequests.length === 0;
 
   return (
@@ -495,6 +503,19 @@ export function AdminDashboard() {
                     </Action>
                   </div>
                 </Card>
+              ))}
+            </Panel>
+
+            <Panel title="Insurance waiting for review" count={queue.pendingInsurance.length}>
+              {queue.pendingInsurance.map((item) => (
+                <InsuranceReviewCard
+                  key={item.id}
+                  item={item}
+                  busy={busy === item.id}
+                  onView={() => item.docPath && void openDocument(item.docPath)}
+                  onVerify={(fields) => void act("verify_insurance", item.id, undefined, fields)}
+                  onReject={(note) => void act("reject_insurance", item.id, note)}
+                />
               ))}
             </Panel>
 
@@ -1310,6 +1331,136 @@ function ResolveBox({ busy, onResolve }: { busy: boolean; onResolve: (note: stri
         {busy ? "…" : "Resolve"}
       </Action>
     </div>
+  );
+}
+
+/**
+ * Reading a certificate and turning it into a decision.
+ *
+ * Verifying is not a single click on purpose: the window is the decision. Staff
+ * read the two dates off the certificate and type them, because the booking
+ * gate refuses a verified row that carries none, and a one-tap "looks fine"
+ * would produce exactly that row. Rejecting takes a reason, shown to the
+ * professional the same way a listing rejection reaches a host.
+ */
+function InsuranceReviewCard({
+  item,
+  busy,
+  onView,
+  onVerify,
+  onReject,
+}: {
+  item: PendingInsurance;
+  busy: boolean;
+  onView: () => void;
+  onVerify: (fields: {
+    effectiveDate: string;
+    expiresAt: string;
+    insurer: string;
+    policyNumber: string;
+  }) => void;
+  onReject: (note: string) => void;
+}) {
+  const [effectiveDate, setEffectiveDate] = useState(item.effectiveDate ?? "");
+  const [expiresAt, setExpiresAt] = useState(item.expiresAt ?? "");
+  const [insurer, setInsurer] = useState(item.insurer ?? "");
+  const [policyNumber, setPolicyNumber] = useState(item.policyNumber ?? "");
+  const [rejecting, setRejecting] = useState(false);
+  const [note, setNote] = useState("");
+
+  const field = "flex-1 px-3 py-2 rounded-md font-body text-[11.5px] outline-none";
+  const fieldStyle = { backgroundColor: PANEL, color: "#fff", border: `1px solid ${LINE}` };
+  const canVerify = /^\d{4}-\d{2}-\d{2}$/.test(effectiveDate) && /^\d{4}-\d{2}-\d{2}$/.test(expiresAt);
+
+  return (
+    <Card>
+      <p className="font-body font-medium text-[12.5px]" style={{ color: "#fff" }}>
+        {item.displayName ?? item.email ?? "A professional"}
+      </p>
+      <p className="font-body font-light text-[11.5px] mt-1" style={{ color: MUTED }}>
+        {item.email ?? "unknown"}
+      </p>
+
+      <div className="flex flex-wrap gap-2 mt-3">
+        {item.docPath ? (
+          <Doc label="Certificate" onClick={onView} />
+        ) : (
+          <span className="font-body text-[11px]" style={{ color: CORAL }}>
+            No file uploaded
+          </span>
+        )}
+      </div>
+
+      {rejecting ? (
+        <div className="flex gap-2 mt-3">
+          <input
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="Why is it being turned down? (shown to them)"
+            aria-label="Rejection reason"
+            className={field}
+            style={fieldStyle}
+          />
+          <Action danger disabled={busy || note.trim().length < 15} onClick={() => onReject(note)}>
+            {busy ? "…" : "Confirm"}
+          </Action>
+          <Action disabled={busy} onClick={() => setRejecting(false)}>
+            Cancel
+          </Action>
+        </div>
+      ) : (
+        <>
+          <div className="flex gap-2 mt-3">
+            <input
+              value={effectiveDate}
+              onChange={(e) => setEffectiveDate(e.target.value)}
+              placeholder="Effective (YYYY-MM-DD)"
+              aria-label="Effective date"
+              className={field}
+              style={fieldStyle}
+            />
+            <input
+              value={expiresAt}
+              onChange={(e) => setExpiresAt(e.target.value)}
+              placeholder="Expires (YYYY-MM-DD)"
+              aria-label="Expiry date"
+              className={field}
+              style={fieldStyle}
+            />
+          </div>
+          <div className="flex gap-2 mt-2">
+            <input
+              value={insurer}
+              onChange={(e) => setInsurer(e.target.value)}
+              placeholder="Insurer (optional)"
+              aria-label="Insurer"
+              className={field}
+              style={fieldStyle}
+            />
+            <input
+              value={policyNumber}
+              onChange={(e) => setPolicyNumber(e.target.value)}
+              placeholder="Policy no. (optional)"
+              aria-label="Policy number"
+              className={field}
+              style={fieldStyle}
+            />
+          </div>
+          <div className="flex gap-2 mt-3">
+            <Action
+              primary
+              disabled={busy || !canVerify}
+              onClick={() => onVerify({ effectiveDate, expiresAt, insurer, policyNumber })}
+            >
+              <Check size={12} /> Verify
+            </Action>
+            <Action disabled={busy} onClick={() => setRejecting(true)}>
+              <X size={12} /> Reject
+            </Action>
+          </div>
+        </>
+      )}
+    </Card>
   );
 }
 

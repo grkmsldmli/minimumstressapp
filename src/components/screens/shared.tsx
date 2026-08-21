@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Building2, ChevronRight, Mail, Sparkles, Users } from "lucide-react";
+import { ArrowLeft, Building2, ChevronRight, Mail, Sparkles, Users } from "lucide-react";
 
 import { Ambient, BreathingLogo, Headline, Wordmark } from "@/components/brand";
 import { PrimaryButton } from "@/components/primitives";
@@ -14,9 +14,17 @@ const NAVY_WASH =
 export function NavyScreen({
   children,
   className = "",
+  onBack,
 }: {
   children: React.ReactNode;
   className?: string;
+  /**
+   * When present, a back arrow floats at the top-left over the starfield. The
+   * onboarding screens sit above the shell's data guard, so this is the only
+   * way back off them — without it, a wrong email typed into the code screen
+   * had no way home but killing the app.
+   */
+  onBack?: () => void;
 }) {
   return (
     <div
@@ -24,6 +32,17 @@ export function NavyScreen({
       style={{ background: NAVY_WASH }}
     >
       <Ambient />
+      {onBack && (
+        <button
+          type="button"
+          onClick={onBack}
+          aria-label="Back"
+          className="absolute left-5 top-5 z-20 w-9 h-9 rounded-full flex items-center justify-center press"
+          style={{ backgroundColor: "rgba(255,255,255,0.14)" }}
+        >
+          <ArrowLeft size={16} color="#fff" />
+        </button>
+      )}
       {children}
     </div>
   );
@@ -87,9 +106,9 @@ export function Splash({ next }: { next: () => void }) {
 /*  How it works                                                       */
 /* ------------------------------------------------------------------ */
 
-export function HowItWorks({ next }: { next: () => void }) {
+export function HowItWorks({ next, onBack }: { next: () => void; onBack?: () => void }) {
   return (
-    <NavyScreen className="items-center justify-between px-8 pt-14 pb-9">
+    <NavyScreen className="items-center justify-between px-8 pt-14 pb-9" onBack={onBack}>
       <div className="relative z-10 text-center">
         <p className="font-body font-semibold text-[12px] uppercase tracking-[0.2em] text-sky-soft">
           How it works
@@ -225,6 +244,7 @@ export function AuthEntry({
   providers,
   error,
   busy = false,
+  onBack,
 }: {
   onEmail: (email: string) => void;
   onProvider: (provider: Provider) => void;
@@ -237,6 +257,7 @@ export function AuthEntry({
   /** Why the code could not be sent. Shown here because there is no code screen to show it on. */
   error?: string | null;
   busy?: boolean;
+  onBack?: () => void;
 }) {
   const [email, setEmail] = useState("");
   // A trailing-dot or spaceless check catches the common typo without
@@ -244,7 +265,7 @@ export function AuthEntry({
   const looksLikeEmail = /^\S+@\S+\.\S+$/.test(email.trim());
 
   return (
-    <NavyScreen className="justify-center gap-10 px-8 pt-16 pb-9">
+    <NavyScreen className="justify-center gap-10 px-8 pt-16 pb-9" onBack={onBack}>
       <div className="relative z-10 text-center">
         <div className="flex justify-center">
           <Wordmark size={13} />
@@ -366,11 +387,13 @@ export function AuthVerify({
   next,
   error,
   busy = false,
+  onBack,
 }: {
   email: string;
   next: (code: string) => void;
   error?: string | null;
   busy?: boolean;
+  onBack?: () => void;
 }) {
   const [digits, setDigits] = useState<string[]>(Array(CODE_LENGTH).fill(""));
   const inputs = useRef<(HTMLInputElement | null)[]>([]);
@@ -413,7 +436,7 @@ export function AuthVerify({
       the screen empty with the input stranded at the bottom edge — which reads
       as a rendering failure rather than a layout.
     */
-    <NavyScreen className="justify-center px-8 py-16">
+    <NavyScreen className="justify-center px-8 py-16" onBack={onBack}>
       <div className="relative z-10 text-center">
         <div className="flex justify-center">
           <Wordmark size={13} />

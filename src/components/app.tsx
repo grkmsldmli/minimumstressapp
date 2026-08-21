@@ -541,6 +541,7 @@ export function App() {
           providers={providers}
           error={authError}
           busy={authBusy}
+          onBack={back}
           onEmail={(value) => {
             setEmail(value);
             setAuthError(null);
@@ -599,6 +600,7 @@ export function App() {
           email={email}
           error={authError}
           busy={authBusy}
+          onBack={back}
           next={(code) => {
             setAuthError(null);
 
@@ -682,7 +684,7 @@ export function App() {
   // Rendered before the data guard, because these are exactly the screens that
   // exist to get someone to the point where there is data to load.
   if (screen === "splash") return <Splash next={() => go("how")} />;
-  if (screen === "how") return <HowItWorks next={() => go("auth-entry")} />;
+  if (screen === "how") return <HowItWorks next={() => go("auth-entry")} onBack={back} />;
   if (screen === "auth-entry") return renderAuthEntry();
   if (screen === "auth-verify") return renderAuthVerify();
 

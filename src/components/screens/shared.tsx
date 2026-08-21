@@ -244,7 +244,7 @@ export function AuthEntry({
   const looksLikeEmail = /^\S+@\S+\.\S+$/.test(email.trim());
 
   return (
-    <NavyScreen className="justify-between px-8 pt-16 pb-9">
+    <NavyScreen className="justify-center gap-10 px-8 pt-16 pb-9">
       <div className="relative z-10 text-center">
         <div className="flex justify-center">
           <Wordmark size={13} />

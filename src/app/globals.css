@@ -104,7 +104,9 @@ body {
 .app-frame {
   position: relative;
   overflow: hidden;
-  background: #ffffff;
+  /* Navy, so the safe-area strip under the status bar matches the app's navy
+     headers instead of showing a white gap. */
+  background: #16304e;
   width: 100%;
   /* 100vh first as the floor: older Android WebViews (Appetize's included) do
      not understand dvh, and an invalid height falls back to auto — which
@@ -112,6 +114,9 @@ body {
      ("half screen"). Browsers that do understand dvh take the second line. */
   height: 100vh;
   height: 100dvh;
+  /* Clear the status bar / notch on a real phone (0 in a browser, so desktop
+     is unaffected). Without it the app header ran under the clock and battery. */
+  padding-top: env(safe-area-inset-top);
 }
 
 @media (min-width: 500px) {
@@ -121,6 +126,9 @@ body {
   }
 
   .app-frame {
+    /* Desktop mockup keeps a white interior; there is no safe area here, so the
+       padding-top above resolves to 0. */
+    background: #ffffff;
     width: 385px;
     height: 780px;
     border-radius: 44px;

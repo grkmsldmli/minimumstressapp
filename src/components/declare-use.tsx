@@ -124,8 +124,8 @@ export function DeclareUse({
       </div>
 
       <p className="font-body font-normal text-[13px] leading-relaxed mt-3 text-ink-soft">
-        This room takes {capacity}. What you tell us here is part of the booking — using the space
-        for something else, or bringing more people, is a breach of the terms.
+        Maximum capacity: {capacity} {capacity === 1 ? "person" : "people"}. Please keep your
+        purpose and attendee count accurate.
       </p>
     </div>
   );

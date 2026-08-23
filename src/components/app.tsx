@@ -40,7 +40,12 @@ import { isNativeApp } from "@/lib/native";
 import { BOOKING_HORIZON_DAYS } from "@/lib/money";
 import { SESSION_MS } from "@/lib/session";
 import { explainRejection } from "@/lib/booking-plan";
-import { checkInsuranceForBooking, insuranceStatus, type InsuranceFacts } from "@/lib/insurance";
+import {
+  checkInsuranceForBooking,
+  insuranceStatus,
+  type InsuranceFacts,
+  type InsuranceRejection,
+} from "@/lib/insurance";
 import type { NotificationEntry } from "@/lib/notify/history";
 import { ClaimForm } from "@/components/screens/claim-form";
 import { Disputes } from "@/components/screens/disputes";
@@ -83,15 +88,26 @@ import { SpaceDetail } from "./screens/space-detail";
  * reach the eighth week — and a run whose early weeks are covered but whose
  * later ones are not is told about the schedule rather than a single date.
  *
- * Returns the message to show, or null when the booking may proceed.
+ * Returns the message to show plus the reason behind it, or null when the
+ * booking may proceed. The reason lets the gate's CTA speak to the actual state
+ * — add cover that is missing, view cover under review, update cover that was
+ * turned down, lapsed, or short of the date.
  */
+type BookingGate = {
+  message: string;
+  reason: InsuranceRejection | "professional_profile_required";
+};
+
 function bookingEligibilityMessage(
   profile: Profile,
   dates: readonly Date[],
   now: Date,
-): string | null {
+): BookingGate | null {
   if (profile.accountType !== "practitioner") {
-    return explainRejection("professional_profile_required").message;
+    return {
+      message: explainRejection("professional_profile_required").message,
+      reason: "professional_profile_required",
+    };
   }
 
   const facts: InsuranceFacts = {
@@ -111,9 +127,13 @@ function bookingEligibilityMessage(
       continue;
     }
     if (problem === "insurance_not_valid_for_date" && sawCovered) {
-      return "Your current coverage expires before the end of this recurring schedule. Extend it, or book a shorter run.";
+      return {
+        message:
+          "Your current coverage expires before the end of this recurring schedule. Extend it, or book a shorter run.",
+        reason: "insurance_not_valid_for_date",
+      };
     }
-    return explainRejection(problem).message;
+    return { message: explainRejection(problem).message, reason: problem };
   }
 
   return null;
@@ -175,7 +195,7 @@ export function App() {
    * insurance, so the detail screen renders it with a way there rather than a
    * bare red line.
    */
-  const [insuranceGate, setInsuranceGate] = useState<string | null>(null);
+  const [insuranceGate, setInsuranceGate] = useState<BookingGate | null>(null);
   /** Milestones dismissed this session, whether or not the server took it. */
   const [dismissedMilestones, setDismissedMilestones] = useState<MilestoneKey[]>([]);
   /** What a term booking did, including the weeks it could not take. */
@@ -1120,7 +1140,8 @@ export function App() {
           error={bookingError}
           notice={bookingNotice}
           skipped={seriesSkipped}
-          insuranceGate={insuranceGate}
+          insuranceGate={insuranceGate?.message ?? null}
+          insuranceGateReason={insuranceGate?.reason ?? null}
           onAddInsurance={() => {
             setInsuranceGate(null);
             go("verify");

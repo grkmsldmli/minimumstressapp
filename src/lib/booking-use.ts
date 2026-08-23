@@ -259,16 +259,18 @@ export function checkDeclaredUse(
 export function explainUseRejection(reason: UseRejection, rules: SpaceRules): string {
   switch (reason) {
     case "purpose_missing":
-      return "Tell us what you will be using the space for.";
+      return "Choose how you'll use the space.";
     case "purpose_unknown":
-      return "Choose what you will be using the space for.";
+      return "Choose how you'll use the space.";
     case "purpose_needs_detail":
-      return "Say a little more about what you will be doing.";
+      return "Add a little more detail so the host knows what to expect.";
     case "use_not_allowed":
-      return "This host does not offer the space for that. Try another room, or another use.";
+      return "This space isn't offered for that use. Try a different purpose, or another space.";
     case "attendees_missing":
-      return "How many people will be there, including you?";
+      return "How many people will attend, including you?";
     case "too_many_attendees":
-      return `This room takes ${rules.capacity}. Book a larger one, or bring fewer people.`;
+      return `This space holds up to ${rules.capacity} ${
+        rules.capacity === 1 ? "person" : "people"
+      }. Lower your attendee count, or choose a larger space.`;
   }
 }

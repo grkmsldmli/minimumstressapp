@@ -65,11 +65,11 @@ export async function POST(request: NextRequest): Promise<Response> {
       admin.from("spaces").select("timezone").eq("id", spaceId.value).maybeSingle(),
     ]);
 
-    if (!space) return jsonError("No such space", 404);
+    if (!space) return jsonError("We couldn't find that space.", 404);
 
     const isPro = Boolean(practitioner?.is_pro);
     if (weeks.value > 1 && !isPro) {
-      return jsonError("Booking more than one week at a time is a Pro feature", 403);
+      return jsonError("Recurring bookings are a Pro feature. Go Pro to book a weekly series.", 403);
     }
 
     const occurrences = seriesOccurrences({
@@ -81,7 +81,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     });
 
     if (occurrences.length === 0) {
-      return jsonError("None of those weeks are inside your booking window", 409);
+      return jsonError("None of those dates are within your booking window.", 409);
     }
 
     /*

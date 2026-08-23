@@ -62,6 +62,26 @@ interface Slot {
   isInstant: boolean;
 }
 
+/**
+ * The gate's button, named for the state that raised it. Every path leads to the
+ * same insurance screen — only the label changes: add cover that is missing,
+ * view cover under review, or update cover that was turned down, has lapsed, or
+ * doesn't reach the date.
+ */
+function insuranceCtaLabel(reason: string | null | undefined): string {
+  switch (reason) {
+    case "insurance_pending":
+      return "View insurance";
+    case "insurance_rejected":
+    case "insurance_expired":
+    case "insurance_not_valid_for_date":
+      return "Update insurance";
+    default:
+      // insurance_required / not yet added, and any fallback.
+      return "Add insurance";
+  }
+}
+
 export function SpaceDetail({
   space,
   isPro,
@@ -75,6 +95,7 @@ export function SpaceDetail({
   startAt,
   reviews,
   insuranceGate,
+  insuranceGateReason,
   onAddInsurance,
 }: {
   space: PublicSpace;
@@ -93,6 +114,8 @@ export function SpaceDetail({
    * answered by adding insurance, so it is rendered with a way there.
    */
   insuranceGate?: string | null;
+  /** Which eligibility reason raised the gate, so the CTA can name the right action. */
+  insuranceGateReason?: string | null;
   onAddInsurance?: () => void;
   /** What a term booking managed, when it managed some of it. */
   notice?: string | null;
@@ -752,7 +775,7 @@ export function SpaceDetail({
             style={{ backgroundColor: "#FFF8F1", border: "1px solid #F5DFC4" }}
           >
             <p className="font-body font-semibold text-[14px] text-[#8B6C37]">
-              Liability insurance required
+              Liability insurance
             </p>
             <p className="font-body font-normal text-[13.5px] leading-relaxed mt-1 text-[#8B6C37]">
               {insuranceGate}
@@ -764,7 +787,7 @@ export function SpaceDetail({
                 className="mt-3 px-4 py-2 rounded-full font-body font-medium text-[13.5px] press"
                 style={{ backgroundColor: "#2E5578", color: "#fff" }}
               >
-                Add insurance
+                {insuranceCtaLabel(insuranceGateReason)}
               </button>
             )}
           </div>

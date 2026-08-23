@@ -41,8 +41,8 @@ function futureSlot(): Date {
   return new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
 }
 
-const PENDING = "Your liability insurance is being reviewed. You can book once it is verified.";
-const REQUIRED = "Active liability coverage is required before you can book a space for professional use.";
+const PENDING = "Your insurance is under review. You'll be able to book once it's verified.";
+const REQUIRED = "Liability insurance is required to book. Add your coverage to continue.";
 
 /**
  * The sticky action footer and the one scroll container, by their stable
@@ -145,16 +145,16 @@ describe("the booking screen's insurance gate", () => {
         onGoPro={vi.fn()}
         onBook={onBook}
         insuranceGate={PENDING}
+        insuranceGateReason="insurance_pending"
         onAddInsurance={vi.fn()}
       />,
     );
 
     const { bar } = regions(container);
-    expect(screen.getByText("Liability insurance required")).toBeDefined();
+    expect(screen.getByText("Liability insurance")).toBeDefined();
     expect(screen.getByText(PENDING)).toBeDefined();
-    expect(screen.getByRole("button", { name: /add insurance/i })).toBeDefined();
-    // The gate lives in the compact bar, above the CTA.
-    expect(bar!.textContent).toMatch(/being reviewed/i);
+    // The gate lives in the compact footer, above the CTA.
+    expect(bar!.textContent).toMatch(/under review/i);
     // Showing the gate is not making a booking.
     expect(onBook).not.toHaveBeenCalled();
   });
@@ -170,11 +170,41 @@ describe("the booking screen's insurance gate", () => {
         onGoPro={vi.fn()}
         onBook={vi.fn()}
         insuranceGate={REQUIRED}
+        insuranceGateReason="insurance_required"
         onAddInsurance={vi.fn()}
       />,
     );
 
     expect(screen.getByText(REQUIRED)).toBeDefined();
+  });
+
+  // The gate CTA is state-aware: add when missing, view when under review,
+  // update when it needs a new certificate.
+  it("labels the gate CTA for the insurance state that raised it", async () => {
+    const cases: Array<{ reason: string; label: RegExp }> = [
+      { reason: "insurance_required", label: /^add insurance$/i },
+      { reason: "insurance_pending", label: /^view insurance$/i },
+      { reason: "insurance_rejected", label: /^update insurance$/i },
+      { reason: "insurance_expired", label: /^update insurance$/i },
+      { reason: "insurance_not_valid_for_date", label: /^update insurance$/i },
+    ];
+    for (const { reason, label } of cases) {
+      const { unmount } = render(
+        <SpaceDetail
+          space={await seeded()}
+          isPro={false}
+          reviews={[]}
+          onBack={vi.fn()}
+          onGoPro={vi.fn()}
+          onBook={vi.fn()}
+          insuranceGate="Coverage note for this state."
+          insuranceGateReason={reason}
+          onAddInsurance={vi.fn()}
+        />,
+      );
+      expect(screen.getByRole("button", { name: label })).toBeDefined();
+      unmount();
+    }
   });
 
   // 5 — cover in hand (no gate): pressing Book proceeds to the booking.

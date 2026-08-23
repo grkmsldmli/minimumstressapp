@@ -320,60 +320,58 @@ export function explainRejection(
       return { message: explainUseRejection(reason, rules), status: 409 };
     case "professional_profile_required":
       return {
-        message:
-          "Minimum Stress spaces are for independent wellness professionals. Set up your professional profile to book.",
+        message: "Complete your professional profile to book a space.",
         status: 403,
       };
     case "insurance_required":
       return {
-        message:
-          "Active liability coverage is required before you can book a space for professional use.",
+        message: "Liability insurance is required to book. Add your coverage to continue.",
         status: 403,
       };
     case "insurance_pending":
       return {
-        message: "Your liability insurance is being reviewed. You can book once it is verified.",
+        message: "Your insurance is under review. You'll be able to book once it's verified.",
         status: 403,
       };
     case "insurance_rejected":
       return {
-        message: "Your liability insurance could not be verified. Add a valid certificate to book.",
+        message: "We couldn't verify your insurance. Add updated proof of coverage to continue.",
         status: 403,
       };
     case "insurance_expired":
       return {
-        message: "Your liability coverage has expired. Renew it before you can book.",
+        message: "Your liability insurance has expired. Add current coverage to continue.",
         status: 403,
       };
     case "insurance_not_valid_for_date":
       return {
         message:
-          "Your liability coverage does not reach that date. Update it, or choose a date within your coverage.",
+          "Your coverage doesn't extend to this date. Choose an earlier date, or update your insurance.",
         status: 403,
       };
     case "space_not_found":
-      return { message: "No such space", status: 404 };
+      return { message: "We couldn't find that space.", status: 404 };
     case "space_not_active":
-      return { message: "That space is not accepting bookings", status: 409 };
+      return { message: "This space isn't accepting bookings right now.", status: 409 };
     case "host_cannot_be_paid":
-      return { message: "This host has not finished setting up payouts", status: 409 };
+      return { message: "This space isn't available to book yet.", status: 409 };
     case "slot_in_past":
-      return { message: "That time has already passed", status: 409 };
+      return { message: "That time has already passed. Choose another time to continue.", status: 409 };
     case "beyond_booking_horizon":
-      return { message: "That is beyond your booking window", status: 409 };
+      return { message: "That date is beyond your current booking window.", status: 409 };
     case "slot_not_open":
-      return { message: "That hour is not open", status: 409 };
+      return { message: "That time isn't available.", status: 409 };
     case "slot_taken":
-      return { message: "Someone just took that hour", status: 409 };
+      return { message: "That time was just booked. Choose another time to continue.", status: 409 };
     case "too_many_upcoming":
       return {
-        message: `You have ${MAX_UPCOMING_BOOKINGS_FREE} sessions booked. Finish one, or go Pro to book as many at a time as you like.`,
+        message: `You've reached ${MAX_UPCOMING_BOOKINGS_FREE} upcoming sessions. Complete one, or go Pro to book more at once.`,
         status: 409,
       };
 
     case "too_soon_to_request":
       return {
-        message: `This host accepts bookings themselves, and that is too soon for them to answer. Pick a later time, or a room that books straight away.`,
+        message: `This host reviews each booking, and that's too soon for them to respond. Choose a later time, or a space that books instantly.`,
         status: 409,
       };
   }

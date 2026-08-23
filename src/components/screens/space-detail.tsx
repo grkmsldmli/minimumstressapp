@@ -238,6 +238,13 @@ export function SpaceDetail({
     // one gets through later.
     .flatMap((type) => (type && type.label !== roomType ? [type] : []));
 
+  /*
+   * The booking bar is anchored to the bottom and scrolls its own content, so a
+   * refusal added to the top of it (the insurance gate) can land above the fold.
+   * Bringing it into view is what turns "Book did nothing" back into an answer:
+   * the message sits at the top of the bar, and the finger that pressed Book was
+   * at the bottom of it.
+   */
   return (
     <div className="h-full flex flex-col relative screen-in bg-white">
       <SpaceGallery media={space.media} category={space.category} height={320}>
@@ -269,7 +276,7 @@ export function SpaceDetail({
         </div>
       </SpaceGallery>
 
-      <div className="flex-1 overflow-y-auto px-6 pt-5 pb-36">
+      <div className="flex-1 overflow-y-auto px-6 pt-5">
         <p className="font-body font-normal text-[15px] leading-relaxed text-ink-muted">
           {space.description}
         </p>
@@ -518,6 +525,81 @@ export function SpaceDetail({
           </div>
         )}
 
+        {/*
+          What the booking is for and how it repeats, in the page's own scroll
+          rather than the pinned bar — so the bar below stays the compact action
+          area and this screen keeps a single vertical scroll. Asked only once an
+          hour is chosen: answering earlier is answering for a booking not yet
+          decided on.
+        */}
+        {!preview && selected && repeatable > 1 && (
+          <button
+            type="button"
+            onClick={() => (isPro ? setWeeks(weeks > 1 ? 1 : Math.min(4, repeatable)) : onGoPro())}
+            className="flex items-center justify-between w-full mt-6 px-3.5 py-2.5 rounded-xl press"
+            style={{
+              backgroundColor: weeks > 1 ? "#EDF6FE" : "#fff",
+              border: `1px solid ${weeks > 1 ? "#3B9BE8" : "#DCE7F2"}`,
+            }}
+          >
+            <span className="flex items-center gap-2 font-body text-[15px] text-navy">
+              <Repeat size={13} color={weeks > 1 ? "#3B9BE8" : "#8CA3BD"} />
+              {weeks > 1
+                ? `Every ${sessionWeekday(selected, space.timeZone)} for ${weeks} weeks`
+                : `Repeat weekly${isPro ? "" : " — Pro"}`}
+            </span>
+            <span className="font-body font-medium text-[15px] text-navy">
+              {weeks > 1 ? formatCents(priced.totalCents * weeks) : ""}
+            </span>
+          </button>
+        )}
+
+        {!preview && weeks > 1 && (
+          <div className="flex gap-1.5 mt-2.5">
+            {Array.from({ length: Math.min(4, repeatable) }, (_, i) => i + 1)
+              .filter((n) => n > 1)
+              .map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => setWeeks(n)}
+                  className="flex-1 py-2 rounded-lg font-body text-[13.5px] press"
+                  style={{
+                    backgroundColor: weeks === n ? "#16304E" : "#fff",
+                    color: weeks === n ? "#fff" : "#16304E",
+                    border: `1px solid ${weeks === n ? "#16304E" : "#DCE7F2"}`,
+                  }}
+                >
+                  {n} weeks
+                </button>
+              ))}
+          </div>
+        )}
+
+        {!preview && selected && (
+          <DeclareUse
+            allowedUses={space.allowedUses}
+            capacity={space.capacity}
+            value={declared}
+            onChange={setDeclared}
+          />
+        )}
+
+        {/*
+          Said before the card, not after it. A room the host has to accept looks
+          identical to one that books straight through until the confirmation
+          screen — the button verb and this line are the whole difference.
+        */}
+        {!preview && byRequest && selected && (
+          <p
+            className="rounded-xl px-3.5 py-3 font-body font-normal text-[13.5px] leading-relaxed mt-3"
+            style={{ backgroundColor: "#FFF8F1", border: "1px solid #F5DFC4", color: "#8B6C37" }}
+          >
+            This host accepts bookings themselves. Your card is held, not charged, until they say
+            yes — and released in full if they say no or do not answer within a day.
+          </p>
+        )}
+
         {!isPro && (
           <button
             type="button"
@@ -631,10 +713,19 @@ export function SpaceDetail({
             You pay now. Cancel {LATE_CANCELLATION_HOURS} hours ahead for a refund.
           </p>
         </div>
-      </div>
 
+      {/*
+        The compact action area, kept inside the page's own scroll as a sticky
+        footer rather than an absolute overlay. It holds only the final action —
+        the Book button, and the insurance gate when a booking is refused for
+        cover. Being in flow, it reserves its own space and simply pins to the
+        bottom while there is more above to scroll, so it can never cover the
+        content and needs no measured padding to compensate: one scroll
+        container, friendly to a future pull-to-refresh. `-mx-6` lets its fade
+        reach the screen edges past the scroll's own horizontal padding.
+      */}
       <div
-        className="absolute bottom-0 inset-x-0 px-6 pt-4 pb-6"
+        className="sticky bottom-0 -mx-6 px-6 pt-4 pb-6"
         style={{ background: "linear-gradient(to top, #FFFFFF 75%, transparent)" }}
       >
         {/*
@@ -701,59 +792,6 @@ export function SpaceDetail({
           </div>
         )}
 
-        {/*
-          Offered only once an hour is chosen, and only to Pro.
-          
-          A weekly class is the reason somebody comes back, and the app made
-          them walk the whole discovery flow for each one — a decision made in
-          September, re-entered every Tuesday. Free accounts see it and see
-          what it costs, because a cap nobody can see is not a reason to pay.
-        */}
-        {!preview && selected && repeatable > 1 && (
-          <button
-            type="button"
-            onClick={() => (isPro ? setWeeks(weeks > 1 ? 1 : Math.min(4, repeatable)) : onGoPro())}
-            className="flex items-center justify-between w-full mb-2.5 px-3.5 py-2.5 rounded-xl press"
-            style={{
-              backgroundColor: weeks > 1 ? "#EDF6FE" : "#fff",
-              border: `1px solid ${weeks > 1 ? "#3B9BE8" : "#DCE7F2"}`,
-            }}
-          >
-            <span className="flex items-center gap-2 font-body text-[15px] text-navy">
-              <Repeat size={13} color={weeks > 1 ? "#3B9BE8" : "#8CA3BD"} />
-              {weeks > 1
-                ? `Every ${sessionWeekday(selected, space.timeZone)} for ${weeks} weeks`
-                : `Repeat weekly${isPro ? "" : " — Pro"}`}
-            </span>
-            <span className="font-body font-medium text-[15px] text-navy">
-              {weeks > 1 ? formatCents(priced.totalCents * weeks) : ""}
-            </span>
-          </button>
-        )}
-
-        {/* How many weeks, once repeating is on. */}
-        {!preview && weeks > 1 && (
-          <div className="flex gap-1.5 mb-2.5">
-            {Array.from({ length: Math.min(4, repeatable) }, (_, i) => i + 1)
-              .filter((n) => n > 1)
-              .map((n) => (
-                <button
-                  key={n}
-                  type="button"
-                  onClick={() => setWeeks(n)}
-                  className="flex-1 py-2 rounded-lg font-body text-[13.5px] press"
-                  style={{
-                    backgroundColor: weeks === n ? "#16304E" : "#fff",
-                    color: weeks === n ? "#fff" : "#16304E",
-                    border: `1px solid ${weeks === n ? "#16304E" : "#DCE7F2"}`,
-                  }}
-                >
-                  {n} weeks
-                </button>
-              ))}
-          </div>
-        )}
-
         {preview ? (
           <PrimaryButton onClick={onBack}>Back to your studio</PrimaryButton>
         ) : (
@@ -762,37 +800,6 @@ export function SpaceDetail({
           choose looks like the app is broken. It says which it is now.
         */
         <>
-        {/*
-          Asked after the hour is chosen and before the money. Putting it
-          earlier makes somebody answer questions about a booking they have not
-          decided to make; putting it after payment makes it a formality.
-        */}
-        {selected && (
-          <DeclareUse
-            allowedUses={space.allowedUses}
-            capacity={space.capacity}
-            value={declared}
-            onChange={setDeclared}
-          />
-        )}
-
-        {/*
-          Said before the card, not after it.
-          A room the host has to accept looks identical to one that books
-          straight through, right up until the confirmation screen — so
-          somebody would pay expecting an hour and get a wait instead. The
-          button verb and this line are the whole difference.
-        */}
-        {byRequest && selected && (
-          <p
-            className="rounded-xl px-3.5 py-3 font-body font-normal text-[13.5px] leading-relaxed mb-3"
-            style={{ backgroundColor: "#FFF8F1", border: "1px solid #F5DFC4", color: "#8B6C37" }}
-          >
-            This host accepts bookings themselves. Your card is held, not charged, until they say
-            yes — and released in full if they say no or do not answer within a day.
-          </p>
-        )}
-
         <PrimaryButton
           disabled={!selected || !ready || booking}
           onClick={() => {
@@ -828,6 +835,7 @@ export function SpaceDetail({
         )}
         </>
         )}
+      </div>
       </div>
     </div>
   );

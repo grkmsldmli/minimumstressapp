@@ -743,3 +743,64 @@ body {
     animation: none !important;
   }
 }
+
+/* ------------------------------------------------------------------ */
+/*  Paw loader — two small navy paws gently "making biscuits".         */
+/*  The brand's quiet waiting sign. Timing ~1.35s, soft ease-in-out;   */
+/*  the two paws alternate via a half-cycle delay on the right one.    */
+/* ------------------------------------------------------------------ */
+.paw-knead {
+  transform-origin: 50% 100%;
+  animation: pawKnead 1.35s ease-in-out infinite;
+}
+.paw-knead--right {
+  animation-delay: -0.675s;
+}
+@keyframes pawKnead {
+  0% {
+    transform: translateY(0) scaleX(1) scaleY(1);
+    opacity: 0.65;
+  }
+  22% {
+    transform: translateY(2.5px) scaleX(1.05) scaleY(0.94);
+    opacity: 1;
+  }
+  44%,
+  100% {
+    transform: translateY(0) scaleX(1) scaleY(1);
+    opacity: 0.65;
+  }
+}
+.paw-knead-shadow {
+  transform-origin: 50% 50%;
+  animation: pawKneadShadow 1.35s ease-in-out infinite;
+}
+.paw-knead-shadow--right {
+  animation-delay: -0.675s;
+}
+@keyframes pawKneadShadow {
+  0%,
+  44%,
+  100% {
+    transform: scaleX(1);
+    opacity: 0.16;
+  }
+  22% {
+    transform: scaleX(1.4);
+    opacity: 0.24;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .paw-knead,
+  .paw-knead--right {
+    animation: none !important;
+    transform: none !important;
+    opacity: 0.8;
+  }
+  .paw-knead-shadow,
+  .paw-knead-shadow--right {
+    animation: none !important;
+    transform: none !important;
+    opacity: 0.14;
+  }
+}

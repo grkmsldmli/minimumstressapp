@@ -25,6 +25,7 @@ import {
   type MilestoneKey,
 } from "@/lib/milestones";
 import { MilestoneMoment } from "@/components/milestone-moment";
+import { PawLoader } from "@/components/paw-loader";
 import { type CancellationEvent, standingFor } from "@/lib/reliability";
 import type { LocationChoice } from "@/components/location-prompt";
 import { supabaseBackendEnabled } from "@/lib/repository-factory";
@@ -584,6 +585,17 @@ export function App() {
     [refresh],
   );
 
+  /*
+   * Pull-to-refresh's callback. It re-fetches the current screen's data in place
+   * through the app's existing `refresh()` (a revision bump, not a page reload),
+   * and holds for a short beat so the paw loader reads as a deliberate refresh
+   * rather than a flicker. It always resolves, so the gesture can never stick.
+   */
+  const onPullRefresh = useCallback(async () => {
+    refresh();
+    await new Promise((resolve) => setTimeout(resolve, 650));
+  }, [refresh]);
+
   /**
    * Deletes, then resets. The order matters only in that the reset must not
    * happen first: a screen re-rendering against an account that still exists
@@ -770,7 +782,9 @@ export function App() {
     return loadError ? (
       <LoadFailed message={loadError} onRetry={() => { setLoadError(null); refresh(); }} />
     ) : (
-      <div className="h-full bg-white" />
+      <div className="h-full bg-white flex items-center justify-center">
+        <PawLoader label="Getting things ready…" />
+      </div>
     );
   }
 
@@ -942,6 +956,7 @@ export function App() {
         <Discover
           spaces={spaces}
           isPro={profile.isPro}
+          onRefresh={onPullRefresh}
           greetingName={profile.displayName}
           rebookable={rebookableRooms}
           onRebook={(entry) => {
@@ -993,6 +1008,7 @@ export function App() {
           spaces={mySpaces}
           bookings={hostBookings}
           requests={bookingRequests}
+          onRefresh={onPullRefresh}
           /*
            * Refreshed rather than patched in place. Answering moves a booking
            * between two lists that come from two different queries — out of
@@ -1433,6 +1449,7 @@ export function App() {
       return (
         <MyBookings
           bookings={bookings}
+          onRefresh={onPullRefresh}
           accessFor={(spaceId) => access[spaceId] ?? null}
           // The street off the public catalogue rather than off `access`.
           // `access` opens a day before the session; the address has been
@@ -1463,6 +1480,7 @@ export function App() {
       return (
         <PractitionerProfile
           profile={profile}
+          onRefresh={onPullRefresh}
           milestones={practitionerMilestones}
           milestoneTotal={practitionerTotal(practitionerFacts)}
           sessions={sessions}
@@ -1509,6 +1527,7 @@ export function App() {
         <HostSpaces
           spaces={mySpaces}
           bookings={hostBookings}
+          onRefresh={onPullRefresh}
           onBack={back}
           onAddSpace={() => go("addspace")}
           onOpenSpace={(spaceId) => {

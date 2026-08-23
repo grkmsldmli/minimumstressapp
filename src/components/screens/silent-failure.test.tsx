@@ -111,6 +111,7 @@ function renderBookings(onCancel: (id: string) => Promise<unknown>) {
   render(
     <MyBookings
       bookings={[booking]}
+      onRefresh={() => Promise.resolve()}
       accessFor={() => null}
       addressFor={() => "12 Willow St"}
       isPro={false}

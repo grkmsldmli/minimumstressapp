@@ -20,6 +20,7 @@ import { AccountBadge } from "@/components/account-badge";
 import { DeleteAccount } from "@/components/delete-account";
 import { DocumentStatus } from "@/components/document-status";
 import { EmergencyContactCard } from "@/components/emergency-contact";
+import { PullToRefresh } from "@/components/pull-to-refresh";
 import { BadgeCard } from "@/components/badge-card";
 import { MilestoneCard } from "@/components/milestone-card";
 import { Ambient, Headline, LogoBadge } from "@/components/brand";
@@ -64,6 +65,7 @@ export function HostDashboard({
   spaces,
   bookings,
   requests,
+  onRefresh,
   onAnswerRequest,
   onAddSpace,
   onEditHours,
@@ -83,6 +85,8 @@ export function HostDashboard({
   bookings: HostBooking[];
   /** Waiting on the host. Empty on every listing that books instantly. */
   requests: BookingRequest[];
+  /** Pull-to-refresh: re-fetches host bookings, requests, and listings in place. */
+  onRefresh: () => Promise<unknown> | unknown;
   /**
    * The Host Terms this host has accepted, and when — from their profile. Null
    * on an account that has never accepted (an existing host from before the
@@ -381,7 +385,7 @@ export function HostDashboard({
             </button>
           </div>
 
-          <div className="flex-1 overflow-y-auto px-6 pt-6 pb-8">
+          <PullToRefresh className="flex-1 px-6 pt-6 pb-8" onRefresh={onRefresh}>
             <Unfinished space={active} onEdit={() => onEditSpace(active.id)} />
 
             {/*
@@ -487,7 +491,7 @@ export function HostDashboard({
             )}
 
             <HostLegalCard version={hostTermsVersion} acceptedAt={hostTermsAcceptedAt} />
-          </div>
+          </PullToRefresh>
         </>
       )}
     </div>

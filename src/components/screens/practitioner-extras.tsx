@@ -17,6 +17,7 @@ import { AccountBadge } from "@/components/account-badge";
 import { AccountChange } from "@/components/account-change";
 import { DeleteAccount } from "@/components/delete-account";
 import { EmergencyContactCard } from "@/components/emergency-contact";
+import { PullToRefresh } from "@/components/pull-to-refresh";
 import { BadgeCard } from "@/components/badge-card";
 import { MilestoneCard } from "@/components/milestone-card";
 import { Ambient, BreathingLogo, Headline } from "@/components/brand";
@@ -462,6 +463,7 @@ export function ProScreen({
 
 export function PractitionerProfile({
   profile,
+  onRefresh,
   milestones,
   milestoneTotal,
   bookingsCount,
@@ -479,6 +481,8 @@ export function PractitionerProfile({
   onSignOut,
 }: {
   profile: Profile;
+  /** Pull-to-refresh: re-fetches profile/account state in place. */
+  onRefresh: () => Promise<unknown> | unknown;
   /** The moments reached so far, counted in app.tsx from bookings. */
   milestones: MilestoneKey[];
   /** What they have held, never what they spent. See milestones.ts. */
@@ -514,7 +518,7 @@ export function PractitionerProfile({
         sub={`${bookingsCount} booking${bookingsCount === 1 ? "" : "s"} so far${profile.email ? ` · ${profile.email}` : ""}`}
       />
 
-      <div className="flex-1 overflow-y-auto px-6 pt-5 pb-8">
+      <PullToRefresh className="flex-1 px-6 pt-5 pb-8" onRefresh={onRefresh}>
         {/*
           Shown always, not only when something is wrong. A rule nobody can see
           until it costs them is a trap; this way "where do I stand" is a tap
@@ -627,7 +631,7 @@ export function PractitionerProfile({
         <div className="mt-8">
           <DeleteAccount onDelete={onDeleteAccount} />
         </div>
-      </div>
+      </PullToRefresh>
     </div>
   );
 }

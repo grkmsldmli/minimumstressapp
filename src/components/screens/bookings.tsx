@@ -16,6 +16,7 @@ import {
 import { Ambient, BreathingLogo, Headline, categoryGradient } from "@/components/brand";
 import { BreathCoach } from "@/components/breath-coach";
 import { ConfettiBurst } from "@/components/primitives";
+import { PullToRefresh } from "@/components/pull-to-refresh";
 import { SpaceDirections } from "@/components/space-directions";
 import { CancellationConsequence } from "@/components/standing-notice";
 import type { Booking, SpaceAccessDetails } from "@/lib/domain";
@@ -354,6 +355,7 @@ function refundable(booking: Booking, now: Date): boolean {
 
 export function MyBookings({
   bookings,
+  onRefresh,
   accessFor,
   addressFor,
   isPro,
@@ -366,6 +368,8 @@ export function MyBookings({
   onMessage,
 }: {
   bookings: Booking[];
+  /** Pull-to-refresh: re-fetches the practitioner's bookings in place. */
+  onRefresh: () => Promise<unknown> | unknown;
   accessFor: (spaceId: string) => SpaceAccessDetails | null;
   /** The public street, which exists from the moment a room is listed. */
   addressFor: (spaceId: string) => string | null;
@@ -416,7 +420,7 @@ export function MyBookings({
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-6 pt-5 pb-8">
+      <PullToRefresh className="flex-1 px-6 pt-5 pb-8" onRefresh={onRefresh}>
 
         <SectionLabel>Upcoming</SectionLabel>
         {upcoming.length === 0 && (
@@ -518,7 +522,7 @@ export function MyBookings({
             </div>
           </>
         )}
-      </div>
+      </PullToRefresh>
     </div>
   );
 }

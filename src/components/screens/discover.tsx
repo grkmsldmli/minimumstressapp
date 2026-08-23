@@ -30,6 +30,7 @@ import {
 } from "@/components/brand";
 import { BookAgain } from "@/components/book-again";
 import { BrowseMap } from "@/components/browse-map";
+import { PullToRefresh } from "@/components/pull-to-refresh";
 import { TiltCard } from "@/components/primitives";
 import type { PublicSpace } from "@/lib/domain";
 import { PRO_BOOKING_HORIZON_DAYS, formatCents, quote } from "@/lib/money";
@@ -57,6 +58,7 @@ function browsePriceCents(space: PublicSpace, isPro: boolean): number {
 export function Discover({
   spaces,
   isPro,
+  onRefresh,
   onOpenSpace,
   onGoPro,
   onGoBookings,
@@ -77,6 +79,8 @@ export function Discover({
 }: {
   spaces: PublicSpace[];
   isPro: boolean;
+  /** Pull-to-refresh: re-fetches discovery data in place. */
+  onRefresh: () => Promise<unknown> | unknown;
   onOpenSpace: (id: string) => void;
   onGoPro: () => void;
   onGoBookings: () => void;
@@ -340,7 +344,7 @@ export function Discover({
       {view === "map" ? (
         <MapView spaces={visible} isPro={isPro} onOpen={onOpenSpace} you={you} />
       ) : (
-        <div className="flex-1 overflow-y-auto pb-8">
+        <PullToRefresh className="flex-1 pb-8" onRefresh={onRefresh}>
           {active === "all" && visible.length > 0 && (
             <>
               <SectionLabel className="px-6">Open right now</SectionLabel>
@@ -459,7 +463,7 @@ export function Discover({
           >
             Terms &amp; Privacy
           </button>
-        </div>
+        </PullToRefresh>
       )}
     </div>
   );

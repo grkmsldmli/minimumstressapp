@@ -75,7 +75,7 @@ const SIDES = [
     points: [
       "You know who booked, and can message them",
       "The booking is paid before it stands",
-      "They confirm they carry their own insurance",
+      "They carry liability cover we verify before they can book",
       "Access exists only for that booking",
     ],
   },
@@ -99,6 +99,7 @@ const WHEN_WRONG = [
 const VERIFY = [
   "Listing information",
   "The right to offer the space",
+  "A professional's liability cover, before they can book",
   "Booking and payment status",
   "Access tied to the booking",
 ];

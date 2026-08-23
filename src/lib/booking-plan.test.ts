@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   explainRejection,
   planBooking,
+  planSeries,
   type HostFacts,
   type PractitionerFacts,
   type SpaceFacts,
@@ -56,6 +57,19 @@ const HOST: HostFacts = { stripeAccountId: "acct_1", payable: true };
 const PRACTITIONER: PractitionerFacts = {
   id: "pr_1",
   isPro: false,
+  accountType: "practitioner",
+  /*
+   * Verified cover on a wide-open window, so the tests about price, horizon and
+   * availability are not tripped by the eligibility gate they were not written
+   * to examine. The gate's own behaviour is exhausted in insurance.test.ts and
+   * in the CASE A–N block at the foot of this file.
+   */
+  insurance: {
+    hasCertificate: true,
+    state: "verified",
+    effectiveDate: new Date("2025-01-01T00:00:00Z"),
+    expiresAt: new Date("2030-01-01T00:00:00Z"),
+  },
 };
 
 const plan = (overrides: Partial<Parameters<typeof planBooking>[0]> = {}) =>
@@ -402,5 +416,282 @@ describe("what the room is for", () => {
   it("allows anything while the host has not chosen", () => {
     const result = plan({ declared: { purpose: "filming", attendees: 2 } });
     expect(result.ok).toBe(true);
+  });
+});
+
+/*
+ * Professional-only booking + liability insurance, run through the real gate.
+ *
+ * These are the spec's CASE A–N. The point of running them through planBooking
+ * rather than checkInsuranceForBooking directly is that planBooking is the one
+ * gate every caller crosses — the form, the API route and the recurring
+ * expander all end here — so a case that passes here cannot be bypassed by
+ * hitting the endpoint another way (CASE I). Browsing (CASE A) never reaches
+ * this function and so is never gated; the read paths do not call it.
+ */
+describe("who may confirm a booking, and with what cover (CASE A–N)", () => {
+  const NON_PRO_DATE = at(14, 1); // Tue Aug 4, comfortably inside the 14-day horizon
+  const activeInsurance = PRACTITIONER.insurance;
+
+  // Live now, but a short window: valid today, lapses in two days.
+  const shortWindow = {
+    hasCertificate: true,
+    state: "verified" as const,
+    effectiveDate: new Date("2026-08-01T00:00:00Z"),
+    expiresAt: new Date("2026-08-05T00:00:00Z"),
+  };
+
+  // CASE H — an account that never chose the professional side has no
+  // professional profile to book against, and is refused before insurance is
+  // even considered.
+  it("H: refuses an account with no professional profile", () => {
+    expect(plan({ practitioner: { ...PRACTITIONER, accountType: null } })).toEqual({
+      ok: false,
+      reason: "professional_profile_required",
+    });
+  });
+
+  it("H: refuses a host trying to book like a guest", () => {
+    expect(plan({ practitioner: { ...PRACTITIONER, accountType: "host" } })).toEqual({
+      ok: false,
+      reason: "professional_profile_required",
+    });
+  });
+
+  // CASE B — a professional who never added cover cannot confirm.
+  it("B: refuses a professional with no certificate on file", () => {
+    expect(
+      plan({
+        practitioner: {
+          ...PRACTITIONER,
+          insurance: { hasCertificate: false, state: "pending", effectiveDate: null, expiresAt: null },
+        },
+      }),
+    ).toEqual({ ok: false, reason: "insurance_required" });
+  });
+
+  // CASE C — a certificate uploaded but not yet reviewed is not cover.
+  it("C: refuses while the certificate is still being reviewed", () => {
+    expect(
+      plan({
+        practitioner: {
+          ...PRACTITIONER,
+          insurance: { hasCertificate: true, state: "pending", effectiveDate: null, expiresAt: null },
+        },
+      }),
+    ).toEqual({ ok: false, reason: "insurance_pending" });
+  });
+
+  // CASE N — a certificate staff turned down is not cover.
+  it("N: refuses a rejected certificate", () => {
+    expect(
+      plan({
+        practitioner: {
+          ...PRACTITIONER,
+          insurance: { hasCertificate: true, state: "rejected", effectiveDate: null, expiresAt: null },
+        },
+      }),
+    ).toEqual({ ok: false, reason: "insurance_rejected" });
+  });
+
+  // CASE D — verified cover, valid on the date, goes through.
+  it("D: allows a professional with verified, active cover", () => {
+    const result = plan({
+      practitioner: { ...PRACTITIONER, insurance: activeInsurance },
+      startsAt: NON_PRO_DATE,
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  // CASE E — cover that has already lapsed is refused outright.
+  it("E: refuses cover that has already expired", () => {
+    expect(
+      plan({
+        practitioner: {
+          ...PRACTITIONER,
+          insurance: {
+            hasCertificate: true,
+            state: "verified",
+            effectiveDate: new Date("2025-01-01T00:00:00Z"),
+            expiresAt: new Date("2026-07-01T00:00:00Z"), // before NOW (Aug 3)
+          },
+        },
+        startsAt: NON_PRO_DATE,
+      }),
+    ).toEqual({ ok: false, reason: "insurance_expired" });
+  });
+
+  // CASE F — cover live today, but the booking is past the window's end.
+  it("F: refuses a future booking the live cover does not reach", () => {
+    expect(
+      plan({
+        practitioner: { ...PRACTITIONER, insurance: shortWindow },
+        startsAt: at(14, 7), // Mon Aug 10, past the Aug 5 expiry, still within horizon
+      }),
+    ).toEqual({ ok: false, reason: "insurance_not_valid_for_date" });
+  });
+
+  // CASE G — a recurring series is only as good as its furthest date. Each
+  // occurrence is its own check against the same window: the early ones pass,
+  // and the one past expiry is refused rather than silently created.
+  it("G: covers the early dates of a series and refuses the one past expiry", () => {
+    const covered = plan({
+      practitioner: { ...PRACTITIONER, insurance: shortWindow },
+      startsAt: at(14, 1), // Aug 4, inside the window
+    });
+    const uncovered = plan({
+      practitioner: { ...PRACTITIONER, insurance: shortWindow },
+      startsAt: at(14, 7), // Aug 10, past the window
+    });
+    expect(covered.ok).toBe(true);
+    expect(uncovered).toEqual({ ok: false, reason: "insurance_not_valid_for_date" });
+  });
+
+  // CASE L — a 1:1 client session is ordinary professional use.
+  it("L: allows a verified professional's 1:1 client session", () => {
+    const result = plan({
+      startsAt: NON_PRO_DATE,
+      declared: { purpose: "client_session", attendees: 1 },
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  // CASE K — a group class is allowed where the host permits it and it fits.
+  it("K: allows a group class the host offers and the room fits", () => {
+    const result = plan({
+      space: { ...SPACE, allowedUses: ["group_class"], capacity: 8 },
+      startsAt: NON_PRO_DATE,
+      declared: { purpose: "group_class", attendees: 6 },
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  // CASE M — so is a workshop, on the same terms.
+  it("M: allows a workshop the host offers and the room fits", () => {
+    const result = plan({
+      space: { ...SPACE, allowedUses: ["workshop"], capacity: 12 },
+      startsAt: NON_PRO_DATE,
+      declared: { purpose: "workshop", attendees: 10 },
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  // The host's own permission still governs: insurance is not a skeleton key.
+  it("still refuses a group class a host did not offer", () => {
+    expect(
+      plan({
+        space: { ...SPACE, allowedUses: ["client_session"] },
+        startsAt: NON_PRO_DATE,
+        declared: { purpose: "group_class", attendees: 6 },
+      }),
+    ).toEqual({ ok: false, reason: "use_not_allowed" });
+  });
+
+  // The professional gate is asked before the slot, so eligibility does not
+  // depend on which hour was tapped (CASE I: no ordering makes it bypassable).
+  it("I: refuses on eligibility before it looks at the slot at all", () => {
+    expect(
+      plan({
+        practitioner: { ...PRACTITIONER, accountType: null },
+        startsAt: at(3, 1), // 03:00, an hour the room never opens
+      }),
+    ).toEqual({ ok: false, reason: "professional_profile_required" });
+  });
+
+  /*
+   * The whole session, not just the day it starts. Cover that ends on the
+   * booking day covers a 14:00 hour, whose 15:00 end is still that day — but not
+   * a 16:00 hour, whose 17:00 PT end is 00:00 UTC the next day, past the window.
+   * Same policy, same day, different hour: only the interval check tells them
+   * apart, and this is the case behind "cover the entire booking interval".
+   */
+  it("refuses when the session's END falls past cover, though its start is within", () => {
+    const expiresOnBookingDay = {
+      ...PRACTITIONER,
+      insurance: {
+        hasCertificate: true,
+        state: "verified" as const,
+        effectiveDate: new Date("2026-08-01T00:00:00Z"),
+        expiresAt: new Date("2026-08-03T00:00:00Z"), // the booking day itself
+      },
+    };
+    // 16:00 PT runs to 17:00 PT = 2026-08-04T00:00Z, one moment past the window.
+    expect(plan({ practitioner: expiresOnBookingDay, startsAt: at(16) })).toEqual({
+      ok: false,
+      reason: "insurance_not_valid_for_date",
+    });
+    // The same cover holds an earlier hour whose end stays inside the day.
+    expect(plan({ practitioner: expiresOnBookingDay, startsAt: at(14) }).ok).toBe(true);
+  });
+});
+
+/*
+ * A recurring run is all-or-nothing, decided before anything is booked.
+ *
+ * planSeries is the pure half of the atomic series: it plans every occurrence
+ * against one set of facts and stops at the first that cannot be booked, so the
+ * route can create none rather than book the covered weeks and charge for a run
+ * that was never whole. These pin exactly that — a single bad week fails the
+ * lot, and the failing week is named.
+ */
+describe("planSeries — a recurring run is all or nothing (atomic)", () => {
+  const series = (
+    starts: Date[],
+    overrides: Partial<Parameters<typeof planSeries>[0]> = {},
+  ) =>
+    planSeries({
+      space: SPACE,
+      host: HOST,
+      // A run is a Pro feature, and Pro reaches far enough for these weeks.
+      practitioner: { ...PRACTITIONER, isPro: true },
+      takenStarts: [],
+      declared: { purpose: "personal_practice", attendees: 1 },
+      now: NOW,
+      starts,
+      ...overrides,
+    });
+
+  const THREE_WEEKS = [at(14, 0), at(14, 7), at(14, 14)];
+
+  it("plans every occurrence when they all pass", () => {
+    const result = series(THREE_WEEKS);
+    expect(result.ok).toBe(true);
+    expect(result.ok && result.occurrences.map((o) => o.startsAt)).toEqual(THREE_WEEKS);
+  });
+
+  it("refuses the whole run, and names the week, when cover ends mid-series", () => {
+    const shortWindow = {
+      hasCertificate: true,
+      state: "verified" as const,
+      effectiveDate: new Date("2025-01-01T00:00:00Z"),
+      expiresAt: new Date("2026-08-05T00:00:00Z"), // covers Aug 3, not Aug 10 or 17
+    };
+    const result = series(THREE_WEEKS, {
+      practitioner: { ...PRACTITIONER, isPro: true, insurance: shortWindow },
+    });
+    // First failing occurrence is Aug 10; nothing is planned past a refusal.
+    expect(result).toEqual({
+      ok: false,
+      startsAt: at(14, 7),
+      reason: "insurance_not_valid_for_date",
+    });
+  });
+
+  it("refuses the whole run if any single week's hour is already taken", () => {
+    const result = series(THREE_WEEKS, { takenStarts: [at(14, 7)] });
+    expect(result).toEqual({ ok: false, startsAt: at(14, 7), reason: "slot_taken" });
+  });
+
+  it("refuses a run for an account with no professional profile", () => {
+    const result = series([at(14, 0), at(14, 7)], {
+      practitioner: { ...PRACTITIONER, isPro: true, accountType: null },
+    });
+    expect(result).toEqual({ ok: false, startsAt: at(14, 0), reason: "professional_profile_required" });
+  });
+
+  it("does not let two weeks of one run claim the same hour", () => {
+    // The earlier week is added to what is taken, so the duplicate is caught.
+    const result = series([at(14, 0), at(14, 0)]);
+    expect(result).toEqual({ ok: false, startsAt: at(14, 0), reason: "slot_taken" });
   });
 });

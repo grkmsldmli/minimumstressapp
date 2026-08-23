@@ -38,6 +38,9 @@ import {
 import { type Provider, enabledProviders } from "@/lib/auth-providers";
 import { isNativeApp } from "@/lib/native";
 import { BOOKING_HORIZON_DAYS } from "@/lib/money";
+import { SESSION_MS } from "@/lib/session";
+import { explainRejection } from "@/lib/booking-plan";
+import { checkInsuranceForBooking, insuranceStatus, type InsuranceFacts } from "@/lib/insurance";
 import type { NotificationEntry } from "@/lib/notify/history";
 import { ClaimForm } from "@/components/screens/claim-form";
 import { Disputes } from "@/components/screens/disputes";
@@ -68,6 +71,53 @@ import {
 } from "./screens/practitioner-extras";
 import { AuthEntry, AuthVerify, HowItWorks, RoleSelect, Splash } from "./screens/shared";
 import { SpaceDetail } from "./screens/space-detail";
+
+/**
+ * Whether this account can confirm a booking on these dates, decided on the
+ * client before any payment.
+ *
+ * The same rules planBooking enforces on the server, run early: the server is
+ * still the gate that cannot be bypassed, and this only spares a wasted round
+ * trip and lets the refusal carry a way to fix it rather than a dead end. Every
+ * occurrence of a run is checked, because cover that is good today need not
+ * reach the eighth week — and a run whose early weeks are covered but whose
+ * later ones are not is told about the schedule rather than a single date.
+ *
+ * Returns the message to show, or null when the booking may proceed.
+ */
+function bookingEligibilityMessage(
+  profile: Profile,
+  dates: readonly Date[],
+  now: Date,
+): string | null {
+  if (profile.accountType !== "practitioner") {
+    return explainRejection("professional_profile_required").message;
+  }
+
+  const facts: InsuranceFacts = {
+    hasCertificate: profile.insuranceDocName !== null,
+    state: profile.insuranceReview.state,
+    effectiveDate: profile.insuranceEffectiveDate,
+    expiresAt: profile.insuranceExpiresAt,
+  };
+
+  let sawCovered = false;
+  for (const date of dates) {
+    // The whole session, matching the server: cover must hold from the start to
+    // the end, not merely on the day it begins.
+    const problem = checkInsuranceForBooking(facts, date, new Date(date.getTime() + SESSION_MS), now);
+    if (!problem) {
+      sawCovered = true;
+      continue;
+    }
+    if (problem === "insurance_not_valid_for_date" && sawCovered) {
+      return "Your current coverage expires before the end of this recurring schedule. Extend it, or book a shorter run.";
+    }
+    return explainRejection(problem).message;
+  }
+
+  return null;
+}
 
 /** Everything the shell reads, refetched whenever the repository changes. */
 interface Snapshot {
@@ -118,6 +168,14 @@ export function App() {
   const [authError, setAuthError] = useState<string | null>(null);
   const [roleError, setRoleError] = useState<string | null>(null);
   const [bookingError, setBookingError] = useState<string | null>(null);
+  /**
+   * Set when a booking is refused for eligibility — no professional profile, or
+   * cover that is missing, pending, expired or short of the date. Kept apart
+   * from bookingError because it is not "try again": it is answered by adding
+   * insurance, so the detail screen renders it with a way there rather than a
+   * bare red line.
+   */
+  const [insuranceGate, setInsuranceGate] = useState<string | null>(null);
   /** Milestones dismissed this session, whether or not the server took it. */
   const [dismissedMilestones, setDismissedMilestones] = useState<MilestoneKey[]>([]);
   /** What a term booking did, including the weeks it could not take. */
@@ -541,6 +599,7 @@ export function App() {
           providers={providers}
           error={authError}
           busy={authBusy}
+          onBack={back}
           onEmail={(value) => {
             setEmail(value);
             setAuthError(null);
@@ -599,6 +658,7 @@ export function App() {
           email={email}
           error={authError}
           busy={authBusy}
+          onBack={back}
           next={(code) => {
             setAuthError(null);
 
@@ -682,7 +742,7 @@ export function App() {
   // Rendered before the data guard, because these are exactly the screens that
   // exist to get someone to the point where there is data to load.
   if (screen === "splash") return <Splash next={() => go("how")} />;
-  if (screen === "how") return <HowItWorks next={() => go("auth-entry")} />;
+  if (screen === "how") return <HowItWorks next={() => go("auth-entry")} onBack={back} />;
   if (screen === "auth-entry") return renderAuthEntry();
   if (screen === "auth-verify") return renderAuthVerify();
 
@@ -865,11 +925,14 @@ export function App() {
           greetingName={profile.displayName}
           rebookable={rebookableRooms}
           onRebook={(entry) => {
+            // A gate belongs to the room it was raised on; a new one starts clean.
+            setInsuranceGate(null);
             setActiveSpaceId(entry.spaceId);
             setOpenAtSlot(entry.nextStart);
             go("detail");
           }}
           onOpenSpace={(spaceId) => {
+            setInsuranceGate(null);
             setOpenAtSlot(null);
             setActiveSpaceId(spaceId);
             go("detail");
@@ -930,6 +993,7 @@ export function App() {
             go("edit-space");
           }}
           onPreviewSpace={(spaceId) => {
+            setInsuranceGate(null);
             setActiveSpaceId(spaceId);
             go("detail");
           }}
@@ -1020,6 +1084,17 @@ export function App() {
       return (
         <InsuranceUpload
           initialDocName={profile.insuranceDocName}
+          status={insuranceStatus(
+            {
+              hasCertificate: profile.insuranceDocName !== null,
+              state: profile.insuranceReview.state,
+              effectiveDate: profile.insuranceEffectiveDate,
+              expiresAt: profile.insuranceExpiresAt,
+            },
+            new Date(),
+          )}
+          reviewNote={profile.insuranceReviewNote}
+          onBack={back}
           onContinue={(docName) =>
             mutate(() => repo.updateProfile({ insuranceDocName: docName })).then(() =>
               go("discover"),
@@ -1045,7 +1120,37 @@ export function App() {
           error={bookingError}
           notice={bookingNotice}
           skipped={seriesSkipped}
+          insuranceGate={insuranceGate}
+          onAddInsurance={() => {
+            setInsuranceGate(null);
+            go("verify");
+          }}
           onBook={async (startsAt, weeks, declared) => {
+            /*
+             * Eligibility first, before a card is ever touched.
+             *
+             * The server enforces this too — planBooking refuses a booking
+             * without a professional profile and verified cover valid on the
+             * date, and it does so before any row or charge. Running the same
+             * check here spares a round trip and, more importantly, turns the
+             * refusal into something with a way out: a message beside an "Add
+             * insurance" button rather than a bare failure. Every week of a run
+             * is checked, since cover good today need not reach the last one.
+             */
+            setInsuranceGate(null);
+            const dates =
+              weeks > 1
+                ? Array.from(
+                    { length: weeks },
+                    (_, k) => new Date(startsAt.getTime() + k * 7 * 86_400_000),
+                  )
+                : [startsAt];
+            const gate = bookingEligibilityMessage(profile, dates, new Date());
+            if (gate) {
+              setInsuranceGate(gate);
+              return;
+            }
+
             /*
              * A term goes through its own route, which walks the weeks and
              * books each one under the ordinary rules. It reports what it

@@ -56,6 +56,23 @@ export interface Profile {
   email: string | null;
   isPro: boolean;
   insuranceDocName: string | null;
+  /**
+   * The practitioner's professional liability cover — the review state, when it
+   * was looked at, the policy window, and enough to identify the policy.
+   *
+   * Distinct from a host space's own property insurance (HostSpace.
+   * insuranceReview): a professional carries this to book a room, a host carries
+   * theirs for the building, and one never stands in for the other. Both dates
+   * are known only once staff verify the certificate — an uploaded file is not
+   * proof of cover. See migration 0054 and lib/insurance.ts.
+   */
+  insuranceReview: DocumentReview;
+  insuranceEffectiveDate: Date | null;
+  insuranceExpiresAt: Date | null;
+  insuranceInsurer: string | null;
+  insurancePolicyNumber: string | null;
+  /** Staff's own words when a certificate is turned down, shown verbatim. */
+  insuranceReviewNote: string | null;
   payoutSchedule: PayoutSchedule;
   /**
    * Where payout setup actually stands.

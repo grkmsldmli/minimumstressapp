@@ -74,6 +74,8 @@ export function SpaceDetail({
   skipped = [],
   startAt,
   reviews,
+  insuranceGate,
+  onAddInsurance,
 }: {
   space: PublicSpace;
   isPro: boolean;
@@ -84,6 +86,14 @@ export function SpaceDetail({
   onBook: (startsAt: Date, weeks: number, declared: DeclaredUse) => void | Promise<void>;
   /** Why the booking was refused. Silence here was the bug. */
   error?: string | null;
+  /**
+   * A booking refused for eligibility rather than availability — no
+   * professional profile, or cover that is missing, pending, expired or short
+   * of the date. Shown apart from `error` because it is not "try again": it is
+   * answered by adding insurance, so it is rendered with a way there.
+   */
+  insuranceGate?: string | null;
+  onAddInsurance?: () => void;
   /** What a term booking managed, when it managed some of it. */
   notice?: string | null;
   /** The weeks it could not take, each with its own reason. */
@@ -638,6 +648,35 @@ export function SpaceDetail({
           <p className="font-body font-normal text-[15px] leading-relaxed mb-2.5 text-coral-deep">
             {error}
           </p>
+        )}
+
+        {/*
+          Eligibility refused, not availability. This is answered by adding
+          cover rather than trying again, so it carries a way there instead of
+          sitting as a red line under a button that will keep refusing.
+        */}
+        {insuranceGate && (
+          <div
+            className="rounded-xl p-3.5 mb-2.5"
+            style={{ backgroundColor: "#FFF8F1", border: "1px solid #F5DFC4" }}
+          >
+            <p className="font-body font-semibold text-[14px] text-[#8B6C37]">
+              Liability insurance required
+            </p>
+            <p className="font-body font-normal text-[13.5px] leading-relaxed mt-1 text-[#8B6C37]">
+              {insuranceGate}
+            </p>
+            {onAddInsurance && (
+              <button
+                type="button"
+                onClick={onAddInsurance}
+                className="mt-3 px-4 py-2 rounded-full font-body font-medium text-[13.5px] press"
+                style={{ backgroundColor: "#2E5578", color: "#fff" }}
+              >
+                Add insurance
+              </button>
+            )}
+          </div>
         )}
 
         {/*

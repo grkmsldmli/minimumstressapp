@@ -41,6 +41,26 @@ export interface OpenEscalation {
   spaceName: string | null;
 }
 
+/**
+ * A professional's liability certificate waiting to be read.
+ *
+ * The queue that stands between an uploaded file and a bookable professional:
+ * until staff read the window off the certificate and verify it, the booking
+ * gate refuses. Ranked oldest-first, because the person at the top has been
+ * unable to book the longest.
+ */
+export interface PendingInsurance {
+  id: string;
+  email: string | null;
+  displayName: string | null;
+  docPath: string | null;
+  effectiveDate: string | null;
+  expiresAt: string | null;
+  insurer: string | null;
+  policyNumber: string | null;
+  since: string;
+}
+
 export interface AccountChangeRequest {
   id: string;
   email: string | null;
@@ -314,6 +334,8 @@ export interface AdminQueue {
   openDisputes: StaffDispute[];
   escalations: OpenEscalation[];
   pendingListings: PendingListing[];
+  /** Professionals whose liability certificate is waiting to be verified. */
+  pendingInsurance: PendingInsurance[];
   accountChangeRequests: AccountChangeRequest[];
   unpayableHosts: UnpayableHost[];
 
@@ -406,7 +428,7 @@ export async function loadQueue(admin: SupabaseClient): Promise<AdminQueue> {
     admin
       .from("profiles")
       .select(
-        "id, account_type, display_name, stripe_connect_charges_enabled, created_at, terms_version, emergency_contact_name, emergency_contact_phone, emergency_contact_relationship",
+        "id, account_type, display_name, stripe_connect_charges_enabled, created_at, terms_version, emergency_contact_name, emergency_contact_phone, emergency_contact_relationship, insurance_doc_path, insurance_doc_state, insurance_effective_date, insurance_expires_at, insurance_insurer, insurance_policy_number, insurance_review_note",
       ),
 
     admin
@@ -899,6 +921,29 @@ export async function loadQueue(admin: SupabaseClient): Promise<AdminQueue> {
       insuranceDocPath: (row.insurance_doc_path as string) ?? null,
       createdAt: row.created_at as string,
     })),
+
+    // A professional carries their own certificate, so this reads the profile
+    // rather than the space. Only those with a file uploaded and still awaiting
+    // a decision — a verified or rejected one has already had its moment here.
+    pendingInsurance: (profiles.data ?? [])
+      .filter(
+        (p) =>
+          p.account_type === "practitioner" &&
+          p.insurance_doc_path != null &&
+          ((p.insurance_doc_state as string) ?? "pending") === "pending",
+      )
+      .map((p) => ({
+        id: p.id as string,
+        email: emails.get(p.id as string) ?? null,
+        displayName: (p.display_name as string) ?? null,
+        docPath: (p.insurance_doc_path as string) ?? null,
+        effectiveDate: (p.insurance_effective_date as string) ?? null,
+        expiresAt: (p.insurance_expires_at as string) ?? null,
+        insurer: (p.insurance_insurer as string) ?? null,
+        policyNumber: (p.insurance_policy_number as string) ?? null,
+        since: (p.created_at as string) ?? "",
+      }))
+      .sort((a, b) => a.since.localeCompare(b.since)),
 
     accountChangeRequests: (changes.data ?? []).map((row) => ({
       id: row.id as string,

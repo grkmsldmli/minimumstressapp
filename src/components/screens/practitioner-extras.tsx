@@ -7,6 +7,7 @@ import {
   Check,
   ChevronRight,
   CreditCard,
+  FileCheck,
   FileUp,
   LogOut,
   Scale,
@@ -79,6 +80,54 @@ export function InsuranceUpload({
    */
   const [saveError, setSaveError] = useState<string | null>(null);
 
+  /*
+   * Two states, not one screen that says everything at once. Before a file is
+   * on record this is the optional upload step; once one is — and while it is
+   * being reviewed — it is a short status, not a fresh pitch to add what is
+   * already there. The upload, replacement, review and status logic is
+   * unchanged; only what the screen says about them.
+   */
+  const hasCertOnFile = Boolean(initialDocName);
+
+  // The on-file state's words, driven by where the cover actually stands, so a
+  // pending certificate does not read the same as a verified or rejected one.
+  const reviewCopy: Record<InsuranceStatus, { pre: string; accent: string; body: string }> = {
+    not_added: {
+      pre: "Your insurance is",
+      accent: "under review.",
+      body: "We'll let you know when it's verified. You can keep exploring spaces in the meantime.",
+    },
+    pending_review: {
+      pre: "Your insurance is",
+      accent: "under review.",
+      body: "We'll let you know when it's verified. You can keep exploring spaces in the meantime.",
+    },
+    verified: {
+      pre: "Your insurance is",
+      accent: "verified.",
+      body: "You're covered and can book a space.",
+    },
+    expired: {
+      pre: "Your insurance has",
+      accent: "expired.",
+      body: "Upload a current certificate to book again.",
+    },
+    rejected: {
+      pre: "Your insurance needs",
+      accent: "another look.",
+      body: reviewNote?.trim() || "Add a valid certificate and we'll review it again.",
+    },
+  };
+  const onFileCopy = reviewCopy[status];
+
+  const submit = (docName: string | null) => {
+    setSaveError(null);
+    setSaving(true);
+    void onContinue(docName)
+      .catch((cause) => setSaveError(errorMessage(cause, "That did not save. Try again.")))
+      .finally(() => setSaving(false));
+  };
+
   return (
     <NavyScreen>
       <div className="flex-1 flex flex-col justify-center px-8 relative z-10">
@@ -94,84 +143,70 @@ export function InsuranceUpload({
           </button>
         )}
 
-        <p className="font-body font-semibold text-[12px] uppercase tracking-[0.2em] text-sky-soft">
-          Optional for now
-        </p>
-        <div className="mt-2">
-          <Headline pre="Add your" accent="insurance?" size={27} light />
-        </div>
-        {/*
-          Two earlier lines had to go. "Hosts approve you faster when a
-          certificate is on file" described a host approval of practitioners
-          that does not exist — a booking is direct, and a host never sees this
-          document. "It never blocks a booking" is now simply false: verified
-          liability cover is required before a professional booking is confirmed
-          (see lib/insurance.ts and the booking gate). Optional here means
-          optional at *this step* — you can browse without it — not that it is
-          never needed.
-        */}
-        <p className="font-body font-normal text-[14px] leading-relaxed text-white/65 mt-3">
-          Independent professionals carry their own liability cover. You can skip this now and
-          keep looking around — but you&rsquo;ll need verified coverage on file before you can
-          confirm a booking. You can add or update it any time from your profile.
-        </p>
-
-        {/*
-          Where the cover actually stands. "On file" was silent about the part
-          that decides a booking — a file uploaded is not the same as cover we
-          have verified, and a lapsed one is worse than none because it reads as
-          done. A rejection shows staff's own words so it can be fixed.
-        */}
-        {status === "verified" && (
-          <p
-            className="font-body font-normal text-[13px] leading-relaxed mt-3 rounded-xl px-3 py-2.5"
-            style={{ backgroundColor: "rgba(120,190,140,0.16)", color: "#BFE6C9" }}
-          >
-            Verified — you&rsquo;re covered and can book.
-          </p>
-        )}
-        {status === "pending_review" && (
-          <p
-            className="font-body font-normal text-[13px] leading-relaxed mt-3 rounded-xl px-3 py-2.5"
-            style={{ backgroundColor: "rgba(143,198,245,0.16)", color: "#BFD9F2" }}
-          >
-            In review — we check certificates by hand, and you can book once it is verified.
-          </p>
-        )}
-        {status === "expired" && (
-          <p
-            className="font-body font-normal text-[13px] leading-relaxed mt-3 rounded-xl px-3 py-2.5"
-            style={{ backgroundColor: "rgba(232,163,61,0.16)", color: "#F0CF9A" }}
-          >
-            Your cover has lapsed. Upload a current certificate to book again.
-          </p>
-        )}
-        {status === "rejected" && (
-          <div
-            className="mt-3 rounded-xl px-3 py-2.5"
-            style={{ backgroundColor: "rgba(242,105,92,0.16)", color: "#F2A79E" }}
-          >
-            <p className="font-body font-semibold text-[13px]">Not verified</p>
-            <p className="font-body font-normal text-[13px] leading-relaxed mt-0.5">
-              {reviewNote?.trim() || "Add a valid certificate to book."}
+        {hasCertOnFile ? (
+          <>
+            <p className="font-body font-semibold text-[12px] uppercase tracking-[0.2em] text-sky-soft">
+              Insurance
             </p>
-          </div>
-        )}
-
-        <div className="mt-6 rounded-2xl p-4 bg-white">
-          <DocumentUpload
-            label="Certificate of insurance"
-            hint="PDF or photo"
-            file={file}
-            onPick={setFile}
-            onRemove={() => setFile(null)}
-          />
-          {!file && initialDocName && (
-            <p className="font-body font-normal text-[13.5px] mt-2 text-ink-faint">
-              On file: {initialDocName}
+            <div className="mt-2">
+              <Headline pre={onFileCopy.pre} accent={onFileCopy.accent} size={27} light />
+            </div>
+            <p className="font-body font-normal text-[14px] leading-relaxed text-white/65 mt-3">
+              {onFileCopy.body}
             </p>
-          )}
-        </div>
+
+            {/*
+              The file already on record, with the way to swap it in place. Same
+              picker the upload state uses — a replacement is a newly-picked
+              File, submitted by Continue exactly as a first upload is.
+            */}
+            <div className="mt-6 rounded-2xl p-4 bg-white">
+              <p className="font-body text-[13.5px] text-ink-soft mb-1.5">Certificate of insurance</p>
+              <div
+                className="flex items-center gap-2.5 px-4 py-3 rounded-xl"
+                style={{ border: "1px solid #D4E8FA", backgroundColor: "#EDF6FE" }}
+              >
+                <FileCheck size={16} color="#3B9BE8" className="shrink-0" />
+                <span className="font-body text-[13.5px] flex-1 truncate text-navy">{existingName}</span>
+                <label className="font-body text-[13px] font-medium text-sky-text press cursor-pointer shrink-0">
+                  Replace file
+                  <input
+                    type="file"
+                    accept="application/pdf,image/*"
+                    className="sr-only"
+                    onChange={(e) => {
+                      const picked = e.target.files?.[0];
+                      if (picked) setFile(picked);
+                      e.target.value = "";
+                    }}
+                  />
+                </label>
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="font-body font-semibold text-[12px] uppercase tracking-[0.2em] text-sky-soft">
+              Optional for now
+            </p>
+            <div className="mt-2">
+              <Headline pre="Add your" accent="insurance" size={27} light />
+            </div>
+            <p className="font-body font-normal text-[14px] leading-relaxed text-white/65 mt-3">
+              You&rsquo;ll need verified liability insurance before you can book a space.
+            </p>
+
+            <div className="mt-6 rounded-2xl p-4 bg-white">
+              <DocumentUpload
+                label="Certificate of insurance"
+                hint="PDF or photo"
+                file={file}
+                onPick={setFile}
+                onRemove={() => setFile(null)}
+              />
+            </div>
+          </>
+        )}
 
       </div>
 
@@ -186,20 +221,19 @@ export function InsuranceUpload({
           </p>
         )}
 
-        <PrimaryButton
-          disabled={saving}
-          onClick={() => {
-            setSaveError(null);
-            setSaving(true);
-            void onContinue(existingName)
-              .catch((cause) =>
-                setSaveError(errorMessage(cause, "That did not save. Try again.")),
-              )
-              .finally(() => setSaving(false));
-          }}
-        >
-          {saving ? "One moment…" : existingName ? "Continue" : "Skip for now"}
+        <PrimaryButton disabled={saving || !existingName} onClick={() => submit(existingName)}>
+          {saving ? "One moment…" : "Continue"}
         </PrimaryButton>
+        {!hasCertOnFile && (
+          <button
+            type="button"
+            onClick={() => submit(null)}
+            disabled={saving}
+            className="w-full mt-3 py-2 font-body font-medium text-[14px] press text-white/70"
+          >
+            Skip for now
+          </button>
+        )}
       </div>
     </NavyScreen>
   );

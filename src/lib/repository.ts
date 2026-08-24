@@ -43,6 +43,16 @@ export interface Repository {
    */
   uploadAvatar(file: File): Promise<Profile>;
 
+  /**
+   * The practitioner's liability certificate, actually uploaded.
+   *
+   * Bytes, not a field. The file goes into the private verification-docs bucket
+   * at practitioner/{userId}/…, the stored path points at it, and the review
+   * returns to pending so staff re-check a new certificate. The old flow saved
+   * only the filename, leaving the admin a name and no file to open.
+   */
+  uploadInsuranceCertificate(file: File): Promise<Profile>;
+
   /** Active listings only — mirrors the spaces_public view. */
   listPublicSpaces(): Promise<PublicSpace[]>;
   getPublicSpace(id: string): Promise<PublicSpace | null>;

@@ -44,6 +44,7 @@ import type { NotificationEntry } from "./notify/history";
 import {
   rejectionReason,
   spaceDocPath,
+  practitionerDocPath,
   avatarPath,
   spaceMediaPath,
 } from "./uploads";
@@ -299,6 +300,51 @@ export class SupabaseRepository implements Repository {
     if (uploadError) throw asError(uploadError);
 
     const { error } = await this.db.from("profiles").upsert({ id, avatar_path: path });
+    if (error) throw asError(error);
+
+    return this.getProfile();
+  }
+
+  /**
+   * The practitioner's liability certificate, actually uploaded.
+   *
+   * The old flow stored the filename in insurance_doc_path and never uploaded
+   * anything, so the admin review card had a name and no file to open. This
+   * writes the bytes to the private verification-docs bucket under the
+   * practitioner's own folder — the one the storage policy in 0003 lets them
+   * write and the admin route knows how to sign — and records that real path.
+   *
+   * Uploaded first, recorded second, so the path in the row always points at
+   * bytes that are already there — the same order the avatar and listing
+   * documents use.
+   */
+  async uploadInsuranceCertificate(file: File): Promise<Profile> {
+    const reason = rejectionReason(file, "document");
+    if (reason) throw new Error(reason);
+
+    const id = await this.userId();
+    const path = practitionerDocPath(id, file.type, crypto.randomUUID());
+
+    const { error: uploadError } = await this.db.storage
+      .from("verification-docs")
+      .upload(path, file, { contentType: file.type, upsert: false });
+    if (uploadError) throw asError(uploadError);
+
+    /*
+     * A new certificate is unreviewed by definition, so the review returns to
+     * pending: the staff note is cleared and reviewed-at is nulled, the shape
+     * profiles_insurance_review_consistent (0054) requires and the booking gate
+     * reads. Profiles has no edit-reset trigger the way spaces do (0019), so it
+     * is set here. The verified-only date columns are left for staff to set on
+     * re-verification; the pending state makes insuranceStatus ignore them.
+     */
+    const { error } = await this.db.from("profiles").upsert({
+      id,
+      insurance_doc_path: path,
+      insurance_doc_state: "pending",
+      insurance_doc_reviewed_at: null,
+      insurance_review_note: null,
+    });
     if (error) throw asError(error);
 
     return this.getProfile();

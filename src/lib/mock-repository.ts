@@ -395,6 +395,22 @@ export class MockRepository implements Repository {
     return { ...this.profile };
   }
 
+  async uploadInsuranceCertificate(file: File): Promise<Profile> {
+    const reason = rejectionReason(file, "document");
+    if (reason) throw new Error(reason);
+
+    // No bucket here, so the name stands in for the stored file. A new
+    // certificate returns to pending review, exactly as the real repository
+    // resets it — the state the onboarding screen and admin queue read.
+    this.profile = {
+      ...this.profile,
+      insuranceDocName: file.name,
+      insuranceReview: { state: "pending", reviewedAt: null },
+      insuranceReviewNote: null,
+    };
+    return { ...this.profile };
+  }
+
   async startProSubscription(): Promise<Profile> {
     this.profile = { ...this.profile, isPro: true };
     return { ...this.profile };

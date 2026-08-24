@@ -28,6 +28,7 @@ import type {
   SessionParty,
 } from "@/lib/admin/queue";
 import { formatCents } from "@/lib/money";
+import { isVerificationDocPath } from "@/lib/verification-docs";
 
 import { DisputeQueue } from "./disputes";
 import { Funnel } from "./funnel";
@@ -1372,6 +1373,15 @@ function InsuranceReviewCard({
   const fieldStyle = { backgroundColor: PANEL, color: "#fff", border: `1px solid ${LINE}` };
   const canVerify = /^\d{4}-\d{2}-\d{2}$/.test(effectiveDate) && /^\d{4}-\d{2}-\d{2}$/.test(expiresAt);
 
+  /*
+   * A certificate added before document storage existed has a bare filename in
+   * insurance_doc_path and no object behind it. It can be named but never
+   * opened, so it cannot be reviewed — the practitioner has to add it again
+   * (their "Replace file" writes a real path and returns this to pending). Same
+   * rule the signing route enforces, so what the admin sees matches what opens.
+   */
+  const legacyDoc = item.docPath !== null && !isVerificationDocPath(item.docPath);
+
   return (
     <Card>
       <p className="font-body font-medium text-[12.5px]" style={{ color: "#fff" }}>
@@ -1381,13 +1391,25 @@ function InsuranceReviewCard({
         {item.email ?? "unknown"}
       </p>
 
-      <div className="flex flex-wrap gap-2 mt-3">
-        {item.docPath ? (
-          <Doc label="Certificate" onClick={onView} />
-        ) : (
+      <div className="mt-3">
+        {!item.docPath ? (
           <span className="font-body text-[11px]" style={{ color: CORAL }}>
             No file uploaded
           </span>
+        ) : legacyDoc ? (
+          <div>
+            <span className="font-body font-medium text-[11.5px]" style={{ color: CORAL }}>
+              Document unavailable
+            </span>
+            <p className="font-body font-light text-[11px] mt-1" style={{ color: MUTED }}>
+              This certificate was added before document storage was enabled. Ask the
+              practitioner to upload it again.
+            </p>
+          </div>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            <Doc label="Certificate" onClick={onView} />
+          </div>
         )}
       </div>
 
@@ -1449,7 +1471,7 @@ function InsuranceReviewCard({
           <div className="flex gap-2 mt-3">
             <Action
               primary
-              disabled={busy || !canVerify}
+              disabled={busy || !canVerify || legacyDoc}
               onClick={() => onVerify({ effectiveDate, expiresAt, insurer, policyNumber })}
             >
               <Check size={12} /> Verify

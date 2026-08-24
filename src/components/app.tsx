@@ -1131,10 +1131,11 @@ export function App() {
           )}
           reviewNote={profile.insuranceReviewNote}
           onBack={back}
-          onContinue={(docName) =>
-            mutate(() => repo.updateProfile({ insuranceDocName: docName })).then(() =>
-              go("discover"),
-            )
+          onContinue={(file) =>
+            (file
+              ? mutate(() => repo.uploadInsuranceCertificate(file))
+              : Promise.resolve()
+            ).then(() => go("discover"))
           }
         />
       );

@@ -60,8 +60,12 @@ export function InsuranceUpload({
   status = "not_added",
   reviewNote,
 }: {
-  /** Rejects when the record does not save, so this screen does not move on. */
-  onContinue: (docName: string | null) => Promise<unknown>;
+  /**
+   * Given the picked file, uploads it and moves on; given null, moves on
+   * without a change (Skip, or Continue with nothing new to upload). Rejects
+   * when the upload does not land, so this screen does not move on.
+   */
+  onContinue: (file: File | null) => Promise<unknown>;
   onBack?: () => void;
   initialDocName: string | null;
   /** Where the cover stands, so the screen can say more than "on file". */
@@ -120,10 +124,10 @@ export function InsuranceUpload({
   };
   const onFileCopy = reviewCopy[status];
 
-  const submit = (docName: string | null) => {
+  const submit = (fileToSubmit: File | null) => {
     setSaveError(null);
     setSaving(true);
-    void onContinue(docName)
+    void onContinue(fileToSubmit)
       .catch((cause) => setSaveError(errorMessage(cause, "That did not save. Try again.")))
       .finally(() => setSaving(false));
   };
@@ -221,7 +225,10 @@ export function InsuranceUpload({
           </p>
         )}
 
-        <PrimaryButton disabled={saving || !existingName} onClick={() => submit(existingName)}>
+        <PrimaryButton
+          disabled={saving || (!hasCertOnFile && !file)}
+          onClick={() => submit(file)}
+        >
           {saving ? "One moment…" : "Continue"}
         </PrimaryButton>
         {!hasCertOnFile && (

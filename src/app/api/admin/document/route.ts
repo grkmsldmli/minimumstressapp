@@ -3,6 +3,7 @@ import type { NextRequest } from "next/server";
 import { isStaff } from "@/lib/admin/access";
 import { handled, jsonError, requireUser } from "@/lib/api/session";
 import { supabaseAdmin } from "@/lib/supabase/server";
+import { isVerificationDocPath } from "@/lib/verification-docs";
 
 /**
  * A short-lived link to one verification document.
@@ -28,17 +29,15 @@ export async function GET(request: NextRequest): Promise<Response> {
     if (!path) return jsonError("path is required", 400);
 
     /**
-     * Constrained to the bucket's own two prefixes.
+     * Constrained to the bucket's own two prefixes — see isVerificationDocPath.
      *
      * Without this the parameter is "sign me anything in this bucket", and a
      * bucket is not the only thing a path can reach — `..` segments and
      * absolute-looking paths are exactly what storage layers disagree about.
+     * A bare filename (what the old upload wrongly stored) is refused here too.
      * Staff are trusted; a staff session that has been taken is not.
      */
-    if (
-      !/^space\/[0-9a-f-]{36}\/[0-9a-f-]{36}\/[\w.-]+$/i.test(path) &&
-      !/^practitioner\/[0-9a-f-]{36}\/[\w.-]+$/i.test(path)
-    ) {
+    if (!isVerificationDocPath(path)) {
       return jsonError("That is not a verification document path", 400);
     }
 

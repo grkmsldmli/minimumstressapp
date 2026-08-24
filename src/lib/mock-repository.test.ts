@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { MockRepository } from "./mock-repository";
+import { insuranceStatus } from "./insurance";
 import { INSTANT_FEE_CENTS } from "./money";
 
 let repo: MockRepository;
@@ -513,5 +514,44 @@ describe("keeping a listing's town and its uses", () => {
       lng: -122.28,
     });
     expect(edited.city).toBe("Belmont");
+  });
+});
+
+describe("uploading a liability certificate", () => {
+  const statusOf = (p: Awaited<ReturnType<MockRepository["getProfile"]>>) =>
+    insuranceStatus(
+      {
+        hasCertificate: p.insuranceDocName !== null,
+        state: p.insuranceReview.state,
+        effectiveDate: p.insuranceEffectiveDate,
+        expiresAt: p.insuranceExpiresAt,
+      },
+      new Date(),
+    );
+
+  it("stores the uploaded file and puts the review into pending", async () => {
+    const profile = await repo.uploadInsuranceCertificate(testFile("cert.pdf", "application/pdf"));
+    expect(profile.insuranceDocName).toBe("cert.pdf");
+    expect(profile.insuranceReview.state).toBe("pending");
+    expect(statusOf(profile)).toBe("pending_review");
+  });
+
+  it("accepts a photo of a certificate, not only a PDF", async () => {
+    const profile = await repo.uploadInsuranceCertificate(testFile("cert.jpg", "image/jpeg"));
+    expect(profile.insuranceDocName).toBe("cert.jpg");
+    expect(statusOf(profile)).toBe("pending_review");
+  });
+
+  it("replaces the file and returns to pending on a re-upload", async () => {
+    await repo.uploadInsuranceCertificate(testFile("first.pdf", "application/pdf"));
+    const profile = await repo.uploadInsuranceCertificate(testFile("second.pdf", "application/pdf"));
+    expect(profile.insuranceDocName).toBe("second.pdf");
+    expect(profile.insuranceReview.state).toBe("pending");
+  });
+
+  it("rejects a file that is neither a PDF nor a photo", async () => {
+    await expect(
+      repo.uploadInsuranceCertificate(testFile("notes.txt", "text/plain")),
+    ).rejects.toThrow();
   });
 });

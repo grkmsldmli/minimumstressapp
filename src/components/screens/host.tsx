@@ -734,14 +734,6 @@ export function EditAvailability({
 /*  Earnings                                                           */
 /* ------------------------------------------------------------------ */
 
-/**
- * The federal 1099-K threshold: over $20,000 *and* more than 200 transactions
- * in a calendar year. Both must be true, which is why a host well past the
- * dollar figure on a handful of long bookings still gets no form.
- */
-const FORM_1099K_DOLLARS = 20_000;
-const FORM_1099K_TRANSACTIONS = 200;
-
 export function Earnings({
   spaces,
   bookings,
@@ -762,9 +754,6 @@ export function Earnings({
   // total by three and called it year-to-date, which invented money on the
   // screen a host uses for their tax records.
   const yearCents = thisYear.reduce((sum, b) => sum + b.netCents, 0);
-
-  const meets1099K =
-    yearCents >= FORM_1099K_DOLLARS * 100 && thisYear.length >= FORM_1099K_TRANSACTIONS;
 
   const nameFor = (spaceId: string) => spaces.find((s) => s.id === spaceId)?.name ?? "Space";
   /*
@@ -834,7 +823,15 @@ export function Earnings({
           Transaction history
         </p>
         {thisYear.length === 0 ? (
-          <p className="font-body font-normal text-[14px] text-ink-faint">Nothing paid out yet.</p>
+          <div
+            className="rounded-2xl p-4"
+            style={{ backgroundColor: "#F4F8FC", border: "1px solid #E7EEF6" }}
+          >
+            <p className="font-body font-medium text-[14.5px] text-navy">No payouts yet</p>
+            <p className="font-body font-normal text-[13.5px] leading-relaxed mt-1 text-ink-faint">
+              Your payout history will appear here.
+            </p>
+          </div>
         ) : (
           <div className="flex flex-col gap-2">
             {thisYear.map((booking) => (
@@ -867,24 +864,37 @@ export function Earnings({
           className="rounded-2xl p-4"
           style={{ backgroundColor: "#F4F8FC", border: "1px solid #E7EEF6" }}
         >
-          <p className="font-body font-normal text-[14px] leading-relaxed text-ink-muted">
-            {meets1099K
-              ? `You've passed $${FORM_1099K_DOLLARS.toLocaleString()} across ${FORM_1099K_TRANSACTIONS}+ bookings this year, so a 1099-K will be issued automatically at year-end.`
-              : `A 1099-K is issued only above $${FORM_1099K_DOLLARS.toLocaleString()} and ${FORM_1099K_TRANSACTIONS} bookings in a year — both, not either. You're at ${formatCents(yearCents)} across ${thisYear.length}, so no form is due. Your state may set a lower threshold.`}
+          {/*
+            Only whether a document is available, not the eligibility maths. The
+            screen a host reads for their money should not become a tax form: if
+            a document is ever issued for them, it appears here. State thresholds
+            can differ, which is worth a calm line without a calculation.
+          */}
+          <p className="font-body font-medium text-[14.5px] text-navy">No tax forms available yet</p>
+          <p className="font-body font-normal text-[13.5px] leading-relaxed mt-1 text-ink-faint">
+            If a tax document is issued for your earnings, you&rsquo;ll find it here.
           </p>
-          <button
-            type="button"
-            onClick={exportCsv}
-            disabled={thisYear.length === 0}
-            className="w-full mt-3 py-3 rounded-xl font-body font-medium text-[15px] press"
-            style={{
-              backgroundColor: thisYear.length === 0 ? "#E9F0F7" : "#3B9BE8",
-              color: thisYear.length === 0 ? "#8CA3BD" : "#fff",
-            }}
-          >
-            Download year-to-date CSV
-          </button>
+          <p className="font-body font-normal text-[12.5px] leading-relaxed mt-2 text-ink-faint">
+            Tax reporting requirements may vary by state.
+          </p>
         </div>
+        {/*
+          The CSV is an earnings export, not a tax form, so it sits on its own
+          below the document status rather than inside it — same generation, same
+          disabled-when-empty behaviour as before.
+        */}
+        <button
+          type="button"
+          onClick={exportCsv}
+          disabled={thisYear.length === 0}
+          className="w-full mt-3 py-3 rounded-xl font-body font-medium text-[15px] press"
+          style={{
+            backgroundColor: thisYear.length === 0 ? "#E9F0F7" : "#3B9BE8",
+            color: thisYear.length === 0 ? "#8CA3BD" : "#fff",
+          }}
+        >
+          Download year-to-date CSV
+        </button>
       </div>
     </div>
   );

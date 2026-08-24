@@ -3,6 +3,7 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
+  Bell,
   Check,
   ChevronRight,
   CreditCard,
@@ -557,7 +558,7 @@ export function PractitionerProfile({
           */}
           <ProfileRow
             icon={Scale}
-            label="Sorted out"
+            label="Refunds & claims"
             value={disputesWaiting > 0 ? `${disputesWaiting} waiting on you` : undefined}
             onClick={onGoDisputes}
           />
@@ -568,24 +569,24 @@ export function PractitionerProfile({
         </div>
         <div className="flex flex-col gap-2.5">
           {/*
-            Nothing a practitioner receives is optional — all of it is about a
-            session they paid for — so this states that rather than offering a
-            switch that would not switch anything.
+            Not a toggle: everything a practitioner is emailed is about a session
+            they paid for, so none of it is optional — stated in one line rather
+            than offered as a switch that would not switch anything.
           */}
           <div
-            className="rounded-2xl p-4"
-            style={{ backgroundColor: "#F4F8FC", border: "1px solid #E7EEF6" }}
+            className="flex items-start gap-3 p-3.5 rounded-xl bg-white"
+            style={{ border: "1px solid #E7EEF6" }}
           >
-            <p className="font-body font-normal text-[15px] leading-relaxed text-ink-muted">
-              We email you about your own sessions — confirmations, your entry code, and anything
-              that changes. Nothing else, and no marketing.
-            </p>
+            <Bell size={15} color="#3B9BE8" className="mt-0.5 shrink-0" />
+            <div>
+              <p className="font-body font-medium text-[14.5px] text-navy">Booking updates</p>
+              <p className="font-body font-normal text-[13px] mt-0.5 leading-relaxed text-ink-faint">
+                Confirmations, access details and important changes.
+              </p>
+            </div>
           </div>
-          {/*
-            Asked of both sides. Somebody alone in a stranger's building and
-            somebody letting a stranger into theirs are in the same position.
-          */}
           <EmergencyContactCard
+            collapsible
             contact={profile.emergencyContact}
             onSave={(emergencyContact) => onUpdate({ emergencyContact })}
           />

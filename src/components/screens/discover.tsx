@@ -191,7 +191,7 @@ export function Discover({
         <button
           type="button"
           onClick={onGoPro}
-          className="flex items-center justify-between px-6 py-2.5 press shrink-0"
+          className="flex items-center justify-between gap-3 px-6 py-2.5 press shrink-0"
           style={{ backgroundColor: "#16304E" }}
         >
           {/*
@@ -201,7 +201,7 @@ export function Discover({
             it was tried and taken back out. The benefit stayed on the banner
             after the code stopped delivering it.
           */}
-          <span className="font-body font-normal text-[13.5px] text-white/70">
+          <span className="font-body font-normal text-[13.5px] text-white/70 min-w-0 truncate">
             Unlimited sessions, {PRO_BOOKING_HORIZON_DAYS} days ahead
           </span>
           {/*
@@ -240,15 +240,15 @@ export function Discover({
         style={{ background: "radial-gradient(130% 130% at 20% 0%, #1E4066 0%, #16304E 80%)" }}
       >
         <Ambient />
-        <div className="flex items-center justify-between relative z-10">
-          <div className="flex items-center gap-2.5">
-            <button type="button" onClick={onGoProfile} className="press" aria-label="Your profile">
+        <div className="flex items-center justify-between gap-2 relative z-10">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <button type="button" onClick={onGoProfile} className="press shrink-0" aria-label="Your profile">
               <LogoBadge size={34} />
             </button>
-            <div>
+            <div className="min-w-0">
               <div className="flex items-center gap-1.5">
-                <GreetIcon size={11} color="#8FC6F5" />
-                <p className="font-body font-normal text-[13.5px] tracking-wide text-white/70">
+                <GreetIcon size={11} color="#8FC6F5" className="shrink-0" />
+                <p className="font-body font-normal text-[13.5px] tracking-wide text-white/70 truncate">
                   {greetingName ? `${greeting}, ${greetingName}` : greeting}
                 </p>
               </div>
@@ -258,7 +258,7 @@ export function Discover({
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             <RoundButton label="Your bookings" onClick={onGoBookings}>
               <Calendar size={15} color="#fff" />
             </RoundButton>
@@ -309,7 +309,7 @@ export function Discover({
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search by name, room type or what's in it"
             aria-label="Search spaces"
-            className="font-body font-normal text-[14px] outline-none w-full bg-transparent text-white placeholder:text-white/50"
+            className="font-body font-normal text-[14px] outline-none w-full min-w-0 bg-transparent text-white placeholder:text-white/50 placeholder:truncate"
           />
           {query && (
             <button

@@ -138,6 +138,28 @@ body {
 }
 
 /* ------------------------------------------------------------------ */
+/*  Mobile form controls — never below 16px                            */
+/*                                                                     */
+/*  iOS Safari zooms the whole page in when a focused input, textarea  */
+/*  or select has an effective font-size under 16px, and the zoom does */
+/*  not fully reverse on blur — the page is left scaled and pannable,  */
+/*  right-edge controls clipped. Every control here is designed        */
+/*  smaller than 16px, so on a real phone (below the 500px mockup      */
+/*  breakpoint, where the app is edge to edge) they are floored at     */
+/*  16px. This is a minimum only — pinch-to-zoom stays enabled, the    */
+/*  viewport is never locked, and the desktop mockup keeps its design  */
+/*  sizes. The `.app-frame` scope lifts specificity above the Tailwind */
+/*  text-[..] utilities so this actually takes effect.                 */
+/* ------------------------------------------------------------------ */
+@media (max-width: 499px) {
+  .app-frame input,
+  .app-frame textarea,
+  .app-frame select {
+    font-size: 16px;
+  }
+}
+
+/* ------------------------------------------------------------------ */
 /*  Motion — the breathing motif and screen transitions                */
 /* ------------------------------------------------------------------ */
 

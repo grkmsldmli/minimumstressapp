@@ -22,7 +22,7 @@ import { PullToRefresh } from "@/components/pull-to-refresh";
 import { Ambient, BreathingLogo, Headline } from "@/components/brand";
 import { ConfettiBurst, PrimaryButton, Toggle } from "@/components/primitives";
 import { SavedCard } from "@/components/saved-card";
-import { StandingNotice } from "@/components/standing-notice";
+import { StandingSummary } from "@/components/standing-notice";
 import { AvatarUpload, DocumentUpload } from "@/components/uploads";
 import type { AccountType, Profile } from "@/lib/domain";
 import { type InsuranceStatus, insuranceStatus } from "@/lib/insurance";
@@ -574,13 +574,13 @@ export function PractitionerProfile({
             than offered as a switch that would not switch anything.
           */}
           <div
-            className="flex items-start gap-3 p-3.5 rounded-xl bg-white"
+            className="flex items-start gap-3 px-3.5 py-2.5 rounded-xl bg-white"
             style={{ border: "1px solid #E7EEF6" }}
           >
             <Bell size={15} color="#3B9BE8" className="mt-0.5 shrink-0" />
             <div>
               <p className="font-body font-medium text-[14.5px] text-navy">Booking updates</p>
-              <p className="font-body font-normal text-[13px] mt-0.5 leading-relaxed text-ink-faint">
+              <p className="font-body font-normal text-[13px] mt-0.5 text-ink-faint">
                 Confirmations, access details and important changes.
               </p>
             </div>
@@ -601,7 +601,7 @@ export function PractitionerProfile({
           <GroupLabel>Account standing</GroupLabel>
         </div>
         <div className="flex flex-col gap-2.5">
-          <StandingNotice party="practitioner" standing={standing} />
+          <StandingSummary party="practitioner" standing={standing} />
         </div>
 
         <div className="mt-6">

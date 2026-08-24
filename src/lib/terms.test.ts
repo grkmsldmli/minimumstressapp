@@ -170,6 +170,16 @@ describe("the words a version stands for", () => {
      * acceptance is actually recorded against.
      */
     2: "fffbd1f7",
+    /*
+     * Version 3 tightens the practitioner cancellation standing: a pause now
+     * comes at three late cancellations in 90 days rather than six, and lasts
+     * 7 days rather than 14. That is a stricter cancellation term — a change to
+     * cancellation, which this file's own rule says raises the version — so
+     * every practitioner is asked again. The host rule (three, 14 days) is
+     * unchanged; only the practitioner lines and the shared "pauses lift" line
+     * moved, along with the "seven days" and "shorter pause" wording.
+     */
+    3: "abc408a5",
   };
 
   it("still says what the current version said", () => {

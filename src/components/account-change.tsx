@@ -51,7 +51,7 @@ export function AccountChange({
   if (sent) {
     return (
       <p className="font-body font-normal text-[13.5px] leading-relaxed mt-2 text-ink-soft">
-        We have your request. A person reads these — we will email you either way.
+        Thanks — we&apos;ve got your request and will email you either way.
       </p>
     );
   }
@@ -79,19 +79,27 @@ export function AccountChange({
         Said before they write anything. This is not a toggle: the two sides
         carry different obligations, and switching without meeting them would
         hand an account duties it never satisfied — which is what locking the
-        column was for in the first place.
+        column was for in the first place. The obligations are named plainly
+        below rather than in the platform's own terms ("sublease", "payout
+        account"); the person reading this is deciding whether to ask, not
+        filling in a form yet.
       */}
       <p className="font-body font-normal text-[13.5px] leading-relaxed mt-1 text-ink-soft">
         {other === "host"
-          ? "Hosting needs proof you can sublease, a legal acknowledgement and a payout account. A person reads this and sets you up rather than flipping a switch."
-          : "We will move you across once there is nothing outstanding on your listings. A person reads this."}
+          ? "Want to list a space? Send us a request and we'll help set up your host account."
+          : "We'll move you across once there's nothing outstanding on your listings."}
       </p>
+      {other === "host" && (
+        <p className="font-body font-normal text-[13px] leading-relaxed mt-2 text-ink-faint">
+          You&apos;ll complete the required hosting details before your first listing goes live.
+        </p>
+      )}
 
       <textarea
         value={reason}
         onChange={(event) => setReason(event.target.value.slice(0, 1000))}
         rows={3}
-        placeholder="Anything that helps — optional."
+        placeholder="Tell us anything we should know — optional"
         className="font-body text-[14.5px] outline-none w-full rounded-xl px-3.5 py-3 mt-3 resize-none bg-white text-navy"
         style={{ border: "1px solid #DCE7F2" }}
       />
@@ -106,7 +114,7 @@ export function AccountChange({
           className="flex-1 py-2.5 rounded-xl font-body font-medium text-[14.5px] text-white press"
           style={{ backgroundColor: "#16304E", opacity: sending ? 0.6 : 1 }}
         >
-          {sending ? "Sending…" : "Ask to switch"}
+          {sending ? "Sending…" : other === "host" ? "Request host access" : "Ask to switch"}
         </button>
         <button
           type="button"

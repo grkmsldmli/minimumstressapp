@@ -65,7 +65,7 @@ import type {
   SpaceAccessDetails,
   SpaceEdit,
 } from "./domain";
-import type { CancellationEvent } from "./reliability";
+import { toCancellationEvents, type CancellationEvent } from "./reliability";
 import type { CreateBookingInput, Repository, ReviewInput } from "./repository";
 import type { ApprovalState } from "./booking-approval";
 import { knownUses } from "./booking-use";
@@ -835,18 +835,22 @@ export class SupabaseRepository implements Repository {
   async listCancellationHistory(): Promise<CancellationEvent[]> {
     const { data, error } = await this.db
       .from("bookings")
-      .select("starts_at, cancelled_at, cancelled_by")
-      .not("cancelled_at", "is", null)
-      .not("captured_at", "is", null);
+      .select("starts_at, cancelled_at, cancelled_by, captured_at")
+      .not("cancelled_at", "is", null);
     if (error) throw asError(error);
 
-    return (data ?? [])
-      .filter((row) => row.cancelled_by === "host" || row.cancelled_by === "practitioner")
-      .map((row) => ({
-        at: new Date(row.cancelled_at),
-        sessionStart: new Date(row.starts_at),
-        by: row.cancelled_by as "host" | "practitioner",
-      }));
+    // The abandoned-checkout exclusion lives in toCancellationEvents, shared
+    // with the server booking gate and the admin watchlist, so the card and the
+    // enforcement can never count different things. A released hold has no
+    // captured_at and drops out there; standingFor keeps only the caller's side.
+    return toCancellationEvents(
+      (data ?? []).map((row) => ({
+        cancelledBy: row.cancelled_by,
+        capturedAt: row.captured_at,
+        cancelledAt: row.cancelled_at,
+        sessionStart: row.starts_at,
+      })),
+    );
   }
 
   /* ---------------- hosting ---------------- */

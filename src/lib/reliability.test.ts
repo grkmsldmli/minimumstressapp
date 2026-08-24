@@ -7,9 +7,11 @@ import {
   LATE_CANCELLATION_HOURS,
   STANDING_WINDOW_DAYS,
   SUSPENSION_DAYS,
+  countsTowardStanding,
   explainStanding,
   isLate,
   standingFor,
+  toCancellationEvents,
 } from "./reliability";
 
 /** A $40 room at the standard fee, for the cancellation checks. */
@@ -89,31 +91,58 @@ describe("hosts, where the harm is not settled by money", () => {
     const history = lateRun("host", 3, 1); // 1, 2 and 3 days ago
     const standing = standingFor("host", history, NOW);
 
-    const expected = new Date(daysAgo(1).getTime() + SUSPENSION_DAYS * 86_400_000);
+    const expected = new Date(daysAgo(1).getTime() + SUSPENSION_DAYS.host * 86_400_000);
     expect(standing.suspendedUntil?.getTime()).toBe(expected.getTime());
   });
 });
 
-describe("practitioners, whose late cancellation is already paid for", () => {
-  it("does not suspend at three, because the host was made whole", () => {
-    const standing = standingFor("practitioner", lateRun("practitioner", 3), NOW);
-
-    expect(standing.blocksNewBookings).toBe(false);
+describe("practitioners, paused on the same count but for less time", () => {
+  it("does not pause under three", () => {
+    // CASE B/C: one and two late cancellations do not block a booking.
+    expect(standingFor("practitioner", lateRun("practitioner", 1), NOW).blocksNewBookings).toBe(
+      false,
+    );
+    expect(standingFor("practitioner", lateRun("practitioner", 2), NOW).blocksNewBookings).toBe(
+      false,
+    );
   });
 
-  it("suspends at six, catching a pattern rather than a loss", () => {
-    const standing = standingFor("practitioner", lateRun("practitioner", 6), NOW);
+  it("warns at two, one short of the pause", () => {
+    const standing = standingFor("practitioner", lateRun("practitioner", 2), NOW);
+
+    expect(standing.level).toBe("warned");
+    expect(standing.remainingBeforeSuspension).toBe(1);
+  });
+
+  it("pauses at three, the same count as a host", () => {
+    // CASE D: three qualifying late cancellations in the window blocks new bookings.
+    const standing = standingFor("practitioner", lateRun("practitioner", 3), NOW);
 
     expect(standing.level).toBe("suspended");
     expect(standing.blocksNewBookings).toBe(true);
+    expect(standing.suspendedUntil).not.toBeNull();
   });
 
-  it("holds hosts to a stricter line than practitioners", () => {
-    const four = 4;
-    expect(standingFor("host", lateRun("host", four), NOW).blocksNewBookings).toBe(true);
-    expect(
-      standingFor("practitioner", lateRun("practitioner", four), NOW).blocksNewBookings,
-    ).toBe(false);
+  it("serves a shorter pause than a host does, from the same trigger", () => {
+    // CASE I: the same three cancellations on both sides; only the length differs.
+    const days = (by: Party) => lateRun(by, 3, 1); // 1, 2 and 3 days ago
+    const trigger = daysAgo(1).getTime(); // the third cancellation, sorted
+    const host = standingFor("host", days("host"), NOW);
+    const practitioner = standingFor("practitioner", days("practitioner"), NOW);
+
+    expect(host.suspendedUntil?.getTime()).toBe(trigger + SUSPENSION_DAYS.host * 86_400_000);
+    expect(practitioner.suspendedUntil?.getTime()).toBe(
+      trigger + SUSPENSION_DAYS.practitioner * 86_400_000,
+    );
+    expect(practitioner.suspendedUntil!.getTime()).toBeLessThan(host.suspendedUntil!.getTime());
+  });
+
+  it("does not count the other side's cancellations against a practitioner", () => {
+    // CASE F: five late host cancellations plus two of the practitioner's own is
+    // still under three for the practitioner — a host's cancellation is not theirs.
+    const history = [...lateRun("host", 5), ...lateRun("practitioner", 2)];
+
+    expect(standingFor("practitioner", history, NOW).blocksNewBookings).toBe(false);
   });
 });
 
@@ -206,6 +235,118 @@ describe("what the person is told", () => {
     const message = explainStanding("host", standingFor("host", [], NOW));
 
     expect(message).toMatch(/no last-minute cancellations/i);
+  });
+});
+
+/**
+ * Which cancellations are even eligible to count, before standing does its sums.
+ *
+ * The blocker this guards: an abandoned checkout is released by the reaper as a
+ * `cancelled_by = practitioner` cancellation with no `captured_at`, and once
+ * standing became a real booking restriction, counting those would suspend
+ * somebody for closing a card form. `captured_at` — written only by payment
+ * success — is the line, and it lives in `countsTowardStanding` /
+ * `toCancellationEvents` so the card, the server gate and the admin watchlist
+ * all apply it identically.
+ */
+describe("which cancellations count toward standing", () => {
+  /** A cancelled-booking row as the client/server/admin read it before mapping. */
+  const row = (
+    over: Partial<{
+      cancelledBy: string | null;
+      capturedAt: Date | null;
+      cancelledAt: Date | null;
+      sessionStart: Date;
+    }> = {},
+  ) => {
+    const at = daysAgo(5);
+    return {
+      cancelledBy: "practitioner" as string | null,
+      capturedAt: at as Date | null, // money arrived = a genuine, held booking
+      cancelledAt: at as Date | null,
+      sessionStart: new Date(at.getTime() + 2 * 3_600_000), // 2h after = late
+      ...over,
+    };
+  };
+
+  /** A genuine, captured, late practitioner cancellation `days` ago. */
+  const genuine = (days: number) => {
+    const at = daysAgo(days);
+    return {
+      cancelledBy: "practitioner" as string | null,
+      capturedAt: at as Date | null,
+      cancelledAt: at as Date | null,
+      sessionStart: new Date(at.getTime() + 2 * 3_600_000),
+    };
+  };
+
+  it("A: counts an explicit practitioner cancellation inside 24h", () => {
+    const events = toCancellationEvents([row()]);
+    expect(events).toHaveLength(1);
+    expect(standingFor("practitioner", events, NOW).lateCancellations).toBe(1);
+  });
+
+  it("B: keeps a genuine cancellation made in good time, but standing does not count it", () => {
+    const early = row({ sessionStart: new Date(daysAgo(5).getTime() + 48 * 3_600_000) });
+    const events = toCancellationEvents([early]);
+    expect(events).toHaveLength(1); // it was a real booking they cancelled
+    expect(standingFor("practitioner", events, NOW).lateCancellations).toBe(0); // just not late
+  });
+
+  it("C: does not count a host cancellation against a practitioner", () => {
+    const events = toCancellationEvents([row({ cancelledBy: "host" })]);
+    expect(standingFor("practitioner", events, NOW).lateCancellations).toBe(0);
+  });
+
+  it("D: does not count an abandoned checkout (released with no capture)", () => {
+    // The reaper writes cancelled_by = practitioner with captured_at null.
+    expect(countsTowardStanding({ cancelledBy: "practitioner", capturedAt: null })).toBe(false);
+    expect(toCancellationEvents([row({ capturedAt: null })])).toEqual([]);
+  });
+
+  it("E: does not count a system/platform release with no capture", () => {
+    // A Stripe-expired intent or any automatic cleanup: same shape, no capture.
+    expect(toCancellationEvents([row({ capturedAt: null, cancelledBy: "practitioner" })])).toEqual(
+      [],
+    );
+  });
+
+  it("F: pauses on three genuine qualifying cancellations in 90 days", () => {
+    const events = toCancellationEvents([genuine(5), genuine(10), genuine(15)]);
+    expect(events).toHaveLength(3);
+    expect(standingFor("practitioner", events, NOW).blocksNewBookings).toBe(true);
+  });
+
+  it("G: two genuine cancellations plus one abandoned checkout still allow booking", () => {
+    const abandoned = { ...genuine(15), capturedAt: null };
+    const events = toCancellationEvents([genuine(5), genuine(10), abandoned]);
+    expect(events).toHaveLength(2); // the abandoned one dropped out
+    expect(standingFor("practitioner", events, NOW).blocksNewBookings).toBe(false);
+  });
+
+  it("H: the card and the gate build the same count from the same rows", () => {
+    // Both the client history and the server gate map through this one function,
+    // so identical rows give an identical count and an identical decision.
+    const rows = [genuine(5), genuine(10), genuine(15), { ...genuine(20), capturedAt: null }];
+    const events = toCancellationEvents(rows);
+    const standing = standingFor("practitioner", events, NOW);
+    expect(events).toHaveLength(3); // abandoned dropped, three genuine remain
+    expect(standing.blocksNewBookings).toBe(true);
+  });
+
+  it("accepts database timestamps as strings, not only Date objects", () => {
+    // The real repositories hand this ISO strings straight from the row.
+    const at = daysAgo(5);
+    const events = toCancellationEvents([
+      {
+        cancelledBy: "practitioner",
+        capturedAt: at.toISOString(),
+        cancelledAt: at.toISOString(),
+        sessionStart: new Date(at.getTime() + 2 * 3_600_000).toISOString(),
+      },
+    ]);
+    expect(events).toHaveLength(1);
+    expect(standingFor("practitioner", events, NOW).lateCancellations).toBe(1);
   });
 });
 

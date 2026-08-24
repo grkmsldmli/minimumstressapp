@@ -626,6 +626,110 @@ describe("who may confirm a booking, and with what cover (CASE A–N)", () => {
 });
 
 /*
+ * A standing pause, run through the real gate.
+ *
+ * Until now the pause was display-only: standingFor computed blocksNewBookings
+ * and the profile showed it, but no booking path consulted it, so a paused
+ * practitioner could book from the sheet or straight from the API. planBooking
+ * is the one gate every caller crosses, so enforcing it here is what makes the
+ * pause real and un-bypassable — the same argument the CASE I test makes for
+ * eligibility. It stops NEW bookings only; nothing here cancels an existing one.
+ */
+describe("a standing pause stops a new booking, and only a new one", () => {
+  const daysBeforeNow = (days: number) => new Date(NOW.getTime() - days * 86_400_000);
+  // A late cancellation `days` ago: the session it killed was two hours later,
+  // so it lands inside the 24-hour "late" line.
+  const lateCancel = (days: number, by: "host" | "practitioner" = "practitioner") => {
+    const at = daysBeforeNow(days);
+    return { by, at, sessionStart: new Date(at.getTime() + 2 * 3_600_000) };
+  };
+
+  it("A: allows a booking with no cancellations", () => {
+    expect(plan({ practitionerCancellations: [] }).ok).toBe(true);
+  });
+
+  it("B: allows a booking after one late cancellation", () => {
+    expect(plan({ practitionerCancellations: [lateCancel(5)] }).ok).toBe(true);
+  });
+
+  it("C: allows a booking after two late cancellations", () => {
+    expect(plan({ practitionerCancellations: [lateCancel(5), lateCancel(10)] }).ok).toBe(true);
+  });
+
+  it("D: refuses a booking at three late cancellations inside the window", () => {
+    expect(
+      plan({ practitionerCancellations: [lateCancel(5), lateCancel(10), lateCancel(15)] }),
+    ).toEqual({ ok: false, reason: "standing_paused" });
+  });
+
+  it("E: does not count a cancellation that has aged out of the window", () => {
+    // Two inside 90 days, one just past it — only two count, so the booking stands.
+    expect(
+      plan({
+        practitionerCancellations: [lateCancel(5), lateCancel(10), lateCancel(95)],
+      }).ok,
+    ).toBe(true);
+  });
+
+  it("F: does not count the host's cancellations against the practitioner", () => {
+    // Five late host cancellations and two of the practitioner's own: under three.
+    expect(
+      plan({
+        practitionerCancellations: [
+          lateCancel(3, "host"),
+          lateCancel(6, "host"),
+          lateCancel(9, "host"),
+          lateCancel(12, "host"),
+          lateCancel(15, "host"),
+          lateCancel(20),
+          lateCancel(25),
+        ],
+      }).ok,
+    ).toBe(true);
+  });
+
+  it("does not count a cancellation made in good time", () => {
+    // Three cancellations, but each was made 48 hours ahead — none is late.
+    const inGoodTime = [3, 6, 9].map((days) => {
+      const at = daysBeforeNow(days);
+      return {
+        by: "practitioner" as const,
+        at,
+        sessionStart: new Date(at.getTime() + 48 * 3_600_000),
+      };
+    });
+    expect(plan({ practitionerCancellations: inGoodTime }).ok).toBe(true);
+  });
+
+  it("K: refuses at the gate every caller crosses, so a direct API call cannot bypass it", () => {
+    // planBooking is what createBooking and the route both call; a pause here is
+    // a pause everywhere, whatever slot is asked for.
+    expect(
+      plan({
+        practitionerCancellations: [lateCancel(1), lateCancel(2), lateCancel(3)],
+        startsAt: at(15),
+      }),
+    ).toEqual({ ok: false, reason: "standing_paused" });
+  });
+
+  it("checks the pause before the slot, so eligibility does not depend on the hour", () => {
+    expect(
+      plan({
+        practitionerCancellations: [lateCancel(1), lateCancel(2), lateCancel(3)],
+        startsAt: at(3, 1), // 03:00, an hour the room never opens
+      }),
+    ).toEqual({ ok: false, reason: "standing_paused" });
+  });
+
+  it("L: says so plainly, at 409, and that existing bookings are unaffected", () => {
+    const { message, status } = explainRejection("standing_paused");
+    expect(status).toBe(409);
+    expect(message).toMatch(/paused/i);
+    expect(message).toMatch(/existing bookings/i);
+  });
+});
+
+/*
  * A recurring run is all-or-nothing, decided before anything is booked.
  *
  * planSeries is the pure half of the atomic series: it plans every occurrence
@@ -687,6 +791,24 @@ describe("planSeries — a recurring run is all or nothing (atomic)", () => {
       practitioner: { ...PRACTITIONER, isPro: true, accountType: null },
     });
     expect(result).toEqual({ ok: false, startsAt: at(14, 0), reason: "professional_profile_required" });
+  });
+
+  it("refuses the whole run when new bookings are paused", () => {
+    // A pause is a fact about the person, not the week, so it fails at the first
+    // occurrence and the run is never partially booked.
+    const daysBeforeNow = (days: number) => new Date(NOW.getTime() - days * 86_400_000);
+    const lateCancel = (days: number) => {
+      const at = daysBeforeNow(days);
+      return {
+        by: "practitioner" as const,
+        at,
+        sessionStart: new Date(at.getTime() + 2 * 3_600_000),
+      };
+    };
+    const result = series([at(14, 0), at(14, 7)], {
+      practitionerCancellations: [lateCancel(1), lateCancel(2), lateCancel(3)],
+    });
+    expect(result).toEqual({ ok: false, startsAt: at(14, 0), reason: "standing_paused" });
   });
 
   it("does not let two weeks of one run claim the same hour", () => {

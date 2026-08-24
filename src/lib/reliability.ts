@@ -12,9 +12,11 @@ import { FREE_CANCEL_WINDOW_MS } from "./money";
  * they had set aside, so the loss is already settled between them. A host who
  * cancels leaves a practitioner with no room, sometimes with their own client
  * already booked, and no amount of goodwill credit gives them the session
- * back. Treating both with one threshold would either wave through the harmful
- * case or punish the settled one. So hosts escalate at three, practitioners at
- * six.
+ * back. Both sides pause at the same count — three late cancellations inside
+ * the window — but the length of the pause is where they differ: a host's runs
+ * the full term, a practitioner's half of it, because a practitioner's late
+ * cancellation is already paid for. One count keeps the rule simple to state;
+ * the shorter pause keeps it proportionate to a harm that money already settled.
  *
  * **A suspension must not create the harm it prevents.** It stops new
  * bookings only. Every booking already on the calendar is honoured, because
@@ -29,9 +31,6 @@ import { FREE_CANCEL_WINDOW_MS } from "./money";
 
 /** Cancellations older than this stop counting. */
 export const STANDING_WINDOW_DAYS = 90;
-
-/** How long a suspension lasts before it lifts on its own. */
-export const SUSPENSION_DAYS = 14;
 
 /**
  * A cancellation counts as late when it lands inside the free-cancellation
@@ -48,12 +47,27 @@ export const LATE_CANCELLATION_HOURS = FREE_CANCEL_WINDOW_MS / (60 * 60 * 1000);
 
 export type Party = "host" | "practitioner";
 
+/**
+ * How long a pause lasts before it lifts on its own, per side.
+ *
+ * The same count triggers it on both sides; the length is what differs. A
+ * host's cancellation is the one nothing makes right, so it costs the full
+ * term. A practitioner's is already paid for — the host keeps the hour's fee —
+ * so the pause is a proportionate nudge, half as long, not a second penalty on
+ * top of a settled one.
+ */
+export const SUSPENSION_DAYS: Record<Party, number> = {
+  host: 14,
+  practitioner: 7,
+};
+
 export const THRESHOLDS: Record<Party, { warnAt: number; suspendAt: number }> = {
   // A host cancellation is the one nothing makes right.
   host: { warnAt: 2, suspendAt: 3 },
-  // A practitioner's is already paid for, so this catches a pattern rather
-  // than a loss — hence the higher bar.
-  practitioner: { warnAt: 4, suspendAt: 6 },
+  // The same count as a host for launch — simple to state and to see coming —
+  // with a shorter pause (see SUSPENSION_DAYS) rather than a higher bar,
+  // because a practitioner's late cancellation is already paid for.
+  practitioner: { warnAt: 2, suspendAt: 3 },
 };
 
 export interface CancellationEvent {
@@ -83,6 +97,62 @@ export interface Standing {
 export function isLate(event: CancellationEvent): boolean {
   const hoursAhead = (event.sessionStart.getTime() - event.at.getTime()) / 3_600_000;
   return hoursAhead < LATE_CANCELLATION_HOURS;
+}
+
+/** A timestamp column as it arrives from either the database (string) or code. */
+type Timestamp = Date | string | null;
+
+/**
+ * Whether a cancelled booking counts toward standing at all — the one place
+ * this rule lives, so the profile card, the server booking gate and the admin
+ * watchlist can never count different things.
+ *
+ * The test is "was this a booking the practitioner genuinely held and walked
+ * away from", and the signal is `captured_at`: it is written by the
+ * payment-success webhook and by nothing else, so a booking that was captured
+ * is one that was paid for and a session the host was relying on. Everything
+ * automatic leaves it null — an abandoned checkout, a Stripe-expired intent, a
+ * request declined or never answered — and all of those are written as a
+ * `cancelled_by = practitioner` cancellation only because the schema has no
+ * other status for a released hold. Counting them would suspend someone for
+ * closing a tab, which the product rule forbids. The party is checked too, so a
+ * value that is neither side is ignored rather than assumed.
+ */
+export function countsTowardStanding(cancellation: {
+  cancelledBy: string | null;
+  capturedAt: Timestamp;
+}): boolean {
+  return (
+    cancellation.capturedAt != null &&
+    (cancellation.cancelledBy === "host" || cancellation.cancelledBy === "practitioner")
+  );
+}
+
+/**
+ * Turn cancelled-booking rows into the events `standingFor` reads, keeping only
+ * the qualifying ones.
+ *
+ * The client's history, the server's booking gate and the mock all build their
+ * cancellation history through this, so display and enforcement cannot diverge
+ * on what a cancellation is — the abandoned-checkout exclusion is applied once,
+ * here, rather than reimplemented at each caller. Party is left on the event and
+ * filtered by `standingFor`, so this stays side-agnostic.
+ */
+export function toCancellationEvents(
+  rows: readonly {
+    cancelledBy: string | null;
+    capturedAt: Timestamp;
+    cancelledAt: Timestamp;
+    sessionStart: Date | string;
+  }[],
+): CancellationEvent[] {
+  return rows
+    .filter((row) => countsTowardStanding(row) && row.cancelledAt != null)
+    .map((row) => ({
+      at: new Date(row.cancelledAt as Date | string),
+      sessionStart: new Date(row.sessionStart),
+      by: row.cancelledBy as Party,
+    }));
 }
 
 /**
@@ -119,7 +189,7 @@ export function standingFor(
     // Counted from the cancellation that crossed the line, so the clock starts
     // at the act rather than at whenever someone next looks.
     const trigger = relevant[suspendAt - 1].at;
-    const until = new Date(trigger.getTime() + SUSPENSION_DAYS * 86_400_000);
+    const until = new Date(trigger.getTime() + SUSPENSION_DAYS[party] * 86_400_000);
 
     if (until > now) {
       return {
@@ -159,11 +229,11 @@ export function explainStanding(party: Party, standing: Standing): string {
       return `Paused until ${standing.suspendedUntil!.toLocaleDateString("en-US", { month: "long", day: "numeric" })} after ${standing.lateCancellations} last-minute cancellations in ${STANDING_WINDOW_DAYS} days. You can't take ${noun} until then. Sessions already booked go ahead. Email ${SUPPORT_EMAIL} if this is wrong.`;
 
     case "warned":
-      return `${standing.lateCancellations} last-minute cancellations in the past ${STANDING_WINDOW_DAYS} days. ${standing.remainingBeforeSuspension === 1 ? "One more" : `${standing.remainingBeforeSuspension} more`} and you won't be able to take ${noun} for ${SUSPENSION_DAYS} days. Cancellations stop counting after ${STANDING_WINDOW_DAYS} days.`;
+      return `${standing.lateCancellations} last-minute cancellations in the past ${STANDING_WINDOW_DAYS} days. ${standing.remainingBeforeSuspension === 1 ? "One more" : `${standing.remainingBeforeSuspension} more`} and you won't be able to take ${noun} for ${SUSPENSION_DAYS[party]} days. Cancellations stop counting after ${STANDING_WINDOW_DAYS} days.`;
 
     case "clear":
       return standing.lateCancellations === 0
-        ? `No last-minute cancellations in the past ${STANDING_WINDOW_DAYS} days. ${suspendAt} would pause your bookings for ${SUSPENSION_DAYS} days.`
-        : `${standing.lateCancellations} last-minute cancellation${standing.lateCancellations === 1 ? "" : "s"} in the past ${STANDING_WINDOW_DAYS} days. ${suspendAt} would pause your bookings for ${SUSPENSION_DAYS} days.`;
+        ? `No last-minute cancellations in the past ${STANDING_WINDOW_DAYS} days. ${suspendAt} would pause your bookings for ${SUSPENSION_DAYS[party]} days.`
+        : `${standing.lateCancellations} last-minute cancellation${standing.lateCancellations === 1 ? "" : "s"} in the past ${STANDING_WINDOW_DAYS} days. ${suspendAt} would pause your bookings for ${SUSPENSION_DAYS[party]} days.`;
   }
 }

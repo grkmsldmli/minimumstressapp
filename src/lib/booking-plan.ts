@@ -34,6 +34,7 @@ import {
   type InsuranceRejection,
   checkInsuranceForBooking,
 } from "./insurance";
+import { type CancellationEvent, standingFor } from "./reliability";
 import { SESSION_MS } from "./session";
 
 export interface SpaceFacts {
@@ -86,6 +87,7 @@ export type PlanRejection =
   | "space_not_found"
   | "space_not_active"
   | "professional_profile_required"
+  | "standing_paused"
   | "host_cannot_be_paid"
   | "slot_in_past"
   | "beyond_booking_horizon"
@@ -128,6 +130,18 @@ export function planBooking(input: {
    * passes one, and a missing declaration is a rejection rather than a pass.
    */
   declared?: DeclaredUse | null;
+  /**
+   * This practitioner's own late cancellations, for the standing pause.
+   *
+   * Their history, not a stored flag: the pause is derived here the same way
+   * the profile card derives it, so the gate and the card can never disagree,
+   * and a cancellation ageing out of the window lifts the pause without anyone
+   * acting. Only their own count — the service reads cancelled_by = practitioner
+   * — so a host's cancellation of their booking never lands on them. Optional in
+   * the type so tests predating standing enforcement still describe what they
+   * were written to; the service always passes it, and none means clear.
+   */
+  practitionerCancellations?: readonly CancellationEvent[];
   startsAt: Date;
   now: Date;
 }): BookingPlan {
@@ -140,6 +154,7 @@ export function planBooking(input: {
     now,
     upcomingCount = 0,
     declared = null,
+    practitionerCancellations = [],
   } = input;
 
   if (!space) return { ok: false, reason: "space_not_found" };
@@ -160,6 +175,20 @@ export function planBooking(input: {
    */
   if (practitioner.accountType !== "practitioner") {
     return { ok: false, reason: "professional_profile_required" };
+  }
+
+  /*
+   * A temporary pause after repeated late cancellations, checked before the
+   * slot because it is a fact about the person, not the hour. It stops new
+   * bookings only — every session already on the calendar is honoured, and
+   * nothing here cancels one — and it lifts on its own once the window clears
+   * (see reliability.ts). Derived from their own history rather than a stored
+   * flag, and enforced here because planBooking is the one gate the sheet, the
+   * API route and the recurring expander all cross: a pause the client merely
+   * renders is one a direct call ignores.
+   */
+  if (standingFor("practitioner", practitionerCancellations, now).blocksNewBookings) {
+    return { ok: false, reason: "standing_paused" };
   }
 
   /*
@@ -322,6 +351,12 @@ export function explainRejection(
       return {
         message: "Complete your professional profile to book a space.",
         status: 403,
+      };
+    case "standing_paused":
+      return {
+        message:
+          "New bookings are paused for now after recent last-minute cancellations. Your existing bookings are unaffected — check your profile for when the pause lifts.",
+        status: 409,
       };
     case "insurance_required":
       return {

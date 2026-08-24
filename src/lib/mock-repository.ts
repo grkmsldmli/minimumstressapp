@@ -43,7 +43,7 @@ import {
   resolveCancellation,
 } from "./money";
 import { explainRedaction, redact } from "./message-redaction";
-import type { CancellationEvent } from "./reliability";
+import { toCancellationEvents, type CancellationEvent } from "./reliability";
 import type { CreateBookingInput, Repository } from "./repository";
 import type { AccessDetails } from "./access-details";
 import type { MediaKind, SpaceEdit } from "./domain";
@@ -617,15 +617,23 @@ export class MockRepository implements Repository {
   /* ---------------- credit ---------------- */
 
   async listCancellationHistory(): Promise<CancellationEvent[]> {
-    return this.bookings
-      .filter((b) => b.status === "cancelled_by_host" || b.status === "cancelled_by_practitioner")
-      .map((b) => ({
-        // The mock has no cancelled_at column, so the moment is taken as now.
-        // Real rows carry it; see SupabaseRepository.
-        at: new Date(),
-        sessionStart: b.startsAt,
-        by: b.status === "cancelled_by_host" ? ("host" as const) : ("practitioner" as const),
-      }));
+    // Built through the same toCancellationEvents rule the real repo uses. The
+    // mock has no reaper and no abandoned checkouts, so every cancellation here
+    // is a genuine one — and no captured_at/cancelled_at columns, so a non-null
+    // stand-in for each keeps them counting through the shared predicate rather
+    // than a second, divergent filter.
+    return toCancellationEvents(
+      this.bookings
+        .filter(
+          (b) => b.status === "cancelled_by_host" || b.status === "cancelled_by_practitioner",
+        )
+        .map((b) => ({
+          cancelledBy: b.status === "cancelled_by_host" ? "host" : "practitioner",
+          capturedAt: b.startsAt,
+          cancelledAt: new Date(),
+          sessionStart: b.startsAt,
+        })),
+    );
   }
 
   /* ---------------- hosting ---------------- */

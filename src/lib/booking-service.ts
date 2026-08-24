@@ -15,6 +15,7 @@ import {
 } from "./booking-plan";
 import { resolveCancellation, type BookingMoney } from "./money";
 import { notifyCancellation } from "./notify/for-booking";
+import { toCancellationEvents, type CancellationEvent } from "./reliability";
 import { SESSION_MINUTES } from "./session";
 import { customerFor } from "./stripe/subscription";
 
@@ -165,6 +166,16 @@ interface BookingFacts {
   practitioner: PractitionerFacts;
   takenStarts: Date[];
   upcomingCount: number;
+  /**
+   * This practitioner's qualifying late cancellations, for the standing pause.
+   *
+   * Built through `toCancellationEvents`, the same rule the profile card and the
+   * admin watchlist use, so the gate and the card can never disagree: only
+   * cancellations of bookings that were genuinely captured count, which drops
+   * abandoned checkouts and other automatic releases, and `standingFor` then
+   * keeps only the practitioner's own.
+   */
+  practitionerCancellations: CancellationEvent[];
   /** The stored Stripe customer, so the card can be kept. Not used by the gate. */
   stripeCustomerId: string | null;
 }
@@ -201,6 +212,7 @@ async function gatherBookingFacts(
     { data: blocks },
     { data: taken },
     { count: upcomingCount },
+    { data: cancels },
   ] = await Promise.all([
     admin
       .from("profiles")
@@ -243,6 +255,23 @@ async function gatherBookingFacts(
       .eq("practitioner_id", practitionerId)
       .eq("status", "upcoming")
       .gt("starts_at", new Date().toISOString()),
+
+    /*
+     * This practitioner's own cancellations, for the standing pause.
+     *
+     * All cancellations of their own bookings, judged by the shared
+     * `toCancellationEvents` rule below rather than by a query clause: an
+     * abandoned checkout is released as a `cancelled_by = practitioner`
+     * cancellation with no `captured_at`, so filtering on cancelled_by alone
+     * would count a closed tab as a strike. `captured_at` is fetched precisely
+     * so that rule can exclude it, and `standingFor` then keeps only the
+     * practitioner's own and applies the 24-hour and 90-day lines.
+     */
+    admin
+      .from("bookings")
+      .select("starts_at, cancelled_at, captured_at, cancelled_by")
+      .eq("practitioner_id", practitionerId)
+      .not("cancelled_at", "is", null),
   ]);
 
   return {
@@ -302,6 +331,17 @@ async function gatherBookingFacts(
     },
     takenStarts: (taken ?? []).map((b) => new Date(b.starts_at)),
     upcomingCount: upcomingCount ?? 0,
+    // The shared rule: abandoned checkouts (no captured_at) drop out here, the
+    // same way the profile card and admin watchlist drop them, and standingFor
+    // keeps only this practitioner's own from what remains.
+    practitionerCancellations: toCancellationEvents(
+      (cancels ?? []).map((row) => ({
+        cancelledBy: row.cancelled_by,
+        capturedAt: row.captured_at,
+        cancelledAt: row.cancelled_at,
+        sessionStart: row.starts_at,
+      })),
+    ),
     stripeCustomerId: practitioner?.stripe_customer_id ?? null,
   };
 }
@@ -323,6 +363,7 @@ export async function createBooking(
     practitioner: facts.practitioner,
     takenStarts: facts.takenStarts,
     upcomingCount: facts.upcomingCount,
+    practitionerCancellations: facts.practitionerCancellations,
     declared: request.declared,
     startsAt: request.startsAt,
     now,
@@ -503,6 +544,7 @@ export async function preflightSeries(
     practitioner: facts.practitioner,
     takenStarts: facts.takenStarts,
     upcomingCount: facts.upcomingCount,
+    practitionerCancellations: facts.practitionerCancellations,
     declared,
     starts,
     now,

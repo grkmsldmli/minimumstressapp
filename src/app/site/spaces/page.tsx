@@ -4,9 +4,8 @@ import { Suspense } from "react";
 
 import { SiteFooter, SiteHeader } from "@/components/site/chrome";
 import { RequestSpace } from "@/components/site/request-space";
-import { NothingYet, SearchedFor } from "@/components/site/searched-for";
 import { WEBSITE } from "@/lib/company";
-import { cityPath, indexableCity } from "@/lib/directory";
+import { cityPath, discoverableCity } from "@/lib/directory";
 import { citiesWithSpaces } from "@/lib/directory-data";
 
 /**
@@ -36,10 +35,14 @@ export const metadata: Metadata = {
 export default async function SpacesIndex() {
   const cities = await citiesWithSpaces();
 
-  // Only the towns with enough to be worth a page. Linking to a thin one from
-  // here is the same mistake as putting it in the sitemap, made by hand.
+  // Every town with live inventory, for the person who came looking. This is
+  // deliberately not the indexing threshold: a town with one or two rooms is
+  // real inventory somebody can book, and hiding it here — as this page used to,
+  // by reusing indexableCity — was showing "nothing" over a listing that
+  // existed. Whether a town is worth advertising to a search engine is a
+  // separate, higher bar, decided on the town's own page.
   const listed = cities
-    .filter(indexableCity)
+    .filter(discoverableCity)
     .sort((a, b) => a.city.localeCompare(b.city));
 
   return (
@@ -86,31 +89,22 @@ export default async function SpacesIndex() {
             </>
           ) : (
             /*
-             * The empty state, written as a real answer rather than as an
-             * apology. Somebody reading this is either a practitioner who needs
-             * a room — in which case the honest thing is to say there is not one
-             * yet — or somebody with a room, who is the entire reason the page
-             * would ever fill up.
+             * The empty state, and now a truthful one: it is reached only when
+             * there is genuinely no live inventory anywhere, because visibility
+             * above no longer hides real rooms behind the indexing threshold.
+             * Written as a real answer rather than an apology — the reader is
+             * either a practitioner who needs a room, told plainly there is not
+             * one here yet, or somebody with a room, who is the whole reason the
+             * page would ever fill up.
              */
             <>
-              {/*
-                The search, answered. Client-side: this page is cached, and a
-                server-rendered echo would show the first visitor's search to
-                everybody after them.
-              */}
-              <Suspense fallback={<NothingYet />}>
-                <SearchedFor />
-              </Suspense>
+              <p className="mt-5 text-[16.5px] leading-[1.75]" style={{ color: "#5f6673" }}>
+                Spaces are coming to your area.
+              </p>
 
-              {/*
-                Said rather than left implied. Somebody who has just searched
-                deserves to know this is the whole answer and not a filter
-                hiding results — and that the reason is the state of the
-                marketplace, not their query.
-              */}
               <p className="mt-3 text-[15px] leading-[1.75]" style={{ color: "#8a94a3" }}>
-                Every room here comes from someone who already had one. If you know a studio
-                with quiet hours, tell them about us.
+                Tell us what you&rsquo;re looking for and we&rsquo;ll use it to guide where we
+                add spaces next.
               </p>
 
               {/*

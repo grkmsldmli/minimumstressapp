@@ -30,6 +30,18 @@ import { SPACE_TYPES, spaceTypeBySlug } from "./space-types";
  */
 export const MIN_LISTINGS_TO_INDEX = 3;
 
+/**
+ * How many live rooms a town needs before a *person* is shown it. One.
+ *
+ * The other end of the same scale MIN_LISTINGS_TO_INDEX sits on, and the two
+ * are deliberately different numbers because they answer to different
+ * audiences. A single real room is inventory somebody can book right now;
+ * hiding it from the person who came looking, because a search engine would not
+ * yet index a page with one room on it, is confusing the two. Discovery starts
+ * at the first live room; indexing keeps its higher, separate bar below.
+ */
+export const MIN_LISTINGS_TO_SHOW = 1;
+
 export interface CityRow {
   state: string;
   city: string;
@@ -69,6 +81,21 @@ export function stateSlug(state: string): string {
 /** True when a town has enough bookable rooms to be worth a page of its own. */
 export function indexableCity(row: Pick<CityRow, "spaceCount">): boolean {
   return row.spaceCount >= MIN_LISTINGS_TO_INDEX;
+}
+
+/**
+ * True when a town has any live room worth showing a person.
+ *
+ * The visibility rule for the human-facing directory, kept apart from
+ * `indexableCity` on purpose: a town below the indexing bar still has real
+ * inventory, and a searcher should be able to find and book it. Every town in
+ * `city_inventory` already has at least one live listing, so in practice this
+ * lets all of them through — it is written as a predicate anyway so the rule is
+ * named where it is read, and cannot silently become the indexing threshold
+ * again.
+ */
+export function discoverableCity(row: Pick<CityRow, "spaceCount">): boolean {
+  return row.spaceCount >= MIN_LISTINGS_TO_SHOW;
 }
 
 /**

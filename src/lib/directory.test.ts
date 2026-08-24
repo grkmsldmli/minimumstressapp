@@ -4,9 +4,11 @@ import {
   type CityRow,
   type CityTypeRow,
   MIN_LISTINGS_TO_INDEX,
+  MIN_LISTINGS_TO_SHOW,
   canonicalForCityType,
   citySlug,
   cityPath,
+  discoverableCity,
   indexableCity,
   indexableCityType,
   indexablePaths,
@@ -79,6 +81,44 @@ describe("when a town page is worth indexing", () => {
   it("is, at it and above it", () => {
     expect(indexableCity({ spaceCount: MIN_LISTINGS_TO_INDEX })).toBe(true);
     expect(indexableCity({ spaceCount: 40 })).toBe(true);
+  });
+});
+
+/**
+ * Human discovery and search-engine indexing are two different questions on two
+ * different scales, and this is where they must not be allowed to collapse back
+ * into one. Showing a person a live room is a lower bar than advertising the
+ * page to a crawler, and the whole of the "Nothing is listed yet" bug was this
+ * distinction going missing.
+ */
+describe("when a town is worth showing a person", () => {
+  it("shows the first threshold below the indexing one — they are not the same number", () => {
+    expect(MIN_LISTINGS_TO_SHOW).toBeLessThan(MIN_LISTINGS_TO_INDEX);
+  });
+
+  it("is not, with nothing live in it", () => {
+    // Zero live rooms is the only genuine empty state the directory should show.
+    expect(discoverableCity({ spaceCount: 0 })).toBe(false);
+  });
+
+  it("is, from the very first live room", () => {
+    // One or two rooms: real inventory a person can book, so it must be shown —
+    // even though the page stays below the indexing bar (B and C).
+    expect(discoverableCity({ spaceCount: 1 })).toBe(true);
+    expect(discoverableCity({ spaceCount: 2 })).toBe(true);
+  });
+
+  it("separates being shown from being indexed for a one- or two-room town", () => {
+    for (const count of [1, 2]) {
+      expect(discoverableCity({ spaceCount: count }), `${count} shown`).toBe(true);
+      expect(indexableCity({ spaceCount: count }), `${count} indexed`).toBe(false);
+    }
+  });
+
+  it("shows and indexes a town once it clears the SEO bar", () => {
+    // Three rooms (D): visible to people and now also eligible for indexing.
+    expect(discoverableCity({ spaceCount: MIN_LISTINGS_TO_INDEX })).toBe(true);
+    expect(indexableCity({ spaceCount: MIN_LISTINGS_TO_INDEX })).toBe(true);
   });
 });
 

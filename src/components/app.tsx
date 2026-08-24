@@ -1130,6 +1130,8 @@ export function App() {
             new Date(),
           )}
           reviewNote={profile.insuranceReviewNote}
+          effectiveDate={profile.insuranceEffectiveDate}
+          expiresAt={profile.insuranceExpiresAt}
           onBack={back}
           onContinue={(file) =>
             (file

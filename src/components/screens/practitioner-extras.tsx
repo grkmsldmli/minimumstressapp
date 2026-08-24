@@ -1,10 +1,11 @@
 "use client";
 
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, type ReactNode, useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
   Bell,
   Check,
+  CheckCircle2,
   ChevronRight,
   CreditCard,
   FileCheck,
@@ -24,9 +25,11 @@ import { Ambient, BreathingLogo, Headline } from "@/components/brand";
 import { ConfettiBurst, PrimaryButton, Toggle } from "@/components/primitives";
 import { SavedCard } from "@/components/saved-card";
 import { StandingSummary } from "@/components/standing-notice";
+import { shortName } from "@/components/document-status";
 import { AvatarUpload, DocumentUpload } from "@/components/uploads";
 import type { AccountType, Profile } from "@/lib/domain";
 import { type InsuranceStatus, insuranceStatus } from "@/lib/insurance";
+import { formatCoverageDate } from "@/lib/format-date";
 import { errorMessage } from "@/lib/error-message";
 import type { Standing } from "@/lib/reliability";
 import type { MilestoneKey } from "@/lib/milestones";
@@ -49,6 +52,26 @@ const INSURANCE_LABEL: Record<InsuranceStatus, string> = {
   expired: "Expired — renew",
 };
 
+/**
+ * The insurance line on the settings row.
+ *
+ * Verified is the one state worth a mark of its own — it is the whole point of
+ * the step, the thing that opens booking — so it carries the same green check a
+ * verified document wears elsewhere in the app. Every other state stays a plain
+ * grey word: "in review" or "expired" is a status, not something to dress up.
+ */
+function InsuranceRowValue({ status }: { status: InsuranceStatus }) {
+  if (status === "verified") {
+    return (
+      <span className="inline-flex items-center gap-1" style={{ color: "#557255" }}>
+        <CheckCircle2 size={13} />
+        Verified
+      </span>
+    );
+  }
+  return <>{INSURANCE_LABEL[status]}</>;
+}
+
 /* ------------------------------------------------------------------ */
 /*  Insurance upload — optional at onboarding, required before booking  */
 /* ------------------------------------------------------------------ */
@@ -59,6 +82,8 @@ export function InsuranceUpload({
   initialDocName,
   status = "not_added",
   reviewNote,
+  effectiveDate,
+  expiresAt,
 }: {
   /**
    * Given the picked file, uploads it and moves on; given null, moves on
@@ -72,9 +97,20 @@ export function InsuranceUpload({
   status?: InsuranceStatus;
   /** Staff's reason when a certificate was turned down, shown verbatim. */
   reviewNote?: string | null;
+  /** The verified cover window, shown back once it is on record. */
+  effectiveDate?: Date | null;
+  expiresAt?: Date | null;
 }) {
   const [file, setFile] = useState<File | null>(null);
-  const existingName = file?.name ?? initialDocName;
+  /*
+   * What the file card shows. A freshly-picked file still has the name the
+   * person chose it by, and showing it confirms they picked the right one. A
+   * file already on record has only its storage path — a generated name behind
+   * two ids — so it shows its type instead, the way host documents do (see
+   * shortName). The raw path is never put on screen: it is nothing the
+   * practitioner would recognise and half of it is somebody's account id.
+   */
+  const existingName = file ? file.name : initialDocName ? shortName(initialDocName) : null;
   const [saving, setSaving] = useState(false);
   /*
    * This screen used to record the policy and move on in the same breath. A
@@ -187,6 +223,31 @@ export function InsuranceUpload({
                 </label>
               </div>
             </div>
+
+            {/*
+              The window a person can act on, once it is verified: when the
+              cover runs from and — the date that matters — when it lapses and
+              pauses their bookings again. Only shown when both are on record.
+            */}
+            {status === "verified" && effectiveDate && expiresAt && (
+              <dl
+                className="mt-3 rounded-2xl px-4 py-3.5 space-y-2"
+                style={{ backgroundColor: "rgba(255,255,255,0.06)" }}
+              >
+                <div className="flex items-center justify-between gap-4">
+                  <dt className="font-body text-[13px] text-white/55">Effective</dt>
+                  <dd className="font-body text-[13.5px] text-white/85">
+                    {formatCoverageDate(effectiveDate)}
+                  </dd>
+                </div>
+                <div className="flex items-center justify-between gap-4">
+                  <dt className="font-body text-[13px] text-white/55">Expires</dt>
+                  <dd className="font-body text-[13.5px] text-white/85">
+                    {formatCoverageDate(expiresAt)}
+                  </dd>
+                </div>
+              </dl>
+            )}
           </>
         ) : (
           <>
@@ -567,8 +628,8 @@ export function PractitionerProfile({
             // in review or has lapsed cannot. Derived from the stored review
             // state and the clock — see lib/insurance.ts.
             value={
-              INSURANCE_LABEL[
-                insuranceStatus(
+              <InsuranceRowValue
+                status={insuranceStatus(
                   {
                     hasCertificate: profile.insuranceDocName !== null,
                     state: profile.insuranceReview.state,
@@ -576,8 +637,8 @@ export function PractitionerProfile({
                     expiresAt: profile.insuranceExpiresAt,
                   },
                   new Date(),
-                )
-              ]
+                )}
+              />
             }
             onClick={onGoInsurance}
           />
@@ -810,7 +871,7 @@ export function ProfileRow({
 }: {
   icon: typeof CreditCard;
   label: string;
-  value?: string;
+  value?: ReactNode;
   onClick?: () => void;
   danger?: boolean;
 }) {

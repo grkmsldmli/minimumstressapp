@@ -40,6 +40,8 @@ export const NOTIFICATION_KINDS = [
   "claim_filed",
   "claim_decided",
   "staff_waiting",
+  "insurance_verified",
+  "insurance_rejected",
 ] as const;
 
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
@@ -630,6 +632,45 @@ export function render(kind: NotificationKind, context: MessageContext): Message
           `A payout was returned by your bank${context.reason ? `: ${context.reason}` : ""}.`,
           `Your earnings are safe and still yours — they are sitting with our payment processor, not lost. Stripe pauses payouts to an account after a return, so this will keep happening until the bank details are corrected.`,
           `Update them from Payouts in your profile, and the paused amount goes out on the next run.`,
+          SIGN_OFF,
+        ),
+        sms: null,
+      };
+
+    /**
+     * The certificate cleared review. It states the fact and, if we have it,
+     * the expiry — but promises nothing on either side of that. No renewal
+     * reminder, because there is no scheduler to send one and a promise we
+     * cannot keep is worse than silence; and booking is "subject to the normal
+     * requirements" rather than guaranteed, because insurance is one gate among
+     * several and clearing it is not the same as clearing all of them.
+     */
+    case "insurance_verified":
+      return {
+        subject: "Your insurance is verified",
+        body: lines(
+          greeting(name),
+          "Your liability insurance has been verified and is now on file.",
+          context.until ? `Coverage expires: ${context.until}` : null,
+          "You can continue booking spaces subject to the normal booking requirements.",
+          SIGN_OFF,
+        ),
+        sms: null,
+      };
+
+    /**
+     * Turned down, in the reviewer's own words. A rejection with nothing
+     * attached leaves a practitioner uploading the same certificate again, so
+     * the note carries — and the message says plainly what to do next.
+     */
+    case "insurance_rejected":
+      return {
+        subject: "Action needed for your insurance",
+        body: lines(
+          greeting(name),
+          "We could not verify the liability insurance certificate on your account.",
+          context.note ? `Why: ${context.note}` : null,
+          "Upload a current certificate in the app and we'll review it again.",
           SIGN_OFF,
         ),
         sms: null,

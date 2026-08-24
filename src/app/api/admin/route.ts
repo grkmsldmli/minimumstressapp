@@ -6,6 +6,8 @@ import { handled, jsonError, requireUser } from "@/lib/api/session";
 import { dateOnly, integer, jsonObject, oneOf, optionalString, uuid } from "@/lib/api/validate";
 import { ClaimError, decideClaim } from "@/lib/claim-service";
 import { CLAIM_CAP_CENTS } from "@/lib/claims";
+import { formatCoverageDate } from "@/lib/format-date";
+import { notifyInsuranceReviewed } from "@/lib/notify/for-insurance";
 import { RefundError, decideRefund } from "@/lib/refund-service";
 import { supabaseAdmin } from "@/lib/supabase/server";
 
@@ -373,7 +375,7 @@ export async function POST(request: NextRequest): Promise<Response> {
         const policyNumber = optionalString(body.value, "policyNumber", { max: 200 });
         if (!policyNumber.ok) return jsonError(policyNumber.reason, 400);
 
-        const { error } = await admin
+        const { data, error } = await admin
           .from("profiles")
           .update({
             insurance_doc_state: "verified",
@@ -386,7 +388,8 @@ export async function POST(request: NextRequest): Promise<Response> {
             insurance_review_note: null,
           })
           .eq("id", id.value)
-          .eq("account_type", "practitioner");
+          .eq("account_type", "practitioner")
+          .select("insurance_doc_path");
 
         if (error) {
           return jsonError(
@@ -396,6 +399,19 @@ export async function POST(request: NextRequest): Promise<Response> {
             400,
           );
         }
+
+        // Tell them, but only for a row that actually changed — a stray id that
+        // matched no practitioner is a no-op, not a verification. The email
+        // comes after the write and cannot fail it: see notifyInsuranceReviewed.
+        const verified = data?.[0];
+        if (verified?.insurance_doc_path) {
+          await notifyInsuranceReviewed(admin, id.value, {
+            outcome: "verified",
+            certificate: verified.insurance_doc_path,
+            expiresLabel: formatCoverageDate(expires.value),
+          });
+        }
+
         return Response.json({ ok: true });
       }
 
@@ -412,7 +428,7 @@ export async function POST(request: NextRequest): Promise<Response> {
           return jsonError("Say why — it is shown to them", 400);
         }
 
-        const { error } = await admin
+        const { data, error } = await admin
           .from("profiles")
           .update({
             insurance_doc_state: "rejected",
@@ -422,8 +438,21 @@ export async function POST(request: NextRequest): Promise<Response> {
             insurance_review_note: note.value,
           })
           .eq("id", id.value)
-          .eq("account_type", "practitioner");
+          .eq("account_type", "practitioner")
+          .select("insurance_doc_path");
         if (error) throw error;
+
+        // Same shape as verify: notify only a row that changed, after the
+        // write, in a call that cannot fail the decision it follows.
+        const rejected = data?.[0];
+        if (rejected?.insurance_doc_path) {
+          await notifyInsuranceReviewed(admin, id.value, {
+            outcome: "rejected",
+            certificate: rejected.insurance_doc_path,
+            note: note.value,
+          });
+        }
+
         return Response.json({ ok: true });
       }
 

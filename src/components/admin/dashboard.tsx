@@ -1371,7 +1371,14 @@ function InsuranceReviewCard({
 
   const field = "flex-1 px-3 py-2 rounded-md font-body text-[11.5px] outline-none";
   const fieldStyle = { backgroundColor: PANEL, color: "#fff", border: `1px solid ${LINE}` };
-  const canVerify = /^\d{4}-\d{2}-\d{2}$/.test(effectiveDate) && /^\d{4}-\d{2}-\d{2}$/.test(expiresAt);
+  // Native date inputs already guarantee the YYYY-MM-DD shape or an empty
+  // string, so this reads as "both are set, and the window is the right way
+  // round" — the same rule the server enforces (0054), checked here so the
+  // button is off before a submit that would only bounce. String order is date
+  // order for this format.
+  const datesReady = Boolean(effectiveDate) && Boolean(expiresAt);
+  const windowBackwards = datesReady && expiresAt < effectiveDate;
+  const canVerify = datesReady && !windowBackwards;
 
   /*
    * A certificate added before document storage existed has a bare filename in
@@ -1433,23 +1440,40 @@ function InsuranceReviewCard({
       ) : (
         <>
           <div className="flex gap-2 mt-3">
-            <input
-              value={effectiveDate}
-              onChange={(e) => setEffectiveDate(e.target.value)}
-              placeholder="Effective (YYYY-MM-DD)"
-              aria-label="Effective date"
-              className={field}
-              style={fieldStyle}
-            />
-            <input
-              value={expiresAt}
-              onChange={(e) => setExpiresAt(e.target.value)}
-              placeholder="Expires (YYYY-MM-DD)"
-              aria-label="Expiry date"
-              className={field}
-              style={fieldStyle}
-            />
+            <label className="flex-1">
+              <span className="block font-body text-[10px] uppercase tracking-wide mb-1" style={{ color: MUTED }}>
+                Effective date
+              </span>
+              <input
+                type="date"
+                value={effectiveDate}
+                onChange={(e) => setEffectiveDate(e.target.value)}
+                aria-label="Effective date"
+                max={expiresAt || undefined}
+                className="w-full px-3 py-2 rounded-md font-body text-[11.5px] outline-none"
+                style={{ ...fieldStyle, colorScheme: "dark" }}
+              />
+            </label>
+            <label className="flex-1">
+              <span className="block font-body text-[10px] uppercase tracking-wide mb-1" style={{ color: MUTED }}>
+                Expiration date
+              </span>
+              <input
+                type="date"
+                value={expiresAt}
+                onChange={(e) => setExpiresAt(e.target.value)}
+                aria-label="Expiration date"
+                min={effectiveDate || undefined}
+                className="w-full px-3 py-2 rounded-md font-body text-[11.5px] outline-none"
+                style={{ ...fieldStyle, colorScheme: "dark" }}
+              />
+            </label>
           </div>
+          {windowBackwards && (
+            <p className="font-body text-[10.5px] mt-1.5" style={{ color: CORAL }}>
+              The expiration must be on or after the effective date.
+            </p>
+          )}
           <div className="flex gap-2 mt-2">
             <input
               value={insurer}

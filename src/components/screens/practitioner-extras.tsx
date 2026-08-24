@@ -18,8 +18,6 @@ import { AccountChange } from "@/components/account-change";
 import { DeleteAccount } from "@/components/delete-account";
 import { EmergencyContactCard } from "@/components/emergency-contact";
 import { PullToRefresh } from "@/components/pull-to-refresh";
-import { BadgeCard } from "@/components/badge-card";
-import { MilestoneCard } from "@/components/milestone-card";
 import { Ambient, BreathingLogo, Headline } from "@/components/brand";
 import { ConfettiBurst, PrimaryButton, Toggle } from "@/components/primitives";
 import { SavedCard } from "@/components/saved-card";
@@ -464,13 +462,10 @@ export function ProScreen({
 export function PractitionerProfile({
   profile,
   onRefresh,
-  milestones,
-  milestoneTotal,
   bookingsCount,
   standing,
   onBack,
   onUpdate,
-  sessions,
   onDeleteAccount,
   onPickAvatar,
   onGoLegal,
@@ -519,57 +514,12 @@ export function PractitionerProfile({
       />
 
       <PullToRefresh className="flex-1 px-6 pt-5 pb-8" onRefresh={onRefresh}>
-        {/*
-          Shown always, not only when something is wrong. A rule nobody can see
-          until it costs them is a trap; this way "where do I stand" is a tap
-          away on a good day too.
-        */}
-        <div className="mb-6">
-          <StandingNotice party="practitioner" standing={standing} />
-        </div>
-
-        <GroupLabel>Notifications</GroupLabel>
-        {/*
-          Two switches stood here and neither did what it said.
-          "Booking reminders" wrote `notify_bookings`, which is the host
-          preference — the one that silences "somebody booked your space". A
-          practitioner turning it off changed nothing about their own mail, and
-          somebody who is both would have silenced their studio alerts from the
-          wrong screen without being told. Its own subtitle promised control
-          over the entry code, which is never withheld: see SILENCEABLE, where
-          the line is drawn at anything carrying a door code or a change to
-          somebody's day.
-          "Offers" wrote a column nothing reads. There is no offers message and
-          no send that consults it — the same fault this file's own comment
-          records as a bug, left in place for one more switch.
-          Nothing a practitioner receives is optional, because all of it is
-          about a session they paid for. So the section says that instead of
-          offering a choice that does not exist. When there is marketing to
-          send, the switch comes back with a sender that honours it.
-        */}
-        <div
-          className="rounded-2xl p-4"
-          style={{ backgroundColor: "#F4F8FC", border: "1px solid #E7EEF6" }}
-        >
-          <p className="font-body font-normal text-[15px] leading-relaxed text-ink-muted">
-            We email you about your own sessions — confirmations, your entry code, and anything
-            that changes. Nothing else, and no marketing.
-          </p>
-        </div>
-
-        <div className="mt-6">
-          <GroupLabel>Account</GroupLabel>
-        </div>
+        {/* Professional — first, because it gates booking eligibility. */}
+        <GroupLabel>Professional</GroupLabel>
         <div className="flex flex-col gap-2.5">
-          {/*
-            The card is kept and can be charged off-session afterwards, so this
-            is a screen rather than a label. Saying only where it is typed was
-            silent about the part that matters: what can reach it later.
-          */}
-          <SavedCard isPro={profile.isPro} />
           <ProfileRow
             icon={FileUp}
-            label="Insurance certificate"
+            label="Liability insurance"
             // The status, not the filename: what a professional needs to know
             // here is whether they can book, and a file on record that is still
             // in review or has lapsed cannot. Derived from the stored review
@@ -589,6 +539,18 @@ export function PractitionerProfile({
             }
             onClick={onGoInsurance}
           />
+        </div>
+
+        <div className="mt-6">
+          <GroupLabel>Bookings &amp; payments</GroupLabel>
+        </div>
+        <div className="flex flex-col gap-2.5">
+          {/*
+            The card is kept and can be charged off-session afterwards, so this
+            is a screen rather than a label. Saying only where it is typed was
+            silent about the part that matters: what can reach it later.
+          */}
+          <SavedCard isPro={profile.isPro} />
           {/*
             Shown with a count when something is waiting, because being asked
             to answer an accusation is not a thing to find by browsing.
@@ -596,35 +558,60 @@ export function PractitionerProfile({
           <ProfileRow
             icon={Scale}
             label="Sorted out"
-            value={
-              disputesWaiting > 0
-                ? `${disputesWaiting} waiting on you`
-                : undefined
-            }
+            value={disputesWaiting > 0 ? `${disputesWaiting} waiting on you` : undefined}
             onClick={onGoDisputes}
           />
-          <ProfileRow icon={ScrollText} label="Terms & privacy" onClick={onGoLegal} />
-          <ProfileRow icon={LogOut} label="Log out" onClick={onSignOut} danger />
-
-          {profile.accountType && (
-            <AccountChange accountType={profile.accountType} onRequest={onRequestAccountChange} />
-          )}
         </div>
 
         <div className="mt-6">
-          <MilestoneCard party="practitioner" earned={milestones} total={milestoneTotal} />
-          <BadgeCard party="practitioner" sessions={sessions} />
+          <GroupLabel>Safety &amp; notifications</GroupLabel>
         </div>
-
-        {/*
-          Asked of both sides. Somebody alone in a stranger's building and
-          somebody letting a stranger into theirs are in the same position.
-        */}
-        <div className="mt-6">
+        <div className="flex flex-col gap-2.5">
+          {/*
+            Nothing a practitioner receives is optional — all of it is about a
+            session they paid for — so this states that rather than offering a
+            switch that would not switch anything.
+          */}
+          <div
+            className="rounded-2xl p-4"
+            style={{ backgroundColor: "#F4F8FC", border: "1px solid #E7EEF6" }}
+          >
+            <p className="font-body font-normal text-[15px] leading-relaxed text-ink-muted">
+              We email you about your own sessions — confirmations, your entry code, and anything
+              that changes. Nothing else, and no marketing.
+            </p>
+          </div>
+          {/*
+            Asked of both sides. Somebody alone in a stranger's building and
+            somebody letting a stranger into theirs are in the same position.
+          */}
           <EmergencyContactCard
             contact={profile.emergencyContact}
             onSave={(emergencyContact) => onUpdate({ emergencyContact })}
           />
+        </div>
+
+        {/*
+          Shown always, not only when something is wrong. A rule nobody can see
+          until it costs them is a trap; this way "where do I stand" is a tap
+          away on a good day too.
+        */}
+        <div className="mt-6">
+          <GroupLabel>Account standing</GroupLabel>
+        </div>
+        <div className="flex flex-col gap-2.5">
+          <StandingNotice party="practitioner" standing={standing} />
+        </div>
+
+        <div className="mt-6">
+          <GroupLabel>Account &amp; legal</GroupLabel>
+        </div>
+        <div className="flex flex-col gap-2.5">
+          <ProfileRow icon={ScrollText} label="Terms & privacy" onClick={onGoLegal} />
+          {profile.accountType && (
+            <AccountChange accountType={profile.accountType} onRequest={onRequestAccountChange} />
+          )}
+          <ProfileRow icon={LogOut} label="Log out" onClick={onSignOut} danger />
         </div>
 
         {/* Last, and on its own. Nothing here is undoable except this. */}

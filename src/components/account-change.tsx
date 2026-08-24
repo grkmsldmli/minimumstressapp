@@ -65,7 +65,7 @@ export function AccountChange({
         style={{ color: "#8CA3BD" }}
       >
         <ArrowLeftRight size={13} />
-        I signed up as the wrong one
+        Need a different account type?
       </button>
     );
   }

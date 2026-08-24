@@ -143,7 +143,7 @@ export function EmergencyContactCard({
               ? "Save contact"
               : onFile
                 ? "Saved"
-                : "Nothing saved yet"}
+                : "Not added"}
       </button>
     </div>
   );

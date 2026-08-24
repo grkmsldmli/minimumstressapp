@@ -21,8 +21,6 @@ import { DeleteAccount } from "@/components/delete-account";
 import { DocumentStatus } from "@/components/document-status";
 import { EmergencyContactCard } from "@/components/emergency-contact";
 import { PullToRefresh } from "@/components/pull-to-refresh";
-import { BadgeCard } from "@/components/badge-card";
-import { MilestoneCard } from "@/components/milestone-card";
 import { Ambient, Headline, LogoBadge } from "@/components/brand";
 import { PrimaryButton } from "@/components/primitives";
 import { RequestQueue } from "@/components/request-queue";
@@ -914,9 +912,6 @@ export function HostProfile({
   standing,
   onBack,
   onUpdate,
-  sessions,
-  milestones,
-  milestoneTotal,
   onDeleteAccount,
   onPickAvatar,
   onGoLegal,
@@ -995,31 +990,23 @@ export function HostProfile({
       />
 
       <div className="flex-1 overflow-y-auto px-6 pt-5 pb-8">
-        {/* Always visible, so it is never a surprise on the day it costs something. */}
-        <div className="mb-6">
-          <StandingNotice party="host" standing={standing} />
-        </div>
-
-        <GroupLabel>Notifications</GroupLabel>
+        <GroupLabel>Hosting</GroupLabel>
         <div className="flex flex-col gap-2.5">
-          <SettingToggle
-            label="New booking alerts"
-            sub="The moment someone books"
-            on={profile.notifyBookings}
-            onToggle={() => onUpdate({ notifyBookings: !profile.notifyBookings })}
-          />
           {/*
-            "Payout alerts — when money lands in your account" once stood here
-            and switched nothing off: SILENCEABLE maps it to `host_payout_sent`,
-            a kind nobody sends. There is no arriving-money email to silence.
-            The only payout mail a host gets is payout_failed — money stuck at
-            their bank — which is never optional, so there is no toggle for it.
-            The switch above is the real one, and gates host_new_booking.
+            The switch that decides whether a space exists for anybody else —
+            hosting, not account admin, so it leads the page. Hiding a space used
+            to live three taps inside Edit.
           */}
+          <ProfileRow
+            icon={Building2}
+            label="Your spaces"
+            value={spacesSummary(spaces)}
+            onClick={onGoSpaces}
+          />
         </div>
 
         <div className="mt-6">
-          <GroupLabel>Payouts</GroupLabel>
+          <GroupLabel>Bookings &amp; payouts</GroupLabel>
         </div>
         <div className="flex flex-col gap-2.5">
           {profile.payoutSetup === "ready" ? (
@@ -1183,44 +1170,39 @@ export function HostProfile({
         </div>
 
         <div className="mt-6">
-          <GroupLabel>Account</GroupLabel>
+          <GroupLabel>Safety &amp; notifications</GroupLabel>
         </div>
         <div className="flex flex-col gap-2.5">
-          {/*
-            Above the legal rows because it is the one somebody comes here for.
-            Hiding a space used to live three taps inside Edit, which is the
-            wrong place: it is not an edit, it is the switch that decides
-            whether the space exists for anybody else.
-          */}
-          <ProfileRow
-            icon={Building2}
-            label="Your spaces"
-            value={spacesSummary(spaces)}
-            onClick={onGoSpaces}
+          <SettingToggle
+            label="New booking alerts"
+            sub="The moment someone books"
+            on={profile.notifyBookings}
+            onToggle={() => onUpdate({ notifyBookings: !profile.notifyBookings })}
           />
-          <ProfileRow icon={ScrollText} label="Terms & privacy" onClick={onGoLegal} />
-          <ProfileRow icon={LogOut} label="Log out" onClick={onSignOut} danger />
-        </div>
-
-        <div className="mt-6 flex flex-col gap-2.5">
           {/*
-            Above the badges, because these are the ones somebody can actually
-            reach this year. badge-card holds itself back until twenty-five
-            sessions and starts counting at a hundred.
+            Asked of both sides. Somebody alone in a stranger's building and
+            somebody letting a stranger into theirs are in the same position.
           */}
-          <MilestoneCard party="host" earned={milestones} total={milestoneTotal} />
-          <BadgeCard party="host" sessions={sessions} />
-        </div>
-
-        {/*
-          Asked of both sides. Somebody alone in a stranger's building and
-          somebody letting a stranger into theirs are in the same position.
-        */}
-        <div className="mt-6">
           <EmergencyContactCard
             contact={profile.emergencyContact}
             onSave={(emergencyContact) => onUpdate({ emergencyContact })}
           />
+        </div>
+
+        {/* Always visible, so it is never a surprise on the day it costs something. */}
+        <div className="mt-6">
+          <GroupLabel>Account standing</GroupLabel>
+        </div>
+        <div className="flex flex-col gap-2.5">
+          <StandingNotice party="host" standing={standing} />
+        </div>
+
+        <div className="mt-6">
+          <GroupLabel>Account &amp; legal</GroupLabel>
+        </div>
+        <div className="flex flex-col gap-2.5">
+          <ProfileRow icon={ScrollText} label="Terms & privacy" onClick={onGoLegal} />
+          <ProfileRow icon={LogOut} label="Log out" onClick={onSignOut} danger />
         </div>
 
         {/* Last, and on its own. Nothing here is undoable except this. */}

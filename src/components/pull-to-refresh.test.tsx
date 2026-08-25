@@ -15,10 +15,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { PawLoader } from "./paw-loader";
 import {
+  PTR_SLOP,
   PTR_THRESHOLD,
   PullToRefresh,
   createRefreshRunner,
   pullPhase,
+  resolveGestureAxis,
   visiblePull,
 } from "./pull-to-refresh";
 
@@ -92,6 +94,42 @@ describe("createRefreshRunner", () => {
     const runner = createRefreshRunner(onRefresh);
     await expect(runner.run()).resolves.toBeUndefined(); // swallows the error
     expect(runner.running).toBe(false); // and releases
+  });
+});
+
+/**
+ * The direction rule that lets the pull and the horizontal listing rail share
+ * one scroll container. The freeze it fixes: the pull's non-passive touchmove
+ * cancelled the first move of a horizontal swipe, which cancels the rail's
+ * native scroll for the whole gesture. So a horizontal drag must be recognised
+ * and handed over — never claimed as a pull.
+ */
+describe("resolveGestureAxis", () => {
+  it("says nothing until the finger passes the slop", () => {
+    expect(resolveGestureAxis(0, 0)).toBeNull();
+    expect(resolveGestureAxis(PTR_SLOP - 1, PTR_SLOP - 1)).toBeNull();
+    // A tap or the first pixel of jitter must not lock a direction — and, while
+    // null, the caller prevents nothing, so the rail can start scrolling.
+    expect(resolveGestureAxis(3, 2)).toBeNull();
+  });
+
+  it("hands a horizontal drag to the carousel", () => {
+    expect(resolveGestureAxis(40, 5)).toBe("horizontal");
+    expect(resolveGestureAxis(-40, 5)).toBe("horizontal");
+    // The exact bug: a horizontal swipe with a little downward drift used to be
+    // treated as a downward pull and frozen. It is horizontal.
+    expect(resolveGestureAxis(30, 12)).toBe("horizontal");
+  });
+
+  it("keeps a vertical drag for the pull", () => {
+    expect(resolveGestureAxis(5, 40)).toBe("vertical");
+    expect(resolveGestureAxis(-5, 40)).toBe("vertical");
+    expect(resolveGestureAxis(12, 30)).toBe("vertical");
+  });
+
+  it("resolves the moment either axis crosses the slop", () => {
+    expect(resolveGestureAxis(PTR_SLOP, 0)).toBe("horizontal");
+    expect(resolveGestureAxis(0, PTR_SLOP)).toBe("vertical");
   });
 });
 

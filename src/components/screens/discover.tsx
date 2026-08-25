@@ -319,7 +319,7 @@ export function Discover({
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search by name, room type or what's in it"
+            placeholder="Search spaces"
             aria-label="Search spaces"
             className="font-body font-normal text-[14px] outline-none w-full min-w-0 bg-transparent text-white placeholder:text-white/50 placeholder:truncate"
           />
@@ -370,7 +370,10 @@ export function Discover({
               */}
               <div
                 ref={railRef}
-                className="flex gap-3.5 px-6 pb-6 overflow-x-auto no-scrollbar snap-x snap-mandatory scroll-pl-6"
+                // Proximity, not mandatory: the finger drags freely and the rail
+                // only settles toward a card when it comes to rest near one, so a
+                // flick never feels caught. Snap is kept, just gentler.
+                className="flex gap-3.5 px-6 pb-6 overflow-x-auto no-scrollbar snap-x snap-proximity scroll-pl-6"
                 style={{ perspective: 800 }}
               >
                 {visible.slice(0, 4).map((space, i) => (

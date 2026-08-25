@@ -21,6 +21,34 @@ import { PawLoader } from "./paw-loader";
 export const PTR_THRESHOLD = 70;
 export const PTR_MAX_PULL = 90;
 export const PTR_RESISTANCE = 0.5;
+/** How far a finger travels before its direction is judged, in px. */
+export const PTR_SLOP = 8;
+
+/**
+ * Which way a drag is going, once it has gone far enough to tell.
+ *
+ * The whole reason pull-to-refresh and the horizontal listing rail can share one
+ * scroll container without fighting: the pull only ever owns a *vertical* drag.
+ * A drag that leans horizontal belongs to the rail, and this returns as much so
+ * the caller can stand down and never preventDefault — which is what was
+ * freezing the carousel, since a non-passive touchmove that cancels the first
+ * horizontal move cancels the rail's native scroll for the whole gesture.
+ *
+ * Null until the finger has moved past the slop, so a tap or the first pixel of
+ * jitter does not lock a direction — and, just as importantly, nothing is
+ * prevented while the answer is still null, leaving the browser free to start
+ * scrolling the rail immediately.
+ */
+export function resolveGestureAxis(
+  dx: number,
+  dy: number,
+  slop = PTR_SLOP,
+): "horizontal" | "vertical" | null {
+  const adx = Math.abs(dx);
+  const ady = Math.abs(dy);
+  if (adx < slop && ady < slop) return null;
+  return adx > ady ? "horizontal" : "vertical";
+}
 
 export type PtrPhase = "idle" | "pulling" | "ready" | "refreshing" | "complete";
 
@@ -81,9 +109,13 @@ export function usePullToRefresh(
     if (!el) return;
 
     const runner = createRefreshRunner(() => onRefreshRef.current());
+    let startX: number | null = null;
     let startY: number | null = null;
     let pullNow = 0;
     let active = false;
+    // Locked once the drag passes the slop. Until then no direction is assumed
+    // and nothing is prevented, so the rail can scroll from the first pixel.
+    let axis: "horizontal" | "vertical" | null = null;
 
     const set = (p: number) => {
       pullNow = p;
@@ -91,21 +123,24 @@ export function usePullToRefresh(
     };
 
     const onStart = (e: TouchEvent) => {
+      axis = null;
       if (runner.running || e.touches.length !== 1) {
         active = false;
         return;
       }
       if (el.scrollTop <= 0) {
+        startX = e.touches[0].clientX;
         startY = e.touches[0].clientY;
         active = true;
       } else {
+        startX = null;
         startY = null;
         active = false;
       }
     };
 
     const onMove = (e: TouchEvent) => {
-      if (!active || runner.running || startY === null) return;
+      if (!active || runner.running || startY === null || startX === null) return;
       // The finger reached the top then pushed content up: stand down.
       if (el.scrollTop > 0) {
         active = false;
@@ -113,7 +148,23 @@ export function usePullToRefresh(
         setPhase("idle");
         return;
       }
+
+      const dx = e.touches[0].clientX - startX;
       const dy = e.touches[0].clientY - startY;
+
+      // Decide direction once, from the first real movement. A horizontal drag
+      // is the carousel's: hand it over and never preventDefault, so its native
+      // scroll runs without the freeze. Below the slop, do nothing yet — the
+      // browser stays free to begin scrolling the rail.
+      if (axis === null) {
+        axis = resolveGestureAxis(dx, dy);
+        if (axis === null) return;
+        if (axis === "horizontal") {
+          active = false;
+          return;
+        }
+      }
+
       if (dy <= 0) {
         if (pullNow !== 0) {
           set(0);
@@ -121,7 +172,7 @@ export function usePullToRefresh(
         }
         return;
       }
-      // We own the gesture now — stop native scroll and overscroll refresh.
+      // A vertical pull at the top is ours — stop native scroll and overscroll.
       e.preventDefault();
       const v = visiblePull(dy);
       set(v);
@@ -129,6 +180,8 @@ export function usePullToRefresh(
     };
 
     const finish = () => {
+      axis = null;
+      startX = null;
       if (!active) return;
       active = false;
       startY = null;

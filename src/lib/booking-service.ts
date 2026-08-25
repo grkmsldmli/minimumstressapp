@@ -5,6 +5,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { DeclaredUse } from "./booking-use";
 
 import { abandonedBefore } from "./abandoned";
+import { type HeldBookingRow, isHeldBooking } from "./booking-visibility";
 import {
   explainRejection,
   planBooking,
@@ -211,7 +212,7 @@ async function gatherBookingFacts(
     { data: hostRow },
     { data: blocks },
     { data: taken },
-    { count: upcomingCount },
+    { data: upcomingRows },
     { data: cancels },
   ] = await Promise.all([
     admin
@@ -251,7 +252,12 @@ async function gatherBookingFacts(
      */
     admin
       .from("bookings")
-      .select("id", { count: "exact", head: true })
+      // The fields the held-booking rule reads, not a raw count: an unpaid
+      // instant checkout hold (not_required, captured_at null) is upcoming in
+      // the table but is not a committed session, so it must not consume the
+      // Free plan's allowance. isHeldBooking makes that call, the same rule the
+      // bookings list uses.
+      .select("captured_at, approval_state, authorized_at")
       .eq("practitioner_id", practitionerId)
       .eq("status", "upcoming")
       .gt("starts_at", new Date().toISOString()),
@@ -330,7 +336,7 @@ async function gatherBookingFacts(
       },
     },
     takenStarts: (taken ?? []).map((b) => new Date(b.starts_at)),
-    upcomingCount: upcomingCount ?? 0,
+    upcomingCount: ((upcomingRows ?? []) as HeldBookingRow[]).filter(isHeldBooking).length,
     // The shared rule: abandoned checkouts (no captured_at) drop out here, the
     // same way the profile card and admin watchlist drop them, and standingFor
     // keeps only this practitioner's own from what remains.

@@ -22,6 +22,7 @@
  */
 
 import { apiFetch } from "./api-fetch";
+import { type HeldBookingRow, isHeldBooking } from "./booking-visibility";
 import { payoutSetupFrom } from "./payout-setup";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -151,6 +152,61 @@ interface MediaRow {
   space_id: string;
   storage_path: string;
   kind: "image" | "video";
+}
+
+/** A row of `bookings_with_access_code`, the fields a Booking is built from. */
+interface BookingViewRow {
+  id: string;
+  space_id: string;
+  practitioner_id: string;
+  starts_at: string;
+  ends_at: string;
+  status: string;
+  is_instant: boolean;
+  was_pro: boolean;
+  host_rate_cents: number;
+  service_fee_cents: number;
+  instant_fee_cents: number;
+  pro_discount_cents: number;
+  total_cents: number;
+  platform_cents: number;
+  revealed_access_code: string | null;
+  access_code_revealed_at: string;
+  approval_state: string | null;
+}
+
+/**
+ * One view row into the domain Booking. Shared by the list and the by-id read
+ * so they build the same shape; the space label comes from the public catalogue
+ * because the view carries no name.
+ */
+function mapBookingRow(row: BookingViewRow, byId: Map<string, PublicSpace>): Booking {
+  const space = byId.get(row.space_id);
+  const category = (space?.category ?? "physical") as CategoryKey;
+  return {
+    id: row.id,
+    spaceId: row.space_id,
+    spaceName: space?.name ?? "Your booking",
+    roomType: roomTypeFor(category),
+    category,
+    practitionerId: row.practitioner_id,
+    startsAt: new Date(row.starts_at),
+    endsAt: new Date(row.ends_at),
+    timeZone: space?.timeZone ?? FALLBACK_ZONE,
+    status: row.status as BookingStatus,
+    isInstant: row.is_instant,
+    wasPro: row.was_pro,
+    hostRateCents: row.host_rate_cents,
+    serviceFeeCents: row.service_fee_cents,
+    instantFeeCents: row.instant_fee_cents,
+    proDiscountCents: row.pro_discount_cents,
+    totalCents: row.total_cents,
+    platformCents: row.platform_cents,
+    revealedAccessCode: row.revealed_access_code ?? null,
+    accessCodeRevealedAt: new Date(row.access_code_revealed_at),
+    // Older rows predate the column and are not requests.
+    approvalState: (row.approval_state ?? "not_required") as ApprovalState,
+  };
 }
 
 
@@ -641,11 +697,7 @@ export class SupabaseRepository implements Repository {
      * and the money is held. An abandoned checkout has neither, so it is still
      * excluded, which is what this filter was always for.
      */
-    const real = data.filter(
-      (row) =>
-        row.captured_at !== null ||
-        (row.approval_state === "pending" && row.authorized_at !== null),
-    );
+    const real = data.filter((row) => isHeldBooking(row as HeldBookingRow));
     if (!real.length) return [];
 
     // The view carries no space name, and a practitioner cannot read `spaces`
@@ -653,34 +705,34 @@ export class SupabaseRepository implements Repository {
     const spaces = await this.listPublicSpaces();
     const byId = new Map(spaces.map((s) => [s.id, s]));
 
-    return real.map((row): Booking => {
-      const space = byId.get(row.space_id);
-      const category = (space?.category ?? "physical") as CategoryKey;
-      return {
-        id: row.id,
-        spaceId: row.space_id,
-        spaceName: space?.name ?? "Your booking",
-        roomType: roomTypeFor(category),
-        category,
-        practitionerId: row.practitioner_id,
-        startsAt: new Date(row.starts_at),
-        endsAt: new Date(row.ends_at),
-        timeZone: space?.timeZone ?? FALLBACK_ZONE,
-        status: row.status as BookingStatus,
-        isInstant: row.is_instant,
-        wasPro: row.was_pro,
-        hostRateCents: row.host_rate_cents,
-        serviceFeeCents: row.service_fee_cents,
-        instantFeeCents: row.instant_fee_cents,
-        proDiscountCents: row.pro_discount_cents,
-        totalCents: row.total_cents,
-        platformCents: row.platform_cents,
-        revealedAccessCode: row.revealed_access_code ?? null,
-        accessCodeRevealedAt: new Date(row.access_code_revealed_at),
-        // Older rows predate the column and are not requests.
-        approvalState: (row.approval_state ?? "not_required") as ApprovalState,
-      };
-    });
+    return real.map((row) => mapBookingRow(row, byId));
+  }
+
+  /**
+   * One booking by its id, the just-created one included.
+   *
+   * `listMyBookings` deliberately hides an in-flight checkout hold — captured_at
+   * null, approval "not_required" — because it has no place in a list of real
+   * sessions. But the moment right after creating one, the caller needs exactly
+   * that row back so the payment sheet can open against it. This reads it
+   * directly by id, scoped to the signed-in practitioner so it is still only
+   * ever their own booking, and applies no held-visibility filter. It invents
+   * nothing: every field is the server's, read back from the view.
+   */
+  async getBookingById(bookingId: string): Promise<Booking | null> {
+    const me = await this.userId();
+
+    const { data, error } = await this.db
+      .from("bookings_with_access_code")
+      .select("*")
+      .eq("id", bookingId)
+      .eq("practitioner_id", me)
+      .maybeSingle();
+    if (error) throw asError(error);
+    if (!data) return null;
+
+    const spaces = await this.listPublicSpaces();
+    return mapBookingRow(data, new Map(spaces.map((s) => [s.id, s])));
   }
 
   /**
@@ -722,10 +774,12 @@ export class SupabaseRepository implements Repository {
       throw new Error(payload.error ?? `Booking failed (${response.status})`);
     }
 
-    // Read back rather than assembled from the response: the row the database
-    // holds is the one every other screen will show, and building a second
-    // version here is how two truths appear.
-    const booking = (await this.listMyBookings()).find((b) => b.id === payload.bookingId);
+    // Read the row back by id rather than through listMyBookings: a booking
+    // still awaiting its card is a hold that list deliberately hides, so routing
+    // the just-created one through it would drop the very row the payment sheet
+    // needs. This reads the database's own row directly — no second, invented
+    // version — so the sheet opens against real server state.
+    const booking = await this.getBookingById(payload.bookingId);
     if (!booking) throw new Error("Booking was created but could not be read back");
 
     return { booking, clientSecret: payload.clientSecret ?? null };

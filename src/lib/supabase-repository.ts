@@ -21,6 +21,7 @@
  * routes in the Stripe milestone; until then they throw rather than pretend.
  */
 
+import { apiFetch } from "./api-fetch";
 import { payoutSetupFrom } from "./payout-setup";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -359,7 +360,7 @@ export class SupabaseRepository implements Repository {
    * granted itself.
    */
   async startProSubscription(): Promise<Profile> {
-    const response = await fetch("/api/pro", { method: "POST" });
+    const response = await apiFetch("/api/pro", { method: "POST" });
 
     if (!response.ok) {
       const { error } = await response.json().catch(() => ({ error: null }));
@@ -383,7 +384,7 @@ export class SupabaseRepository implements Repository {
    * only once Stripe says the account can actually receive money.
    */
   async connectPayouts(): Promise<Profile> {
-    const response = await fetch("/api/connect/onboard", { method: "POST" });
+    const response = await apiFetch("/api/connect/onboard", { method: "POST" });
     if (!response.ok) {
       const { error } = await response.json().catch(() => ({ error: null }));
       throw new Error(error ?? "Could not start payout setup");
@@ -414,7 +415,7 @@ export class SupabaseRepository implements Repository {
    * has always worked, a few lines up.
    */
   async openPayoutDashboard(): Promise<void> {
-    const response = await fetch("/api/connect/dashboard", { method: "POST" });
+    const response = await apiFetch("/api/connect/dashboard", { method: "POST" });
     if (!response.ok) {
       const { error } = await response.json().catch(() => ({ error: null }));
       throw new Error(error ?? "Could not open your payout account");
@@ -697,7 +698,7 @@ export class SupabaseRepository implements Repository {
    * it were safe to.
    */
   async createBooking(input: CreateBookingInput): Promise<CreatedBooking> {
-    const response = await fetch("/api/bookings", {
+    const response = await apiFetch("/api/bookings", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -736,7 +737,7 @@ export class SupabaseRepository implements Repository {
    * same route for the same reason.
    */
   async cancelBooking(id: string, actor: "practitioner" | "host"): Promise<Booking> {
-    const response = await fetch(`/api/bookings/${encodeURIComponent(id)}/cancel`, {
+    const response = await apiFetch(`/api/bookings/${encodeURIComponent(id)}/cancel`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ actor }),
@@ -758,7 +759,7 @@ export class SupabaseRepository implements Repository {
    * `reviews` has no insert policy at all.
    */
   async submitReview(input: ReviewInput): Promise<void> {
-    const response = await fetch("/api/reviews", {
+    const response = await apiFetch("/api/reviews", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(input),
@@ -830,7 +831,7 @@ export class SupabaseRepository implements Repository {
   }
 
   async sendMessage(bookingId: string, body: string): Promise<{ notice: string | null }> {
-    const response = await fetch("/api/messages", {
+    const response = await apiFetch("/api/messages", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ bookingId, body }),
@@ -1500,7 +1501,7 @@ export class SupabaseRepository implements Repository {
     decision: "approve" | "decline",
     note?: string,
   ): Promise<void> {
-    const response = await fetch(
+    const response = await apiFetch(
       `/api/bookings/${encodeURIComponent(bookingId)}/approval`,
       {
         method: "POST",

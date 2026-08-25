@@ -13,6 +13,7 @@ import type {
   PublicReview,
   SpaceAccessDetails,
 } from "@/lib/domain";
+import { apiFetch } from "@/lib/api-fetch";
 import { errorMessage } from "@/lib/error-message";
 import { delayFor, isTransient } from "@/lib/transient";
 import { hostFactsFrom, practitionerFactsFrom } from "@/lib/milestone-facts";
@@ -340,6 +341,8 @@ export function App() {
    */
   const sortByLocation = useCallback(async (query: string) => {
     try {
+      // Public and unauthenticated — no session needed, so a plain fetch, not
+      // apiFetch. It reaches no user data; attaching a token would be pointless.
       const response = await fetch(`/api/spaces/nearby?${query}`);
       const body = (await response.json()) as {
         spaces?: { id: string; distanceLabel: string }[];
@@ -602,7 +605,7 @@ export function App() {
    * would refetch it and look like nothing happened.
    */
   const deleteAccount = useCallback(async () => {
-    const response = await fetch("/api/account/delete", {
+    const response = await apiFetch("/api/account/delete", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ confirm: "DELETE" }),
@@ -1199,7 +1202,7 @@ export function App() {
              */
             if (weeks > 1) {
               setBookingError(null);
-              const response = await fetch("/api/bookings/series", {
+              const response = await apiFetch("/api/bookings/series", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -1332,7 +1335,7 @@ export function App() {
           booking={subject}
           onBack={back}
           onSubmit={async (input) => {
-            const response = await fetch(`/api/bookings/${subject.id}/refund`, {
+            const response = await apiFetch(`/api/bookings/${subject.id}/refund`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify(input),
@@ -1361,7 +1364,7 @@ export function App() {
           hourlyRateCents={room.hourlyRateCents}
           onBack={back}
           onSubmit={async (input) => {
-            const response = await fetch(`/api/bookings/${subject.id}/claim`, {
+            const response = await apiFetch(`/api/bookings/${subject.id}/claim`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify(input),
@@ -1385,7 +1388,7 @@ export function App() {
               dispute.kind === "refund" ? `/api/refunds/${dispute.id}` : `/api/claims/${dispute.id}`;
             const field = dispute.kind === "refund" ? { reply } : { reply };
 
-            const response = await fetch(url, {
+            const response = await apiFetch(url, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify(field),
@@ -1496,7 +1499,7 @@ export function App() {
           onGoLegal={() => go("legal")}
           onGoDisputes={() => go("disputes")}
           onRequestAccountChange={async (reason) => {
-            const response = await fetch("/api/account/change-request", {
+            const response = await apiFetch("/api/account/change-request", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({

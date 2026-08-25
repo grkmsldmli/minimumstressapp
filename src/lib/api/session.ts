@@ -1,25 +1,31 @@
 import "server-only";
 
 import type { SupabaseClient, User } from "@supabase/supabase-js";
+import { headers } from "next/headers";
 
+import { bearerToken } from "../auth-header";
 import { supabaseServer } from "../supabase/server";
 
 /**
  * Who is making this request.
  *
- * Read from the session cookie via Supabase, never from the request body. A
- * route that accepted a practitioner id from its caller would let anyone book
- * as anyone — and every authorization check downstream would be checking a
- * claim rather than a fact.
+ * Read from the session, never from the request body. A route that accepted a
+ * practitioner id from its caller would let anyone book as anyone — and every
+ * authorization check downstream would be checking a claim rather than a fact.
  *
- * `getUser()` rather than `getSession()`: the former revalidates the token with
- * Supabase, the latter trusts whatever the cookie says.
+ * The session arrives one of two ways: the cookie on the web, or — because the
+ * native shell's cookie does not survive its WebView — an `Authorization:
+ * Bearer <jwt>` header carrying the same access token. Either way the token is
+ * handed to `getUser`, which revalidates it with Supabase rather than trusting
+ * it (unlike `getSession`), so a bearer is exactly as trustworthy as a cookie
+ * and neither trusts a client-supplied identity.
  */
 export async function requireUser(): Promise<
   { user: User; db: SupabaseClient } | { response: Response }
 > {
   const db = await supabaseServer();
-  const { data, error } = await db.auth.getUser();
+  const token = bearerToken((await headers()).get("authorization"));
+  const { data, error } = token ? await db.auth.getUser(token) : await db.auth.getUser();
 
   if (error || !data.user) {
     return { response: jsonError("Sign in to continue", 401) };

@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Check, Key, MapPin, Repeat, Ruler, Sun, Users, Zap } from "lucide-react";
 
 import { AccessPanel } from "@/components/access-panel";
@@ -161,6 +161,48 @@ export function SpaceDetail({
   const [weeks, setWeeks] = useState(1);
 
   /*
+   * The hero collapses as the page scrolls, driven by the one scroll container's
+   * own position — not a second scroll area, and not a scroll-timeline, which
+   * iOS Safari does not run. A passive listener reads scrollTop once per frame
+   * and writes a single custom property; there is no layout read interleaved
+   * with the write, so nothing thrashes, and SpaceGallery's height simply
+   * follows `--hero-h`. At the top the hero is its full self; a short scroll
+   * trims it to about two-thirds and it holds there; scrolling back up restores
+   * it. The number the hero starts at (320) matches the height passed below.
+   */
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const scroller = scrollRef.current;
+    const root = rootRef.current;
+    if (!scroller || !root) return;
+
+    const EXPANDED = 320;
+    const COLLAPSED = 200;
+    const DISTANCE = 160;
+    let frame = 0;
+
+    const apply = () => {
+      frame = 0;
+      const p = Math.min(1, Math.max(0, scroller.scrollTop / DISTANCE));
+      root.style.setProperty(
+        "--hero-h",
+        `${Math.round(EXPANDED - (EXPANDED - COLLAPSED) * p)}px`,
+      );
+    };
+    const onScroll = () => {
+      if (!frame) frame = requestAnimationFrame(apply);
+    };
+
+    apply();
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      scroller.removeEventListener("scroll", onScroll);
+      if (frame) cancelAnimationFrame(frame);
+    };
+  }, []);
+
+  /*
    * The window is no longer computed here. The calendar owns which days are
    * offered, and `isWithinBookingHorizon` below is what actually refuses one —
    * so there is one rule rather than a screen-side copy that can drift from it,
@@ -269,7 +311,7 @@ export function SpaceDetail({
    * at the bottom of it.
    */
   return (
-    <div className="h-full flex flex-col relative screen-in bg-white">
+    <div ref={rootRef} className="h-full flex flex-col relative screen-in bg-white">
       <SpaceGallery media={space.media} category={space.category} height={320}>
         <button
           type="button"
@@ -299,7 +341,7 @@ export function SpaceDetail({
         </div>
       </SpaceGallery>
 
-      <div className="flex-1 overflow-y-auto px-6 pt-5">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 pt-5">
         <p className="font-body font-normal text-[15px] leading-relaxed text-ink-muted">
           {space.description}
         </p>

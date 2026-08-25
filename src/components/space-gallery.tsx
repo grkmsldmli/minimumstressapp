@@ -87,7 +87,17 @@ export function SpaceGallery({
   }, [track, media.length]);
 
   return (
-    <div className="relative shrink-0 overflow-hidden" style={{ height }}>
+    /*
+     * Height is the passed number by default, but yields to `--hero-h` when an
+     * ancestor sets it — which is how the detail screen collapses the hero as
+     * the page scrolls, without this component knowing anything about scrolling.
+     * Where no ancestor sets the variable, the fallback keeps every other caller
+     * at exactly the height it asked for.
+     */
+    <div
+      className="relative shrink-0 overflow-hidden"
+      style={{ height: `var(--hero-h, ${height}px)` }}
+    >
       {media.length === 0 ? (
         <div
           className="absolute inset-0 flex items-center justify-center"

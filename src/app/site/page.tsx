@@ -8,7 +8,7 @@ import { SpaceCarousel, type Slide } from "@/components/site/space-carousel";
 import { SpaceSearch } from "@/components/site/space-search";
 import { APP_URL, BRAND } from "@/lib/company";
 import { COLOUR, TYPE } from "@/lib/site-theme";
-import { CATEGORIES, type CategoryKey } from "@/lib/taxonomy";
+import { CATEGORIES, type CategoryKey, GENERIC_USE } from "@/lib/taxonomy";
 
 /**
  * A marketplace homepage that is also legible.
@@ -89,20 +89,6 @@ const BLURBS: Record<CategoryKey, string> = {
   traditional: "Hands-on rooms with a couch and a sink, for treatment work.",
   social: "A private room with two chairs, for seeing one person at a time.",
   spirit: "Still, quiet rooms for sitting, breathwork and guided practice.",
-};
-
-/**
- * The use each category opens on: the one sharing its room type's name.
- *
- * A category is not a `suitable_for` slug, and the search takes slugs — so
- * rather than teach the search a second vocabulary, each card opens the
- * broadest use inside it.
- */
-const GENERIC_USE: Record<CategoryKey, string> = {
-  physical: "movement-studio",
-  traditional: "treatment-room",
-  social: "consultation-room",
-  spirit: "meditation-room",
 };
 
 /**

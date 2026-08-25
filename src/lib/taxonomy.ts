@@ -139,6 +139,25 @@ export function specialtiesFor(key: CategoryKey): readonly string[] {
   return getCategory(key).specialties;
 }
 
+/**
+ * The broadest `suitable_for` use inside each category — the one whose name
+ * matches the category's room type.
+ *
+ * A category is not a `suitable_for` slug, and the marketing "Explore by space"
+ * cards open the search on a slug. Rather than teach the homepage a second
+ * vocabulary, each card opens the widest use in its category, and the finer
+ * ones (a category's specialties) are reached from there. Lives here, beside
+ * the categories, so the two cannot drift and a test can hold every value to a
+ * slug the app actually supports — see space-types.ts. Every value here MUST be
+ * a real SPACE_TYPES slug, or a card routes to a use the search cannot answer.
+ */
+export const GENERIC_USE: Record<CategoryKey, string> = {
+  physical: "movement-studio",
+  traditional: "treatment-room",
+  social: "consultation-room",
+  spirit: "meditation-room",
+};
+
 /* ------------------------------------------------------------------ */
 /*  Listing vocabulary                                                 */
 /* ------------------------------------------------------------------ */

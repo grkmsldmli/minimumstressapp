@@ -234,3 +234,26 @@ describe("what the middleware runs on", () => {
     }
   });
 });
+
+/**
+ * The rewrite that turns minimumstress.com into the /site pages, and the query
+ * string it must not lose on the way.
+ */
+describe("the content-site rewrite", () => {
+  const rewriteOf = (url: string) => {
+    const host = new URL(url).host;
+    return proxy(new NextRequest(url, { headers: { host } })).headers.get("x-middleware-rewrite");
+  };
+
+  it("sends a content-site path under /site", () => {
+    expect(rewriteOf("https://minimumstress.com/spaces")).toContain("/site/spaces");
+  });
+
+  it("carries the query string across, so server-side ?type filtering works", () => {
+    // A rewrite that dropped the query would hand /spaces an empty search and
+    // silently ignore the "Explore by space" filter — the whole point of it.
+    const dest = rewriteOf("https://minimumstress.com/spaces?type=movement-studio");
+    expect(dest).toContain("/site/spaces");
+    expect(dest).toContain("type=movement-studio");
+  });
+});

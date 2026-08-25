@@ -1,6 +1,6 @@
 import "server-only";
 
-import { type CityRow, type CityTypeRow, indexablePaths, pickRouteListing } from "./directory";
+import { type CityRow, type CityTypeRow, groupCities, indexablePaths, pickRouteListing } from "./directory";
 import { idFromSlug, listingPath, uuidPrefixRange } from "./listing-url";
 import { isSupabaseConfigured } from "./supabase/env";
 import { supabasePublic } from "./supabase/server";
@@ -56,6 +56,31 @@ export async function citiesWithSpaces(): Promise<CityRow[]> {
 
   if (error || !data) return [];
   return (data as CityInventoryRow[]).map(toCityRow);
+}
+
+/**
+ * The towns with live inventory in one category — what a "Explore by space"
+ * card resolves to.
+ *
+ * The marketing cards carry a space-type slug; the caller has already turned
+ * that into a category (a SpaceType knows its category). `city_inventory` is
+ * category-blind, so this reads the category's own rows from `spaces_public`
+ * and groups them into towns. `spaces_public` is active-only, so nothing
+ * unpublished is ever counted. Returns empty on any failure, the same "no
+ * towns" every caller already handles.
+ */
+export async function citiesWithCategory(category: string): Promise<CityRow[]> {
+  if (!isSupabaseConfigured()) return [];
+
+  const { data, error } = await supabasePublic()
+    .from("spaces_public")
+    .select("state, city, hourly_rate_cents")
+    .eq("category", category);
+
+  if (error || !data) return [];
+  return groupCities(
+    data as { state: string | null; city: string | null; hourly_rate_cents: number | null }[],
+  );
 }
 
 export async function cityTypesWithSpaces(): Promise<CityTypeRow[]> {

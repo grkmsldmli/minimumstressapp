@@ -9,6 +9,7 @@ import {
   citySlug,
   cityPath,
   discoverableCity,
+  groupCities,
   indexableCity,
   indexableCityType,
   indexablePaths,
@@ -295,5 +296,48 @@ describe("resolving a listing URL to one room", () => {
 
   it("returns nothing when the prefix matched no rooms at all", () => {
     expect(pickRouteListing([], route)).toBeNull();
+  });
+});
+
+/**
+ * Grouping a category's listing rows into towns, for the type-filtered
+ * directory. It stands in for the `city_inventory` view, which has no category
+ * column — so it must group and count the same way the view does.
+ */
+describe("grouping listings into towns", () => {
+  it("counts rooms per town and keeps a price range", () => {
+    const rows = [
+      { state: "CA", city: "San Carlos", hourly_rate_cents: 4500 },
+      { state: "CA", city: "San Carlos", hourly_rate_cents: 6500 },
+      { state: "CA", city: "Belmont", hourly_rate_cents: 5000 },
+    ];
+    const towns = groupCities(rows).sort((a, b) => a.city.localeCompare(b.city));
+    expect(towns).toHaveLength(2);
+    const belmont = towns.find((t) => t.city === "Belmont")!;
+    const sanCarlos = towns.find((t) => t.city === "San Carlos")!;
+    expect(sanCarlos.spaceCount).toBe(2);
+    expect(sanCarlos.minCents).toBe(4500);
+    expect(sanCarlos.maxCents).toBe(6500);
+    expect(belmont.spaceCount).toBe(1);
+  });
+
+  it("drops rows with no town, exactly as the view's not-null filter does", () => {
+    const towns = groupCities([
+      { state: "CA", city: "San Carlos", hourly_rate_cents: 4500 },
+      { state: null, city: "San Carlos", hourly_rate_cents: 4500 },
+      { state: "CA", city: null, hourly_rate_cents: 4500 },
+    ]);
+    expect(towns).toHaveLength(1);
+    expect(towns[0].spaceCount).toBe(1);
+  });
+
+  it("is empty for no rows — the category has no live rooms", () => {
+    expect(groupCities([])).toEqual([]);
+  });
+
+  it("still counts a room whose rate is missing", () => {
+    const towns = groupCities([{ state: "CA", city: "Campbell", hourly_rate_cents: null }]);
+    expect(towns[0].spaceCount).toBe(1);
+    expect(towns[0].minCents).toBe(0);
   });
 });

@@ -5,42 +5,74 @@ import { Suspense } from "react";
 import { SiteFooter, SiteHeader } from "@/components/site/chrome";
 import { RequestSpace } from "@/components/site/request-space";
 import { WEBSITE } from "@/lib/company";
-import { cityPath, discoverableCity } from "@/lib/directory";
-import { citiesWithSpaces } from "@/lib/directory-data";
+import { type CityRow, cityPath, discoverableCity } from "@/lib/directory";
+import { citiesWithCategory, citiesWithSpaces } from "@/lib/directory-data";
+import { type SpaceType, spaceTypeBySlug } from "@/lib/space-types";
 
 /**
- * Where the towns are listed, once there are any.
+ * Where the towns are listed, either all of them or filtered to one kind of use.
  *
- * The parent of every generated address, and the page that has to be honest
- * when there is nothing under it. Today that is the whole of its job: no
- listings means no towns, and a directory that invents a page per town
- * regardless would be the failure this part of the site is built to
- * avoid — a hundred addresses with nothing behind them, teaching a search
- * engine what to think of the rest.
+ * The parent of every generated address. Two jobs: be honest when there is
+ * nothing under it, and — when an "Explore by space" card sends someone here
+ * with `?type=` — show only the inventory that use is actually in, rather than
+ * the whole directory wearing that card's name.
  *
- * So when it is empty it says so and points at the thing that would fix it,
- * which is a host with a spare room.
+ * The filter resolves through the taxonomy: a space type knows its category, so
+ * `?type=movement-studio` shows the physical rooms and `?type=meditation-room`
+ * the spirit ones. A card whose category has no live rooms yet gets a
+ * category-specific empty state, never unrelated inventory borrowed to look
+ * full. The `?type=` variants are the same directory filtered, not their own
+ * pages, so their canonical stays on /spaces and they carry noindex — the
+ * faceted-URL sprawl this part of the site is careful about.
  */
 
 export const revalidate = 3600;
 
-export const metadata: Metadata = {
-  title: "Wellness Spaces for Rent",
-  description:
-    "Treatment rooms, studios and private consulting rooms, rented for as long as you need. No lease, " +
-    "no deposit.",
-  alternates: { canonical: `${WEBSITE}/spaces` },
-};
+type SpacesSearch = { type?: string | string[] };
 
-export default async function SpacesIndex() {
-  const cities = await citiesWithSpaces();
+/** The chosen space type, when the URL carries a real one; null otherwise. */
+function chosenType(params: SpacesSearch): SpaceType | null {
+  const raw = Array.isArray(params.type) ? params.type[0] : params.type;
+  return raw ? spaceTypeBySlug(raw) : null;
+}
 
-  // Every town with live inventory, for the person who came looking. This is
-  // deliberately not the indexing threshold: a town with one or two rooms is
-  // real inventory somebody can book, and hiding it here — as this page used to,
-  // by reusing indexableCity — was showing "nothing" over a listing that
-  // existed. Whether a town is worth advertising to a search engine is a
-  // separate, higher bar, decided on the town's own page.
+export async function generateMetadata({
+  searchParams,
+}: {
+  searchParams: Promise<SpacesSearch>;
+}): Promise<Metadata> {
+  const type = chosenType(await searchParams);
+  return {
+    title: "Wellness Spaces for Rent",
+    description:
+      "Treatment rooms, studios and private consulting rooms, rented for as long as you need. No lease, " +
+      "no deposit.",
+    alternates: { canonical: `${WEBSITE}/spaces` },
+    // A filtered slice is not its own address. Kept out of the index so the
+    // facets never compete with /spaces, while still following through to the
+    // town pages, which carry their own indexing rule.
+    ...(type ? { robots: { index: false, follow: true } } : {}),
+  };
+}
+
+export default async function SpacesIndex({
+  searchParams,
+}: {
+  searchParams: Promise<SpacesSearch>;
+}) {
+  const type = chosenType(await searchParams);
+
+  // A card filters to its category; without one, every town with inventory. The
+  // category is the space type's own (SpaceType.category), so "Movement Studios"
+  // (movement-studio → physical) shows physical rooms and nothing else — never
+  // unrelated inventory to avoid an empty state.
+  const cities: CityRow[] = type
+    ? await citiesWithCategory(type.category)
+    : await citiesWithSpaces();
+
+  // Every town with live inventory, for the person who came looking — the show
+  // threshold (1), not the index threshold (3). Whether a town is worth
+  // advertising to a search engine is decided separately, on the town's page.
   const listed = cities
     .filter(discoverableCity)
     .sort((a, b) => a.city.localeCompare(b.city));
@@ -50,9 +82,18 @@ export default async function SpacesIndex() {
       <SiteHeader />
 
       <main className="mx-auto max-w-6xl px-6 pb-24 pt-4">
-      <div className="max-w-3xl">
+        <div className="max-w-3xl">
+          {type && (
+            <p
+              className="mt-2 text-[12px] font-semibold uppercase tracking-[0.16em]"
+              style={{ color: "#0EA5E9" }}
+            >
+              {type.plural}
+            </p>
+          )}
+
           <h1
-            className="mt-5 text-[38px] leading-[1.1] sm:text-[44px]"
+            className="mt-2 text-[38px] leading-[1.1] sm:text-[44px]"
             style={{ fontFamily: "var(--font-dm-serif)", color: "#0F2F55" }}
           >
             Space on your schedule,
@@ -65,8 +106,9 @@ export default async function SpacesIndex() {
           {listed.length > 0 ? (
             <>
               <p className="mt-5 text-[16.5px] leading-[1.75]" style={{ color: "#5f6673" }}>
-                Treatment rooms, studios and private consulting rooms, booked on your schedule. No
-                lease, no deposit, and the price you see is the price you pay.
+                {type
+                  ? `${type.plural} on your schedule. No lease, no deposit, and the price you see is the price you pay.`
+                  : "Treatment rooms, studios and private consulting rooms, booked on your schedule. No lease, no deposit, and the price you see is the price you pay."}
               </p>
 
               <div className="mt-8 grid gap-3 sm:grid-cols-2">
@@ -89,17 +131,18 @@ export default async function SpacesIndex() {
             </>
           ) : (
             /*
-             * The empty state, and now a truthful one: it is reached only when
-             * there is genuinely no live inventory anywhere, because visibility
-             * above no longer hides real rooms behind the indexing threshold.
-             * Written as a real answer rather than an apology — the reader is
-             * either a practitioner who needs a room, told plainly there is not
-             * one here yet, or somebody with a room, who is the whole reason the
-             * page would ever fill up.
+             * The empty state, written as a real answer rather than an apology.
+             * Category-specific when a card sent someone here for a use with no
+             * live rooms yet — "No consultation rooms available yet" is the true
+             * answer, and showing physical rooms in its place would be a lie
+             * dressed as a result. Without a filter it is the whole directory
+             * that is empty, and it says that instead.
              */
             <>
               <p className="mt-5 text-[16.5px] leading-[1.75]" style={{ color: "#5f6673" }}>
-                Spaces are coming to your area.
+                {type
+                  ? `No ${type.plural.toLowerCase()} available yet.`
+                  : "Spaces are coming to your area."}
               </p>
 
               <p className="mt-3 text-[15px] leading-[1.75]" style={{ color: "#8a94a3" }}>
@@ -108,10 +151,9 @@ export default async function SpacesIndex() {
               </p>
 
               {/*
-                The only thing an empty marketplace can still do with somebody
-                who came looking: take the request. It is prefilled from the
-                search that got here, and it is what a host is eventually shown
-                as a reason to list.
+                The one thing an empty result can still do with somebody who came
+                looking: take the request. Prefilled from the search that got
+                here, and what a host is eventually shown as a reason to list.
               */}
               <Suspense fallback={null}>
                 <RequestSpace />
@@ -138,7 +180,7 @@ export default async function SpacesIndex() {
               </div>
             </>
           )}
-      </div>
+        </div>
       </main>
 
       <SiteFooter />

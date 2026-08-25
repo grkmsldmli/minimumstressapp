@@ -84,6 +84,48 @@ export function indexableCity(row: Pick<CityRow, "spaceCount">): boolean {
 }
 
 /**
+ * Group listing rows into towns, the way the `city_inventory` view does.
+ *
+ * The view aggregates every active listing by town, but it has no category
+ * column, so a type-filtered directory ("Movement Studios") cannot come from
+ * it. Rather than add a view — a schema change — the filtered case reads the
+ * already category-filtered rows from `spaces_public` and groups them here.
+ * The set is small (one category's rooms), so this is not the "fetch every
+ * listing and group in JavaScript" the view exists to avoid; it is one narrow
+ * query the view cannot express. Rows without a town are dropped, exactly as
+ * the view's `city is not null and state is not null` does.
+ */
+export function groupCities(
+  rows: { state: string | null; city: string | null; hourly_rate_cents?: number | null }[],
+): CityRow[] {
+  const byTown = new Map<string, { state: string; city: string; rates: number[]; count: number }>();
+
+  for (const row of rows) {
+    if (!row.state || !row.city) continue;
+    const key = `${row.state}/${row.city}`;
+    const town = byTown.get(key) ?? { state: row.state, city: row.city, rates: [], count: 0 };
+    town.count += 1;
+    if (typeof row.hourly_rate_cents === "number") town.rates.push(row.hourly_rate_cents);
+    byTown.set(key, town);
+  }
+
+  return [...byTown.values()].map(({ state, city, rates, count }) => {
+    const sorted = [...rates].sort((a, b) => a - b);
+    // Lower-of-two median, matching how a small set reads; price is not shown on
+    // the index anyway, so this only has to be sane, not the view's percentile.
+    const median = sorted.length ? sorted[Math.floor((sorted.length - 1) / 2)] : 0;
+    return {
+      state,
+      city,
+      spaceCount: count,
+      minCents: sorted[0] ?? 0,
+      maxCents: sorted[sorted.length - 1] ?? 0,
+      medianCents: median,
+    };
+  });
+}
+
+/**
  * True when a town has any live room worth showing a person.
  *
  * The visibility rule for the human-facing directory, kept apart from

@@ -168,22 +168,28 @@ describe("the harness itself", () => {
   });
 });
 
-describe("the address is public, the door is not", () => {
+describe("the exact address is private until booked", () => {
   /**
-   * This block asserted the opposite, and the opposite was wrong.
-   *
-   * Every listing here is a retail studio whose address is already on Google
-   * Maps and its own website, so withholding the street number protected
-   * nothing and cost a practitioner the fact they judge a room by. What is
-   * still worth withholding is the way inside, which belongs to whoever paid
-   * for the hour.
+   * Before a booking, a browser learns only roughly where a room is — the area
+   * and a point offset a few hundred metres (migration 0055). The exact street,
+   * the precise coordinates and the way inside belong to whoever paid for the
+   * hour, and come back through space_access_details().
    */
-  it("shows the address to an anonymous browser", async () => {
-    const [space] = await asAnon<{ address_line: string }>(
-      `select address_line from spaces_public where id = '${SPACE}'`,
-    );
+  it("gives an anonymous browser no exact location", async () => {
+    const [space] = await asAnon<{
+      address_line: string | null;
+      lat: number | null;
+      lng: number | null;
+      entry_instructions?: string;
+    }>(`select * from spaces_public where id = '${SPACE}'`);
 
-    expect(space.address_line).toBe("12 Alder Lane");
+    // The exact street and precise point are NULL shims, kept only so the
+    // previously deployed client's select does not error mid rollout (migration
+    // 0055); entry instructions are not in the view at all.
+    expect(space.address_line).toBeNull();
+    expect(space.lat).toBeNull();
+    expect(space.lng).toBeNull();
+    expect(space.entry_instructions).toBeUndefined();
   });
 
   it("never publishes the entry instructions", async () => {
@@ -1102,11 +1108,11 @@ describe("the public area", () => {
 });
 
 /**
- * The map draws the room where the room is.
+ * The map draws roughly where the room is, not exactly.
  *
- * This published a point offset a few hundred metres, so a real map could be
- * drawn without naming a room we would not name. With the address published
- * that only produced a worse map, and the offset went with it.
+ * spaces_public publishes a point offset a few hundred metres (approx_lat /
+ * approx_lng), so a real map can be drawn without naming a room we would not
+ * name. The exact point never leaves the base table before a booking.
  */
 describe("the map point", () => {
   // Its own listing, because earlier tests push SPACE back to pending and a
@@ -1129,21 +1135,25 @@ describe("the map point", () => {
     `);
   });
 
-  it("is the studio's own position, not a point near it", async () => {
-    const [shown] = await asAnon<{ lat: number; lng: number }>(
-      `select lat, lng from spaces_public where id = '${MAP_SPACE}'`,
+  it("is a point near the studio, not its own position", async () => {
+    const [shown] = await asAnon<{ approx_lat: number; approx_lng: number }>(
+      `select approx_lat, approx_lng from spaces_public where id = '${MAP_SPACE}'`,
     );
 
-    expect(Number(shown.lat)).toBeCloseTo(LAT, 6);
-    expect(Number(shown.lng)).toBeCloseTo(LNG, 6);
+    // Offset off the building (250-450m), but still the same neighbourhood.
+    expect(Number(shown.approx_lat) !== LAT || Number(shown.approx_lng) !== LNG).toBe(true);
+    expect(Math.abs(Number(shown.approx_lat) - LAT)).toBeLessThan(0.01);
+    expect(Math.abs(Number(shown.approx_lng) - LNG)).toBeLessThan(0.01);
   });
 
-  it("comes with the street it belongs to", async () => {
-    const [shown] = await asAnon<{ address_line: string }>(
-      `select address_line from spaces_public where id = '${MAP_SPACE}'`,
+  it("carries the approximate point, not the street", async () => {
+    const [shown] = await asAnon<{ address_line: string | null; approx_lat: number | null }>(
+      `select address_line, approx_lat from spaces_public where id = '${MAP_SPACE}'`,
     );
 
-    expect(shown.address_line).toBe("2 Bay Street");
+    // The offset point is published; the street is a NULL shim (migration 0055).
+    expect(shown.approx_lat).not.toBeNull();
+    expect(shown.address_line).toBeNull();
   });
 });
 
@@ -1789,7 +1799,7 @@ describe("listing requires accepting the Host Terms", () => {
       `select host_terms_version, host_terms_accepted_at from profiles where id = auth.uid()`,
     );
 
-    expect(row.host_terms_version).toBe(1);
+    expect(row.host_terms_version).toBe(2);
     expect(row.host_terms_accepted_at).not.toBeNull();
   });
 
@@ -1797,7 +1807,7 @@ describe("listing requires accepting the Host Terms", () => {
   it("refuses to unset an accepted version", async () => {
     await asUser(
       NEW_HOST,
-      `update profiles set host_terms_version = 1 where id = auth.uid()`,
+      `update profiles set host_terms_version = 2 where id = auth.uid()`,
     );
     await expect(
       asUser(NEW_HOST, `update profiles set host_terms_version = null where id = auth.uid()`),

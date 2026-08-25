@@ -67,7 +67,7 @@ beforeAll(async () => {
   // the button being pressed.
   const startsAt = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000);
   startsAt.setMinutes(0, 0, 0);
-  const created = await repo.createBooking({ spaceId: spaces[0].id, startsAt, declared: { purpose: "personal_practice", attendees: 1 } });
+  const created = await repo.createBooking({ spaceId: spaces[0].id, startsAt, declared: { purpose: "movement_session", attendees: 1 } });
   booking = created.booking;
 
   space = await repo.createSpace({

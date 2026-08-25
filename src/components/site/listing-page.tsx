@@ -6,7 +6,7 @@ import { Reveal } from "@/components/site/reveal";
 import { APP_URL } from "@/lib/company";
 import { cityPath } from "@/lib/directory";
 import type { DirectoryListing } from "@/lib/directory-data";
-import { formatCents } from "@/lib/money";
+import { formatCents, publicHourlyTotalCents } from "@/lib/money";
 import { COLOUR, TYPE } from "@/lib/site-theme";
 import { spaceTypeBySlug } from "@/lib/space-types";
 import {
@@ -88,12 +88,17 @@ export function ListingPage({ listing }: { listing: DirectoryListing }) {
             {listing.name}
           </h1>
 
+          {/* The all-in hourly a guest pays — host rate plus service fee — so
+              the number here matches the number at checkout. */}
           <p className="mt-4 text-[26px]" style={{ color: COLOUR.ink }}>
-            {formatCents(listing.hourlyRateCents)}
+            {formatCents(publicHourlyTotalCents(listing.hourlyRateCents))}
             <span className={TYPE.body} style={{ color: COLOUR.muted }}>
               {" "}
               an hour
             </span>
+          </p>
+          <p className={`mt-1 ${TYPE.small}`} style={{ color: COLOUR.muted }}>
+            Service fee included
           </p>
 
           {listing.reviewCount > 0 && listing.averageRating !== null && (
@@ -216,19 +221,16 @@ export function ListingPage({ listing }: { listing: DirectoryListing }) {
             </>
           )}
 
-          {listing.addressLine && (
-            <>
-              <h2 className={`mt-10 ${TYPE.h3}`} style={{ color: COLOUR.ink }}>
-                Where it is
-              </h2>
-              <p className={`mt-2 ${TYPE.body}`} style={{ color: COLOUR.body }}>
-                {listing.addressLine}
-              </p>
-              <p className={`mt-1 ${TYPE.small}`} style={{ color: COLOUR.muted }}>
-                How to get inside is sent to you shortly before your session.
-              </p>
-            </>
-          )}
+          <h2 className={`mt-10 ${TYPE.h3}`} style={{ color: COLOUR.ink }}>
+            Where it is
+          </h2>
+          <p className={`mt-2 ${TYPE.body}`} style={{ color: COLOUR.body }}>
+            {listing.area ? `${listing.area}, ` : ""}
+            {listing.city}, {listing.state}
+          </p>
+          <p className={`mt-1 ${TYPE.small}`} style={{ color: COLOUR.muted }}>
+            The exact address is shared after your booking is confirmed.
+          </p>
 
           {/*
             Booking happens in the app, which is where the calendar, the card
@@ -241,8 +243,8 @@ export function ListingPage({ listing }: { listing: DirectoryListing }) {
             style={{ backgroundColor: COLOUR.wash, border: `1px solid ${COLOUR.line}` }}
           >
             <p className={TYPE.body} style={{ color: COLOUR.body }}>
-              Hours, availability and booking are in the app. The price you see here is the price
-              you pay.
+              Hours, availability and booking are in the app. The price above is the all-in
+              hourly rate, service fee included.
             </p>
             <a
               href={`${APP_URL}?space=${encodeURIComponent(listing.id)}`}

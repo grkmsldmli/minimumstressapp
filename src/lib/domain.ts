@@ -209,16 +209,6 @@ export interface PublicSpace {
   /** Private room, a room inside a shared studio, or the whole place. */
   roomSetup: RoomSetupKey;
   /**
-   * The street, and where it is on a map.
-   *
-   * Public because every listing here is a retail studio whose address is
-   * already on Google Maps and its own website — withholding it protected
-   * nothing and cost a practitioner the fact they judge a room by. The entry
-   * instructions and the access code are what stay behind the booking.
-   *
-   * Null on a listing that predates geocoding.
-   */
-  /**
    * What "accessible" means for this room, as four answered facts.
    *
    * Replaces a boolean that rendered as "Wheelchair accessible" and told
@@ -233,9 +223,17 @@ export interface PublicSpace {
    * exists — and because "street parking" locates nothing.
    */
   parking: Parking;
-  addressLine: string | null;
-  lat: number | null;
-  lng: number | null;
+  /**
+   * Roughly where the room is, for the browse map — a point offset a few
+   * hundred metres from the real one and stable per listing (see approx_lat /
+   * approx_lng in the DB). Never the exact building. The precise coordinates
+   * and the street address are not in this type at all; they are revealed
+   * through the booking's access flow once a session is confirmed.
+   *
+   * Null on a listing that predates geocoding.
+   */
+  approxLat: number | null;
+  approxLng: number | null;
   distanceLabel: string;
   /**
    * Counted from released reviews only, so a sealed one cannot be inferred by

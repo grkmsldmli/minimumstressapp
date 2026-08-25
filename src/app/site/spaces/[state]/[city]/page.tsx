@@ -16,7 +16,7 @@ import {
   usesInCity,
 } from "@/lib/directory";
 import { citiesWithSpaces, cityTypesWithSpaces, spacesIn } from "@/lib/directory-data";
-import { formatCents } from "@/lib/money";
+import { formatCents, publicHourlyTotalCents } from "@/lib/money";
 import { spaceTypeBySlug } from "@/lib/space-types";
 
 /**
@@ -60,7 +60,7 @@ export async function generateMetadata({
     title,
     description:
       `Treatment rooms, studios and private consulting space in ${row.city}, on your schedule. ` +
-      "No lease, and the price you see is the price you pay.",
+      "No lease, and prices are all-in with the service fee included.",
     alternates: { canonical: `${WEBSITE}/spaces/${state}/${city}` },
     /*
      * The single rule, read here as well as by the sitemap and the links.
@@ -126,8 +126,9 @@ export default async function CityPage({
           */}
           {prices && (
             <p className="mt-3 text-[15px]" style={{ color: "#8a94a3" }}>
-              {formatCents(prices.from)}–{formatCents(prices.to)} an hour, typically{" "}
-              {formatCents(prices.median)}.
+              {formatCents(publicHourlyTotalCents(prices.from))}–
+              {formatCents(publicHourlyTotalCents(prices.to))} an hour, typically{" "}
+              {formatCents(publicHourlyTotalCents(prices.median))}. Fees included.
             </p>
           )}
 

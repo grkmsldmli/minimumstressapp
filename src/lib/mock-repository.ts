@@ -355,9 +355,10 @@ export class MockRepository implements Repository {
         allowedUses: [],
         bookingMode: "instant" as const,
         roomSetup: seed.roomSetup,
-        addressLine: seed.addressLine,
-        lat: seed.lat,
-        lng: seed.lng,
+        // The coarse point only, matching spaces_public. The exact address and
+        // lat/lng live in SEED_PRIVATE and come back through the access flow.
+        approxLat: seed.lat,
+        approxLng: seed.lng,
         access: seed.access,
         distanceLabel: seed.distanceLabel,
       reviewCount: 0,
@@ -830,6 +831,10 @@ export class MockRepository implements Repository {
       distanceLabel: "your space",
       reviewCount: 0,
       averageRating: null,
+      // A host does not browse their own listing on the public map; the coarse
+      // point is the public view's field and is left null here.
+      approxLat: null,
+      approxLng: null,
       // New listings are never live: the brief defers review to a manual
       // process, so nothing reaches Discover until it is approved.
       status: "pending",

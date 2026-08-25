@@ -18,7 +18,7 @@ import {
 import { citiesWithSpaces, cityTypesWithSpaces, listingBySlug, spacesIn } from "@/lib/directory-data";
 import { ListingPage } from "@/components/site/listing-page";
 import { isListingSlug, listingSlug } from "@/lib/listing-url";
-import { formatCents } from "@/lib/money";
+import { formatCents, publicHourlyTotalCents } from "@/lib/money";
 import { type CategoryKey, roomTypeFor } from "@/lib/taxonomy";
 import { spaceTypeBySlug } from "@/lib/space-types";
 
@@ -77,7 +77,8 @@ export async function generateMetadata({
       title: `${listing.name} — ${listing.city}, ${listing.state}`,
       description:
         `${roomTypeFor(listing.category as CategoryKey)} in ${listing.city}, ` +
-        `${formatCents(listing.hourlyRateCents)} an hour. ${listing.description}`.slice(0, 200),
+        `${formatCents(publicHourlyTotalCents(listing.hourlyRateCents))} an hour, fees included. ` +
+        `${listing.description}`.slice(0, 200),
       alternates: {
         canonical: `${WEBSITE}/spaces/${state}/${city}/${listingSlug(listing.name, listing.id)}`,
       },
@@ -153,8 +154,9 @@ export default async function CityTypePage({
 
           {prices && (
             <p className="mt-3 text-[15px]" style={{ color: "#8a94a3" }}>
-              {formatCents(prices.from)}–{formatCents(prices.to)} an hour in {found.city.city},
-              typically {formatCents(prices.median)}.
+              {formatCents(publicHourlyTotalCents(prices.from))}–
+              {formatCents(publicHourlyTotalCents(prices.to))} an hour in {found.city.city},
+              typically {formatCents(publicHourlyTotalCents(prices.median))}. Fees included.
             </p>
           )}
 

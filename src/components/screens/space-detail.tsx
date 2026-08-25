@@ -511,16 +511,17 @@ export function SpaceDetail({
           <MapPin size={13} color="#3B9BE8" className="mt-0.5 shrink-0" />
           <div>
             {/*
-              The address, plainly. It was withheld until a day before the
-              session, which protected nothing — every listing here is a retail
-              studio whose address is on Google Maps and its own website — and
-              cost somebody the one fact they judge a room by.
+              The area only, before a booking. The exact address and the way in
+              are held back until a session is confirmed — see the access flow
+              (space_access_details) and migration 0055. Showing the street here
+              would hand every listing's address to anybody browsing.
             */}
             <p className="font-body font-medium text-[15px] text-navy">
-              {space.addressLine ?? space.area ?? "Address on request"}
+              {space.area ?? "Area shared on the listing"}
             </p>
             <p className="font-body font-normal text-[13.5px] leading-relaxed mt-0.5 text-ink-soft">
-              Entry instructions arrive a day before, your door code half an hour before.
+              Exact address is shared after your booking is confirmed. Entry instructions arrive a
+              day before, your door code half an hour before.
             </p>
           </div>
         </div>

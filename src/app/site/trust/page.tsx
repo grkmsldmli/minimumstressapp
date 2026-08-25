@@ -63,7 +63,7 @@ const SIDES = [
     who: "If you are booking a space",
     heading: "Before you arrive",
     points: [
-      "The address is on the listing, before you pay",
+      "The city and area on the listing; the exact address once you've booked",
       "What is in the room, and anything to bring",
       "Entry details released as your session approaches",
       "Cancellation terms shown before you confirm",
@@ -125,7 +125,7 @@ const FAQ = [
   },
   {
     q: "Can I cancel?",
-    a: `Cancel more than ${CANCEL_HOURS} hours before the session and you are refunded. Inside that window the booking stands, because the host held the hour for you.`,
+    a: `Cancel more than ${CANCEL_HOURS} hours before the session and you're refunded, apart from the card fee. Inside that window the booking stands, because the host held the hour for you.`,
   },
 ];
 

@@ -86,7 +86,7 @@ const plan = (overrides: Partial<Parameters<typeof planBooking>[0]> = {}) =>
      * omitted the declaration would be failing for a reason it was not written
      * to examine. The declaration's own rules are in booking-use.test.ts.
      */
-    declared: { purpose: "personal_practice", attendees: 1 },
+    declared: { purpose: "movement_session", attendees: 1 },
     ...overrides,
   });
 
@@ -374,7 +374,7 @@ describe("what the room is for", () => {
   });
 
   it("refuses a use the host does not offer", () => {
-    const strict = { ...SPACE, allowedUses: ["personal_practice"] };
+    const strict = { ...SPACE, allowedUses: ["movement_session"] };
     expect(plan({ space: strict, declared: { purpose: "filming", attendees: 2 } })).toEqual({
       ok: false,
       reason: "use_not_allowed",
@@ -749,7 +749,7 @@ describe("planSeries — a recurring run is all or nothing (atomic)", () => {
       // A run is a Pro feature, and Pro reaches far enough for these weeks.
       practitioner: { ...PRACTITIONER, isPro: true },
       takenStarts: [],
-      declared: { purpose: "personal_practice", attendees: 1 },
+      declared: { purpose: "movement_session", attendees: 1 },
       now: NOW,
       starts,
       ...overrides,

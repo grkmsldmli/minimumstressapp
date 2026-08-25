@@ -18,13 +18,12 @@ import {
 
 /**
  * The cases in here are the ones the product was specified against, written as
- * the scenarios rather than as unit tests of each branch — two friends and a
- * dance floor, an instructor with six people, somebody bringing ten to a room
- * that holds six.
+ * the scenarios rather than as unit tests of each branch — an instructor with
+ * six people, somebody bringing ten to a room that holds six.
  */
 
 const rules = (over: Partial<SpaceRules> = {}): SpaceRules => ({
-  allowedUses: ["dance_rehearsal", "group_class", "personal_practice"],
+  allowedUses: ["movement_session", "group_class", "client_session"],
   capacity: 8,
   ...over,
 });
@@ -48,11 +47,11 @@ describe("the platform's floor", () => {
   });
 });
 
-describe("two friends and a dance floor", () => {
-  /** Case A. Nobody here is a practitioner, and that is not a reason to refuse. */
-  it("can book a movement studio for a rehearsal", () => {
+describe("a movement session", () => {
+  /** Case A: a teacher booking a studio for a small movement session. */
+  it("can book a movement studio the host offers it for", () => {
     expect(
-      checkDeclaredUse({ purpose: "dance_rehearsal", attendees: 2 }, rules()),
+      checkDeclaredUse({ purpose: "movement_session", attendees: 2 }, rules()),
     ).toBeNull();
   });
 });
@@ -85,7 +84,7 @@ describe("more people than the room holds", () => {
 
   it("refuses a nonsense count rather than reading it as one person", () => {
     for (const attendees of [0, -1, 2.5, Number.NaN]) {
-      expect(checkDeclaredUse({ purpose: "dance_rehearsal", attendees }, rules()), String(attendees)).toBe(
+      expect(checkDeclaredUse({ purpose: "group_class", attendees }, rules()), String(attendees)).toBe(
         "attendees_missing",
       );
     }
@@ -140,7 +139,7 @@ describe("the declaration itself", () => {
   });
 
   it("does not ask the other purposes for a note", () => {
-    expect(checkDeclaredUse({ purpose: "personal_practice", attendees: 1 }, rules())).toBeNull();
+    expect(checkDeclaredUse({ purpose: "movement_session", attendees: 1 }, rules())).toBeNull();
   });
 });
 
@@ -155,7 +154,9 @@ describe("the vocabulary", () => {
   });
 
   it("resolves a key and refuses one that is not ours", () => {
-    expect(bookingUse("dance_rehearsal")?.label).toBe("Dance or movement rehearsal");
+    expect(bookingUse("movement_session")?.label).toBe("Yoga, Pilates or movement session");
+    expect(bookingUse("personal_practice")).toBeNull();
+    expect(bookingUse("dance_rehearsal")).toBeNull();
     expect(bookingUse("therapy")).toBeNull();
     expect(bookingUse("")).toBeNull();
   });
@@ -205,7 +206,7 @@ describe("what a room is offered for by default", () => {
   });
 
   it("follows the room type", () => {
-    expect(defaultUsesFor("physical")).toContain("dance_rehearsal");
+    expect(defaultUsesFor("physical")).toContain("movement_session");
     expect(defaultUsesFor("spirit")).toContain("meditation");
     expect(defaultUsesFor("traditional")).toContain("client_session");
   });

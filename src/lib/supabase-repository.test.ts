@@ -106,7 +106,7 @@ describe("createBooking → payment preparation", () => {
   const input = {
     spaceId: "s1",
     startsAt: new Date("2026-09-01T10:00:00Z"),
-    declared: { purpose: "personal_practice" as const, purposeNote: null, attendees: 1 },
+    declared: { purpose: "movement_session" as const, purposeNote: null, attendees: 1 },
   };
 
   it("returns the new hold and its clientSecret so the payment sheet can open", async () => {

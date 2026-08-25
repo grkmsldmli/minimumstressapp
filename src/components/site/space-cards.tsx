@@ -3,7 +3,7 @@ import Link from "next/link";
 import { APP_URL } from "@/lib/company";
 import { listingPath } from "@/lib/listing-url";
 import type { DirectorySpace } from "@/lib/directory-data";
-import { formatCents } from "@/lib/money";
+import { formatCents, publicHourlyTotalCents } from "@/lib/money";
 import { spaceTypeBySlug } from "@/lib/space-types";
 import { roomTypeFor, type CategoryKey } from "@/lib/taxonomy";
 
@@ -40,9 +40,10 @@ export function SpaceCards({ spaces }: { spaces: DirectorySpace[] }) {
               <h3 className="text-[17px]" style={{ color: "#0F2F55" }}>
                 {space.name}
               </h3>
+              {/* All-in hourly, service fee included, matching the listing and checkout. */}
               <p className="text-[15px]" style={{ color: "#0F2F55" }}>
-                {formatCents(space.hourlyRateCents)}
-                <span className="text-[13px]" style={{ color: "#8a94a3" }}> an hour</span>
+                {formatCents(publicHourlyTotalCents(space.hourlyRateCents))}
+                <span className="text-[13px]" style={{ color: "#8a94a3" }}> an hour, incl. fees</span>
               </p>
             </div>
 

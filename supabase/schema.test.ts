@@ -281,12 +281,12 @@ describe("private columns stay out of the public views", () => {
   /**
    * The line moved, and it moved on purpose.
    *
-   * The address used to be here, on the grounds that a room should not be
-   * findable before it is booked. Every listing is a retail studio whose
-   * address is on Google Maps already, so that withheld nothing and cost the
-   * practitioner the fact they decide on. What is still private is the way in.
+   * The exact location and the way in are both private until a booking is
+   * confirmed. A browser gets the coarse point and the area; the street, the
+   * precise lat/lng and the entry details come back through
+   * space_access_details() once a booking is held (migration 0055).
    */
-  it("omits the way in from spaces_public", async () => {
+  it("omits the exact location and the way in from spaces_public", async () => {
     const columns = await rows<{ column_name: string }>(
       `select column_name from information_schema.columns
        where table_schema = 'public' and table_name = 'spaces_public'`,
@@ -297,10 +297,13 @@ describe("private columns stay out of the public views", () => {
     expect(names).not.toContain("sublease_doc_path");
     expect(names).not.toContain("insurance_doc_path");
 
-    // Published now, and the reason is in the migration rather than here.
-    expect(names).toContain("address_line");
-    expect(names).toContain("lat");
-    expect(names).toContain("lng");
+    // Only the coarse point and area are published, so a room can be placed but
+    // not found. The address_line/lat/lng column names survive as NULL for a
+    // safe rollout (migration 0055 header); that they carry no data is asserted
+    // by value below.
+    expect(names).toContain("approx_lat");
+    expect(names).toContain("approx_lng");
+    expect(names).toContain("area");
 
     // Still has to be useful for Discover.
     expect(names).toContain("hourly_rate_cents");
@@ -433,6 +436,65 @@ describe("private columns stay out of the public views", () => {
     // A definer function without a pinned search_path is a privilege
     // escalation waiting to happen.
     expect(fn.proconfig ?? []).toContain("search_path=public");
+  });
+});
+
+/**
+ * Before a booking, spaces_public carries only a coarse point and the area —
+ * never the exact address or the precise coordinates. The exact location coming
+ * back once a booking is held is proven end to end against space_access_details
+ * in rls.test.ts (a signed-in stranger is refused; the booker gets the street);
+ * this asserts the public view is coarse in the first place (migration 0055).
+ */
+describe("location is coarse in spaces_public", () => {
+  const host = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+  const spaceId = "dddddddd-dddd-dddd-dddd-dddddddddddd";
+  const exactLat = 37.5629;
+  const exactLng = -122.3255;
+
+  beforeAll(async () => {
+    await db.exec(`
+      insert into auth.users (id, email) values ('${host}', 'coarse-host@example.com');
+      insert into profiles (id, display_name) values ('${host}', 'Coarse Host');
+      insert into spaces (
+        id, host_id, name, category, hourly_rate_cents, capacity, access_type,
+        entry_instructions, address_line, lat, lng, sublease_doc_path, legal_ack_at,
+        status, sublease_doc_state, sublease_doc_reviewed_at
+      ) values (
+        '${spaceId}', '${host}', 'Cedar', 'physical', 4500, 3, 'keypad',
+        'Code 4417, then the blue door', '742 Evergreen Terrace, San Mateo, CA 94402',
+        ${exactLat}, ${exactLng}, 'space/x/lease.pdf', now(),
+        'active', 'verified', now()
+      );
+    `);
+  });
+
+  it("publishes only an offset point and an area, never the exact location", async () => {
+    const [row] = await rows<{
+      approx_lat: number;
+      approx_lng: number;
+      area: string | null;
+      address_line: string | null;
+      lat: number | null;
+      lng: number | null;
+    }>(
+      `select approx_lat, approx_lng, area, address_line, lat, lng
+       from spaces_public where id = '${spaceId}'`,
+    );
+    expect(row.approx_lat).not.toBeNull();
+    expect(row.approx_lng).not.toBeNull();
+    // Moved off the building: the offset is 250-450m, so the published point is
+    // never the real one, but still in the same neighbourhood.
+    expect(row.approx_lat !== exactLat || row.approx_lng !== exactLng).toBe(true);
+    expect(Math.abs(row.approx_lat - exactLat)).toBeLessThan(0.01);
+    expect(Math.abs(row.approx_lng - exactLng)).toBeLessThan(0.01);
+    // The area is the town, not the street number.
+    expect(row.area ?? "").not.toContain("742");
+    // The deprecated columns exist for rollout safety but carry no exact data,
+    // even though the base row has all three.
+    expect(row.address_line).toBeNull();
+    expect(row.lat).toBeNull();
+    expect(row.lng).toBeNull();
   });
 });
 

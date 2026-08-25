@@ -58,7 +58,7 @@ const HERO: Slide[] = [
   },
   {
     src: "/photos/moment-arriving.webp",
-    label: "Let yourself in",
+    label: "Access the space",
     alt: "A practitioner with a mat over her shoulder opening a keypad door onto a pilates studio.",
   },
   {
@@ -112,9 +112,9 @@ const GROUPS = CATEGORIES.map((category) => ({
 }));
 
 const STEPS = [
-  { n: "1", title: "Search", body: "Find a room near you, for the kind of work you do." },
-  { n: "2", title: "Book", body: "Choose your hours and pay the price on the listing." },
-  { n: "3", title: "Work", body: "Let yourself in and see your own clients." },
+  { n: "1", title: "Find a space", body: "Search nearby spaces that fit the way you work." },
+  { n: "2", title: "Choose your time", body: "Pick an available hour that works for you." },
+  { n: "3", title: "Get to work", body: "Book, get the access details, and meet your client." },
 ];
 
 /**
@@ -292,69 +292,50 @@ function HowItWorks() {
   return (
     <section
       id="how-it-works"
-      className="border-y py-20"
+      className="border-y py-16 sm:py-24"
       style={{ borderColor: COLOUR.line, backgroundColor: COLOUR.wash }}
     >
       <div className="mx-auto max-w-6xl px-6">
-        {/*
-          The heading had the left third of a wide page and nothing beside it.
-          Pairing it with the one sentence that frames the three steps fills the
-          row and earns its space — the alternative was more air.
-        */}
         <Reveal>
-          <div className="grid gap-6 lg:grid-cols-[1fr_1fr] lg:gap-16">
+          <div className="max-w-xl">
             <h2 className={TYPE.h2} style={{ fontFamily: "var(--font-dm-serif)", color: COLOUR.ink }}>
-              How it works.
+              How it works
             </h2>
-            <p className={`max-w-md lg:pt-2 ${TYPE.body}`} style={{ color: COLOUR.body }}>
-              No viewings, no negotiation, no deposit. Three steps, about five minutes.
+            <p className={`mt-3 ${TYPE.lead}`} style={{ color: COLOUR.body }}>
+              Find a space, choose your time, and get to work.
             </p>
           </div>
         </Reveal>
 
-        <div className="mt-12 grid grid-cols-3 gap-4 sm:mt-14 sm:gap-8">
+        {/*
+          Three cards rather than a timeline. The old horizontal rule left the
+          steps floating in a mostly empty row; a defined card each fills the
+          space, reads cleanly on desktop, and stacks without any of the line's
+          alignment maths on a phone.
+        */}
+        <div className="mt-10 grid gap-4 sm:mt-12 sm:grid-cols-3 sm:gap-5">
           {STEPS.map((step, index) => (
-            <Reveal key={step.n} delay={index * 110} className="relative">
-              {/*
-                A rule from this number to the next, so the three read as one
-                sequence rather than three facts standing near each other.
-
-                One segment per step rather than a single line across the row,
-                which is what this was first: a line inset from the container's
-                edges ran three hundred pixels past the last circle into empty
-                space, and sat eighteen pixels above the numbers because the
-                container's top is not the circles' top. Anchoring each segment
-                to its own step makes both exact and keeps them exact — the
-                negative right offset is the grid gap, so the segment ends
-                precisely where the next column, and therefore the next circle,
-                begins.
-              */}
-              {index < STEPS.length - 1 && (
+            <Reveal key={step.n} delay={index * 90}>
+              <div
+                className="flex h-full flex-col rounded-2xl bg-white p-6 sm:p-7"
+                style={{ border: `1px solid ${COLOUR.line}` }}
+              >
                 <span
-                  aria-hidden
-                  className="absolute left-[42px] top-[18px] h-px sm:left-[52px] sm:top-[22px]"
-                  style={{ right: "-2rem", backgroundColor: COLOUR.line }}
-                />
-              )}
-
-              <span
-                className="relative flex h-9 w-9 items-center justify-center rounded-full text-[15px] font-medium text-white sm:h-11 sm:w-11 sm:text-[17px]"
-                style={{ backgroundColor: COLOUR.accent }}
-              >
-                {step.n}
-              </span>
-              <h3
-                className="mt-4 text-[16px] font-medium sm:mt-5 sm:text-[21px]"
-                style={{ color: COLOUR.ink }}
-              >
-                {step.title}
-              </h3>
-              <p
-                className="mt-1.5 text-[13.5px] leading-[1.55] sm:mt-2 sm:text-[17px] sm:leading-[1.75]"
-                style={{ color: COLOUR.body }}
-              >
-                {step.body}
-              </p>
+                  className="flex h-11 w-11 items-center justify-center rounded-full text-[17px] font-medium text-white"
+                  style={{
+                    backgroundColor: COLOUR.accent,
+                    boxShadow: `0 10px 22px -10px ${COLOUR.accent}`,
+                  }}
+                >
+                  {step.n}
+                </span>
+                <h3 className={`mt-5 ${TYPE.h3}`} style={{ color: COLOUR.ink }}>
+                  {step.title}
+                </h3>
+                <p className={`mt-2 ${TYPE.body}`} style={{ color: COLOUR.body }}>
+                  {step.body}
+                </p>
+              </div>
             </Reveal>
           ))}
         </div>
@@ -397,7 +378,7 @@ function ForPractitioners() {
                 "Book only the time you need — one session, a few hours, or recurring",
                 "Find spaces close to where you already work",
                 "Bring your own clients or participants",
-                "Cancel 24+ hours ahead at no charge",
+                "Cancel 24+ hours ahead for a refund",
               ].map((line) => (
                 <li key={line} className={`flex gap-3.5 ${TYPE.body}`} style={{ color: COLOUR.body }}>
                   <span
@@ -600,11 +581,11 @@ function Trust() {
 /**
  * How to put it on a phone, said honestly and briefly.
  *
- * There is no App Store listing, so there are no store badges — a badge that
- * opens nothing would be a promise broken in the first second. It does install
- * as a progressive web app, so this says the two taps that do it, in a band
- * rather than the full-height section it used to be. Installing is what
- * somebody does after deciding, not instead of deciding.
+ * No store badges here: linking to a store listing that is not live yet would
+ * be a promise broken in the first second. It installs as a progressive web app
+ * today, so this says the two taps that do it, in a band rather than the
+ * full-height section it used to be. Installing is what somebody does after
+ * deciding, not instead of deciding.
  */
 function Install() {
   return (
@@ -615,8 +596,8 @@ function Install() {
             Take {BRAND} with you.
           </h2>
           <p className={`mt-1.5 ${TYPE.small}`} style={{ color: COLOUR.muted }}>
-            No app store. iPhone: Safari → Share → Add to Home Screen. Android: Chrome → menu →
-            Install app.
+            Add it to your home screen. iPhone: Safari → Share → Add to Home Screen. Android:
+            Chrome → menu → Install app.
           </p>
         </div>
 

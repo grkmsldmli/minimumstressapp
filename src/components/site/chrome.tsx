@@ -79,8 +79,8 @@ export function SiteHeader() {
         className="flex items-center gap-4 text-[15px] leading-[1.7] sm:gap-7 sm:text-[17px]"
         style={{ color: COLOUR.body }}
       >
-        <Link href="/assessments" className="hidden hover:underline sm:inline">
-          Assessments
+        <Link href="/spaces" className="hidden hover:underline sm:inline">
+          Find a space
         </Link>
         <Link href="/about" className="hidden hover:underline sm:inline">
           About
@@ -169,11 +169,11 @@ const COMPANY = [
   { label: "About", href: "/about" },
   { label: "Contact", href: "/contact" },
   /*
-   * The eleven wellness tools. They were the whole of the old site and belong
-   * to neither side of the marketplace, so they sit here rather than being
-   * counted as something practitioners get.
+   * The wellness tools are kept off the marketplace chrome — they belong to
+   * neither side of it and pull focus from the product. The pages and their
+   * URLs stay live and remain in the sitemap (see site-map.ts), so nothing is
+   * lost to search or to a direct link; they are simply not advertised here.
    */
-  { label: "Assessments", href: "/assessments" },
   { label: "Terms", href: `${APP_URL}/terms` },
   /*
    * The second agreement, the one only a host accepts. It sits beside Terms

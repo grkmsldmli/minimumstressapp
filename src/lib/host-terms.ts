@@ -43,10 +43,10 @@ import { digestOf } from "./terms";
  * schema test asserts the two agree — the DB is the authority the acceptance
  * trigger stamps from, this constant is what the client checks against.
  */
-export const HOST_TERMS_VERSION = 1;
+export const HOST_TERMS_VERSION = 2;
 
 /** When the current Host Terms took effect, beside the version so they move together. */
-export const HOST_TERMS_EFFECTIVE = new Date("2026-08-18T00:00:00Z");
+export const HOST_TERMS_EFFECTIVE = new Date("2026-08-25T00:00:00Z");
 
 export function hostTermsEffectiveLabel(): string {
   return HOST_TERMS_EFFECTIVE.toLocaleDateString("en-GB", {
@@ -108,7 +108,7 @@ export const HOST_TERMS_SECTIONS: readonly HostTermsSection[] = [
     key: "permitted-use",
     title: "What a space may and may not be used for",
     points: [
-      "You may offer your space for legitimate uses you are comfortable with — for example personal practice, dance and movement rehearsal, yoga and Pilates, meditation and breathwork, private sessions, coaching, small group classes, workshops, and photography or filming you have allowed.",
+      "You may offer your space for legitimate uses you are comfortable with — for example yoga and Pilates, meditation and breathwork, private client sessions, coaching, small group classes, workshops, and photography or filming you have allowed.",
       "Some uses are never permitted, whatever a host allows. These include sexual activity or services, adult-content production, prostitution or escort activity, anything illegal, illegal drugs, weapons where prohibited or unsafe, hazardous activities, parties and nightlife events, entering outside the booked time, more people than the booking declared, a use materially different from the one declared, undeclared commercial production, and anything that damages the space or creates an unreasonable safety risk.",
       "You cannot allow one of these prohibited uses by ticking it on your listing. The platform's list is a floor nobody can lower.",
     ],

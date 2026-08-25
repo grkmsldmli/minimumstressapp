@@ -47,9 +47,9 @@ export default function FaqPage() {
           </QA>
 
           <QA q="What can I book a space for?">
-            That depends on the space and what the host allows. Uses may include personal practice,
-            dance or movement rehearsal, private sessions, small group classes, meditation,
-            breathwork, coaching and workshops.
+            That depends on the space and what the host allows. Uses may include private client
+            sessions, yoga, Pilates and movement, meditation and breathwork, coaching and
+            consultation, small group classes, and workshops.
             <br />
             <br />
             You say what you plan to use the space for before you book.

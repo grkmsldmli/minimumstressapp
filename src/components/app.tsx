@@ -1577,11 +1577,12 @@ export function App() {
           bookings={bookings}
           onRefresh={onPullRefresh}
           accessFor={(spaceId) => access[spaceId] ?? null}
-          // The street off the public catalogue rather than off `access`.
-          // `access` opens a day before the session; the address has been
-          // public since 0032, and somebody telling a client where to be next
-          // Tuesday should not have to wait until Monday to do it.
-          addressFor={(spaceId) => spaces.find((s) => s.id === spaceId)?.addressLine ?? null}
+          // The exact street comes off `access`, not the public catalogue: the
+          // catalogue no longer carries it (migration 0055), and `access` is
+          // the booking-gated flow that reveals it — loaded for every space the
+          // practitioner holds a booking on, so a confirmed session still shows
+          // the address for sharing with a client.
+          addressFor={(spaceId) => access[spaceId]?.addressLine ?? null}
           isPro={profile.isPro}
           onGoPro={() => go("pro")}
           standing={practitionerStanding}

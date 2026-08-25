@@ -117,7 +117,10 @@ describe("the version and its fingerprint", () => {
    * migration) so every host is asked again.
    */
   it("pins the exact words the current version stands for", () => {
-    expect(hostTermsDigest()).toBe("54eb8be0");
+    // v2: the allowed-use examples dropped "personal practice" and "dance and
+    // movement rehearsal" (HOST_TERMS_VERSION raised to 2, required version
+    // bumped in migration 0056).
+    expect(hostTermsDigest()).toBe("de2b9b76");
   });
 });
 

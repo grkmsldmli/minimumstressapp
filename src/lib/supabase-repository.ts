@@ -120,6 +120,11 @@ interface SpaceRow {
   doc_review_note?: string | null;
   lat?: number | null;
   lng?: number | null;
+  // The coarse point spaces_public exposes in place of lat/lng — offset a few
+  // hundred metres and stable per listing. Present on the view, absent on the
+  // base `spaces` table (so a host row read here simply has neither).
+  approx_lat?: number | null;
+  approx_lng?: number | null;
   // numeric(4,1) arrives as a string from PostgREST, not a number.
   area?: string | null;
   entrance_access?: string | null;
@@ -571,9 +576,11 @@ export class SupabaseRepository implements Repository {
         limitMinutes: row.parking_limit_minutes ?? null,
       },
       floorAreaSqft: row.floor_area_sqft ?? null,
-      addressLine: row.address_line ?? null,
-      lat: row.lat ?? null,
-      lng: row.lng ?? null,
+      // The coarse point only. spaces_public no longer carries the exact
+      // lat/lng or the street address (see migration 0055); the exact values
+      // come back through getSpaceAccessDetails once a booking is held.
+      approxLat: row.approx_lat ?? null,
+      approxLng: row.approx_lng ?? null,
       amenities: row.amenities ?? [],
       requirements: row.requirements ?? [],
       houseRules: row.house_rules ?? "",

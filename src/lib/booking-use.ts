@@ -22,11 +22,11 @@
  * rather than a disagreement about what was meant, which is the difference
  * between having a rule and having a rule you can act on.
  *
- * Identity is deliberately not part of this. A practitioner can misuse a room
- * exactly as easily as anybody else, and requiring a professional title to
- * book a movement studio for an hour turns away real demand — two friends who
- * want to rehearse — while buying no safety at all. The question is what will
- * happen in the room, not who is asking.
+ * Identity is not verified at booking — we do not check a professional title,
+ * because a declaration answers what will happen in the room, not who is
+ * asking. The menu itself is the professional work the marketplace is for:
+ * private client sessions, classes, coaching, movement, meditation and the
+ * like. A booking is declared against one of those.
  */
 
 /**
@@ -68,18 +68,6 @@ export interface BookingUse {
 }
 
 export const BOOKING_USES: readonly BookingUse[] = [
-  {
-    key: "personal_practice",
-    label: "Personal practice",
-    hostLabel: "Personal practice",
-    bringsPeople: false,
-  },
-  {
-    key: "dance_rehearsal",
-    label: "Dance or movement rehearsal",
-    hostLabel: "Dance and movement rehearsal",
-    bringsPeople: true,
-  },
   {
     key: "movement_session",
     label: "Yoga, Pilates or movement session",
@@ -151,14 +139,14 @@ export const OPT_IN_USES = ["group_class", "workshop", "filming", "other"] as co
  * host's to add.
  */
 export const DEFAULT_USES: Record<string, readonly string[]> = {
-  physical: ["personal_practice", "dance_rehearsal", "movement_session"],
+  physical: ["movement_session"],
   social: ["consultation", "client_session"],
   traditional: ["client_session"],
-  spirit: ["personal_practice", "meditation"],
+  spirit: ["meditation"],
 };
 
 export function defaultUsesFor(category: string): string[] {
-  return [...(DEFAULT_USES[category] ?? ["personal_practice"])];
+  return [...(DEFAULT_USES[category] ?? ["client_session"])];
 }
 
 const BY_KEY = new Map(BOOKING_USES.map((use) => [use.key, use]));

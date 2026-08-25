@@ -31,15 +31,15 @@ export const metadata: Metadata = {
 const STEPS = [
   {
     title: "Find a room",
-    body: "Search by what you practise and where you are. Listings show the room, the rate, the address, what is in it and what it suits — everything except how to get through the door.",
+    body: "Search by what you practise and where you are. Listings show the room, the rate, the area, what is in it and what it suits. The exact address reaches you once your booking is confirmed.",
   },
   {
     title: "Book the hour",
     body: "Pick a time inside the host's open hours and pay when you book. The money is held, not sent on, until the session has actually happened.",
   },
   {
-    title: "Let yourself in",
-    body: "You get in on your own. What you need to do that reaches you shortly before your session, and nobody else.",
+    title: "Access the space",
+    body: "How you get in reaches you shortly before your session, and nobody else.",
   },
   {
     title: "Both sides review",
@@ -134,24 +134,23 @@ export default function About() {
 
           <Section title="What it costs">
             <p className="font-body font-normal text-[15px] leading-relaxed text-ink-muted">
-              A host sets their rate and receives all of it. Nothing is deducted from what a
-              host is owed, and the price a practitioner sees on a listing is the price they pay.
+              A host sets their rate and receives all of it — nothing is deducted from what they
+              are owed. The service fee is added on top, and the price a practitioner sees on a
+              listing already includes it.
             </p>
             <p className="font-body font-normal text-[15px] leading-relaxed text-ink-muted mt-3">
-              Cancel 24 or more hours ahead and you are refunded. If a host cancels on you, you are
-              refunded in full, automatically, including the card processing fee — you did not cause
-              it and you do not pay for it.
+              Cancel 24 or more hours ahead and you are refunded, apart from the card fee. If a
+              host cancels on you, you are refunded in full, automatically, including the card
+              processing fee — you did not cause it and you do not pay for it.
             </p>
           </Section>
 
           <Section title="What is public, and what is not">
             <p className="font-body font-normal text-[15px] leading-relaxed text-ink-muted">
-              The address is on the listing — it is already on a map and on the studio&rsquo;s own
-              website, and hiding it left a practitioner booking an afternoon somewhere they could
-              not place. How to get in is the part that is not public: the entry instructions and
-              anything else you need to get in goes only to whoever paid for that hour, shortly
-              before it starts. Hosts hand us a lease or ownership document before a room goes
-              live; those are read by us and shown to nobody.
+              A listing shows the city and the area — enough to know where a room is before you
+              book. The exact address is shared once your booking is confirmed, along with how to
+              get in, and only with whoever paid for that hour. Hosts hand us a lease or ownership
+              document before a room goes live; those are read by us and shown to nobody.
             </p>
           </Section>
 

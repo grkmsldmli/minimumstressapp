@@ -101,9 +101,9 @@ export async function cityTypesWithSpaces(): Promise<CityTypeRow[]> {
  * The rooms on a town's page.
  *
  * `spaces_public` only ever contains active listings, so there is no status to
- * filter — and the street address it carries is deliberate: every listing here
- * is a retail studio whose address is already on its own website. What stays
- * private is how to get in, which is not in this view at all.
+ * filter. What a public page shows of where a room is stops at the city and the
+ * area: the exact street address is held back until a booking is confirmed, and
+ * how to get in is not in this view at all.
  */
 export interface DirectorySpace {
   id: string;
@@ -193,7 +193,6 @@ export interface DirectoryListing extends DirectorySpace {
   amenities: string[];
   requirements: string[];
   houseRules: string;
-  addressLine: string | null;
   floorAreaSqft: number | null;
   bufferMinutes: number;
   photos: string[];
@@ -201,9 +200,12 @@ export interface DirectoryListing extends DirectorySpace {
   averageRating: number | null;
 }
 
+// No address_line: the exact address is not read into anything a public page
+// renders. City and area are enough to place a room before booking; the street
+// address is revealed through the booking flow once a session is confirmed.
 const LISTING_COLUMNS =
   "id, name, category, hourly_rate_cents, capacity, city, state, area, description, " +
-  "suitable_for, room_setup, amenities, requirements, house_rules, address_line, " +
+  "suitable_for, room_setup, amenities, requirements, house_rules, " +
   "floor_area_sqft, buffer_minutes";
 
 /**
@@ -278,7 +280,6 @@ export async function listingBySlug(
     amenities: Array.isArray(row.amenities) ? (row.amenities as string[]) : [],
     requirements: Array.isArray(row.requirements) ? (row.requirements as string[]) : [],
     houseRules: String(row.house_rules ?? ""),
-    addressLine: (row.address_line as string | null) ?? null,
     floorAreaSqft: row.floor_area_sqft === null ? null : Number(row.floor_area_sqft),
     bufferMinutes: Number(row.buffer_minutes ?? 0),
     // Photographs only. A video needs a player and a poster frame, and a page

@@ -114,20 +114,10 @@ export default async function RentOutYourPage({
             {page.whoUses.lead}
           </p>
 
-          {/*
-            Two groups, and the second one is the point.
-
-            The old version listed professions and nothing else, which told
-            everybody without a business card that this was not for them — and
-            told the host their room only earns from practitioners. Somebody
-            who wants a floor to rehearse on for an hour is ordinary demand,
-            and a host deciding whether to list should be able to see it.
-          */}
-          <div className="mt-6 grid gap-4 sm:grid-cols-2">
-            <Audience title="For work" items={page.whoUses.forWork} />
-            {page.whoUses.forThemselves && (
-              <Audience title="For themselves" items={page.whoUses.forThemselves} />
-            )}
+          {/* The professional work this room suits, read from the same uses the
+              booking form offers so the two cannot drift apart. */}
+          <div className="mt-6">
+            <Audience title="Who books it" items={page.whoUses.forWork} />
           </div>
 
           <h2
@@ -173,7 +163,7 @@ export default async function RentOutYourPage({
           <ol className="mt-4 space-y-4">
             {[
               "List your space — photographs, the address, how many it holds, your rate, and the hours you are happy for it to be used. About ten minutes.",
-              "Choose what you allow. Personal practice, private client sessions, small groups, a camera in the room — you decide what happens in there, use by use.",
+              "Choose what you allow. Private client sessions, movement, small groups, a camera in the room — you decide what happens in there, use by use.",
               "Choose how bookings arrive. Approve each request yourself, or let a matching booking go straight through.",
               "Get booked. Everybody says what they are using the space for and how many are coming before they pay, and your rate reaches your bank after each session.",
             ].map((step, index) => (
@@ -249,9 +239,9 @@ export default async function RentOutYourPage({
 /**
  * One column of who a room is for.
  *
- * Chips rather than prose, because this is a list somebody scans for
- * themselves — "dance rehearsal" either is or is not what they were going to
- * do, and a paragraph makes them read to find out.
+ * Chips rather than prose, because this is a list a host scans — "Pilates
+ * instructors" either is or is not who they picture in the room, and a
+ * paragraph makes them read to find out.
  */
 function Audience({ title, items }: { title: string; items: readonly string[] }) {
   return (

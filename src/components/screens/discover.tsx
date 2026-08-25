@@ -184,7 +184,7 @@ export function Discover({
         space.name,
         roomTypeFor(space.category),
         space.description,
-        space.addressLine ?? space.area ?? "",
+        space.area ?? "",
         ...specialtiesFor(space.category),
         ...space.amenities,
       ]
@@ -745,11 +745,12 @@ function MapView({
       */}
       <BrowseMap
         pins={spaces
-          .filter((space) => space.lat !== null && space.lng !== null)
+          .filter((space) => space.approxLat !== null && space.approxLng !== null)
           .map((space) => ({
             id: space.id,
             name: space.name,
-            point: { lat: space.lat!, lng: space.lng! },
+            // The coarse point, not the building — see approxLat/approxLng.
+            point: { lat: space.approxLat!, lng: space.approxLng! },
             category: space.category,
             active: selected === space.id,
           }))}

@@ -31,24 +31,15 @@ export interface HostPage {
   /** The line under the heading. */
   standfirst: string;
   /**
-   * Who is looking for a room like this.
+   * Who is looking for a room like this — the professional work it suits.
    *
-   * Two groups, because this used to describe one. Every line was a
-   * profession — coaches, instructors, practitioners — which quietly told
-   * anybody without a business card that the room was not for them, and told
-   * a host their space only earns from professionals. Both are wrong: two
-   * friends who want a floor for an hour are ordinary demand.
-   *
-   * The entries are the uses in booking-use.ts, said the way each side would
-   * say them, so what this page advertises and what the booking form offers
-   * cannot drift apart. `forThemselves` is optional and deliberately missing
-   * on the rooms where it would be an invention — nobody books a treatment
-   * room with a table in it for their own practice.
+   * The entries are the uses in booking-use.ts, said the way a host would say
+   * them, so what this page advertises and what the booking form offers cannot
+   * drift apart.
    */
   whoUses: {
     lead: string;
     forWork: readonly string[];
-    forThemselves?: readonly string[];
   };
   /** What makes this particular kind of room bookable. Specific, not generic. */
   whatItNeeds: string[];
@@ -65,7 +56,6 @@ const COPY: Record<string, Omit<HostPage, "type">> = {
     whoUses: {
       lead: "A reformer is expensive to own and idle most of the week, which is exactly why somebody else wants yours.",
       forWork: ["Pilates instructors", "Reformer teachers", "Physiotherapists and rehab coaches", "Small group classes", "Workshops"],
-      forThemselves: ["Personal reformer practice", "Mat practice", "Two people training together"],
     },
     whatItNeeds: [
       "At least one reformer, and it is worth saying how many and which make — instructors teach differently on a Balanced Body than on an Allegro, and they will ask.",
@@ -88,7 +78,6 @@ const COPY: Record<string, Omit<HostPage, "type">> = {
     whoUses: {
       lead: "A warm room with clear floor suits more people than a yoga schedule fills.",
       forWork: ["Yoga instructors", "Breathwork facilitators", "Small group classes", "Workshops", "Private client sessions"],
-      forThemselves: ["Personal practice", "Meditation or breathwork", "Dance or movement rehearsal", "A few friends practising together"],
     },
     whatItNeeds: [
       "Floor space and a number: how many mats fit, laid out properly rather than touching.",
@@ -117,7 +106,6 @@ const COPY: Record<string, Omit<HostPage, "type">> = {
     whoUses: {
       lead: "If you have clear floor space sitting unused, somebody may already be looking for it.",
       forWork: ["Pilates instructors", "Yoga instructors", "Tai chi and qigong instructors", "Movement professionals", "Small group classes"],
-      forThemselves: ["Dance rehearsal", "Personal movement practice", "Yoga practice", "Meditation", "Small groups"],
     },
     whatItNeeds: [
       "Clear floor, and the dimensions. Roughly is fine; people plan a session around it.",
@@ -259,7 +247,6 @@ const COPY: Record<string, Omit<HostPage, "type">> = {
     whoUses: {
       lead: "A still room earns from more than teaching.",
       forWork: ["Meditation teachers", "Breathwork facilitators", "Small group classes", "Workshops"],
-      forThemselves: ["Personal practice", "Meditation or breathwork", "A small sitting group"],
     },
     whatItNeeds: [
       "Quiet at the hour it is bookable, which is not the same as quiet in general. Say which hours are which.",
@@ -282,7 +269,6 @@ const COPY: Record<string, Omit<HostPage, "type">> = {
     whoUses: {
       lead: "Quiet and warm, and useful to more people than energy workers.",
       forWork: ["Reiki practitioners", "Energy and bodywork practitioners", "Practitioners seeing private clients"],
-      forThemselves: ["Personal practice", "Meditation or breathwork"],
     },
     whatItNeeds: [
       "A couch or treatment table, reachable from both sides.",

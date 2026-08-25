@@ -107,8 +107,8 @@ export default async function SpacesIndex({
             <>
               <p className="mt-5 text-[16.5px] leading-[1.75]" style={{ color: "#5f6673" }}>
                 {type
-                  ? `${type.plural} on your schedule. No lease, no deposit, and the price you see is the price you pay.`
-                  : "Treatment rooms, studios and private consulting rooms, booked on your schedule. No lease, no deposit, and the price you see is the price you pay."}
+                  ? `${type.plural} on your schedule. No lease, no deposit, and prices are all-in — service fee included.`
+                  : "Treatment rooms, studios and private consulting rooms, booked on your schedule. No lease, no deposit, and prices are all-in — service fee included."}
               </p>
 
               <div className="mt-8 grid gap-3 sm:grid-cols-2">

@@ -1,7 +1,7 @@
 import "server-only";
 
-import { type CityRow, type CityTypeRow, indexablePaths } from "./directory";
-import { idFromSlug, listingPath } from "./listing-url";
+import { type CityRow, type CityTypeRow, indexablePaths, pickRouteListing } from "./directory";
+import { idFromSlug, listingPath, uuidPrefixRange } from "./listing-url";
 import { isSupabaseConfigured } from "./supabase/env";
 import { supabasePublic } from "./supabase/server";
 
@@ -182,35 +182,55 @@ const LISTING_COLUMNS =
   "floor_area_sqft, buffer_minutes";
 
 /**
- * The room behind a slug, found by the id on the end of it.
+ * The room behind a slug, found by the id on the end of it, in the town the
+ * address names.
  *
- * Only the id is trusted. The words in front are the host's name for the room
- * at the time somebody made the link, and they are allowed to have changed —
- * that is the whole reason the id is there.
+ * Only the id is trusted for *which* room. The words in front are the host's
+ * name for it at the time the link was made and are allowed to have changed —
+ * that is the whole reason the id is there. The town, though, is checked: the
+ * URL carries only eight characters of the id, which is not guaranteed unique,
+ * so the town is what tells a rare prefix collision apart and what keeps an
+ * address from resolving to a room in a different town than it claims.
  */
-export async function listingBySlug(slug: string): Promise<DirectoryListing | null> {
+export async function listingBySlug(
+  slug: string,
+  route: { state: string; city: string },
+): Promise<DirectoryListing | null> {
   if (!isSupabaseConfigured()) return null;
 
   const short = idFromSlug(slug);
   if (!short) return null;
 
+  // The eight characters in the URL are the id's first group. `like` on a uuid
+  // is not an operator (it throws, 42883); the range those characters bound is,
+  // and the primary-key index answers it — see uuidPrefixRange.
+  const range = uuidPrefixRange(short);
+  if (!range) return null;
+
   const db = supabasePublic();
 
-  /*
-   * Matched on the id's opening characters rather than on the whole thing,
-   * because only eight of them are in the URL. `like` on a uuid uses the
-   * primary key index as a prefix scan, so this is not the table scan it
-   * looks like.
-   */
   const { data, error } = await db
     .from("spaces_public")
     .select(LISTING_COLUMNS)
-    .like("id", `${short}%`)
-    .limit(2);
+    .gte("id", range.min)
+    .lte("id", range.max)
+    // A handful is more than a prefix collision has ever produced, and enough
+    // to tell a real one from a unique match without reading the whole table.
+    .limit(5);
 
-  if (error || !data || data.length !== 1) return null;
+  if (error || !data || data.length === 0) return null;
 
-  const row = data[0] as unknown as Record<string, unknown>;
+  // spaces_public is active-only, so a delisted room was never a candidate.
+  // Among the id-prefix matches, the one whose town is the town the address
+  // names — or nothing, on a same-town tie, rather than a guess. See
+  // pickRouteListing.
+  const chosen = pickRouteListing(
+    data as unknown as (Record<string, unknown> & { state: string | null; city: string | null })[],
+    route,
+  );
+  if (!chosen) return null;
+
+  const row = chosen;
   const id = String(row.id);
 
   const [{ data: media }, { data: rating }] = await Promise.all([

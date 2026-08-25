@@ -125,6 +125,34 @@ export function canonicalForCityType(row: CityTypeRow, cityCount: number): strin
   return indexableCityType(row, cityCount) ? `${town}/${row.spaceType}` : town;
 }
 
+/**
+ * The one room a listing URL means, chosen from the id-prefix matches by the
+ * town in the address.
+ *
+ * The URL carries only eight characters of the id, which is not guaranteed
+ * unique, so a prefix lookup can return more than one room. This does not pick
+ * between them by guessing — it keeps the ones whose town is the town the URL
+ * names, and returns a room only when exactly one survives. A prefix collision
+ * between two rooms in different towns resolves to the right one; a collision
+ * between two in the same town is a genuine tie and returns null, because
+ * serving the wrong listing is worse than a 404. A town mismatch — the id
+ * belongs to a room in another town than the address claims — also returns
+ * null, so an address cannot be made to point at a room it is not at.
+ */
+export function pickRouteListing<T extends { state: string | null; city: string | null }>(
+  candidates: T[],
+  route: { state: string; city: string },
+): T | null {
+  const inTown = candidates.filter(
+    (row) =>
+      row.state !== null &&
+      row.city !== null &&
+      stateSlug(row.state) === route.state &&
+      citySlug(row.city) === route.city,
+  );
+  return inTown.length === 1 ? inTown[0] : null;
+}
+
 export function cityPath(state: string, city: string): string {
   return `/spaces/${stateSlug(state)}/${citySlug(city)}`;
 }

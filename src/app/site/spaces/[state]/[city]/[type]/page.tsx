@@ -70,7 +70,7 @@ export async function generateMetadata({
    * ending in an id is a listing and nothing else can be.
    */
   if (isListingSlug(type)) {
-    const listing = await listingBySlug(type);
+    const listing = await listingBySlug(type, { state, city });
     if (!listing) return {};
 
     return {
@@ -114,7 +114,7 @@ export default async function CityTypePage({
   const { state, city, type } = await params;
 
   if (isListingSlug(type)) {
-    const listing = await listingBySlug(type);
+    const listing = await listingBySlug(type, { state, city });
     if (!listing) notFound();
     return <ListingPage listing={listing} />;
   }

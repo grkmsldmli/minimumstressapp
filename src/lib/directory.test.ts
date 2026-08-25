@@ -12,6 +12,7 @@ import {
   indexableCity,
   indexableCityType,
   indexablePaths,
+  pickRouteListing,
   priceRange,
   stateSlug,
 } from "./directory";
@@ -238,5 +239,61 @@ describe("a price range", () => {
     const edge = city({ spaceCount: MIN_LISTINGS_TO_INDEX });
     expect(indexableCity(edge)).toBe(true);
     expect(priceRange(edge)).not.toBeNull();
+  });
+});
+
+/**
+ * Choosing the one room a listing URL means from the id-prefix matches.
+ *
+ * Eight characters of a uuid are not unique, so a lookup can return more than
+ * one room. This is where a wrong listing must never be served: the town in the
+ * address is what tells a collision apart, and a genuine tie fails to a 404
+ * rather than a guess.
+ */
+describe("resolving a listing URL to one room", () => {
+  const room = (over: { id?: string; state?: string | null; city?: string | null }) => ({
+    id: "id",
+    name: "Reformer Hit",
+    state: "CA",
+    city: "San Carlos",
+    ...over,
+  });
+  const route = { state: "ca", city: "san-carlos" };
+
+  it("returns the single room in the town the address names", () => {
+    const only = room({ id: "4e313239-4d6a-4fd7-bcd2-711340d8962c" });
+    expect(pickRouteListing([only], route)).toBe(only);
+  });
+
+  it("returns nothing when the id's room is in a different town than the URL", () => {
+    // The prefix matched a room, but it is in Belmont and the address says San
+    // Carlos — resolving it would put a room at an address it is not at.
+    const elsewhere = room({ city: "Belmont" });
+    expect(pickRouteListing([elsewhere], route)).toBeNull();
+    // A wholly wrong route likewise finds nothing.
+    expect(pickRouteListing([room({})], { state: "tx", city: "dallas" })).toBeNull();
+  });
+
+  it("returns nothing for a room the geocoder never placed", () => {
+    expect(pickRouteListing([room({ city: null })], route)).toBeNull();
+    expect(pickRouteListing([room({ state: null })], route)).toBeNull();
+  });
+
+  it("picks the right room when a prefix collision spans two towns", () => {
+    const here = room({ id: "4e313239-aaaa-...", city: "San Carlos" });
+    const there = room({ id: "4e313239-bbbb-...", city: "Belmont" });
+    expect(pickRouteListing([here, there], route)).toBe(here);
+  });
+
+  it("refuses to guess when a collision is in the same town", () => {
+    // Same prefix, same town: a genuine tie. A 404 is correct; serving either
+    // one would be serving the wrong listing to half the visitors.
+    const a = room({ id: "4e313239-aaaa-..." });
+    const b = room({ id: "4e313239-bbbb-..." });
+    expect(pickRouteListing([a, b], route)).toBeNull();
+  });
+
+  it("returns nothing when the prefix matched no rooms at all", () => {
+    expect(pickRouteListing([], route)).toBeNull();
   });
 });

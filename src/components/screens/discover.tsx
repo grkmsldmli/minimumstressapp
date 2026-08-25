@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { AccountBadge } from "@/components/account-badge";
 import { LocationPrompt, type LocationChoice } from "@/components/location-prompt";
@@ -112,6 +112,12 @@ export function Discover({
   const [askedAlready, setAskedAlready] = useState(false);
   const [view, setView] = useState<"list" | "map">("list");
 
+  // The featured rail scrolls horizontally, so it keeps its own position. When
+  // the set it shows changes — a category tapped, a search typed — that position
+  // is stale, and leaving it there is how the rail opens half-scrolled onto a
+  // card that is no longer the first match. Reset it to the start instead.
+  const railRef = useRef<HTMLDivElement>(null);
+
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
   const GreetIcon = hour < 18 ? Sun : Moon;
@@ -128,6 +134,12 @@ export function Discover({
   // effect, which would paint an empty screen first and then fix itself.
   const active: Filter =
     filter !== "all" && !offered.some((c) => c.key === filter) ? "all" : filter;
+
+  // Back to the first card whenever the filter or the search changes what the
+  // rail is showing. Cheap and layout-safe: one scroll assignment, no listener.
+  useEffect(() => {
+    railRef.current?.scrollTo({ left: 0 });
+  }, [active, query]);
 
   const byCategory = active === "all" ? spaces : spaces.filter((s) => s.category === active);
 
@@ -348,8 +360,17 @@ export function Discover({
           {active === "all" && visible.length > 0 && (
             <>
               <SectionLabel className="px-6">Open right now</SectionLabel>
+              {/*
+                One card at a time, with the next just peeking. Snap holds a card
+                flush at the left rather than resting between two, and scroll-pl
+                matches the px-6 gutter so the snapped card sits inside the
+                padding rather than clipped against the edge. Card width is a
+                share of this rail's own width (see FeaturedCard), so the peek is
+                the same on a 320px phone as on a 430px one without any vw maths.
+              */}
               <div
-                className="flex gap-3.5 px-6 pb-6 overflow-x-auto no-scrollbar"
+                ref={railRef}
+                className="flex gap-3.5 px-6 pb-6 overflow-x-auto no-scrollbar snap-x snap-mandatory scroll-pl-6"
                 style={{ perspective: 800 }}
               >
                 {visible.slice(0, 4).map((space, i) => (
@@ -552,7 +573,11 @@ function FeaturedCard({
   return (
     <TiltCard
       onClick={onClick}
-      className="shrink-0 w-[230px] rounded-[24px] overflow-hidden text-left press card-in"
+      // Width is a share of the rail, not a fixed 230px: one card fills the
+      // viewport with a small peek of the next at every phone width, and the cap
+      // keeps it from ballooning on a wide screen. snap-start pairs with the
+      // rail's scroll-snap so it comes to rest flush, never half-shown.
+      className="snap-start shrink-0 basis-[85%] max-w-[320px] rounded-[24px] overflow-hidden text-left press card-in"
       style={{
         animationDelay: `${index * 90}ms`,
         boxShadow: "0 16px 34px -16px rgba(22,48,78,0.35)",
@@ -600,9 +625,11 @@ function FeaturedCard({
         )}
       </div>
       <div className="p-4 bg-white">
-        <div className="flex items-baseline justify-between">
-          <p className="font-display italic font-semibold text-[17px] text-navy">{space.name}</p>
-          <p className="font-body text-[13.5px] text-navy">
+        <div className="flex items-baseline justify-between gap-2">
+          <p className="font-display italic font-semibold text-[17px] text-navy min-w-0 truncate">
+            {space.name}
+          </p>
+          <p className="font-body text-[13.5px] text-navy shrink-0">
             <span className="font-semibold">{formatCents(price)}</span>
             <span className="text-ink-faint">/hr</span>
           </p>

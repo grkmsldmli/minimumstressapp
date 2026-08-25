@@ -191,7 +191,15 @@ function SheetBody({
           </div>
         </div>
 
-        <PaymentElement options={{ layout: "tabs" }} />
+        {/*
+          Card is the only method on the intent (see payment-methods.ts), so
+          this keeps the two wallets that ride on it in hand: Apple Pay stays,
+          Google Pay is turned off, leaving Card + Apple Pay. Link is not a
+          wallet here and is governed by the Stripe account, not this option.
+        */}
+        <PaymentElement
+          options={{ layout: "tabs", wallets: { applePay: "auto", googlePay: "never" } }}
+        />
 
         {error && (
           <p

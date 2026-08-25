@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type {
   Booking,
@@ -203,6 +203,23 @@ export function App() {
   /** What a term booking did, including the weeks it could not take. */
   const [bookingNotice, setBookingNotice] = useState<string | null>(null);
   const [seriesSkipped, setSeriesSkipped] = useState<{ startsAt: string; because: string }[]>([]);
+
+  /**
+   * Pro checkout confirmation, kept honest.
+   *
+   * `confirmingPro` is the short wait after returning from Stripe with a real
+   * payment while the webhook flips is_pro; `justUpgraded` adds the one-time
+   * confetti once that flip is actually observed on the server. Neither ever
+   * grants Pro — the success screen is gated on the loaded profile's isPro — so
+   * a cancelled or abandoned checkout can never reach it.
+   */
+  const [confirmingPro, setConfirmingPro] = useState(false);
+  const [justUpgraded, setJustUpgraded] = useState(false);
+  // Set the moment checkout is opened, so a native return (which carries no URL
+  // marker, unlike the web redirect) knows to confirm on resume.
+  const checkoutStartedRef = useRef(false);
+  // The ?pro= redirect marker is acted on once per load, never replayed.
+  const proReturnHandledRef = useRef(false);
 
   const [authBusy, setAuthBusy] = useState(false);
 
@@ -598,6 +615,87 @@ export function App() {
     refresh();
     await new Promise((resolve) => setTimeout(resolve, 650));
   }, [refresh]);
+
+  /**
+   * Confirm a Pro checkout against the server, then celebrate — never before.
+   *
+   * Called when a checkout returns (the web ?pro=started redirect, or a native
+   * resume after one was opened). It re-reads the account, showing a brief
+   * "confirming" wait while the subscription webhook lands, and turns the screen
+   * Pro only when the server itself says so — applying that server profile
+   * rather than any client guess. A webhook that never confirms leaves the
+   * account Free and the screen back on the offer; nothing here fabricates Pro.
+   * Bounded, so it can never poll forever.
+   */
+  const confirmProSubscription = useCallback(async () => {
+    setConfirmingPro(true);
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const profile = await repo.getProfile().catch(() => null);
+      if (profile?.isPro) {
+        setData((prev) => (prev ? { ...prev, profile } : prev));
+        setJustUpgraded(true); // a real, server-confirmed upgrade — confetti once
+        setConfirmingPro(false);
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+    }
+    setConfirmingPro(false); // gave the webhook long enough; still Free
+  }, [repo]);
+
+  /**
+   * The confetti is a one-time thing, so it clears itself. Reopening the Pro
+   * screen later shows "You're Pro" without replaying the celebration.
+   */
+  useEffect(() => {
+    if (!justUpgraded) return;
+    const timer = setTimeout(() => setJustUpgraded(false), 6000);
+    return () => clearTimeout(timer);
+  }, [justUpgraded]);
+
+  /**
+   * Returning from Stripe on the web. The redirect lands on ?pro=started or
+   * ?pro=cancelled; the marker is stripped so a reload cannot replay it, and
+   * only a started checkout begins confirmation — a cancel stays Free with no
+   * confetti. Acted on once the account is loaded, and only once per load.
+   */
+  useEffect(() => {
+    if (proReturnHandledRef.current || !data || typeof window === "undefined") return;
+
+    const marker = new URLSearchParams(window.location.search).get("pro");
+    if (marker !== "started" && marker !== "cancelled") return;
+
+    proReturnHandledRef.current = true;
+    window.history.replaceState({}, "", window.location.pathname);
+    go("pro");
+    // Starting confirmation is the whole point of handling the redirect; it sets
+    // state, which is exactly what this one-time effect is for.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (marker === "started") void confirmProSubscription();
+  }, [data, go, confirmProSubscription]);
+
+  /**
+   * Returning from Stripe in the native shell. There is no URL marker — the
+   * checkout opened out of the WebView — so a resume after checkout was started,
+   * while still Free, is the signal to confirm. Guarded by the ref so ordinary
+   * backgrounding never triggers it.
+   */
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+
+    const onVisible = () => {
+      if (
+        document.visibilityState === "visible" &&
+        checkoutStartedRef.current &&
+        !data?.profile.isPro
+      ) {
+        checkoutStartedRef.current = false;
+        void confirmProSubscription();
+      }
+    };
+
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [data?.profile.isPro, confirmProSubscription]);
 
   /**
    * Deletes, then resets. The order matters only in that the reset must not
@@ -1520,8 +1618,22 @@ export function App() {
       return (
         <ProScreen
           isPro={profile.isPro}
-          onBack={back}
-          onSubscribe={() => mutate(() => repo.startProSubscription())}
+          celebrate={justUpgraded}
+          confirming={confirmingPro}
+          onBack={() => {
+            // Leaving clears the one-time celebration so a later visit does not
+            // replay it.
+            setJustUpgraded(false);
+            setConfirmingPro(false);
+            back();
+          }}
+          onSubscribe={() => {
+            // Flag the native return path before checkout opens; the web path
+            // uses the ?pro= redirect instead. This only opens checkout — the
+            // screen turns Pro only once the server confirms it.
+            checkoutStartedRef.current = true;
+            return mutate(() => repo.startProSubscription());
+          }}
         />
       );
 

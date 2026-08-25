@@ -384,31 +384,55 @@ const COMPARISON: { label: string; free: string | false; pro: string | true }[] 
   },
 ];
 
+/**
+ * Which face the Pro screen shows, from server truth alone.
+ *
+ * The one rule that matters, and the bug this encodes against: "You're Pro" is
+ * shown only when the server says so — `isPro`, set by the subscription webhook
+ * — never because a checkout was opened, a redirect happened, or the app came
+ * back to the foreground. `celebrate` is a fresh, server-confirmed upgrade and
+ * only adds the confetti; `confirming` is the short wait while the webhook
+ * catches up after a real payment. Free with nothing in flight is the offer.
+ * There is no client flag that can grant Pro.
+ */
+export type ProView = "offer" | "confirming" | "active" | "celebrate";
+
+export function proView(input: {
+  isPro: boolean;
+  confirming?: boolean;
+  celebrate?: boolean;
+}): ProView {
+  if (input.isPro) return input.celebrate ? "celebrate" : "active";
+  if (input.confirming) return "confirming";
+  return "offer";
+}
+
 export function ProScreen({
   isPro,
   onBack,
   onSubscribe,
+  celebrate = false,
+  confirming = false,
 }: {
   isPro: boolean;
   onBack: () => void;
-  /** Rejects when the subscription does not go through, so this screen can say so. */
+  /** Opens checkout. Rejects only when the checkout could not be opened — it is
+   *  never proof of payment, so it never shows the success screen. */
   onSubscribe: () => Promise<unknown>;
+  /** A fresh, server-confirmed upgrade. Adds the confetti, shown once. */
+  celebrate?: boolean;
+  /** Returned from checkout, waiting on the webhook to confirm the payment. */
+  confirming?: boolean;
 }) {
-  const [justSubscribed, setJustSubscribed] = useState(false);
   const [busy, setBusy] = useState(false);
-  /*
-   * The button used to fire the subscription and show the success screen in
-   * the same breath, without waiting for either answer. So a card that was
-   * declined, or a network that dropped, still produced "You're Pro." —
-   * somebody was told they had bought something they had not, on the one
-   * screen in the app where that is a payment.
-   */
   const [failed, setFailed] = useState<string | null>(null);
 
-  if (justSubscribed || isPro) {
+  const view = proView({ isPro, confirming, celebrate });
+
+  if (view === "active" || view === "celebrate") {
     return (
       <NavyScreen className="items-center justify-center text-center px-9">
-        <ConfettiBurst />
+        {view === "celebrate" && <ConfettiBurst />}
         <div className="relative z-10 flex flex-col items-center">
           <BreathingLogo size={120} />
           <div className="mt-6">
@@ -425,6 +449,35 @@ export function ProScreen({
             style={{ backgroundColor: "#2578C2" }}
           >
             Done
+          </button>
+        </div>
+      </NavyScreen>
+    );
+  }
+
+  /*
+   * Returned from Stripe and the payment is real, but the webhook that flips
+   * is_pro has not landed yet. A brief, honest wait — never a fabricated
+   * "You're Pro" — that resolves to the success screen once the server
+   * confirms, or falls back to the offer if it never does.
+   */
+  if (view === "confirming") {
+    return (
+      <NavyScreen className="items-center justify-center text-center px-9">
+        <div className="relative z-10 flex flex-col items-center">
+          <BreathingLogo size={120} />
+          <p className="font-body font-normal text-[15px] text-white/80 leading-relaxed mt-6">
+            Confirming your subscription…
+          </p>
+          <p className="font-body font-normal text-[13.5px] text-white/55 leading-relaxed mt-2">
+            This only takes a moment.
+          </p>
+          <button
+            type="button"
+            onClick={onBack}
+            className="mt-7 font-body font-medium text-[14px] text-white/70 press"
+          >
+            Back
           </button>
         </div>
       </NavyScreen>
@@ -538,10 +591,12 @@ export function ProScreen({
         <PrimaryButton
           disabled={busy}
           onClick={() => {
+            // Only opens checkout. Success is never declared here — that would
+            // be treating "checkout opened" as "paid". The screen turns Pro only
+            // when the server confirms it (isPro), driven by the webhook.
             setFailed(null);
             setBusy(true);
             void onSubscribe()
-              .then(() => setJustSubscribed(true))
               .catch((cause) =>
                 setFailed(errorMessage(cause, "That did not go through. Nothing was charged.")),
               )

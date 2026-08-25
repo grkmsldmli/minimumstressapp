@@ -42,6 +42,7 @@ import { isNativeApp } from "@/lib/native";
 import { BOOKING_HORIZON_DAYS } from "@/lib/money";
 import { SESSION_MS } from "@/lib/session";
 import { explainRejection } from "@/lib/booking-plan";
+import { resolveActiveBooking } from "@/lib/active-booking";
 import {
   checkInsuranceForBooking,
   insuranceStatus,
@@ -203,6 +204,18 @@ export function App() {
   /** What a term booking did, including the weeks it could not take. */
   const [bookingNotice, setBookingNotice] = useState<string | null>(null);
   const [seriesSkipped, setSeriesSkipped] = useState<{ startsAt: string; because: string }[]>([]);
+  /**
+   * The booking just created for checkout, held here so the payment and
+   * confirmation screens can render it.
+   *
+   * A fresh instant booking is an uncaptured hold, and listMyBookings hides
+   * holds by design — so the snapshot's `bookings` never contains the row we
+   * are about to pay for. Without this the payment screen looked the booking up
+   * in that list, found nothing, and dropped onto the not-found fallback. It is
+   * only a fallback: once the webhook captures the booking it reappears in the
+   * list, which takes precedence.
+   */
+  const [checkoutBooking, setCheckoutBooking] = useState<Booking | null>(null);
 
   /**
    * Pro checkout confirmation, kept honest.
@@ -1210,7 +1223,9 @@ export function App() {
     spaces.find((s) => s.id === activeSpaceId) ??
     mySpaces.find((s) => s.id === activeSpaceId) ??
     null;
-  const activeBooking = bookings.find((b) => b.id === activeBookingId) ?? null;
+  // The list first; then the just-created checkout hold it deliberately hides,
+  // so payment and confirmation can render a booking that is not yet captured.
+  const activeBooking = resolveActiveBooking(bookings, checkoutBooking, activeBookingId);
   const editingSpace = mySpaces.find((s) => s.id === editingSpaceId) ?? mySpaces[0] ?? null;
 
   switch (screen) {
@@ -1345,6 +1360,9 @@ export function App() {
                 declared,
               });
               setActiveBookingId(booking.id);
+              // Keep the created row: the next screen needs it, and the refresh
+              // below will not bring it back while it is still an unpaid hold.
+              setCheckoutBooking(booking);
               setClientSecret(clientSecret);
               refresh();
               // The booking row exists either way. A clientSecret means a card
@@ -1379,6 +1397,7 @@ export function App() {
            */
           onBack={() => {
             setClientSecret(null);
+            setCheckoutBooking(null);
             go("discover");
           }}
           onPaid={() => {
@@ -1545,7 +1564,10 @@ export function App() {
           // Only worth offering when it would actually have saved money.
           showProUpsell={!profile.isPro && activeBooking.instantFeeCents > 0}
           onGoPro={() => go("pro")}
-          onDone={() => go("discover")}
+          onDone={() => {
+            setCheckoutBooking(null);
+            go("discover");
+          }}
         />
       );
 

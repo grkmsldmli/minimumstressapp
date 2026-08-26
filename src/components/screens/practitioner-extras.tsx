@@ -4,6 +4,7 @@ import { Fragment, type ReactNode, useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
   Bell,
+  Briefcase,
   Check,
   CheckCircle2,
   ChevronRight,
@@ -13,6 +14,7 @@ import {
   LogOut,
   Scale,
   ScrollText,
+  ShieldCheck,
   X,
 } from "lucide-react";
 
@@ -27,7 +29,9 @@ import { SavedCard } from "@/components/saved-card";
 import { StandingSummary } from "@/components/standing-notice";
 import { shortName } from "@/components/document-status";
 import { AvatarUpload, DocumentUpload } from "@/components/uploads";
+import { SUPPORT_EMAIL } from "@/lib/company";
 import type { AccountType, Profile } from "@/lib/domain";
+import { PRACTITIONER_PROFESSIONS } from "@/lib/professions";
 import { type InsuranceStatus, insuranceStatus } from "@/lib/insurance";
 import { formatCoverageDate } from "@/lib/format-date";
 import { errorMessage } from "@/lib/error-message";
@@ -631,6 +635,8 @@ export function PractitionerProfile({
   disputesWaiting,
   onRequestAccountChange,
   onGoInsurance,
+  onVerifyIdentity,
+  identityChecking = false,
   onSignOut,
 }: {
   profile: Profile;
@@ -657,6 +663,10 @@ export function PractitionerProfile({
   /** How many refund requests or claims are waiting on this account. */
   disputesWaiting: number;
   onGoInsurance: () => void;
+  /** Opens the one-time identity check (hosted by Stripe). */
+  onVerifyIdentity: () => void;
+  /** True during the short wait after returning from Stripe, while the webhook lands. */
+  identityChecking?: boolean;
   onSignOut: () => void;
 }) {
   return (
@@ -697,6 +707,65 @@ export function PractitionerProfile({
             }
             onClick={onGoInsurance}
           />
+          <ProfileRow
+            icon={ShieldCheck}
+            label="Identity"
+            // Verified once, by Stripe; a fact, not a claim about their work.
+            // "Checking…" is the neutral wait while the webhook lands on return —
+            // never a client-side claim of success. Tappable only from a
+            // settled, unverified state; nothing to do while verified or mid-check.
+            value={
+              identityChecking
+                ? "Checking your verification…"
+                : profile.identityVerifiedAt
+                  ? "Verified"
+                  : "Not verified"
+            }
+            onClick={
+              profile.identityVerifiedAt || identityChecking ? undefined : onVerifyIdentity
+            }
+          />
+          {/*
+            Identity-verification helper copy. Short, factual, and honest about
+            who holds what — see the Privacy note it mirrors. No ID image or
+            document is ever shown in the app.
+          */}
+          <p className="font-body font-normal text-[12.5px] leading-relaxed px-1 text-ink-faint">
+            We verify identity through Stripe, which collects and checks your ID and a
+            selfie. We keep only whether you passed and a reference — never the images. To have
+            your verification data deleted, email{" "}
+            <a href={`mailto:${SUPPORT_EMAIL}`} className="underline">
+              {SUPPORT_EMAIL}
+            </a>
+            .
+          </p>
+          {/*
+            What they do, from the controlled list. Display only for now, and the
+            label a host reads on a request. A plain select rather than a screen —
+            it is one choice, changed rarely.
+          */}
+          <div
+            className="flex items-center gap-3 p-3.5 rounded-xl bg-white"
+            style={{ border: "1px solid #E7EEF6" }}
+          >
+            <Briefcase size={15} color="#3B9BE8" className="shrink-0" />
+            <label htmlFor="profession" className="flex-1 font-body font-medium text-[14.5px] text-navy">
+              What you do
+            </label>
+            <select
+              id="profession"
+              value={profile.profession ?? ""}
+              onChange={(event) => onUpdate({ profession: event.target.value || null })}
+              className="font-body text-[13.5px] text-ink-soft bg-white"
+            >
+              <option value="">Choose…</option>
+              {PRACTITIONER_PROFESSIONS.map((profession) => (
+                <option key={profession.key} value={profession.key}>
+                  {profession.label}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
         <div className="mt-6">

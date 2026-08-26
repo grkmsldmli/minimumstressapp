@@ -36,6 +36,31 @@ import { errorMessage } from "./error-message";
  * generic message, discarding the sentence a constraint or trigger raised for
  * exactly that moment.
  */
+/**
+ * The trust fields host_requests() and host_bookings() both carry, and the one
+ * place they are turned into a PractitionerTrust — so the request queue and the
+ * history cannot describe the same signals differently.
+ */
+interface HostRpcRow {
+  booking_id: string;
+  space_id: string;
+  practitioner_name: string | null;
+  practitioner_profession?: string | null;
+  practitioner_identity_verified?: boolean | null;
+  practitioner_insurance_verified?: boolean | null;
+  practitioner_completed_sessions?: number | null;
+  practitioner_good_standing?: boolean | null;
+}
+
+function trustFrom(row: HostRpcRow): PractitionerTrust {
+  return {
+    identityVerified: Boolean(row.practitioner_identity_verified),
+    insuranceVerified: Boolean(row.practitioner_insurance_verified),
+    completedSessions: Number(row.practitioner_completed_sessions ?? 0),
+    goodStanding: Boolean(row.practitioner_good_standing),
+  };
+}
+
 function asError(cause: unknown): Error {
   return cause instanceof Error ? cause : new Error(errorMessage(cause, "Request failed"));
 }
@@ -62,12 +87,14 @@ import type {
   Message,
   NewSpaceInput,
   OpenDispute,
+  PractitionerTrust,
   PublicReview,
   Profile,
   PublicSpace,
   SpaceAccessDetails,
   SpaceEdit,
 } from "./domain";
+import { isKnownProfession, professionLabel } from "./professions";
 import { toCancellationEvents, type CancellationEvent } from "./reliability";
 import type { CreateBookingInput, Repository, ReviewInput } from "./repository";
 import type { ApprovalState } from "./booking-approval";
@@ -274,6 +301,11 @@ export class SupabaseRepository implements Repository {
       notifyPayouts: data?.notify_payouts ?? true,
       notifyOffers: data?.notify_offers ?? false,
       accountType: data?.account_type ?? null,
+      // Server-written; read here, never set from the client (migration 0057).
+      identityVerifiedAt: data?.identity_verified_at
+        ? new Date(data.identity_verified_at)
+        : null,
+      profession: (data?.profession as string | null) ?? null,
       searchPostcode: data?.search_postcode ?? null,
       termsVersion: data?.terms_version ?? null,
       termsAcceptedAt: data?.terms_accepted_at ? new Date(data.terms_accepted_at) : null,
@@ -316,6 +348,16 @@ export class SupabaseRepository implements Repository {
     if (patch.searchPostcode !== undefined) row.search_postcode = patch.searchPostcode;
     if (patch.accountType !== undefined) row.account_type = patch.accountType;
     /*
+     * One of the controlled keys or null. Rejected early with a clear message;
+     * the DB check constraint refuses an unknown one regardless.
+     */
+    if (patch.profession !== undefined) {
+      if (patch.profession !== null && !isKnownProfession(patch.profession)) {
+        throw new Error("Unknown profession");
+      }
+      row.profession = patch.profession;
+    }
+    /*
      * The version travels; the timestamp does not. A trigger sets it from the
      * server clock, so a client cannot record that somebody agreed last year.
      */
@@ -330,8 +372,9 @@ export class SupabaseRepository implements Repository {
     // reads this for money or access.
     if (patch.milestonesSeen !== undefined) row.milestones_seen = patch.milestonesSeen;
 
-    // isPro and stripeConnected are absent on purpose: both are set by webhooks
-    // after money or verification actually clears, never by the client asking.
+    // isPro, stripeConnected and identityVerifiedAt are absent on purpose: all
+    // are set by webhooks after money or verification actually clears, never by
+    // the client asking. The DB trigger in 0057 refuses an identity write here.
 
     const { error } = await this.db.from("profiles").upsert(row);
     if (error) throw asError(error);
@@ -433,6 +476,29 @@ export class SupabaseRepository implements Repository {
 
     // The redirect ends this page. Returning the current profile keeps the
     // signature honest for the moment before the browser leaves.
+    return this.getProfile();
+  }
+
+  async startIdentityVerification(): Promise<Profile> {
+    const response = await apiFetch("/api/identity/start", { method: "POST" });
+
+    if (!response.ok) {
+      const { error } = await response.json().catch(() => ({ error: null }));
+      throw new Error(error ?? "Could not start identity verification");
+    }
+
+    const body = (await response.json()) as {
+      url?: string;
+      alreadyVerified?: boolean;
+      checking?: boolean;
+    };
+    // Already done, or Stripe is still reviewing an earlier attempt: nothing to
+    // open. Hand back the current profile; the app's return poll shows the state.
+    if (body.alreadyVerified || body.checking || !body.url) return this.getProfile();
+
+    // Off to Stripe's hosted flow; the webhook writes the verified time on the
+    // way back. The redirect ends this page.
+    window.location.href = body.url;
     return this.getProfile();
   }
 
@@ -1491,25 +1557,23 @@ export class SupabaseRepository implements Repository {
     if (error) throw asError(error);
 
     return (data ?? []).map(
-      (row: {
-        booking_id: string;
-        space_id: string;
+      (row: HostRpcRow & {
         starts_at: string;
         ends_at: string;
         status: BookingStatus;
         host_paid_at: string | null;
         net_cents: number;
-        practitioner_name: string | null;
       }): HostBooking => ({
         id: row.booking_id,
         spaceId: row.space_id,
         practitionerName: row.practitioner_name ?? "A practitioner",
-        practitionerCraft: "",
+        practitionerCraft: professionLabel(row.practitioner_profession) ?? "",
         startsAt: new Date(row.starts_at),
         endsAt: new Date(row.ends_at),
         status: row.status,
         netCents: row.net_cents,
         hostPaidAt: row.host_paid_at ? new Date(row.host_paid_at) : null,
+        ...trustFrom(row),
       }),
     );
   }
@@ -1519,15 +1583,12 @@ export class SupabaseRepository implements Repository {
     if (error) throw asError(error);
 
     return (data ?? []).map(
-      (row: {
-        booking_id: string;
-        space_id: string;
+      (row: HostRpcRow & {
         space_name: string;
         starts_at: string;
         ends_at: string;
         requested_at: string;
         net_cents: number;
-        practitioner_name: string | null;
         purpose: string | null;
         purpose_note: string | null;
         attendee_count: number | null;
@@ -1536,6 +1597,7 @@ export class SupabaseRepository implements Repository {
         spaceId: row.space_id,
         spaceName: row.space_name,
         practitionerName: row.practitioner_name ?? "A practitioner",
+        practitionerCraft: professionLabel(row.practitioner_profession) ?? "",
         startsAt: new Date(row.starts_at),
         endsAt: new Date(row.ends_at),
         requestedAt: new Date(row.requested_at),
@@ -1543,6 +1605,7 @@ export class SupabaseRepository implements Repository {
         purpose: row.purpose,
         purposeNote: row.purpose_note,
         attendeeCount: row.attendee_count,
+        ...trustFrom(row),
       }),
     );
   }

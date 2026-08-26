@@ -97,6 +97,7 @@ export function SpaceDetail({
   insuranceGate,
   insuranceGateReason,
   onAddInsurance,
+  onVerifyIdentity,
 }: {
   space: PublicSpace;
   isPro: boolean;
@@ -114,6 +115,8 @@ export function SpaceDetail({
    * answered by adding insurance, so it is rendered with a way there.
    */
   insuranceGate?: string | null;
+  /** Fired when the gate is an identity one and the practitioner taps to verify. */
+  onVerifyIdentity?: () => void;
   /** Which eligibility reason raised the gate, so the CTA can name the right action. */
   insuranceGateReason?: string | null;
   onAddInsurance?: () => void;
@@ -812,29 +815,37 @@ export function SpaceDetail({
           cover rather than trying again, so it carries a way there instead of
           sitting as a red line under a button that will keep refusing.
         */}
-        {insuranceGate && (
-          <div
-            className="rounded-xl p-3.5 mb-2.5"
-            style={{ backgroundColor: "#FFF8F1", border: "1px solid #F5DFC4" }}
-          >
-            <p className="font-body font-semibold text-[14px] text-[#8B6C37]">
-              Liability insurance
-            </p>
-            <p className="font-body font-normal text-[13.5px] leading-relaxed mt-1 text-[#8B6C37]">
-              {insuranceGate}
-            </p>
-            {onAddInsurance && (
-              <button
-                type="button"
-                onClick={onAddInsurance}
-                className="mt-3 px-4 py-2 rounded-full font-body font-medium text-[13.5px] press"
-                style={{ backgroundColor: "#2E5578", color: "#fff" }}
+        {insuranceGate &&
+          (() => {
+            // The same in-flow gate serves two eligibility states. Identity is
+            // its own title and action; everything else is the cover gate as
+            // before.
+            const isIdentity = insuranceGateReason === "identity_verification_required";
+            const title = isIdentity ? "Identity" : "Liability insurance";
+            const action = isIdentity ? onVerifyIdentity : onAddInsurance;
+            const label = isIdentity ? "Verify identity" : insuranceCtaLabel(insuranceGateReason);
+            return (
+              <div
+                className="rounded-xl p-3.5 mb-2.5"
+                style={{ backgroundColor: "#FFF8F1", border: "1px solid #F5DFC4" }}
               >
-                {insuranceCtaLabel(insuranceGateReason)}
-              </button>
-            )}
-          </div>
-        )}
+                <p className="font-body font-semibold text-[14px] text-[#8B6C37]">{title}</p>
+                <p className="font-body font-normal text-[13.5px] leading-relaxed mt-1 text-[#8B6C37]">
+                  {insuranceGate}
+                </p>
+                {action && (
+                  <button
+                    type="button"
+                    onClick={action}
+                    className="mt-3 px-4 py-2 rounded-full font-body font-medium text-[13.5px] press"
+                    style={{ backgroundColor: "#2E5578", color: "#fff" }}
+                  >
+                    {label}
+                  </button>
+                )}
+              </div>
+            );
+          })()}
 
         {/*
           A term rarely lands whole. Naming the weeks that did not is the

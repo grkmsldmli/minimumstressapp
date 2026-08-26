@@ -180,6 +180,15 @@ describe("the words a version stands for", () => {
      * moved, along with the "seven days" and "shorter pause" wording.
      */
     3: "abc408a5",
+    /*
+     * Version 4 adds the identity-verification privacy disclosure: that we use
+     * Stripe for identity verification, what Stripe may collect to run it (ID
+     * and selfie images, identifying information, device and fraud signals),
+     * that we store no copies of those images and keep only the status and a
+     * reference, and how to ask for that data to be deleted or redacted. New
+     * processing of a new category of personal data, so everyone is asked again.
+     */
+    4: "30c0ee0b",
   };
 
   it("still says what the current version said", () => {

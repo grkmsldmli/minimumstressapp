@@ -528,7 +528,9 @@ describe("profiles keep their payment identifiers to themselves", () => {
      * The list is exact rather than a check for absent names, so adding any
      * column to this function has to come past this test. `host_paid_at` did:
      * it says when a transfer landed, which is the host's own money and their
-     * own question, and carries no amount at all.
+     * own question, and carries no amount at all. The trust columns (0057) did
+     * too — a profession, three booleans and a plain session count, none of
+     * them a fee, an amount, a document, or contact detail.
      */
     const [row] = await asUser<Record<string, unknown>>(HOST, `select * from host_bookings()`);
 
@@ -542,6 +544,11 @@ describe("profiles keep their payment identifiers to themselves", () => {
       "practitioner_name",
       "practitioner_avatar_path",
       "host_paid_at",
+      "practitioner_profession",
+      "practitioner_identity_verified",
+      "practitioner_insurance_verified",
+      "practitioner_completed_sessions",
+      "practitioner_good_standing",
     ]);
   });
 
@@ -1832,5 +1839,163 @@ describe("listing requires accepting the Host Terms", () => {
     );
     expect(row.terms_version).toBe(1);
     expect(row.host_terms_version).toBeNull();
+  });
+});
+
+/**
+ * Practitioner trust (migration 0057): identity is the server's to set, the
+ * profession is a controlled value, and a host sees a coarse summary — never
+ * another host's bookings or any document.
+ */
+describe("practitioner trust and identity", () => {
+  // Isolated ids, so the counts here cannot be moved by the bookings other
+  // blocks in this shared database create.
+  const THOST = "00000057-0000-4000-8000-000000000001";
+  const TPRAC = "00000057-0000-4000-8000-000000000002";
+  const TOTHER = "00000057-0000-4000-8000-000000000003";
+  const TSPACE = "00000057-0000-4000-8000-000000000010";
+
+  beforeAll(async () => {
+    // Written as the server would (a direct exec has no auth.uid()), which the
+    // spoof test proves the client cannot do: verified identity, verified cover,
+    // a chosen profession.
+    await db.exec(`
+      insert into auth.users (id, email) values
+        ('${THOST}', 'thost@example.com'),
+        ('${TPRAC}', 'tprac@example.com'),
+        ('${TOTHER}', 'tother@example.com');
+
+      insert into profiles (id, display_name) values
+        ('${THOST}', 'Trust Host'),
+        ('${TOTHER}', 'Other Host');
+
+      insert into profiles (
+        id, display_name, identity_verified_at, insurance_doc_path,
+        insurance_doc_state, insurance_doc_reviewed_at,
+        insurance_effective_date, insurance_expires_at, profession
+      ) values (
+        '${TPRAC}', 'Trust Prac', now(), 'prac/x/cert.pdf',
+        'verified', now(), now() - interval '1 day', now() + interval '365 days', 'pilates'
+      );
+
+      insert into spaces (
+        id, host_id, name, category, hourly_rate_cents, capacity, access_type,
+        entry_instructions, address_line, status, sublease_doc_path, legal_ack_at,
+        sublease_doc_state, sublease_doc_reviewed_at
+      ) values (
+        '${TSPACE}', '${THOST}', 'Trust Room', 'physical', 4500, 3, 'keypad',
+        'Panel by the door', '1 Trust Way', 'active',
+        'space/t/lease.pdf', now(), 'verified', now()
+      );
+
+      -- A completed, paid session — the only kind that counts toward the number.
+      insert into bookings (
+        space_id, practitioner_id, starts_at, ends_at, is_instant, was_pro,
+        host_rate_cents, service_fee_cents, instant_fee_cents, pro_discount_cents,
+        credit_applied_cents, total_cents, platform_cents,
+        access_code, access_code_revealed_at, captured_at, status
+      ) values (
+        '${TSPACE}', '${TPRAC}',
+        now() - interval '2 days', now() - interval '2 days' + interval '1 hour',
+        false, false, 4500, 900, 0, 0, 0, 5400, 900,
+        '1111', now() - interval '2 days', now() - interval '2 days', 'completed'
+      );
+
+      -- Cancelled well ahead of the session: paid, but neither a completed
+      -- session nor a late cancellation, so it counts for nothing.
+      insert into bookings (
+        space_id, practitioner_id, starts_at, ends_at, is_instant, was_pro,
+        host_rate_cents, service_fee_cents, instant_fee_cents, pro_discount_cents,
+        credit_applied_cents, total_cents, platform_cents,
+        access_code, access_code_revealed_at, captured_at, status,
+        cancelled_at, cancelled_by
+      ) values (
+        '${TSPACE}', '${TPRAC}',
+        now() + interval '3 days', now() + interval '3 days' + interval '1 hour',
+        false, false, 4500, 900, 0, 0, 0, 5400, 900,
+        '2222', now() + interval '3 days', now() - interval '6 days',
+        'cancelled_by_practitioner', now() - interval '6 days', 'practitioner'
+      );
+
+      -- An unpaid hold — never counts.
+      insert into bookings (
+        space_id, practitioner_id, starts_at, ends_at, is_instant, was_pro,
+        host_rate_cents, service_fee_cents, instant_fee_cents, pro_discount_cents,
+        credit_applied_cents, total_cents, platform_cents,
+        access_code, access_code_revealed_at, status
+      ) values (
+        '${TSPACE}', '${TPRAC}',
+        now() + interval '4 days', now() + interval '4 days' + interval '1 hour',
+        false, false, 4500, 900, 0, 0, 0, 5400, 900,
+        '3333', now() + interval '4 days', 'upcoming'
+      );
+
+      -- A pending, card-authorized request — what host_requests() answers.
+      insert into bookings (
+        space_id, practitioner_id, starts_at, ends_at, is_instant, was_pro,
+        host_rate_cents, service_fee_cents, instant_fee_cents, pro_discount_cents,
+        credit_applied_cents, total_cents, platform_cents,
+        access_code, access_code_revealed_at, approval_state, authorized_at, status
+      ) values (
+        '${TSPACE}', '${TPRAC}',
+        now() + interval '5 days', now() + interval '5 days' + interval '1 hour',
+        false, false, 4500, 900, 0, 0, 0, 5400, 900,
+        '4444', now() + interval '5 days', 'pending', now(), 'upcoming'
+      );
+    `);
+  });
+
+  it("refuses a practitioner marking their own identity verified", async () => {
+    await expect(
+      asUser(TPRAC, `update profiles set identity_verified_at = now() where id = '${TPRAC}'`),
+    ).rejects.toThrow(/server/i);
+  });
+
+  it("refuses an unknown profession and accepts a known one", async () => {
+    await expect(
+      asUser(TPRAC, `update profiles set profession = 'astronaut' where id = '${TPRAC}'`),
+    ).rejects.toThrow();
+    await expect(
+      asUser(TPRAC, `update profiles set profession = 'yoga' where id = '${TPRAC}'`),
+    ).resolves.toBeDefined();
+    // Back to the value the summary tests read.
+    await db.exec(`update profiles set profession = 'pilates' where id = '${TPRAC}'`);
+  });
+
+  it("shows the host the practitioner's trust summary on a request", async () => {
+    const rows = await asUser<{
+      practitioner_profession: string | null;
+      practitioner_identity_verified: boolean;
+      practitioner_insurance_verified: boolean;
+      practitioner_good_standing: boolean;
+      practitioner_completed_sessions: number;
+    }>(THOST, `select * from host_requests()`);
+
+    expect(rows.length).toBe(1); // the one pending, authorized request
+    const req = rows[0];
+    expect(req.practitioner_profession).toBe("pilates");
+    expect(req.practitioner_identity_verified).toBe(true);
+    expect(req.practitioner_insurance_verified).toBe(true);
+    expect(req.practitioner_good_standing).toBe(true);
+    // Only the one completed, paid session — not the cancelled or unpaid rows.
+    expect(Number(req.practitioner_completed_sessions)).toBe(1);
+  });
+
+  it("counts only completed, paid sessions in the host's history summary", async () => {
+    const rows = await asUser<{ practitioner_completed_sessions: number }>(
+      THOST,
+      `select * from host_bookings()`,
+    );
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) {
+      expect(Number(row.practitioner_completed_sessions)).toBe(1);
+    }
+  });
+
+  it("does not leak a practitioner's bookings to an unrelated host", async () => {
+    const requests = await asUser(TOTHER, `select * from host_requests()`);
+    const history = await asUser(TOTHER, `select * from host_bookings()`);
+    expect(requests).toEqual([]);
+    expect(history).toEqual([]);
   });
 });

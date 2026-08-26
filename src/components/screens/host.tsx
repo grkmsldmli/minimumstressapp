@@ -22,6 +22,7 @@ import { DocumentStatus } from "@/components/document-status";
 import { EmergencyContactCard } from "@/components/emergency-contact";
 import { PullToRefresh } from "@/components/pull-to-refresh";
 import { Ambient, Headline, LogoBadge } from "@/components/brand";
+import { PractitionerTrustSummary } from "@/components/practitioner-trust";
 import { PrimaryButton } from "@/components/primitives";
 import { RequestQueue } from "@/components/request-queue";
 import { StandingNotice } from "@/components/standing-notice";
@@ -1343,10 +1344,14 @@ function HostBookingRow({
               {booking.practitionerName}
             </p>
             <p className="font-body font-normal text-[13.5px] text-ink-soft truncate">
-              {booking.practitionerCraft} ·{" "}
+              {booking.practitionerCraft ? `${booking.practitionerCraft} · ` : ""}
               {sessionDate(booking.startsAt, timeZone)}{" "}
               {sessionTime(booking.startsAt, timeZone)}
             </p>
+            {/* The same trust signals, kept to one quiet line here. */}
+            <div className="mt-0.5">
+              <PractitionerTrustSummary trust={booking} compact />
+            </div>
           </div>
         </div>
 

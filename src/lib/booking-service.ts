@@ -218,7 +218,7 @@ async function gatherBookingFacts(
     admin
       .from("profiles")
       .select(
-        "id, is_pro, stripe_customer_id, account_type, insurance_doc_path, insurance_doc_state, insurance_effective_date, insurance_expires_at",
+        "id, is_pro, stripe_customer_id, account_type, identity_verified_at, insurance_doc_path, insurance_doc_state, insurance_effective_date, insurance_expires_at",
       )
       .eq("id", practitionerId)
       .maybeSingle(),
@@ -323,6 +323,8 @@ async function gatherBookingFacts(
        * which reads as unverified rather than as cover.
        */
       accountType: (practitioner?.account_type as "practitioner" | "host" | null) ?? null,
+      // Server-written only (Stripe Identity webhook); a client cannot assert it.
+      identityVerified: Boolean(practitioner?.identity_verified_at),
       insurance: {
         hasCertificate: Boolean(practitioner?.insurance_doc_path),
         state:

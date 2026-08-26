@@ -288,6 +288,8 @@ export class MockRepository implements Repository {
     notifyOffers: false,
     emergencyContact: { name: null, phone: null, relationship: null },
     accountType: null,
+    identityVerifiedAt: null,
+    profession: null,
     searchPostcode: null,
     termsVersion: null,
     termsAcceptedAt: null,
@@ -414,6 +416,16 @@ export class MockRepository implements Repository {
 
   async startProSubscription(): Promise<Profile> {
     this.profile = { ...this.profile, isPro: true };
+    return { ...this.profile };
+  }
+
+  /**
+   * Stands in for Stripe Identity. The demo has no hosted flow to send anyone
+   * to, so it simply marks them verified — the state the real webhook would
+   * write after Stripe confirmed a document and a selfie.
+   */
+  async startIdentityVerification(): Promise<Profile> {
+    this.profile = { ...this.profile, identityVerifiedAt: new Date() };
     return { ...this.profile };
   }
 
@@ -923,6 +935,12 @@ export class MockRepository implements Repository {
       netCents: space.hourlyRateCents,
       // Nothing is settled before the session has happened.
       hostPaidAt: null,
+      // A verified, established practitioner, so the dashboard shows the trust
+      // summary with something in it.
+      identityVerified: true,
+      insuranceVerified: true,
+      completedSessions: 12,
+      goodStanding: true,
     };
 
     this.hostBookings.push(booking);

@@ -77,6 +77,14 @@ export interface PractitionerFacts {
    * account_type, never from the request.
    */
   accountType: "practitioner" | "host" | null;
+  /**
+   * Whether the practitioner's identity has been verified.
+   *
+   * Read from the stored, server-written identity_verified_at (a Stripe Identity
+   * webhook is the only thing that sets it), never from the request — a client
+   * asserting its own identity is exactly what this gate refuses.
+   */
+  identityVerified: boolean;
   /** The professional's liability cover, as reviewed and dated. */
   insurance: InsuranceFacts;
 }
@@ -87,6 +95,7 @@ export type PlanRejection =
   | "space_not_found"
   | "space_not_active"
   | "professional_profile_required"
+  | "identity_verification_required"
   | "standing_paused"
   | "host_cannot_be_paid"
   | "slot_in_past"
@@ -175,6 +184,17 @@ export function planBooking(input: {
    */
   if (practitioner.accountType !== "practitioner") {
     return { ok: false, reason: "professional_profile_required" };
+  }
+
+  /*
+   * A verified identity, checked before the slot for the same reason as the
+   * account side: it is a fact about the person, not the hour. Set only by the
+   * Stripe Identity webhook, so a client cannot assert it, and enforced here —
+   * the one gate the sheet, the API route and the recurring expander all cross —
+   * so a pending or abandoned check can never slip a booking through.
+   */
+  if (!practitioner.identityVerified) {
+    return { ok: false, reason: "identity_verification_required" };
   }
 
   /*
@@ -350,6 +370,11 @@ export function explainRejection(
     case "professional_profile_required":
       return {
         message: "Complete your professional profile to book a space.",
+        status: 403,
+      };
+    case "identity_verification_required":
+      return {
+        message: "Verify your identity to book a space. It takes a couple of minutes and you only do it once.",
         status: 403,
       };
     case "standing_paused":

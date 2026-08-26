@@ -91,6 +91,19 @@ export interface Profile {
   /** Null until chosen. Cannot be changed afterwards — see migration 0012. */
   accountType: AccountType | null;
   /**
+   * When the practitioner's identity was verified, or null.
+   *
+   * Written only by the Stripe Identity webhook (server-authoritative); the
+   * client can read it but never set it — see migration 0057. Null means the
+   * booking gate refuses a new booking until they verify.
+   */
+  identityVerifiedAt: Date | null;
+  /**
+   * What the practitioner does, one of lib/professions' controlled keys, or
+   * null until chosen. Display only for now; a host reads the label.
+   */
+  profession: string | null;
+  /**
    * Which version of the terms this account accepted, and when.
    *
    * Null for everyone who signed up before there was anything to accept.
@@ -476,7 +489,7 @@ export interface Booking extends BookingMoneyRecord {
 }
 
 /** A booking as its host sees it: net earnings, never a fee percentage. */
-export interface HostBooking {
+export interface HostBooking extends PractitionerTrust {
   id: string;
   spaceId: string;
   practitionerName: string;
@@ -504,11 +517,33 @@ export interface HostBooking {
  * payout to report; a finished session has no deadline. Folding them together
  * would give one type where half the fields are null in either direction.
  */
-export interface BookingRequest {
+/**
+ * The coarse trust signals a host may see about a practitioner — before
+ * approving a request, and on their booking history.
+ *
+ * A summary and nothing more: never a document, a policy number, a date of
+ * birth, contact detail, or another host's booking. Assembled server-side by
+ * the host_requests / host_bookings functions, which can read across accounts
+ * safely and return only these.
+ */
+export interface PractitionerTrust {
+  /** Their identity passed a Stripe Identity check. */
+  identityVerified: boolean;
+  /** Their liability certificate is verified (not the document, just the fact). */
+  insuranceVerified: boolean;
+  /** Completed, paid sessions across the platform — a plain reputation count. */
+  completedSessions: number;
+  /** In clear standing: fewer than the warn threshold of late cancellations. */
+  goodStanding: boolean;
+}
+
+export interface BookingRequest extends PractitionerTrust {
   id: string;
   spaceId: string;
   spaceName: string;
   practitionerName: string;
+  /** What they do, as a natural label from lib/professions. Empty if unset. */
+  practitionerCraft: string;
   startsAt: Date;
   endsAt: Date;
   /** When it was asked for. The expiry counts from here. */

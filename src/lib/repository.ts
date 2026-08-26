@@ -197,6 +197,15 @@ export interface Repository {
   startProSubscription(): Promise<Profile>;
 
   /**
+   * Begin the one-time identity check. Against Stripe this opens a hosted
+   * Identity session — a government ID and a selfie, which we never see — and
+   * hands the practitioner to it. The verified state is written only by the
+   * webhook, so this never marks anyone verified; it just opens the form. When
+   * the practitioner is already verified it resolves without leaving the app.
+   */
+  startIdentityVerification(): Promise<Profile>;
+
+  /**
    * Begins payout onboarding. Against Stripe this creates an Express account
    * link and hands the host to Stripe's hosted KYC flow, which is where
    * identity and bank details are collected — deliberately never by us.

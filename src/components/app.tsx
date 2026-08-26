@@ -98,7 +98,7 @@ import { SpaceDetail } from "./screens/space-detail";
  */
 type BookingGate = {
   message: string;
-  reason: InsuranceRejection | "professional_profile_required";
+  reason: InsuranceRejection | "professional_profile_required" | "identity_verification_required";
 };
 
 function bookingEligibilityMessage(
@@ -110,6 +110,16 @@ function bookingEligibilityMessage(
     return {
       message: explainRejection("professional_profile_required").message,
       reason: "professional_profile_required",
+    };
+  }
+
+  // Identity before cover, matching the server gate order. A client-side mirror
+  // only — the server is still the gate that cannot be bypassed — so the refusal
+  // arrives with a way to fix it rather than as a dead-ended round trip.
+  if (profile.identityVerifiedAt === null) {
+    return {
+      message: explainRejection("identity_verification_required").message,
+      reason: "identity_verification_required",
     };
   }
 
@@ -233,6 +243,19 @@ export function App() {
   const checkoutStartedRef = useRef(false);
   // The ?pro= redirect marker is acted on once per load, never replayed.
   const proReturnHandledRef = useRef(false);
+
+  /**
+   * Identity verification, confirmed the same honest way Pro is.
+   *
+   * `confirmingIdentity` is the short "Checking your verification…" wait after
+   * returning from Stripe while the webhook writes identity_verified_at. It
+   * never marks anyone verified — the profile the poll re-reads from the server
+   * is the only thing that does — so a failed or abandoned check simply drops
+   * back to the unverified retry state. Bounded, so it cannot poll forever.
+   */
+  const [confirmingIdentity, setConfirmingIdentity] = useState(false);
+  const identityStartedRef = useRef(false);
+  const identityReturnHandledRef = useRef(false);
 
   const [authBusy, setAuthBusy] = useState(false);
 
@@ -709,6 +732,72 @@ export function App() {
     document.addEventListener("visibilitychange", onVisible);
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, [data?.profile.isPro, confirmProSubscription]);
+
+  /**
+   * Confirm an identity check against the server, then show verified — never
+   * before. Re-reads the profile a few times while the Stripe Identity webhook
+   * writes identity_verified_at, showing "Checking your verification…" until it
+   * lands. If the webhook never confirms (a failed or abandoned check) the
+   * account stays unverified and the row falls back to a plain retry state.
+   * Bounded, so it can never poll forever, and it fabricates nothing.
+   */
+  const confirmIdentityVerification = useCallback(async () => {
+    setConfirmingIdentity(true);
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const profile = await repo.getProfile().catch(() => null);
+      if (profile?.identityVerifiedAt) {
+        setData((prev) => (prev ? { ...prev, profile } : prev));
+        setConfirmingIdentity(false);
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+    }
+    setConfirmingIdentity(false); // gave the webhook long enough; still unverified
+  }, [repo]);
+
+  /**
+   * Returning from Stripe Identity on the web. The redirect lands on
+   * ?identity=checking; the marker is stripped so a reload cannot replay it, the
+   * profile screen is shown so its identity row carries the state, and the
+   * bounded poll begins. Acted on once the account is loaded, once per load.
+   */
+  useEffect(() => {
+    if (identityReturnHandledRef.current || !data || typeof window === "undefined") return;
+
+    const marker = new URLSearchParams(window.location.search).get("identity");
+    if (marker !== "checking") return;
+
+    identityReturnHandledRef.current = true;
+    window.history.replaceState({}, "", window.location.pathname);
+    go("practitioner-profile");
+    // Starting confirmation is the whole point of handling the return; it sets
+    // state, which is exactly what this one-time effect is for.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void confirmIdentityVerification();
+  }, [data, go, confirmIdentityVerification]);
+
+  /**
+   * Returning from Stripe Identity in the native shell — no URL marker, so a
+   * resume after a check was started, while still unverified, is the signal to
+   * confirm. Guarded by the ref so ordinary backgrounding never triggers it.
+   */
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+
+    const onVisible = () => {
+      if (
+        document.visibilityState === "visible" &&
+        identityStartedRef.current &&
+        !data?.profile.identityVerifiedAt
+      ) {
+        identityStartedRef.current = false;
+        void confirmIdentityVerification();
+      }
+    };
+
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [data?.profile.identityVerifiedAt, confirmIdentityVerification]);
 
   /**
    * Deletes, then resets. The order matters only in that the reset must not
@@ -1281,6 +1370,15 @@ export function App() {
             setInsuranceGate(null);
             go("verify");
           }}
+          onVerifyIdentity={() => {
+            setInsuranceGate(null);
+            // Marked so a native resume knows a check is in flight; the web
+            // return uses the ?identity=checking marker instead. Hands off to
+            // Stripe's hosted flow (or resolves instantly in the mock); the
+            // webhook writes the verified state, nothing here does.
+            identityStartedRef.current = true;
+            void mutate(() => repo.startIdentityVerification());
+          }}
           onBook={async (startsAt, weeks, declared) => {
             /*
              * Eligibility first, before a card is ever touched.
@@ -1633,6 +1731,11 @@ export function App() {
           }}
           disputesWaiting={disputes.filter((d) => d.awaitingYou).length}
           onGoInsurance={() => go("verify")}
+          onVerifyIdentity={() => {
+            identityStartedRef.current = true;
+            return mutate(() => repo.startIdentityVerification());
+          }}
+          identityChecking={confirmingIdentity}
           onSignOut={signOut}
         />
       );

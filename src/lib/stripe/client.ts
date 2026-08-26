@@ -25,6 +25,45 @@ export function stripe(): Stripe {
 }
 
 /* ------------------------------------------------------------------ */
+/*  Identity — practitioner verification                               */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Start (or restart) a Stripe Identity check for a practitioner.
+ *
+ * Stripe hosts the whole thing: the practitioner is sent to `session.url`,
+ * uploads a government ID and a selfie there, and we never see either — the same
+ * reason Connect is Express. All we keep is the session id, to match the return
+ * and reuse an unfinished one, and — once the webhook says so — the verified
+ * time. `user_id` on the metadata is how the webhook finds the profile to mark.
+ */
+export async function createIdentitySession(
+  userId: string,
+  returnUrl: string,
+): Promise<{ id: string; url: string }> {
+  const session = await stripe().identity.verificationSessions.create({
+    type: "document",
+    metadata: { user_id: userId },
+    return_url: returnUrl,
+  });
+  if (!session.url) {
+    throw new Error(`Identity session ${session.id} has no hosted URL`);
+  }
+  return { id: session.id, url: session.url };
+}
+
+/**
+ * Where an existing check stands, so a repeat tap can resume it rather than
+ * spend a new session. `url` is present only while Stripe still wants input.
+ */
+export async function retrieveIdentitySession(
+  sessionId: string,
+): Promise<{ status: string; url: string | null }> {
+  const session = await stripe().identity.verificationSessions.retrieve(sessionId);
+  return { status: session.status, url: session.url ?? null };
+}
+
+/* ------------------------------------------------------------------ */
 /*  Connect — host onboarding                                          */
 /* ------------------------------------------------------------------ */
 

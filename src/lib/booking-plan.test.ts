@@ -58,6 +58,10 @@ const PRACTITIONER: PractitionerFacts = {
   id: "pr_1",
   isPro: false,
   accountType: "practitioner",
+  // Verified, so the tests about price, horizon and availability are not
+  // tripped by the identity gate they were not written to examine. The gate's
+  // own behaviour is covered in its own case below.
+  identityVerified: true,
   /*
    * Verified cover on a wide-open window, so the tests about price, horizon and
    * availability are not tripped by the eligibility gate they were not written
@@ -456,6 +460,32 @@ describe("who may confirm a booking, and with what cover (CASE A–N)", () => {
       ok: false,
       reason: "professional_profile_required",
     });
+  });
+
+  // Identity — an unverified practitioner cannot confirm a new booking, and is
+  // refused before cover is even considered. Server-authoritative: this reads
+  // the stored flag the Stripe Identity webhook sets, never anything the client
+  // asserts.
+  it("refuses a practitioner whose identity is not verified", () => {
+    expect(plan({ practitioner: { ...PRACTITIONER, identityVerified: false } })).toEqual({
+      ok: false,
+      reason: "identity_verification_required",
+    });
+  });
+
+  it("refuses an unverified identity even with verified cover (identity is checked first)", () => {
+    expect(
+      plan({
+        practitioner: { ...PRACTITIONER, identityVerified: false, insurance: activeInsurance },
+      }),
+    ).toEqual({ ok: false, reason: "identity_verification_required" });
+  });
+
+  it("gives the identity refusal a sentence and a 403", () => {
+    const { message, status } = explainRejection("identity_verification_required");
+    expect(message.length).toBeGreaterThan(20);
+    expect(message.toLowerCase()).toContain("identity");
+    expect(status).toBe(403);
   });
 
   // CASE B — a professional who never added cover cannot confirm.

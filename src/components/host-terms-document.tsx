@@ -6,7 +6,6 @@ import {
   HOST_TERMS_ENTITY,
   HOST_TERMS_SECTIONS,
   HOST_TERMS_SUMMARY,
-  HOST_TERMS_VERSION,
   hostTermsEffectiveLabel,
 } from "@/lib/host-terms";
 
@@ -119,8 +118,8 @@ export function HostTermsDocument() {
           <div className="h-px my-8" style={{ backgroundColor: "#E7EEF6" }} />
 
           <p className="font-body font-normal text-[13.5px] leading-relaxed text-ink-soft">
-            Host Terms for {BRAND}, operated by {HOST_TERMS_ENTITY}. Version {HOST_TERMS_VERSION}, in
-            effect since {hostTermsEffectiveLabel()}. These are in addition to the{" "}
+            Host Terms for {BRAND}, operated by {HOST_TERMS_ENTITY}. In effect since{" "}
+            {hostTermsEffectiveLabel()}. These are in addition to the{" "}
             <Link href="/terms" className="text-sky-text">
               Terms of Service
             </Link>

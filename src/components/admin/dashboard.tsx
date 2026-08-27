@@ -23,6 +23,7 @@ import type {
   AdminQueue,
   ListingRow,
   LiveSession,
+  PendingCredential,
   PendingInsurance,
   Person,
   SessionParty,
@@ -195,6 +196,7 @@ export function AdminDashboard() {
     queue.escalations.length === 0 &&
     queue.pendingListings.length === 0 &&
     queue.pendingInsurance.length === 0 &&
+    queue.pendingCredentials.length === 0 &&
     queue.accountChangeRequests.length === 0;
 
   return (
@@ -516,6 +518,19 @@ export function AdminDashboard() {
                   onView={() => item.docPath && void openDocument(item.docPath)}
                   onVerify={(fields) => void act("verify_insurance", item.id, undefined, fields)}
                   onReject={(note) => void act("reject_insurance", item.id, note)}
+                />
+              ))}
+            </Panel>
+
+            <Panel title="Credentials waiting for review" count={queue.pendingCredentials.length}>
+              {queue.pendingCredentials.map((item) => (
+                <CredentialReviewCard
+                  key={item.id}
+                  item={item}
+                  busy={busy === item.id}
+                  onView={() => item.docPath && void openDocument(item.docPath)}
+                  onVerify={() => void act("verify_credential", item.id)}
+                  onReject={(note) => void act("reject_credential", item.id, note)}
                 />
               ))}
             </Panel>
@@ -1505,6 +1520,94 @@ function InsuranceReviewCard({
             </Action>
           </div>
         </>
+      )}
+    </Card>
+  );
+}
+
+/**
+ * A credential awaiting a hand review. No dates — a license is valid-or-not, not
+ * windowed like insurance — so this only opens the document and records the
+ * verdict. Verify takes no fields; reject requires a reason shown to the person.
+ */
+function CredentialReviewCard({
+  item,
+  busy,
+  onView,
+  onVerify,
+  onReject,
+}: {
+  item: PendingCredential;
+  busy: boolean;
+  onView: () => void;
+  onVerify: () => void;
+  onReject: (note: string) => void;
+}) {
+  const [rejecting, setRejecting] = useState(false);
+  const [note, setNote] = useState("");
+
+  const field = "flex-1 px-3 py-2 rounded-md font-body text-[11.5px] outline-none";
+  const fieldStyle = { backgroundColor: PANEL, color: "#fff", border: `1px solid ${LINE}` };
+  const legacyDoc = item.docPath !== null && !isVerificationDocPath(item.docPath);
+  const details =
+    [item.profession, item.credentialType, item.credentialNumber, item.credentialJurisdiction]
+      .filter(Boolean)
+      .join(" · ") || "No details given";
+
+  return (
+    <Card>
+      <p className="font-body font-medium text-[12.5px]" style={{ color: "#fff" }}>
+        {item.displayName ?? item.email ?? "A professional"}
+      </p>
+      <p className="font-body font-light text-[11.5px] mt-1" style={{ color: MUTED }}>
+        {item.email ?? "unknown"}
+      </p>
+      <p className="font-body font-light text-[11.5px] mt-1" style={{ color: MUTED }}>
+        {details}
+      </p>
+
+      <div className="mt-3">
+        {!item.docPath ? (
+          <span className="font-body text-[11px]" style={{ color: CORAL }}>
+            No file uploaded
+          </span>
+        ) : legacyDoc ? (
+          <span className="font-body font-medium text-[11.5px]" style={{ color: CORAL }}>
+            Document unavailable
+          </span>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            <Doc label="Credential" onClick={onView} />
+          </div>
+        )}
+      </div>
+
+      {rejecting ? (
+        <div className="flex gap-2 mt-3">
+          <input
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="Why is it being turned down? (shown to them)"
+            aria-label="Rejection reason"
+            className={field}
+            style={fieldStyle}
+          />
+          <Action danger disabled={busy || note.trim().length < 15} onClick={() => onReject(note)}>
+            {busy ? "…" : "Confirm"}
+          </Action>
+          <Action disabled={busy} onClick={() => setRejecting(false)}>
+            Cancel
+          </Action>
+        </div>
+      ) : (
+        <div className="flex gap-2 mt-3">
+          <Action primary disabled={busy || legacyDoc || !item.docPath} onClick={onVerify}>
+            <Check size={12} /> Verify
+          </Action>
+          <Action disabled={busy} onClick={() => setRejecting(true)}>
+            <X size={12} /> Reject
+          </Action>
+        </div>
       )}
     </Card>
   );

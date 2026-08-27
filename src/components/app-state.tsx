@@ -23,6 +23,7 @@ export type Screen =
   | "auth-verify"
   | "role"
   | "verify"
+  | "credential"
   | "discover"
   | "detail"
   | "payment"

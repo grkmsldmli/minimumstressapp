@@ -74,6 +74,12 @@ const PRACTITIONER: PractitionerFacts = {
     effectiveDate: new Date("2025-01-01T00:00:00Z"),
     expiresAt: new Date("2030-01-01T00:00:00Z"),
   },
+  // A declared profession with verified proof, so the tests about price, horizon
+  // and availability are not tripped by the credential gate they were not
+  // written to examine. Pilates, so the default booking is not forced through
+  // host approval the way massage is; the gate's own behaviour has its own cases.
+  profession: "pilates",
+  credentialVerified: true,
 };
 
 const plan = (overrides: Partial<Parameters<typeof planBooking>[0]> = {}) =>
@@ -485,6 +491,73 @@ describe("who may confirm a booking, and with what cover (CASE A–N)", () => {
     const { message, status } = explainRejection("identity_verification_required");
     expect(message.length).toBeGreaterThan(20);
     expect(message.toLowerCase()).toContain("identity");
+    expect(status).toBe(403);
+  });
+
+  // CASE — professional proof, which every profession must provide. The default
+  // practitioner has verified identity and cover, so these isolate the credential
+  // gate. credentialVerified is the single staff-written boolean it reads; false
+  // stands for pending and rejected alike.
+  it("refuses massage without a verified credential", () => {
+    expect(
+      plan({ practitioner: { ...PRACTITIONER, profession: "massage", credentialVerified: false } }),
+    ).toEqual({ ok: false, reason: "credential_required" });
+  });
+
+  it("refuses any other profession without verified proof (pilates)", () => {
+    expect(
+      plan({ practitioner: { ...PRACTITIONER, profession: "pilates", credentialVerified: false } }),
+    ).toEqual({ ok: false, reason: "credential_required" });
+  });
+
+  it("requires proof even when no profession is chosen", () => {
+    expect(
+      plan({ practitioner: { ...PRACTITIONER, profession: null, credentialVerified: false } }),
+    ).toEqual({ ok: false, reason: "credential_required" });
+  });
+
+  it("lets a non-massage profession through once proof is verified, instant if the space allows", () => {
+    const result = plan({
+      practitioner: { ...PRACTITIONER, profession: "pilates", credentialVerified: true },
+    });
+    expect(result.ok).toBe(true);
+    expect(result.ok && result.needsApproval).toBe(false);
+  });
+
+  it("lets massage through with a verified credential, but always via host approval", () => {
+    const result = plan({
+      practitioner: { ...PRACTITIONER, profession: "massage", credentialVerified: true },
+    });
+    // Instant space, yet massage still needs the host to say yes.
+    expect(result.ok).toBe(true);
+    expect(result.ok && result.needsApproval).toBe(true);
+  });
+
+  it("does not force approval for a non-massage use of a space, whatever it is called", () => {
+    const result = plan({
+      practitioner: { ...PRACTITIONER, profession: "movement", credentialVerified: true },
+    });
+    expect(result.ok && result.needsApproval).toBe(false);
+  });
+
+  it("checks the credential after identity and insurance, not before", () => {
+    // A massage practitioner who is also unverified fails on identity first —
+    // the credential gate never masks the earlier, cheaper checks.
+    expect(
+      plan({
+        practitioner: {
+          ...PRACTITIONER,
+          identityVerified: false,
+          profession: "massage",
+          credentialVerified: false,
+        },
+      }),
+    ).toEqual({ ok: false, reason: "identity_verification_required" });
+  });
+
+  it("gives the credential refusal a sentence and a 403", () => {
+    const { message, status } = explainRejection("credential_required");
+    expect(message.length).toBeGreaterThan(20);
     expect(status).toBe(403);
   });
 

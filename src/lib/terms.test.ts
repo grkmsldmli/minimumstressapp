@@ -189,6 +189,13 @@ describe("the words a version stands for", () => {
      * processing of a new category of personal data, so everyone is asked again.
      */
     4: "30c0ee0b",
+    /*
+     * Version 5 adds three prohibited uses to "What a space may be used for":
+     * overnight/residential use, transferring or subletting a booking, and
+     * intentional or reckless misuse of the space, furniture or equipment. New
+     * obligations on every user, so everybody is asked again.
+     */
+    5: "8da98c80",
   };
 
   it("still says what the current version said", () => {

@@ -61,6 +61,24 @@ export interface PendingInsurance {
   since: string;
 }
 
+/**
+ * A practitioner's professional credential awaiting review. Staff open the
+ * document and verify or reject it by hand. The number and jurisdiction are what
+ * the practitioner typed; the profession is shown so staff know what a valid
+ * credential looks like. Oldest-first, like insurance.
+ */
+export interface PendingCredential {
+  id: string;
+  email: string | null;
+  displayName: string | null;
+  profession: string | null;
+  docPath: string | null;
+  credentialType: string | null;
+  credentialNumber: string | null;
+  credentialJurisdiction: string | null;
+  since: string;
+}
+
 export interface AccountChangeRequest {
   id: string;
   email: string | null;
@@ -416,6 +434,7 @@ export interface AdminQueue {
   pendingListings: PendingListing[];
   /** Professionals whose liability certificate is waiting to be verified. */
   pendingInsurance: PendingInsurance[];
+  pendingCredentials: PendingCredential[];
   accountChangeRequests: AccountChangeRequest[];
   unpayableHosts: UnpayableHost[];
 
@@ -508,7 +527,7 @@ export async function loadQueue(admin: SupabaseClient): Promise<AdminQueue> {
     admin
       .from("profiles")
       .select(
-        "id, account_type, display_name, stripe_connect_charges_enabled, created_at, terms_version, emergency_contact_name, emergency_contact_phone, emergency_contact_relationship, insurance_doc_path, insurance_doc_state, insurance_effective_date, insurance_expires_at, insurance_insurer, insurance_policy_number, insurance_review_note",
+        "id, account_type, display_name, stripe_connect_charges_enabled, created_at, terms_version, emergency_contact_name, emergency_contact_phone, emergency_contact_relationship, insurance_doc_path, insurance_doc_state, insurance_effective_date, insurance_expires_at, insurance_insurer, insurance_policy_number, insurance_review_note, profession, credential_doc_path, credential_doc_state, credential_type, credential_number, credential_jurisdiction",
       ),
 
     admin
@@ -1020,6 +1039,29 @@ export async function loadQueue(admin: SupabaseClient): Promise<AdminQueue> {
         expiresAt: (p.insurance_expires_at as string) ?? null,
         insurer: (p.insurance_insurer as string) ?? null,
         policyNumber: (p.insurance_policy_number as string) ?? null,
+        since: (p.created_at as string) ?? "",
+      }))
+      .sort((a, b) => a.since.localeCompare(b.since)),
+
+    // The credential parallel to insurance: a practitioner with a document
+    // uploaded and its review still pending. Never the document itself here —
+    // staff open it through a signed link, the same as insurance.
+    pendingCredentials: (profiles.data ?? [])
+      .filter(
+        (p) =>
+          p.account_type === "practitioner" &&
+          p.credential_doc_path != null &&
+          ((p.credential_doc_state as string | null) ?? null) === "pending",
+      )
+      .map((p) => ({
+        id: p.id as string,
+        email: emails.get(p.id as string) ?? null,
+        displayName: (p.display_name as string) ?? null,
+        profession: (p.profession as string) ?? null,
+        docPath: (p.credential_doc_path as string) ?? null,
+        credentialType: (p.credential_type as string) ?? null,
+        credentialNumber: (p.credential_number as string) ?? null,
+        credentialJurisdiction: (p.credential_jurisdiction as string) ?? null,
         since: (p.created_at as string) ?? "",
       }))
       .sort((a, b) => a.since.localeCompare(b.since)),

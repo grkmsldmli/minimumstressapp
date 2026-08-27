@@ -43,6 +43,7 @@ import { BOOKING_HORIZON_DAYS } from "@/lib/money";
 import { SESSION_MS } from "@/lib/session";
 import { explainRejection } from "@/lib/booking-plan";
 import { resolveActiveBooking } from "@/lib/active-booking";
+import { proofFor } from "@/lib/professions";
 import {
   checkInsuranceForBooking,
   insuranceStatus,
@@ -73,6 +74,7 @@ import { PaymentSheet } from "./screens/payment-sheet";
 import { ReviewScreen } from "./screens/review";
 import { Thread, type ThreadMessage } from "./screens/thread";
 import {
+  CredentialUpload,
   InsuranceUpload,
   PractitionerProfile,
   ProScreen,
@@ -1347,6 +1349,26 @@ export function App() {
         />
       );
 
+    case "credential":
+      return (
+        <CredentialUpload
+          proofLabel={proofFor(profile.profession).label}
+          initialDocName={profile.credentialDocName}
+          state={profile.credentialReview.state}
+          reviewNote={profile.credentialReviewNote}
+          initialType={profile.credentialType}
+          initialNumber={profile.credentialNumber}
+          initialJurisdiction={profile.credentialJurisdiction}
+          onBack={back}
+          onSubmit={(file, details) =>
+            (file
+              ? mutate(() => repo.uploadCredentialCertificate(file, details))
+              : Promise.resolve()
+            ).then(() => go("discover"))
+          }
+        />
+      );
+
     case "discover":
       return renderDiscover();
 
@@ -1731,6 +1753,7 @@ export function App() {
           }}
           disputesWaiting={disputes.filter((d) => d.awaitingYou).length}
           onGoInsurance={() => go("verify")}
+          onGoCredential={() => go("credential")}
           onVerifyIdentity={() => {
             identityStartedRef.current = true;
             return mutate(() => repo.startIdentityVerification());

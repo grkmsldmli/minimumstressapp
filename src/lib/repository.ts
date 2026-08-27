@@ -53,6 +53,21 @@ export interface Repository {
    */
   uploadInsuranceCertificate(file: File): Promise<Profile>;
 
+  /**
+   * A professional credential (license or certificate), uploaded to the private
+   * bucket with what the practitioner typed about it. Review returns to pending;
+   * only staff can verify it. Required to book only for a profession whose rule
+   * is "required" (see lib/professions).
+   */
+  uploadCredentialCertificate(
+    file: File,
+    details: {
+      credentialType: string | null;
+      credentialNumber: string | null;
+      credentialJurisdiction: string | null;
+    },
+  ): Promise<Profile>;
+
   /** Active listings only — mirrors the spaces_public view. */
   listPublicSpaces(): Promise<PublicSpace[]>;
   getPublicSpace(id: string): Promise<PublicSpace | null>;

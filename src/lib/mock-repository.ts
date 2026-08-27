@@ -290,6 +290,12 @@ export class MockRepository implements Repository {
     accountType: null,
     identityVerifiedAt: null,
     profession: null,
+    credentialDocName: null,
+    credentialType: null,
+    credentialNumber: null,
+    credentialJurisdiction: null,
+    credentialReview: { state: null, reviewedAt: null },
+    credentialReviewNote: null,
     searchPostcode: null,
     termsVersion: null,
     termsAcceptedAt: null,
@@ -410,6 +416,31 @@ export class MockRepository implements Repository {
       insuranceDocName: file.name,
       insuranceReview: { state: "pending", reviewedAt: null },
       insuranceReviewNote: null,
+    };
+    return { ...this.profile };
+  }
+
+  async uploadCredentialCertificate(
+    file: File,
+    details: {
+      credentialType: string | null;
+      credentialNumber: string | null;
+      credentialJurisdiction: string | null;
+    },
+  ): Promise<Profile> {
+    const reason = rejectionReason(file, "document");
+    if (reason) throw new Error(reason);
+
+    // Mirrors the real repository: a new document returns review to pending and
+    // records what the practitioner typed. Only staff move it past pending.
+    this.profile = {
+      ...this.profile,
+      credentialDocName: file.name,
+      credentialType: details.credentialType,
+      credentialNumber: details.credentialNumber,
+      credentialJurisdiction: details.credentialJurisdiction,
+      credentialReview: { state: "pending", reviewedAt: null },
+      credentialReviewNote: null,
     };
     return { ...this.profile };
   }
@@ -939,6 +970,7 @@ export class MockRepository implements Repository {
       // summary with something in it.
       identityVerified: true,
       insuranceVerified: true,
+      credentialReviewed: true,
       completedSessions: 12,
       goodStanding: true,
     };

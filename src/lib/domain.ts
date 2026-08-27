@@ -100,9 +100,27 @@ export interface Profile {
   identityVerifiedAt: Date | null;
   /**
    * What the practitioner does, one of lib/professions' controlled keys, or
-   * null until chosen. Display only for now; a host reads the label.
+   * null until chosen. A host reads the label, and its credential rule decides
+   * whether a verified credential is needed to book.
    */
   profession: string | null;
+  /**
+   * A professional credential the practitioner submitted, and its staff verdict.
+   *
+   * `credentialDocName` is the uploaded file's stored path (what they submitted);
+   * `credentialReview.state` is null until anything is submitted, then
+   * pending/verified/rejected — written only by staff (migration 0058). The
+   * number and jurisdiction are what they typed. The review note is theirs to
+   * read when rejected, the same way an insurance note is. Required only for a
+   * profession whose rule is "required"; optional for the rest.
+   */
+  credentialDocName: string | null;
+  credentialType: string | null;
+  credentialNumber: string | null;
+  credentialJurisdiction: string | null;
+  /** State is null until anything is submitted, then pending/verified/rejected. */
+  credentialReview: { state: DocReviewState | null; reviewedAt: Date | null };
+  credentialReviewNote: string | null;
   /**
    * Which version of the terms this account accepted, and when.
    *
@@ -531,6 +549,13 @@ export interface PractitionerTrust {
   identityVerified: boolean;
   /** Their liability certificate is verified (not the document, just the fact). */
   insuranceVerified: boolean;
+  /**
+   * A submitted professional credential has been reviewed and verified — the
+   * plain fact only, never the document, number, jurisdiction, or note. False
+   * when none was submitted or it is unreviewed, so the host UI shows the line
+   * only when it is true.
+   */
+  credentialReviewed: boolean;
   /** Completed, paid sessions across the platform — a plain reputation count. */
   completedSessions: number;
   /** In clear standing: fewer than the warn threshold of late cancellations. */

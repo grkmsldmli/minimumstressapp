@@ -312,6 +312,173 @@ export function InsuranceUpload({
 }
 
 /* ------------------------------------------------------------------ */
+/*  Professional credential — every profession provides proof to book   */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Submitting professional proof. Every practitioner provides some — the kind is
+ * profession-specific (see proofLabel), and the booking gate refuses until it is
+ * reviewed. The verdict is staff's; this screen only submits, and shows where
+ * review stands with the factual labels (under review / reviewed / needs
+ * attention). Never a quality or approval claim.
+ */
+export function CredentialUpload({
+  proofLabel,
+  initialDocName,
+  state,
+  reviewNote,
+  initialType,
+  initialNumber,
+  initialJurisdiction,
+  onSubmit,
+  onBack,
+}: {
+  /** What this profession is asked for, e.g. "CAMTC certification". */
+  proofLabel: string;
+  initialDocName: string | null;
+  state: "pending" | "verified" | "rejected" | null;
+  reviewNote?: string | null;
+  initialType?: string | null;
+  initialNumber?: string | null;
+  initialJurisdiction?: string | null;
+  onSubmit: (
+    file: File | null,
+    details: {
+      credentialType: string | null;
+      credentialNumber: string | null;
+      credentialJurisdiction: string | null;
+    },
+  ) => Promise<unknown>;
+  onBack?: () => void;
+}) {
+  const [file, setFile] = useState<File | null>(null);
+  const [type, setType] = useState(initialType ?? "");
+  const [number, setNumber] = useState(initialNumber ?? "");
+  const [jurisdiction, setJurisdiction] = useState(initialJurisdiction ?? "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const existingName = file ? file.name : initialDocName ? shortName(initialDocName) : null;
+
+  // The approved factual status labels: "Credential under review / reviewed /
+  // needs attention" — never a quality or approval claim.
+  const statusLine: Record<"pending" | "verified" | "rejected", { accent: string; body: string }> = {
+    pending: { accent: "under review.", body: "We'll let you know when it's checked." },
+    verified: {
+      accent: "reviewed.",
+      body: "It's on file, and hosts see it as reviewed.",
+    },
+    rejected: {
+      accent: "needs attention.",
+      body: reviewNote?.trim() || "Add a valid document and we'll review it again.",
+    },
+  };
+  const shown = state ? statusLine[state] : null;
+
+  const inputStyle = {
+    border: "1px solid #DCE7F2",
+  } as const;
+
+  const submit = () => {
+    setError(null);
+    setSaving(true);
+    void onSubmit(file, {
+      credentialType: type.trim() || null,
+      credentialNumber: number.trim() || null,
+      credentialJurisdiction: jurisdiction.trim() || null,
+    })
+      .catch((cause) => setError(errorMessage(cause, "That did not save. Try again.")))
+      .finally(() => setSaving(false));
+  };
+
+  return (
+    <NavyScreen>
+      <div className="flex-1 flex flex-col justify-center px-8 relative z-10">
+        {onBack && (
+          <button
+            type="button"
+            onClick={onBack}
+            aria-label="Back"
+            className="w-9 h-9 rounded-full flex items-center justify-center press absolute left-8 top-8 z-20"
+            style={{ backgroundColor: "rgba(255,255,255,0.14)" }}
+          >
+            <ArrowLeft size={16} color="#fff" />
+          </button>
+        )}
+
+        <p className="font-body font-semibold text-[12px] uppercase tracking-[0.2em] text-sky-soft">
+          Credential
+        </p>
+        <div className="mt-2">
+          <Headline
+            pre={shown ? "Credential" : "Add your"}
+            accent={shown ? shown.accent : "credential."}
+            size={27}
+            light
+          />
+        </div>
+        <p className="font-body font-normal text-[14px] leading-relaxed text-white/65 mt-3">
+          {shown
+            ? shown.body
+            : `We ask for ${proofLabel} before you can book. Add it and we'll review it.`}
+        </p>
+
+        <div className="mt-6 rounded-2xl p-4 bg-white space-y-3">
+          <DocumentUpload
+            label={proofLabel}
+            hint="PDF or an image"
+            required={!initialDocName}
+            file={file}
+            onPick={setFile}
+            onRemove={() => setFile(null)}
+          />
+          {existingName && !file && (
+            <p className="font-body text-[13px] text-ink-soft">On file: {existingName}</p>
+          )}
+          <input
+            value={type}
+            onChange={(e) => setType(e.target.value.slice(0, 80))}
+            placeholder="Credential type (e.g. LMT)"
+            className="w-full px-4 py-3 rounded-xl font-body text-[15px] text-navy outline-none"
+            style={inputStyle}
+          />
+          <input
+            value={number}
+            onChange={(e) => setNumber(e.target.value.slice(0, 80))}
+            placeholder="License or certificate number (if any)"
+            className="w-full px-4 py-3 rounded-xl font-body text-[15px] text-navy outline-none"
+            style={inputStyle}
+          />
+          <input
+            value={jurisdiction}
+            onChange={(e) => setJurisdiction(e.target.value.slice(0, 80))}
+            placeholder="Issuing state (if any)"
+            className="w-full px-4 py-3 rounded-xl font-body text-[15px] text-navy outline-none"
+            style={inputStyle}
+          />
+        </div>
+
+        {error && (
+          <p
+            className="font-body font-normal text-[14px] leading-relaxed mt-3 rounded-xl p-3"
+            style={{ backgroundColor: "#FEF2F0", border: "1px solid #F5C4BC", color: "#7A4A42" }}
+            role="alert"
+          >
+            {error}
+          </p>
+        )}
+
+        <div className="mt-6">
+          <PrimaryButton disabled={saving || (!file && !initialDocName)} onClick={submit}>
+            {saving ? "Saving…" : "Submit for review"}
+          </PrimaryButton>
+        </div>
+      </div>
+    </NavyScreen>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /*  Pro                                                                */
 /* ------------------------------------------------------------------ */
 
@@ -635,6 +802,7 @@ export function PractitionerProfile({
   disputesWaiting,
   onRequestAccountChange,
   onGoInsurance,
+  onGoCredential,
   onVerifyIdentity,
   identityChecking = false,
   onSignOut,
@@ -663,6 +831,8 @@ export function PractitionerProfile({
   /** How many refund requests or claims are waiting on this account. */
   disputesWaiting: number;
   onGoInsurance: () => void;
+  /** Opens the credential upload screen. */
+  onGoCredential: () => void;
   /** Opens the one-time identity check (hosted by Stripe). */
   onVerifyIdentity: () => void;
   /** True during the short wait after returning from Stripe, while the webhook lands. */
@@ -766,6 +936,25 @@ export function PractitionerProfile({
               ))}
             </select>
           </div>
+          {/*
+            Every profession provides proof, so this always shows. The value is
+            the factual review state, or a prompt to add proof when none is on
+            file yet.
+          */}
+          <ProfileRow
+            icon={FileCheck}
+            label="Professional credential"
+            value={
+              profile.credentialReview.state === "verified"
+                ? "Reviewed"
+                : profile.credentialReview.state === "pending"
+                  ? "Under review"
+                  : profile.credentialReview.state === "rejected"
+                    ? "Needs attention"
+                    : "Required"
+            }
+            onClick={onGoCredential}
+          />
         </div>
 
         <div className="mt-6">

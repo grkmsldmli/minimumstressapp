@@ -218,7 +218,7 @@ async function gatherBookingFacts(
     admin
       .from("profiles")
       .select(
-        "id, is_pro, stripe_customer_id, account_type, identity_verified_at, insurance_doc_path, insurance_doc_state, insurance_effective_date, insurance_expires_at",
+        "id, is_pro, stripe_customer_id, account_type, identity_verified_at, profession, credential_doc_state, insurance_doc_path, insurance_doc_state, insurance_effective_date, insurance_expires_at",
       )
       .eq("id", practitionerId)
       .maybeSingle(),
@@ -325,6 +325,10 @@ async function gatherBookingFacts(
       accountType: (practitioner?.account_type as "practitioner" | "host" | null) ?? null,
       // Server-written only (Stripe Identity webhook); a client cannot assert it.
       identityVerified: Boolean(practitioner?.identity_verified_at),
+      // Declared profession and the staff-written credential verdict. planBooking
+      // gates on these only where the profession's rule is "required".
+      profession: (practitioner?.profession as string | null) ?? null,
+      credentialVerified: practitioner?.credential_doc_state === "verified",
       insurance: {
         hasCertificate: Boolean(practitioner?.insurance_doc_path),
         state:
@@ -446,6 +450,10 @@ export async function createBooking(
       access_code_revealed_at: new Date(
         request.startsAt.getTime() - ACCESS_CODE_LEAD_MS,
       ).toISOString(),
+      // The rules acknowledgment the declaration screen presents at booking,
+      // stamped from the server clock so a dispute can point to when it was
+      // given alongside the purpose stored above.
+      rules_ack_at: now.toISOString(),
     })
     .select("id")
     .single();

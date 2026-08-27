@@ -127,6 +127,19 @@ export function DeclareUse({
         Maximum capacity: {capacity} {capacity === 1 ? "person" : "people"}. Please keep your
         purpose and attendee count accurate.
       </p>
+
+      {/*
+        One line, not a wall of checkboxes. Booking is the agreement; the server
+        stamps rules_ack_at at that moment (migration 0058) so a dispute can
+        point to it. Shown once a purpose is chosen, so "the purpose you
+        selected" refers to something.
+      */}
+      {value?.purpose && (
+        <p className="font-body font-normal text-[13px] leading-relaxed mt-4 text-ink-soft">
+          By booking, you agree to use the space only for the purpose you selected and to follow
+          the space and platform rules.
+        </p>
+      )}
     </div>
   );
 }

@@ -547,6 +547,7 @@ describe("profiles keep their payment identifiers to themselves", () => {
       "practitioner_profession",
       "practitioner_identity_verified",
       "practitioner_insurance_verified",
+      "practitioner_credential_reviewed",
       "practitioner_completed_sessions",
       "practitioner_good_standing",
     ]);
@@ -1806,7 +1807,7 @@ describe("listing requires accepting the Host Terms", () => {
       `select host_terms_version, host_terms_accepted_at from profiles where id = auth.uid()`,
     );
 
-    expect(row.host_terms_version).toBe(2);
+    expect(row.host_terms_version).toBe(3);
     expect(row.host_terms_accepted_at).not.toBeNull();
   });
 
@@ -1814,7 +1815,7 @@ describe("listing requires accepting the Host Terms", () => {
   it("refuses to unset an accepted version", async () => {
     await asUser(
       NEW_HOST,
-      `update profiles set host_terms_version = 2 where id = auth.uid()`,
+      `update profiles set host_terms_version = 3 where id = auth.uid()`,
     );
     await expect(
       asUser(NEW_HOST, `update profiles set host_terms_version = null where id = auth.uid()`),
@@ -1997,5 +1998,199 @@ describe("practitioner trust and identity", () => {
     const history = await asUser(TOTHER, `select * from host_bookings()`);
     expect(requests).toEqual([]);
     expect(history).toEqual([]);
+  });
+
+  it("refuses a practitioner marking their own credential verified", async () => {
+    await expect(
+      asUser(TPRAC, `update profiles set credential_doc_state = 'verified' where id = '${TPRAC}'`),
+    ).rejects.toThrow(/staff/i);
+  });
+
+  it("returns a credential to pending review when a new document is submitted", async () => {
+    // A submitted document, then staff verify it in a second write (no path
+    // change, so the trigger does not reset it)…
+    await db.exec(
+      `update profiles set credential_doc_path = 'practitioner/${TPRAC}/cred-a.pdf' where id = '${TPRAC}'`,
+    );
+    await db.exec(
+      `update profiles set credential_doc_state = 'verified', credential_doc_reviewed_at = now() where id = '${TPRAC}'`,
+    );
+    // …then the practitioner uploads a replacement, which restarts review.
+    await asUser(
+      TPRAC,
+      `update profiles set credential_doc_path = 'practitioner/${TPRAC}/cred-b.pdf' where id = '${TPRAC}'`,
+    );
+    const [row] = await asUser<{
+      credential_doc_state: string | null;
+      credential_doc_reviewed_at: string | null;
+    }>(TPRAC, `select credential_doc_state, credential_doc_reviewed_at from profiles where id = '${TPRAC}'`);
+    expect(row.credential_doc_state).toBe("pending");
+    expect(row.credential_doc_reviewed_at).toBeNull();
+  });
+
+  it("shows the host a reviewed credential as a boolean, never the document or note", async () => {
+    // Path first (trigger resets to pending), then the verdict without a path
+    // change — the only way a verified state survives, and how staff review works.
+    await db.exec(
+      `update profiles set credential_doc_path = 'practitioner/${TPRAC}/cred.pdf' where id = '${TPRAC}'`,
+    );
+    await db.exec(
+      `update profiles set credential_doc_state = 'verified', credential_doc_reviewed_at = now() where id = '${TPRAC}'`,
+    );
+    const [req] = await asUser<Record<string, unknown>>(THOST, `select * from host_requests()`);
+    expect(req.practitioner_credential_reviewed).toBe(true);
+    expect(Object.keys(req)).not.toContain("credential_doc_path");
+    expect(Object.keys(req)).not.toContain("credential_number");
+    expect(Object.keys(req)).not.toContain("credential_review_note");
+  });
+});
+
+/*
+ * The verification verdicts — identity, insurance, credential — are the
+ * server's alone, on INSERT as much as UPDATE. The profile row is created by the
+ * client, so a crafted first INSERT is the vector these prove is closed: a fresh
+ * account cannot arrive already verified, and cannot self-promote afterwards.
+ * The service role (webhook, identity session route, admin review) still sets
+ * every verdict, and the practitioner can still upload documents.
+ */
+describe("verification verdicts are the server's, on insert and update", () => {
+  const FRESH = "00000058-0000-4000-8000-000000000001";
+
+  beforeAll(async () => {
+    await db.exec(`insert into auth.users (id, email) values ('${FRESH}', 'fresh58@example.com');`);
+  });
+
+  it("refuses a crafted first INSERT that self-verifies identity", async () => {
+    await expect(
+      asUser(FRESH, `insert into profiles (id, identity_verified_at) values (auth.uid(), now())`),
+    ).rejects.toThrow(/server/i);
+  });
+
+  it("refuses a crafted first INSERT that self-verifies insurance", async () => {
+    await expect(
+      asUser(
+        FRESH,
+        `insert into profiles (id, insurance_doc_state, insurance_doc_reviewed_at) values (auth.uid(), 'verified', now())`,
+      ),
+    ).rejects.toThrow(/staff/i);
+  });
+
+  it("refuses a crafted first INSERT that self-reviews a credential", async () => {
+    await expect(
+      asUser(
+        FRESH,
+        `insert into profiles (id, credential_doc_state, credential_doc_reviewed_at) values (auth.uid(), 'verified', now())`,
+      ),
+    ).rejects.toThrow(/staff/i);
+  });
+
+  it("refuses the all-at-once crafted INSERT the audit flagged", async () => {
+    await expect(
+      asUser(
+        FRESH,
+        `insert into profiles (id, identity_verified_at, insurance_doc_state, insurance_doc_reviewed_at,
+                               credential_doc_state, credential_doc_reviewed_at)
+           values (auth.uid(), now(), 'verified', now(), 'verified', now())`,
+      ),
+    ).rejects.toThrow(/server|staff/i);
+  });
+
+  it("still allows a plain first profile INSERT, verified of nothing", async () => {
+    await expect(
+      asUser(FRESH, `insert into profiles (id, display_name, account_type) values (auth.uid(), 'Fresh', 'practitioner')`),
+    ).resolves.toBeDefined();
+    const [row] = await asUser<{
+      identity_verified_at: string | null;
+      insurance_doc_state: string;
+      credential_doc_state: string | null;
+    }>(
+      FRESH,
+      `select identity_verified_at, insurance_doc_state, credential_doc_state from profiles where id = auth.uid()`,
+    );
+    expect(row.identity_verified_at).toBeNull();
+    expect(row.insurance_doc_state).toBe("pending");
+    expect(row.credential_doc_state).toBeNull();
+  });
+
+  it("refuses self-promoting any verdict through UPDATE", async () => {
+    await expect(
+      asUser(FRESH, `update profiles set identity_verified_at = now() where id = auth.uid()`),
+    ).rejects.toThrow(/server/i);
+    await expect(
+      asUser(
+        FRESH,
+        `update profiles set insurance_doc_state = 'verified', insurance_doc_reviewed_at = now() where id = auth.uid()`,
+      ),
+    ).rejects.toThrow(/staff/i);
+    await expect(
+      asUser(
+        FRESH,
+        `update profiles set credential_doc_state = 'verified', credential_doc_reviewed_at = now() where id = auth.uid()`,
+      ),
+    ).rejects.toThrow(/staff/i);
+  });
+
+  it("lets the practitioner upload insurance, which stays pending, then staff verify", async () => {
+    await asUser(FRESH, `update profiles set insurance_doc_path = 'prac/${FRESH}/ins.pdf' where id = auth.uid()`);
+    const [uploaded] = await asUser<{ insurance_doc_state: string; insurance_doc_reviewed_at: string | null }>(
+      FRESH,
+      `select insurance_doc_state, insurance_doc_reviewed_at from profiles where id = auth.uid()`,
+    );
+    expect(uploaded.insurance_doc_state).toBe("pending");
+    expect(uploaded.insurance_doc_reviewed_at).toBeNull();
+
+    // Staff (service role) verify it.
+    await db.exec(
+      `update profiles set insurance_doc_state = 'verified', insurance_doc_reviewed_at = now(),
+         insurance_effective_date = now() - interval '1 day', insurance_expires_at = now() + interval '365 days'
+       where id = '${FRESH}'`,
+    );
+    const [verified] = await asUser<{ insurance_doc_state: string }>(
+      FRESH,
+      `select insurance_doc_state from profiles where id = auth.uid()`,
+    );
+    expect(verified.insurance_doc_state).toBe("verified");
+  });
+
+  it("resets insurance to pending and clears the verdict when the certificate is replaced", async () => {
+    await asUser(FRESH, `update profiles set insurance_doc_path = 'prac/${FRESH}/ins2.pdf' where id = auth.uid()`);
+    const [row] = await asUser<{ insurance_doc_state: string; insurance_effective_date: string | null }>(
+      FRESH,
+      `select insurance_doc_state, insurance_effective_date from profiles where id = auth.uid()`,
+    );
+    expect(row.insurance_doc_state).toBe("pending");
+    expect(row.insurance_effective_date).toBeNull();
+  });
+
+  it("lets the practitioner upload a credential, which stays pending, then staff review", async () => {
+    await asUser(
+      FRESH,
+      `update profiles set credential_doc_path = 'prac/${FRESH}/cred.pdf', credential_type = 'RYT-200' where id = auth.uid()`,
+    );
+    const [pending] = await asUser<{ credential_doc_state: string | null }>(
+      FRESH,
+      `select credential_doc_state from profiles where id = auth.uid()`,
+    );
+    expect(pending.credential_doc_state).toBe("pending");
+
+    await db.exec(
+      `update profiles set credential_doc_state = 'verified', credential_doc_reviewed_at = now() where id = '${FRESH}'`,
+    );
+    const [reviewed] = await asUser<{ credential_doc_state: string | null }>(
+      FRESH,
+      `select credential_doc_state from profiles where id = auth.uid()`,
+    );
+    expect(reviewed.credential_doc_state).toBe("verified");
+  });
+
+  it("lets the Stripe Identity server flow verify identity (service role)", async () => {
+    await db.exec(
+      `update profiles set identity_verified_at = now(), identity_session_id = 'vs_test_123' where id = '${FRESH}'`,
+    );
+    const [row] = await asUser<{ identity_verified_at: string | null }>(
+      FRESH,
+      `select identity_verified_at from profiles where id = auth.uid()`,
+    );
+    expect(row.identity_verified_at).not.toBeNull();
   });
 });

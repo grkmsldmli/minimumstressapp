@@ -26,6 +26,10 @@ export function PractitionerTrustSummary({
   const badges: string[] = [];
   if (trust.identityVerified) badges.push("Identity verified");
   if (trust.insuranceVerified) badges.push("Insurance verified");
+  // Only when a credential was actually reviewed — a factual "reviewed", never a
+  // claim that the platform certifies the work. Absent for professions that need
+  // no credential, so it never reads as something missing.
+  if (trust.credentialReviewed) badges.push("Credential reviewed");
   if (trust.goodStanding) badges.push("Good standing");
 
   const sessions =

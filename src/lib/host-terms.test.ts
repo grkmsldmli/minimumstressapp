@@ -56,12 +56,17 @@ describe("what a host is agreeing to", () => {
       "Weapons, where prohibited or unsafe": "weapons",
       "Hazardous activities": "hazardous activities",
       "Parties and nightlife events": "parties and nightlife",
+      "Overnight stays, sleeping, or residential use": "overnight stays or residential",
       "More people than the booking declared": "more people than the booking declared",
+      "Transferring, assigning, or subletting your booking to someone else":
+        "transferring or subletting the booking",
       "Entering outside the booked time": "entering outside the booked time",
       "Commercial filming or production that was not declared and allowed":
         "undeclared commercial production",
       "Anything that damages the room or creates an unreasonable safety risk":
         "damages the space or creates an unreasonable safety risk",
+      "Intentional or reckless misuse of the space, furniture, or equipment":
+        "misuse of the space, furniture or equipment",
       "Any use materially different from the declared purpose":
         "materially different from the one declared",
     };
@@ -118,9 +123,11 @@ describe("the version and its fingerprint", () => {
    */
   it("pins the exact words the current version stands for", () => {
     // v2: the allowed-use examples dropped "personal practice" and "dance and
-    // movement rehearsal" (HOST_TERMS_VERSION raised to 2, required version
-    // bumped in migration 0056).
-    expect(hostTermsDigest()).toBe("de2b9b76");
+    // movement rehearsal" (migration 0056).
+    // v3: the prohibited-use list gained overnight/residential use, transferring
+    // or subletting a booking, and misuse of furniture or equipment
+    // (HOST_TERMS_VERSION raised to 3, required version bumped in migration 0059).
+    expect(hostTermsDigest()).toBe("b981a4b6");
   });
 });
 

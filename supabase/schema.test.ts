@@ -286,6 +286,35 @@ describe("private columns stay out of the public views", () => {
    * precise lat/lng and the entry details come back through
    * space_access_details() once a booking is held (migration 0055).
    */
+  it("records the rules acknowledgment and the credential on their rows", async () => {
+    // The acknowledgment lives on the booking (migration 0058), stamped at
+    // creation, so a dispute can point to it beside the declared purpose.
+    const bookingCols = await rows<{ column_name: string }>(
+      `select column_name from information_schema.columns
+       where table_schema = 'public' and table_name = 'bookings'`,
+    );
+    expect(bookingCols.map((c) => c.column_name)).toContain("rules_ack_at");
+
+    // The credential fields live on the profile, beside insurance.
+    const profileCols = (
+      await rows<{ column_name: string }>(
+        `select column_name from information_schema.columns
+         where table_schema = 'public' and table_name = 'profiles'`,
+      )
+    ).map((c) => c.column_name);
+    for (const col of [
+      "credential_doc_path",
+      "credential_doc_state",
+      "credential_doc_reviewed_at",
+      "credential_type",
+      "credential_number",
+      "credential_jurisdiction",
+      "credential_review_note",
+    ]) {
+      expect(profileCols, col).toContain(col);
+    }
+  });
+
   it("omits the exact location and the way in from spaces_public", async () => {
     const columns = await rows<{ column_name: string }>(
       `select column_name from information_schema.columns

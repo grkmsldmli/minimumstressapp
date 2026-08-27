@@ -6,6 +6,8 @@ import {
   isKnownProfession,
   professionFor,
   professionLabel,
+  proofFor,
+  requiresCredential,
 } from "./professions";
 
 describe("practitioner professions", () => {
@@ -58,5 +60,39 @@ describe("practitioner professions", () => {
       expect(p.label).not.toBe("Therapist or Counselor");
       expect(p.label.toLowerCase()).not.toContain("counselor");
     }
+  });
+});
+
+describe("professional proof", () => {
+  it("requires proof from every profession", () => {
+    for (const p of PRACTITIONER_PROFESSIONS) {
+      expect(requiresCredential(p.key), p.key).toBe(true);
+      expect(p.proof.required, p.key).toBe(true);
+      expect(p.proof.label.length, p.key).toBeGreaterThan(3);
+    }
+  });
+
+  it("asks massage for CAMTC specifically", () => {
+    expect(proofFor("massage").kind).toBe("camtc");
+    expect(proofFor("massage").label).toBe("CAMTC certification");
+  });
+
+  it("asks movement-and-teaching professions for a training certificate", () => {
+    for (const key of ["pilates", "yoga", "movement", "meditation", "holistic"]) {
+      expect(proofFor(key).kind, key).toBe("training");
+    }
+  });
+
+  it("asks coaching and the generic professional for reasonable professional proof", () => {
+    for (const key of ["coaching", "other"]) {
+      expect(proofFor(key).kind, key).toBe("professional");
+    }
+  });
+
+  it("still requires proof — generic — when no profession is set", () => {
+    expect(requiresCredential(null)).toBe(true);
+    expect(requiresCredential(undefined)).toBe(true);
+    expect(requiresCredential("astronaut")).toBe(true);
+    expect(proofFor(null).kind).toBe("professional");
   });
 });

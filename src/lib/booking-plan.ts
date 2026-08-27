@@ -35,6 +35,7 @@ import {
   checkInsuranceForBooking,
 } from "./insurance";
 import { type CancellationEvent, standingFor } from "./reliability";
+import { requiresCredential } from "./professions";
 import { SESSION_MS } from "./session";
 
 export interface SpaceFacts {
@@ -85,6 +86,16 @@ export interface PractitionerFacts {
    * asserting its own identity is exactly what this gate refuses.
    */
   identityVerified: boolean;
+  /**
+   * The declared professional category, and whether a submitted credential has
+   * been verified. Both read from stored columns the client cannot forge — the
+   * verdict is staff-written (see migration 0058). Only a profession whose rule
+   * is "required" (a legally licensed one, e.g. massage) gates a booking on the
+   * credential; everything else ignores it. Optional in the type so tests that
+   * predate credentials still describe what they were written to.
+   */
+  profession?: string | null;
+  credentialVerified?: boolean;
   /** The professional's liability cover, as reviewed and dated. */
   insurance: InsuranceFacts;
 }
@@ -96,6 +107,7 @@ export type PlanRejection =
   | "space_not_active"
   | "professional_profile_required"
   | "identity_verification_required"
+  | "credential_required"
   | "standing_paused"
   | "host_cannot_be_paid"
   | "slot_in_past"
@@ -222,6 +234,18 @@ export function planBooking(input: {
   const insuranceProblem = checkInsuranceForBooking(practitioner.insurance, startsAt, endsAt, now);
   if (insuranceProblem) return { ok: false, reason: insuranceProblem };
 
+  /*
+   * A verified credential, but only where the profession legally needs one.
+   * requiresCredential is true for the licensed professions alone (massage in
+   * this set); for everyone else a certificate is optional and its absence
+   * never blocks a booking. Read from the staff-written verdict, so a
+   * practitioner cannot pass this by asserting it — the same shape as identity
+   * and insurance above.
+   */
+  if (requiresCredential(practitioner.profession) && !practitioner.credentialVerified) {
+    return { ok: false, reason: "credential_required" };
+  }
+
   if (startsAt.getTime() <= now.getTime()) return { ok: false, reason: "slot_in_past" };
 
   /*
@@ -276,7 +300,16 @@ export function planBooking(input: {
   if (useProblem) return { ok: false, reason: useProblem };
 
   const isInstant = isInstantSlot(startsAt, now);
-  const needsApproval = space.bookingMode === "request";
+  /*
+   * Massage work always goes through the host, whatever the space's booking
+   * mode. A massage professional (identity and insurance verified, CAMTC
+   * reviewed above) still has the host say yes before entry — the practitioner
+   * profession decides this, not the room's name, so booking a massage room for
+   * a movement session by a non-massage professional stays instant if the space
+   * allows it.
+   */
+  const needsApproval =
+    space.bookingMode === "request" || practitioner.profession === "massage";
 
   /*
    * A request nobody could answer in time is not worth taking.
@@ -370,6 +403,12 @@ export function explainRejection(
     case "professional_profile_required":
       return {
         message: "Complete your professional profile to book a space.",
+        status: 403,
+      };
+    case "credential_required":
+      return {
+        message:
+          "Your profession needs a verified license to book. Add your license and we'll review it.",
         status: 403,
       };
     case "identity_verification_required":

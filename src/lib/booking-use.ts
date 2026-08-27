@@ -44,12 +44,22 @@ export const PROHIBITED_USES = [
   "Weapons, where prohibited or unsafe",
   "Hazardous activities",
   "Parties and nightlife events",
+  "Overnight stays, sleeping, or residential use",
   "More people than the booking declared",
+  "Transferring, assigning, or subletting your booking to someone else",
   "Entering outside the booked time",
   "Commercial filming or production that was not declared and allowed",
   "Anything that damages the room or creates an unreasonable safety risk",
+  "Intentional or reckless misuse of the space, furniture, or equipment",
   "Any use materially different from the declared purpose",
 ] as const;
+/*
+ * This list is pinned to the Host Terms document by host-terms.test.ts — every
+ * enforced prohibition must be named in the agreement — and mirrored in the
+ * practitioner-facing Terms (legal-text.ts). The three added here (overnight,
+ * transfer/sublet, equipment misuse) shipped with HOST_TERMS_VERSION 3 and
+ * TERMS_VERSION 5.
+ */
 
 /**
  * What somebody says they are booking for.

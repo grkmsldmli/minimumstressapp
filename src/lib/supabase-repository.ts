@@ -48,6 +48,7 @@ interface HostRpcRow {
   practitioner_profession?: string | null;
   practitioner_identity_verified?: boolean | null;
   practitioner_insurance_verified?: boolean | null;
+  practitioner_credential_reviewed?: boolean | null;
   practitioner_completed_sessions?: number | null;
   practitioner_good_standing?: boolean | null;
 }
@@ -56,6 +57,7 @@ function trustFrom(row: HostRpcRow): PractitionerTrust {
   return {
     identityVerified: Boolean(row.practitioner_identity_verified),
     insuranceVerified: Boolean(row.practitioner_insurance_verified),
+    credentialReviewed: Boolean(row.practitioner_credential_reviewed),
     completedSessions: Number(row.practitioner_completed_sessions ?? 0),
     goodStanding: Boolean(row.practitioner_good_standing),
   };
@@ -306,6 +308,20 @@ export class SupabaseRepository implements Repository {
         ? new Date(data.identity_verified_at)
         : null,
       profession: (data?.profession as string | null) ?? null,
+      // A submitted credential and its staff verdict. Columns added in 0058; a
+      // row read before it has none, which reads as no credential. state null
+      // means nothing submitted; the verdict is never set from the client.
+      credentialDocName: data?.credential_doc_path ?? null,
+      credentialType: data?.credential_type ?? null,
+      credentialNumber: data?.credential_number ?? null,
+      credentialJurisdiction: data?.credential_jurisdiction ?? null,
+      credentialReview: {
+        state: (data?.credential_doc_state as DocReviewState | null | undefined) ?? null,
+        reviewedAt: data?.credential_doc_reviewed_at
+          ? new Date(data.credential_doc_reviewed_at)
+          : null,
+      },
+      credentialReviewNote: data?.credential_review_note ?? null,
       searchPostcode: data?.search_postcode ?? null,
       termsVersion: data?.terms_version ?? null,
       termsAcceptedAt: data?.terms_accepted_at ? new Date(data.terms_accepted_at) : null,
@@ -334,6 +350,18 @@ export class SupabaseRepository implements Repository {
     if (patch.notifyOffers !== undefined) row.notify_offers = patch.notifyOffers;
     if (patch.payoutSchedule !== undefined) row.payout_schedule = patch.payoutSchedule;
     if (patch.insuranceDocName !== undefined) row.insurance_doc_path = patch.insuranceDocName;
+    /*
+     * The credential the practitioner submits — the document, and what they type
+     * about it. The review verdict (credential_doc_state, reviewed_at, note) is
+     * deliberately never sent from here: a trigger refuses a client-set verdict,
+     * and a new document resets review to pending on its own (migration 0058).
+     */
+    if (patch.credentialDocName !== undefined) row.credential_doc_path = patch.credentialDocName;
+    if (patch.credentialType !== undefined) row.credential_type = patch.credentialType;
+    if (patch.credentialNumber !== undefined) row.credential_number = patch.credentialNumber;
+    if (patch.credentialJurisdiction !== undefined) {
+      row.credential_jurisdiction = patch.credentialJurisdiction;
+    }
     if (patch.emergencyContact !== undefined) {
       row.emergency_contact_name = patch.emergencyContact.name;
       row.emergency_contact_phone = patch.emergencyContact.phone;
@@ -449,6 +477,44 @@ export class SupabaseRepository implements Repository {
       insurance_doc_state: "pending",
       insurance_doc_reviewed_at: null,
       insurance_review_note: null,
+    });
+    if (error) throw asError(error);
+
+    return this.getProfile();
+  }
+
+  /**
+   * A professional credential (license or certificate), uploaded the same way as
+   * insurance: bytes to the private verification-docs bucket, then the path and
+   * what the practitioner typed about it recorded on their row. The review state
+   * is not set here — the credential trigger (0058) forces it back to pending on
+   * a new document, and only staff can move it past that.
+   */
+  async uploadCredentialCertificate(
+    file: File,
+    details: {
+      credentialType: string | null;
+      credentialNumber: string | null;
+      credentialJurisdiction: string | null;
+    },
+  ): Promise<Profile> {
+    const reason = rejectionReason(file, "document");
+    if (reason) throw new Error(reason);
+
+    const id = await this.userId();
+    const path = practitionerDocPath(id, file.type, crypto.randomUUID());
+
+    const { error: uploadError } = await this.db.storage
+      .from("verification-docs")
+      .upload(path, file, { contentType: file.type, upsert: false });
+    if (uploadError) throw asError(uploadError);
+
+    const { error } = await this.db.from("profiles").upsert({
+      id,
+      credential_doc_path: path,
+      credential_type: details.credentialType,
+      credential_number: details.credentialNumber,
+      credential_jurisdiction: details.credentialJurisdiction,
     });
     if (error) throw asError(error);
 

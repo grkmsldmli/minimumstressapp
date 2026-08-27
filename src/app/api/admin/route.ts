@@ -75,6 +75,8 @@ export async function POST(request: NextRequest): Promise<Response> {
       "delete_listing",
       "verify_insurance",
       "reject_insurance",
+      "verify_credential",
+      "reject_credential",
     ] as const);
     if (!action.ok) return jsonError(action.reason, 400);
 
@@ -453,6 +455,50 @@ export async function POST(request: NextRequest): Promise<Response> {
           });
         }
 
+        return Response.json({ ok: true });
+      }
+
+      /**
+       * A professional credential, reviewed by hand. No dates — a license is
+       * valid-or-not rather than windowed like insurance — so this only records
+       * the verdict. Setting the state on a row whose document is unchanged
+       * passes the credential trigger because the service role has no auth.uid();
+       * a stray id that matches no practitioner changes nothing.
+       */
+      case "verify_credential": {
+        const { error } = await admin
+          .from("profiles")
+          .update({
+            credential_doc_state: "verified",
+            credential_doc_reviewed_at: new Date().toISOString(),
+            credential_review_note: null,
+          })
+          .eq("id", id.value)
+          .eq("account_type", "practitioner")
+          .not("credential_doc_path", "is", null);
+        if (error) throw error;
+        return Response.json({ ok: true });
+      }
+
+      /**
+       * Turning a credential down. The reason is required and shown to the
+       * practitioner verbatim, the same as a rejected certificate.
+       */
+      case "reject_credential": {
+        if (!note.value || note.value.trim().length < 15) {
+          return jsonError("Say why — it is shown to them", 400);
+        }
+        const { error } = await admin
+          .from("profiles")
+          .update({
+            credential_doc_state: "rejected",
+            credential_doc_reviewed_at: new Date().toISOString(),
+            credential_review_note: note.value,
+          })
+          .eq("id", id.value)
+          .eq("account_type", "practitioner")
+          .not("credential_doc_path", "is", null);
+        if (error) throw error;
         return Response.json({ ok: true });
       }
 

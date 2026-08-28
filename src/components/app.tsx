@@ -167,6 +167,8 @@ interface Snapshot {
   cancellations: CancellationEvent[];
   sessions: number;
   notifications: NotificationEntry[];
+  /** Founding Host spots still open, from the server's own count. */
+  foundingRemaining: number;
 }
 
 export function App() {
@@ -554,6 +556,7 @@ export function App() {
         cancellations,
         sessions,
         notifications,
+        foundingRemaining,
       ] = await Promise.all([
           repo.getProfile(),
           repo.listPublicSpaces(),
@@ -564,6 +567,7 @@ export function App() {
           repo.listCancellationHistory(),
           repo.getSessionCount(),
           repo.listNotifications(),
+          repo.foundingHostsRemaining(),
         ]);
 
       // Address details are per-space and authorization-gated, so they are
@@ -585,6 +589,7 @@ export function App() {
         cancellations,
         sessions,
         notifications,
+        foundingRemaining,
       };
     };
 
@@ -1256,6 +1261,15 @@ export function App() {
           }}
           hostTermsVersion={profile.hostTermsVersion}
           hostTermsAcceptedAt={profile.hostTermsAcceptedAt}
+          /*
+           * Founding and achievements: the host's own number (null unless they
+           * are one of the fifty), the real count of spots still open, and their
+           * completed-session total — all from the server. sessionsHosted is
+           * already the completed-and-paid count hostFactsFrom made honest.
+           */
+          foundingNumber={profile.foundingNumber}
+          foundingRemaining={data.foundingRemaining}
+          completedSessions={hostFacts.sessionsHosted}
         />
   );
 

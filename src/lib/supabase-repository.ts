@@ -330,6 +330,10 @@ export class SupabaseRepository implements Repository {
         ? new Date(data.host_terms_accepted_at)
         : null,
       milestonesSeen: (data?.milestones_seen as string[] | null) ?? [],
+      // Server-written the moment a first listing goes live, and never from the
+      // client (migration 0060). Both null on a host who is not one of the fifty.
+      foundingHostAt: data?.founding_host_at ? new Date(data.founding_host_at) : null,
+      foundingNumber: (data?.founding_number as number | null) ?? null,
       // Read back only for its owner — this query runs as the signed-in user,
       // and no policy lets anyone select another person's profile row.
       emergencyContact: {
@@ -642,10 +646,11 @@ export class SupabaseRepository implements Repository {
 
     // Two extra round trips rather than a nested select, because availability
     // and media come from their own views with their own visibility rules.
-    const [{ data: blocks }, { data: media }, { data: ratings }] = await Promise.all([
+    const [{ data: blocks }, { data: media }, { data: ratings }, hostSignals] = await Promise.all([
       this.db.from("availability_public").select("*").in("space_id", ids),
       this.db.from("space_media_public").select("*").in("space_id", ids).order("position"),
       this.db.from("space_ratings").select("*").in("space_id", ids),
+      this.hostSignalsFor(spaces.map((s: SpaceRow) => s.host_id)),
     ]);
 
     const ratingFor = new Map(
@@ -662,6 +667,7 @@ export class SupabaseRepository implements Repository {
         (blocks ?? []).filter((b: AvailabilityRow) => b.space_id === row.id),
         (media ?? []).filter((m: MediaRow) => m.space_id === row.id),
         ratingFor.get(row.id),
+        hostSignals.get(row.host_id),
       ),
     );
   }
@@ -675,12 +681,13 @@ export class SupabaseRepository implements Repository {
     if (error) throw asError(error);
     if (!data) return null;
 
-    const [{ data: blocks }, { data: media }] = await Promise.all([
+    const [{ data: blocks }, { data: media }, hostSignals] = await Promise.all([
       this.db.from("availability_public").select("*").eq("space_id", id),
       this.db.from("space_media_public").select("*").eq("space_id", id).order("position"),
+      this.hostSignalsFor([data.host_id]),
     ]);
 
-    return this.toPublicSpace(data, blocks ?? [], media ?? []);
+    return this.toPublicSpace(data, blocks ?? [], media ?? [], undefined, hostSignals.get(data.host_id));
   }
 
   private toPublicSpace(
@@ -688,6 +695,7 @@ export class SupabaseRepository implements Repository {
     blocks: AvailabilityRow[],
     media: MediaRow[],
     rating?: { count: number; average: number },
+    hostSignal?: { founding: boolean; milestone: number },
   ): PublicSpace {
     return {
       id: row.id,
@@ -751,7 +759,45 @@ export class SupabaseRepository implements Repository {
       distanceLabel: "nearby",
       reviewCount: rating?.count ?? 0,
       averageRating: rating?.average ?? null,
+      // The two host signals a practitioner may see, from public_host_profiles.
+      // Absent (a host row that predates 0060, or a self-preview that does not
+      // join it) reads as no founding status and no milestone — no badge.
+      hostFoundingHost: hostSignal?.founding ?? false,
+      hostSessionMilestone: hostSignal?.milestone ?? 0,
     };
+  }
+
+  /**
+   * The founding and milestone signals for a set of hosts, keyed by host id.
+   *
+   * One read of public_host_profiles — the only place a practitioner-facing
+   * surface is allowed to learn a host's founding status or session milestone,
+   * and it exposes a bucket, never a raw count. A host with no row, or the read
+   * failing, simply yields no signal rather than blocking the listings.
+   */
+  private async hostSignalsFor(
+    hostIds: string[],
+  ): Promise<Map<string, { founding: boolean; milestone: number }>> {
+    const out = new Map<string, { founding: boolean; milestone: number }>();
+    const unique = [...new Set(hostIds)];
+    if (unique.length === 0) return out;
+
+    const { data } = await this.db
+      .from("public_host_profiles")
+      .select("id, founding_host, session_milestone")
+      .in("id", unique);
+
+    for (const row of (data ?? []) as {
+      id: string;
+      founding_host: boolean | null;
+      session_milestone: number | null;
+    }[]) {
+      out.set(row.id, {
+        founding: row.founding_host ?? false,
+        milestone: row.session_milestone ?? 0,
+      });
+    }
+    return out;
   }
 
   async getSpaceAccessDetails(spaceId: string): Promise<SpaceAccessDetails | null> {
@@ -1055,6 +1101,14 @@ export class SupabaseRepository implements Repository {
     const { data, error } = await this.db.from("session_counts").select("sessions").maybeSingle();
     if (error) throw asError(error);
     return data?.sessions ?? 0;
+  }
+
+  async foundingHostsRemaining(): Promise<number> {
+    // A plain count of the fifty still open, from the database's own reckoning
+    // of who holds a founding number — never a stored countdown.
+    const { data, error } = await this.db.rpc("founding_hosts_remaining");
+    if (error) throw asError(error);
+    return typeof data === "number" ? data : (data ?? 0);
   }
 
   /* ---------------- credit ---------------- */

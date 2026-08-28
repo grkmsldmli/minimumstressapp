@@ -12,6 +12,7 @@ import { BookingCalendar } from "@/components/booking-calendar";
 import { SpaceGallery } from "@/components/space-gallery";
 import { PrimaryButton } from "@/components/primitives";
 import { DeclareUse } from "@/components/declare-use";
+import { HostBadges } from "@/components/host-badges";
 import {
   type DeclaredUse,
   checkDeclaredUse,
@@ -348,6 +349,15 @@ export function SpaceDetail({
         <p className="font-body font-normal text-[15px] leading-relaxed text-ink-muted">
           {space.description}
         </p>
+
+        {/*
+          Host signals, factual and few: Founding Host, and the milestone this
+          host's rooms have passed. Renders nothing when the host has neither,
+          so an ordinary listing is not padded with an empty row.
+        */}
+        <div className="mt-3.5">
+          <HostBadges space={space} variant="detail" />
+        </div>
 
         {/*
           One row that slides, rather than a grid that grows.

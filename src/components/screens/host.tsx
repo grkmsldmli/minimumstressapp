@@ -3,6 +3,7 @@
 import { useState } from "react";
 import {
   ArrowLeft,
+  Award,
   Bell,
   MessageCircle,
   Building2,
@@ -35,6 +36,8 @@ import { PAYOUT_DELAY_DAYS, describeSpeed } from "@/lib/payouts";
 import type { Standing } from "@/lib/reliability";
 import type { MilestoneKey } from "@/lib/milestones";
 import { claimWindowEndsAt } from "@/lib/claims";
+import { FOUNDING_HOST_LABEL, foundingSpotsRemainingLabel } from "@/lib/founding";
+import { hostAchievementProgress } from "@/lib/host-achievements";
 import { HOST_TERMS_VERSION, hasAcceptedHostTerms } from "@/lib/host-terms";
 import { listingGaps } from "@/lib/listing-quality";
 import { FALLBACK_ZONE, zoneAbbreviation } from "@/lib/timezone";
@@ -54,6 +57,152 @@ function spacesSummary(spaces: HostSpace[]): string {
   const hidden = spaces.filter((space) => space.status === "delisted").length;
   const count = `${spaces.length} space${spaces.length === 1 ? "" : "s"}`;
   return hidden > 0 ? `${count} · ${hidden} hidden` : count;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Recognition — Founding 50 and session milestones                   */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Founding status and session milestones, on the host's own dashboard.
+ *
+ * Everything here is read from server-derived numbers passed in — the host's
+ * founding place, the real spots remaining, their completed-and-paid session
+ * count. Nothing is set from the client, and there is no manufactured urgency:
+ * the Founding line appears only for a host who has earned it or while real
+ * spots remain, and the milestone line reads as calm progress from the very
+ * first session. Recognition, not a scoreboard.
+ */
+function HostRecognition({
+  foundingNumber,
+  foundingRemaining,
+  completedSessions,
+}: {
+  foundingNumber: number | null;
+  foundingRemaining: number;
+  completedSessions: number;
+}) {
+  const isFounding = foundingNumber !== null;
+  const spotsOpen = foundingRemaining > 0;
+  const showFounding = isFounding || spotsOpen;
+  const progress = hostAchievementProgress(completedSessions);
+
+  // The bar fills from the last milestone to the next, so it reads as distance
+  // covered rather than a raw count. Before the first milestone it fills toward
+  // First Booking; once the top is earned it is simply full.
+  const floor = progress.earned?.at ?? 0;
+  const ceiling = progress.next?.at ?? progress.earned?.at ?? 1;
+  const span = Math.max(1, ceiling - floor);
+  const filled = Math.min(1, Math.max(0, (completedSessions - floor) / span));
+
+  return (
+    <div className="mb-5 flex flex-col gap-2.5">
+      {showFounding && (
+        <div
+          className="rounded-2xl p-4"
+          style={{
+            background: isFounding
+              ? "linear-gradient(135deg, #16304E 0%, #22496F 100%)"
+              : "#F4F8FC",
+            border: isFounding ? "none" : "1px solid #E7EEF6",
+          }}
+        >
+          <p
+            className="font-body font-semibold text-[11px] uppercase tracking-[0.22em]"
+            style={{ color: isFounding ? "rgba(255,255,255,0.55)" : "#5B7A9C" }}
+          >
+            Founding 50 · Bay Area
+          </p>
+          {isFounding ? (
+            <div className="flex items-center gap-2.5 mt-2">
+              <span
+                className="w-8 h-8 rounded-full flex items-center justify-center shrink-0"
+                style={{ backgroundColor: "rgba(255,255,255,0.12)" }}
+              >
+                <Award size={16} color="#EBD9A8" />
+              </span>
+              <div>
+                <p className="font-display italic font-semibold text-[19px] leading-none text-white">
+                  {FOUNDING_HOST_LABEL}
+                </p>
+                <p className="font-body font-normal text-[13px] text-white/60 mt-1">
+                  No. {foundingNumber} of 50 · yours for good
+                </p>
+              </div>
+            </div>
+          ) : (
+            <>
+              <p className="font-display italic font-semibold text-[19px] text-navy mt-1.5">
+                {foundingSpotsRemainingLabel(foundingRemaining)}
+              </p>
+              <p className="font-body font-normal text-[13.5px] leading-relaxed text-ink-soft mt-1">
+                Bring your first listing live to claim one of the fifty — a
+                permanent place, not a discount.
+              </p>
+            </>
+          )}
+        </div>
+      )}
+
+      <div
+        className="rounded-2xl p-4"
+        style={{ backgroundColor: "#fff", border: "1px solid #E7EEF6" }}
+      >
+        <div className="flex items-center justify-between">
+          <p className="font-body font-semibold text-[11px] uppercase tracking-[0.22em] text-sky-text">
+            Achievements
+          </p>
+          {progress.earned && (
+            <span className="flex items-center gap-1.5">
+              <Award size={13} color="#2E7CC4" />
+              <span className="font-body font-medium text-[13px] text-navy">
+                {progress.earned.label}
+              </span>
+            </span>
+          )}
+        </div>
+
+        <p className="font-body font-normal text-[14.5px] text-navy mt-2.5">
+          {completedSessions === 0 ? (
+            "No completed sessions yet — your first earns First Booking."
+          ) : (
+            <>
+              <span className="font-semibold">
+                {completedSessions.toLocaleString()}
+              </span>{" "}
+              completed {completedSessions === 1 ? "session" : "sessions"}
+            </>
+          )}
+        </p>
+
+        {progress.next && progress.toNext !== null && (
+          <>
+            <div
+              className="h-1.5 rounded-full mt-3 overflow-hidden"
+              style={{ backgroundColor: "#EDF3F9" }}
+            >
+              <div
+                className="h-full rounded-full"
+                style={{
+                  width: `${Math.round(filled * 100)}%`,
+                  backgroundColor: "#3B9BE8",
+                }}
+              />
+            </div>
+            <p className="font-body font-normal text-[13px] text-ink-soft mt-2">
+              {progress.toNext} {progress.toNext === 1 ? "session" : "sessions"} to{" "}
+              {progress.next.label}
+            </p>
+          </>
+        )}
+        {!progress.next && progress.earned && (
+          <p className="font-body font-normal text-[13px] text-ink-soft mt-2">
+            You have reached every milestone — a room a great many people count on.
+          </p>
+        )}
+      </div>
+    </div>
+  );
 }
 
 /* ------------------------------------------------------------------ */
@@ -79,6 +228,9 @@ export function HostDashboard({
   onMessageBooking,
   hostTermsVersion,
   hostTermsAcceptedAt,
+  foundingNumber,
+  foundingRemaining,
+  completedSessions,
 }: {
   spaces: HostSpace[];
   bookings: HostBooking[];
@@ -114,6 +266,18 @@ export function HostDashboard({
   onReportProblem?: (bookingId: string) => void;
   /** Opens the thread for a booking. */
   onMessageBooking?: (bookingId: string) => void;
+  /**
+   * Founding Host status and progress, all server-derived.
+   *
+   * `foundingNumber` is this host's place in the fifty, or null if they are not
+   * one — read from their profile, which the client can never write.
+   * `foundingRemaining` is the real count of spots still open.
+   * `completedSessions` is their completed-and-paid session total, the number
+   * the achievement ladder is read from.
+   */
+  foundingNumber: number | null;
+  foundingRemaining: number;
+  completedSessions: number;
 }) {
   /*
    * A host's bookings are for their own rooms, so the hour belongs on the
@@ -396,6 +560,18 @@ export function HostDashboard({
               requests={requests.filter((r) => r.spaceId === active.id)}
               zoneOf={zoneOf}
               onAnswer={onAnswerRequest}
+            />
+
+            {/*
+              Recognition sits above the calendar and below anything that needs
+              answering: it is the host's own standing, read once, not a task.
+              Founding status and milestones are counted across all their rooms,
+              so it is shown once regardless of which space tab is active.
+            */}
+            <HostRecognition
+              foundingNumber={foundingNumber}
+              foundingRemaining={foundingRemaining}
+              completedSessions={completedSessions}
             />
 
             <div className="mb-3">

@@ -153,6 +153,17 @@ export interface Profile {
    * from what actually happened or be granted by writing a row.
    */
   milestonesSeen: string[];
+  /**
+   * When this host earned Founding Host status, and their number in the fifty.
+   *
+   * Both null on everyone who is not a Founding Host, and set together the
+   * moment a host's first listing goes live — by the server alone. The client
+   * can read them but can never write them (migration 0060 refuses it on insert
+   * and update), and the number is a permanent 1..50 the database itself caps.
+   * See lib/founding.ts.
+   */
+  foundingHostAt: Date | null;
+  foundingNumber: number | null;
 }
 
 export interface SpaceMedia {
@@ -273,6 +284,18 @@ export interface PublicSpace {
    */
   reviewCount: number;
   averageRating: number | null;
+  /**
+   * Two host trust signals a practitioner may see, and only these two.
+   *
+   * `hostFoundingHost` is whether the host is one of the Founding 50.
+   * `hostSessionMilestone` is the highest completed-session milestone their
+   * rooms have reached, as a bucket (0/1/10/50/100/250/500/1000) — never the
+   * exact count. Both come from the `public_host_profiles` view, which is the
+   * only host data this type is allowed to carry: no name beyond the listing,
+   * no volume, no verdicts. See lib/host-achievements and migration 0060.
+   */
+  hostFoundingHost: boolean;
+  hostSessionMilestone: number;
 }
 
 /**

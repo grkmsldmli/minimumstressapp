@@ -91,7 +91,7 @@ describe("migrations apply cleanly", () => {
         `select table_name from information_schema.tables
          where table_schema = 'public' and table_type = 'BASE TABLE'`,
       );
-      expect(tables.rows).toHaveLength(14);
+      expect(tables.rows).toHaveLength(15);
     } finally {
       await fresh.close();
     }
@@ -151,6 +151,9 @@ describe("migrations apply cleanly", () => {
       "availability",
       "bookings",
       "credit_ledger",
+      // The durable Founding 50 ledger — server-only, so a spot once earned is
+      // never re-opened by a deletion (migration 0060).
+      "founding_hosts",
       "messages",
       "notifications",
       "profiles",
@@ -359,10 +362,16 @@ describe("private columns stay out of the public views", () => {
        where table_schema = 'public' and table_name = 'public_host_profiles'`,
     );
 
+    // Only the name, the avatar, and the two safe host signals: whether the
+    // host is Founding (a boolean), and their highest session milestone (a
+    // bucket, never the raw count). No Stripe id, no document path, no email,
+    // no verdict — see migration 0060.
     expect(columns.map((c) => c.column_name).sort()).toEqual([
       "avatar_path",
       "display_name",
+      "founding_host",
       "id",
+      "session_milestone",
     ]);
   });
 

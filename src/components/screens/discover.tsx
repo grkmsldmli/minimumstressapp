@@ -30,6 +30,7 @@ import {
 } from "@/components/brand";
 import { BookAgain } from "@/components/book-again";
 import { BrowseMap } from "@/components/browse-map";
+import { HostBadges } from "@/components/host-badges";
 import { PullToRefresh } from "@/components/pull-to-refresh";
 import { TiltCard } from "@/components/primitives";
 import type { PublicSpace } from "@/lib/domain";
@@ -643,6 +644,10 @@ function FeaturedCard({
         <p className="font-body font-normal text-[13.5px] mt-0.5 text-ink-soft">
           {roomTypeFor(space.category)} · {space.distanceLabel}
         </p>
+        {/* At most two restrained host signals, below the room, never over it. */}
+        <div className="mt-1.5">
+          <HostBadges space={space} variant="compact" />
+        </div>
       </div>
     </TiltCard>
   );

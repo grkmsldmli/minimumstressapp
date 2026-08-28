@@ -442,9 +442,18 @@ describe("profiles keep their payment identifiers to themselves", () => {
     expect(found).toEqual([]);
   });
 
-  it("exposes only name and avatar through the public host view", async () => {
+  it("exposes only name, avatar and the two safe host signals", async () => {
     const [host] = await asAnon(`select * from public_host_profiles where id = '${HOST}'`);
-    expect(Object.keys(host).sort()).toEqual(["avatar_path", "display_name", "id"]);
+    // Name, avatar, whether they are Founding (a boolean), and their highest
+    // session milestone (a bucket, not the raw count). Nothing private —
+    // migration 0060.
+    expect(Object.keys(host).sort()).toEqual([
+      "avatar_path",
+      "display_name",
+      "founding_host",
+      "id",
+      "session_milestone",
+    ]);
   });
 
   it("gives a practitioner no public presence at all", async () => {

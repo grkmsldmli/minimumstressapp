@@ -126,6 +126,16 @@ export async function POST(request: NextRequest): Promise<Response> {
             400,
           );
         }
+
+        /*
+         * Founding Host is not awarded here. This one write — a listing going
+         * from pending to active — is the qualifying moment, and a database
+         * trigger (migration 0060) allocates the spot inside the very same
+         * transaction. So a qualifying host can never end up live but skipped:
+         * if allocation genuinely fails, this UPDATE rolls back with it and the
+         * approval can be retried; if all fifty spots are already taken, that is
+         * a normal outcome, not an error, and the listing goes live regardless.
+         */
         return Response.json({ ok: true });
       }
 

@@ -118,6 +118,15 @@ export interface Repository {
   getSessionCount(): Promise<number>;
 
   /**
+   * How many Founding Host spots are still open, derived from real rows.
+   *
+   * Straight from `founding_hosts_remaining()` — a count of hosts who hold a
+   * founding number, subtracted from fifty, never a stored or seeded figure.
+   * Shown to a host who has not earned the status while spots remain.
+   */
+  foundingHostsRemaining(): Promise<number>;
+
+  /**
    * Every cancellation involving this user, either side.
    *
    * Returned raw rather than pre-scored so `standingFor` stays the single

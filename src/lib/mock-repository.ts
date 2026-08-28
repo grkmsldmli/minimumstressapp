@@ -49,6 +49,7 @@ import type { AccessDetails } from "./access-details";
 import type { MediaKind, SpaceEdit } from "./domain";
 import type { NotificationEntry } from "./notify/history";
 import { knownUses } from "./booking-use";
+import { FOUNDING_HOST_LIMIT } from "./founding";
 import { knownSpaceTypes } from "./space-types";
 import { type CategoryKey, type RoomSetupKey, roomTypeFor } from "./taxonomy";
 import { SESSION_MINUTES } from "./session";
@@ -302,6 +303,8 @@ export class MockRepository implements Repository {
     hostTermsVersion: null,
     hostTermsAcceptedAt: null,
     milestonesSeen: [],
+    foundingHostAt: null,
+    foundingNumber: null,
   };
 
   private publicSpaces: PublicSpace[] = [];
@@ -371,6 +374,11 @@ export class MockRepository implements Repository {
         distanceLabel: seed.distanceLabel,
       reviewCount: 0,
       averageRating: null,
+      // A little seeded texture: the first two seed hosts founded, and a
+      // couple carry a session milestone, so the practitioner-facing badges
+      // have something to draw in the demo.
+      hostFoundingHost: index < 2,
+      hostSessionMilestone: index === 0 ? 100 : index === 1 ? 10 : 0,
       };
     });
   }
@@ -674,6 +682,13 @@ export class MockRepository implements Repository {
     return this.bookings.filter((b) => b.status === "completed").length;
   }
 
+  async foundingHostsRemaining(): Promise<number> {
+    // The demo has no other hosts going live, so the fifty stand almost whole.
+    // The two seed founders above are other accounts, not this one, so this is
+    // a plausible number rather than a manufactured countdown.
+    return FOUNDING_HOST_LIMIT - 2;
+  }
+
   /* ---------------- credit ---------------- */
 
   async listCancellationHistory(): Promise<CancellationEvent[]> {
@@ -891,6 +906,9 @@ export class MockRepository implements Repository {
       subleaseReview: { state: "pending", reviewedAt: null },
       insuranceReview: { state: "pending", reviewedAt: null },
       reviewNote: null,
+      // A host's own listing carries no host badge for themselves in the demo.
+      hostFoundingHost: false,
+      hostSessionMilestone: 0,
     };
 
     this.mySpaces.push(space);

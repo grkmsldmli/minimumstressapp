@@ -135,9 +135,6 @@ function HostRecognition({
                 <p className="font-display italic font-semibold text-[19px] leading-none text-white">
                   {FOUNDING_HOST_LABEL}
                 </p>
-                <p className="font-body font-normal text-[13px] text-white/60 mt-1">
-                  No. {foundingNumber} of 50 · yours for good
-                </p>
               </div>
             </div>
           ) : (
@@ -464,7 +461,7 @@ export function HostDashboard({
   return (
     <div className="h-full flex flex-col screen-in bg-white">
       <div
-        className="px-6 pt-8 pb-16 relative rounded-b-[30px] overflow-hidden shrink-0"
+        className="px-6 pt-8 pb-8 relative rounded-b-[30px] overflow-hidden shrink-0"
         style={{ background: "radial-gradient(140% 120% at 15% 0%, #1E4066 0%, #16304E 85%)" }}
       >
         <Ambient />
@@ -640,60 +637,12 @@ export function HostDashboard({
           </div>
         )}
 
-        <div className="px-6 -mt-9 shrink-0">
-            <button
-              type="button"
-              onClick={onOpenEarnings}
-              className="w-full text-left rounded-[22px] p-5 grid grid-cols-2 gap-5 bg-white press"
-              style={{
-                boxShadow: "0 18px 40px -18px rgba(22,48,78,0.3)",
-                border: "1px solid #E7EEF6",
-              }}
-            >
-              <div>
-                <p className="font-body text-[12px] uppercase tracking-wide text-ink-faint">
-                  This month
-                </p>
-                <p className="font-display italic font-semibold text-[26px] mt-1 text-navy">
-                  {formatCents(monthCents)}
-                </p>
-                <p className="font-body text-[13.5px] mt-0.5 flex items-center gap-1 text-sky-text">
-                  View earnings <ChevronRight size={11} />
-                </p>
-              </div>
-              <div>
-                <p className="font-body text-[12px] uppercase tracking-wide text-ink-faint">
-                  Hours booked
-                </p>
-                <p className="font-display italic font-semibold text-[26px] mt-1 text-navy">
-                  {hoursFilled}
-                </p>
-                <p className="font-body font-normal text-[13.5px] mt-0.5 text-ink-faint">
-                  {hoursFilled === 0 ? "Nothing booked yet" : "So far this month"}
-                </p>
-              </div>
-            </button>
-          </div>
-
-          <PullToRefresh className="flex-1 px-6 pt-6 pb-8" onRefresh={onRefresh}>
-            <Unfinished space={active} onEdit={() => onEditSpace(active.id)} />
-
+          <PullToRefresh className="flex-1 px-6 pt-5 pb-8" onRefresh={onRefresh}>
             {/*
-              Above the calendar, and above the listing's own warnings. A
-              request expires on a clock the host cannot see running, so it is
-              the one thing on this screen that gets worse while it is ignored.
-            */}
-            <RequestQueue
-              requests={requests.filter((r) => r.spaceId === active.id)}
-              zoneOf={zoneOf}
-              onAnswer={onAnswerRequest}
-            />
-
-            {/*
-              Recognition sits above the calendar and below anything that needs
-              answering: it is the host's own standing, read once, not a task.
-              Founding status and milestones are counted across all their rooms,
-              so it is shown once regardless of which space tab is active.
+              Recognition first, right under the studio hero. Founding status and
+              milestones are the host's own standing — part of who they are here,
+              not something read past a large earnings card. The monthly summary
+              now sits at the foot of the screen instead.
             */}
             <HostRecognition
               foundingNumber={foundingNumber}
@@ -706,6 +655,19 @@ export function HostDashboard({
               not a task. Shown once regardless of the active space tab.
             */}
             <HostReferrals referralCode={referralCode} referrals={referrals} />
+
+            <Unfinished space={active} onEdit={() => onEditSpace(active.id)} />
+
+            {/*
+              Above the calendar, and above the listing's own warnings. A
+              request expires on a clock the host cannot see running, so it is
+              the one thing on this screen that gets worse while it is ignored.
+            */}
+            <RequestQueue
+              requests={requests.filter((r) => r.spaceId === active.id)}
+              zoneOf={zoneOf}
+              onAnswer={onAnswerRequest}
+            />
 
             <div className="mb-3">
               <p className="font-body font-semibold text-[12px] uppercase tracking-[0.2em] mb-2.5 text-sky-text">
@@ -797,6 +759,45 @@ export function HostDashboard({
                 </div>
               </>
             )}
+
+            {/*
+              Earnings, at the foot and compact. Same two figures and the same
+              "View earnings" tap as before — just no longer the first, largest
+              thing under the hero. Reduced padding, smaller numbers, and a short
+              empty state so it never takes more room than it earns.
+            */}
+            <button
+              type="button"
+              onClick={onOpenEarnings}
+              className="w-full text-left rounded-2xl p-3.5 grid grid-cols-2 gap-4 bg-white press mt-7"
+              style={{
+                boxShadow: "0 10px 26px -18px rgba(22,48,78,0.28)",
+                border: "1px solid #E7EEF6",
+              }}
+            >
+              <div>
+                <p className="font-body text-[11px] uppercase tracking-wide text-ink-faint">
+                  This month
+                </p>
+                <p className="font-display italic font-semibold text-[21px] mt-0.5 text-navy">
+                  {formatCents(monthCents)}
+                </p>
+                <p className="font-body text-[13px] mt-0.5 flex items-center gap-1 text-sky-text">
+                  View earnings <ChevronRight size={11} />
+                </p>
+              </div>
+              <div>
+                <p className="font-body text-[11px] uppercase tracking-wide text-ink-faint">
+                  Hours booked
+                </p>
+                <p className="font-display italic font-semibold text-[21px] mt-0.5 text-navy">
+                  {hoursFilled}
+                </p>
+                <p className="font-body font-normal text-[13px] mt-0.5 text-ink-faint">
+                  {hoursFilled === 0 ? "None yet" : "So far this month"}
+                </p>
+              </div>
+            </button>
 
             <HostLegalCard version={hostTermsVersion} acceptedAt={hostTermsAcceptedAt} />
           </PullToRefresh>

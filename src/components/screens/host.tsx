@@ -5,6 +5,8 @@ import {
   ArrowLeft,
   Award,
   Bell,
+  Check,
+  Copy,
   MessageCircle,
   Building2,
   ChevronRight,
@@ -14,6 +16,7 @@ import {
   ShieldAlert,
   ShieldCheck,
   User,
+  Users,
   Wallet,
 } from "lucide-react";
 
@@ -29,7 +32,13 @@ import { RequestQueue } from "@/components/request-queue";
 import { StandingNotice } from "@/components/standing-notice";
 import { WeekSchedule } from "@/components/week-schedule";
 import type { AvailabilityBlock } from "@/lib/availability";
-import type { BookingRequest, HostBooking, HostSpace, Profile } from "@/lib/domain";
+import type {
+  BookingRequest,
+  HostBooking,
+  HostSpace,
+  Profile,
+  ReferralSummary,
+} from "@/lib/domain";
 import { errorMessage } from "@/lib/error-message";
 import { formatCents } from "@/lib/money";
 import { PAYOUT_DELAY_DAYS, describeSpeed } from "@/lib/payouts";
@@ -38,6 +47,7 @@ import type { MilestoneKey } from "@/lib/milestones";
 import { claimWindowEndsAt } from "@/lib/claims";
 import { FOUNDING_HOST_LABEL, foundingSpotsRemainingLabel } from "@/lib/founding";
 import { hostAchievementProgress } from "@/lib/host-achievements";
+import { REFERRAL_STATUS_LABEL, referralLink } from "@/lib/referrals";
 import { HOST_TERMS_VERSION, hasAcceptedHostTerms } from "@/lib/host-terms";
 import { listingGaps } from "@/lib/listing-quality";
 import { FALLBACK_ZONE, zoneAbbreviation } from "@/lib/timezone";
@@ -125,9 +135,6 @@ function HostRecognition({
                 <p className="font-display italic font-semibold text-[19px] leading-none text-white">
                   {FOUNDING_HOST_LABEL}
                 </p>
-                <p className="font-body font-normal text-[13px] text-white/60 mt-1">
-                  No. {foundingNumber} of 50 · yours for good
-                </p>
               </div>
             </div>
           ) : (
@@ -206,6 +213,118 @@ function HostRecognition({
 }
 
 /* ------------------------------------------------------------------ */
+/*  Referrals                                                          */
+/* ------------------------------------------------------------------ */
+
+/**
+ * A host's referral area — share a link, watch factual progress.
+ *
+ * Deliberately quiet: a link to copy, a count, and one line per referred host
+ * showing only how far they have got. There is no money here — no "earned", no
+ * amount, no balance — because the economics are a later, unapproved package.
+ * The referred host is never named; each row is a neutral "Referred host", so a
+ * referrer learns progress and nothing private. All of it is server-derived.
+ */
+function HostReferrals({
+  referralCode,
+  referrals,
+}: {
+  referralCode: string;
+  referrals: ReferralSummary[];
+}) {
+  const [copied, setCopied] = useState(false);
+
+  // Nothing to share yet (a code has not been assigned) — say nothing rather
+  // than render an empty control.
+  if (!referralCode) return null;
+
+  const link = referralLink(referralCode);
+  const qualified = referrals.filter((r) => r.status === "qualified").length;
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch {
+      // Clipboard blocked (older webview, denied permission) — the code is on
+      // screen to copy by hand, so this is a convenience, not a dependency.
+    }
+  };
+
+  return (
+    <div
+      className="mb-5 rounded-2xl p-4"
+      style={{ backgroundColor: "#fff", border: "1px solid #E7EEF6" }}
+    >
+      <div className="flex items-center justify-between">
+        <p className="font-body font-semibold text-[11px] uppercase tracking-[0.22em] text-sky-text">
+          Refer a host
+        </p>
+        <span className="flex items-center gap-1.5 text-ink-soft">
+          <Users size={13} />
+          <span className="font-body font-medium text-[13px]">
+            {referrals.length} referred
+          </span>
+        </span>
+      </div>
+
+      <p className="font-body font-normal text-[13.5px] leading-relaxed text-ink-soft mt-2">
+        Share your link with someone who has a space. It follows them from sign-up
+        to their first completed session.
+      </p>
+
+      <div
+        className="flex items-center gap-2 mt-3 rounded-xl px-3 py-2.5"
+        style={{ backgroundColor: "#F4F8FC", border: "1px solid #E7EEF6" }}
+      >
+        <span className="font-mono text-[13px] text-navy truncate flex-1" title={link}>
+          {referralCode}
+        </span>
+        <button
+          type="button"
+          onClick={() => void copy()}
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg font-body font-medium text-[13px] press shrink-0"
+          style={{ backgroundColor: copied ? "#E3F0E6" : "#E3F0FB", color: copied ? "#2E7D46" : "#2E7CC4" }}
+        >
+          {copied ? <Check size={13} /> : <Copy size={13} />}
+          {copied ? "Copied" : "Copy link"}
+        </button>
+      </div>
+
+      {referrals.length > 0 && (
+        <ul className="flex flex-col mt-3.5">
+          {referrals.map((r, i) => (
+            <li
+              key={r.id}
+              className="flex items-center justify-between py-2.5"
+              style={{ borderTop: i === 0 ? "none" : "1px solid #EEF3F8" }}
+            >
+              <span className="font-body font-normal text-[14px] text-navy">Referred host</span>
+              <span
+                className="font-body font-medium text-[12.5px] px-2.5 py-1 rounded-full"
+                style={
+                  r.status === "qualified"
+                    ? { backgroundColor: "#EEF4FA", color: "#2E7CC4" }
+                    : { backgroundColor: "#F1F4F8", color: "#5B7A9C" }
+                }
+              >
+                {REFERRAL_STATUS_LABEL[r.status]}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {qualified > 0 && (
+        <p className="font-body font-normal text-[12.5px] text-ink-faint mt-2">
+          {qualified} qualified — {qualified === 1 ? "a referred host has" : "referred hosts have"} completed a first paid session.
+        </p>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /*  Host dashboard                                                     */
 /* ------------------------------------------------------------------ */
 
@@ -231,6 +350,8 @@ export function HostDashboard({
   foundingNumber,
   foundingRemaining,
   completedSessions,
+  referralCode,
+  referrals,
 }: {
   spaces: HostSpace[];
   bookings: HostBooking[];
@@ -278,6 +399,9 @@ export function HostDashboard({
   foundingNumber: number | null;
   foundingRemaining: number;
   completedSessions: number;
+  /** This host's shareable referral code, and their referrals as safe summaries. */
+  referralCode: string;
+  referrals: ReferralSummary[];
 }) {
   /*
    * A host's bookings are for their own rooms, so the hour belongs on the
@@ -337,7 +461,7 @@ export function HostDashboard({
   return (
     <div className="h-full flex flex-col screen-in bg-white">
       <div
-        className="px-6 pt-8 pb-16 relative rounded-b-[30px] overflow-hidden shrink-0"
+        className="px-6 pt-8 pb-8 relative rounded-b-[30px] overflow-hidden shrink-0"
         style={{ background: "radial-gradient(140% 120% at 15% 0%, #1E4066 0%, #16304E 85%)" }}
       >
         <Ambient />
@@ -513,42 +637,25 @@ export function HostDashboard({
           </div>
         )}
 
-        <div className="px-6 -mt-9 shrink-0">
-            <button
-              type="button"
-              onClick={onOpenEarnings}
-              className="w-full text-left rounded-[22px] p-5 grid grid-cols-2 gap-5 bg-white press"
-              style={{
-                boxShadow: "0 18px 40px -18px rgba(22,48,78,0.3)",
-                border: "1px solid #E7EEF6",
-              }}
-            >
-              <div>
-                <p className="font-body text-[12px] uppercase tracking-wide text-ink-faint">
-                  This month
-                </p>
-                <p className="font-display italic font-semibold text-[26px] mt-1 text-navy">
-                  {formatCents(monthCents)}
-                </p>
-                <p className="font-body text-[13.5px] mt-0.5 flex items-center gap-1 text-sky-text">
-                  View earnings <ChevronRight size={11} />
-                </p>
-              </div>
-              <div>
-                <p className="font-body text-[12px] uppercase tracking-wide text-ink-faint">
-                  Hours booked
-                </p>
-                <p className="font-display italic font-semibold text-[26px] mt-1 text-navy">
-                  {hoursFilled}
-                </p>
-                <p className="font-body font-normal text-[13.5px] mt-0.5 text-ink-faint">
-                  {hoursFilled === 0 ? "Nothing booked yet" : "So far this month"}
-                </p>
-              </div>
-            </button>
-          </div>
+          <PullToRefresh className="flex-1 px-6 pt-5 pb-8" onRefresh={onRefresh}>
+            {/*
+              Recognition first, right under the studio hero. Founding status and
+              milestones are the host's own standing — part of who they are here,
+              not something read past a large earnings card. The monthly summary
+              now sits at the foot of the screen instead.
+            */}
+            <HostRecognition
+              foundingNumber={foundingNumber}
+              foundingRemaining={foundingRemaining}
+              completedSessions={completedSessions}
+            />
 
-          <PullToRefresh className="flex-1 px-6 pt-6 pb-8" onRefresh={onRefresh}>
+            {/*
+              Referrals sit with the host's other standing — a quiet share area,
+              not a task. Shown once regardless of the active space tab.
+            */}
+            <HostReferrals referralCode={referralCode} referrals={referrals} />
+
             <Unfinished space={active} onEdit={() => onEditSpace(active.id)} />
 
             {/*
@@ -560,18 +667,6 @@ export function HostDashboard({
               requests={requests.filter((r) => r.spaceId === active.id)}
               zoneOf={zoneOf}
               onAnswer={onAnswerRequest}
-            />
-
-            {/*
-              Recognition sits above the calendar and below anything that needs
-              answering: it is the host's own standing, read once, not a task.
-              Founding status and milestones are counted across all their rooms,
-              so it is shown once regardless of which space tab is active.
-            */}
-            <HostRecognition
-              foundingNumber={foundingNumber}
-              foundingRemaining={foundingRemaining}
-              completedSessions={completedSessions}
             />
 
             <div className="mb-3">
@@ -664,6 +759,45 @@ export function HostDashboard({
                 </div>
               </>
             )}
+
+            {/*
+              Earnings, at the foot and compact. Same two figures and the same
+              "View earnings" tap as before — just no longer the first, largest
+              thing under the hero. Reduced padding, smaller numbers, and a short
+              empty state so it never takes more room than it earns.
+            */}
+            <button
+              type="button"
+              onClick={onOpenEarnings}
+              className="w-full text-left rounded-2xl p-3.5 grid grid-cols-2 gap-4 bg-white press mt-7"
+              style={{
+                boxShadow: "0 10px 26px -18px rgba(22,48,78,0.28)",
+                border: "1px solid #E7EEF6",
+              }}
+            >
+              <div>
+                <p className="font-body text-[11px] uppercase tracking-wide text-ink-faint">
+                  This month
+                </p>
+                <p className="font-display italic font-semibold text-[21px] mt-0.5 text-navy">
+                  {formatCents(monthCents)}
+                </p>
+                <p className="font-body text-[13px] mt-0.5 flex items-center gap-1 text-sky-text">
+                  View earnings <ChevronRight size={11} />
+                </p>
+              </div>
+              <div>
+                <p className="font-body text-[11px] uppercase tracking-wide text-ink-faint">
+                  Hours booked
+                </p>
+                <p className="font-display italic font-semibold text-[21px] mt-0.5 text-navy">
+                  {hoursFilled}
+                </p>
+                <p className="font-body font-normal text-[13px] mt-0.5 text-ink-faint">
+                  {hoursFilled === 0 ? "None yet" : "So far this month"}
+                </p>
+              </div>
+            </button>
 
             <HostLegalCard version={hostTermsVersion} acceptedAt={hostTermsAcceptedAt} />
           </PullToRefresh>

@@ -166,6 +166,25 @@ export interface Profile {
   foundingNumber: number | null;
 }
 
+/**
+ * How far one referred host has got, as the referrer is allowed to see it.
+ *
+ * The safe projection of a `referrals` row (migration 0061): the referral's own
+ * id, a factual status, and when the host joined — never the referred host's id,
+ * name, email, listings, bookings, or revenue. `joined` is attributed and
+ * nothing more; `space_live` is their first listing live; `qualified` is their
+ * first completed, captured booking — the referral qualified. No reward is
+ * implied by any of these; economics are not part of this package.
+ */
+export type ReferralStatus = "joined" | "space_live" | "qualified";
+
+export interface ReferralSummary {
+  /** The referral's stable id — the anchor a future reward would attach to. */
+  id: string;
+  status: ReferralStatus;
+  joinedAt: Date;
+}
+
 export interface SpaceMedia {
   id: string;
   url: string;

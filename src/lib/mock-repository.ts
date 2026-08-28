@@ -34,6 +34,7 @@ import type {
   PublicReview,
   Profile,
   PublicSpace,
+  ReferralSummary,
   SpaceAccessDetails,
 } from "./domain";
 import {
@@ -687,6 +688,30 @@ export class MockRepository implements Repository {
     // The two seed founders above are other accounts, not this one, so this is
     // a plausible number rather than a manufactured countdown.
     return FOUNDING_HOST_LIMIT - 2;
+  }
+
+  /* ---------------- referrals ---------------- */
+
+  async myReferralCode(): Promise<string> {
+    // Stable for the session, opaque, and not the user id — the same shape the
+    // real code has, so the share UI has something real to render.
+    return "MS7F2K9Q";
+  }
+
+  async listReferrals(): Promise<ReferralSummary[]> {
+    // A little seeded texture across the three statuses so the dashboard area
+    // shows each state. No referred-host identity here, the same as the server.
+    const day = 24 * 60 * 60 * 1000;
+    return [
+      { id: "ref_demo_1", status: "qualified", joinedAt: new Date(Date.now() - 40 * day) },
+      { id: "ref_demo_2", status: "space_live", joinedAt: new Date(Date.now() - 12 * day) },
+      { id: "ref_demo_3", status: "joined", joinedAt: new Date(Date.now() - 3 * day) },
+    ];
+  }
+
+  async attributeReferral(_code: string): Promise<void> {
+    // Nothing to attribute in a single-account demo; the real repo locks the
+    // relationship server-side.
   }
 
   /* ---------------- credit ---------------- */

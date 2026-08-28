@@ -93,6 +93,8 @@ import type {
   PublicReview,
   Profile,
   PublicSpace,
+  ReferralStatus,
+  ReferralSummary,
   SpaceAccessDetails,
   SpaceEdit,
 } from "./domain";
@@ -1109,6 +1111,34 @@ export class SupabaseRepository implements Repository {
     const { data, error } = await this.db.rpc("founding_hosts_remaining");
     if (error) throw asError(error);
     return typeof data === "number" ? data : (data ?? 0);
+  }
+
+  /* ---------------- referrals ---------------- */
+
+  async myReferralCode(): Promise<string> {
+    // Assigns a code the first time, then returns the same one for good.
+    const { data, error } = await this.db.rpc("my_referral_code");
+    if (error) throw asError(error);
+    return (data as string | null) ?? "";
+  }
+
+  async listReferrals(): Promise<ReferralSummary[]> {
+    const { data, error } = await this.db.rpc("my_referrals");
+    if (error) throw asError(error);
+    return ((data ?? []) as { id: string; status: ReferralStatus; joined_at: string }[]).map(
+      (row) => ({
+        id: row.id,
+        status: row.status,
+        joinedAt: new Date(row.joined_at),
+      }),
+    );
+  }
+
+  async attributeReferral(code: string): Promise<void> {
+    // Server-authoritative and idempotent — every anti-abuse rule is enforced
+    // in attribute_referral, so a bad code or a repeat call is a harmless no-op.
+    const { error } = await this.db.rpc("attribute_referral", { p_code: code });
+    if (error) throw asError(error);
   }
 
   /* ---------------- credit ---------------- */

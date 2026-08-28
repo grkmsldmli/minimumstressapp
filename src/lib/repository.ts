@@ -22,6 +22,7 @@ import type {
   Profile,
   PublicReview,
   PublicSpace,
+  ReferralSummary,
   SpaceAccessDetails,
   SpaceEdit,
 } from "./domain";
@@ -125,6 +126,31 @@ export interface Repository {
    * Shown to a host who has not earned the status while spots remain.
    */
   foundingHostsRemaining(): Promise<number>;
+
+  /* ---------------- referrals ---------------- */
+
+  /**
+   * The caller's own shareable referral code, assigned on first read.
+   *
+   * Server-generated, stable once set, and opaque — it is not the user's id.
+   * The share link is built from it; see lib/referrals.
+   */
+  myReferralCode(): Promise<string>;
+
+  /**
+   * The caller's referrals, as safe status summaries — no referred-host id or
+   * private data. Empty for anyone who has referred nobody.
+   */
+  listReferrals(): Promise<ReferralSummary[]>;
+
+  /**
+   * Lock this account's attribution to the referrer behind `code`.
+   *
+   * Server-authoritative and idempotent: a self-referral, an unknown code, an
+   * already-attributed account, or an account that has already begun hosting is
+   * silently a no-op. Safe to call more than once. No reward is created.
+   */
+  attributeReferral(code: string): Promise<void>;
 
   /**
    * Every cancellation involving this user, either side.

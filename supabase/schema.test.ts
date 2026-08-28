@@ -91,7 +91,7 @@ describe("migrations apply cleanly", () => {
         `select table_name from information_schema.tables
          where table_schema = 'public' and table_type = 'BASE TABLE'`,
       );
-      expect(tables.rows).toHaveLength(15);
+      expect(tables.rows).toHaveLength(17);
     } finally {
       await fresh.close();
     }
@@ -157,6 +157,10 @@ describe("migrations apply cleanly", () => {
       "messages",
       "notifications",
       "profiles",
+      "referrals",
+      // The server-only referrer ledger — code authority and durable eligibility
+      // (migration 0061).
+      "referrer_codes",
       "refund_requests",
       "review_escalations",
       "reviews",

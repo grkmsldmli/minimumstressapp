@@ -11,12 +11,20 @@ import type {
   PublicSpace,
   OpenDispute,
   PublicReview,
+  ReferralSummary,
   SpaceAccessDetails,
 } from "@/lib/domain";
 import { apiFetch } from "@/lib/api-fetch";
 import { errorMessage } from "@/lib/error-message";
 import { delayFor, isTransient } from "@/lib/transient";
 import { hostFactsFrom, practitionerFactsFrom } from "@/lib/milestone-facts";
+import {
+  REFERRAL_PARAM,
+  clearPendingReferral,
+  readPendingReferral,
+  runAttribution,
+  writePendingReferral,
+} from "@/lib/referrals";
 import {
   celebrationDue,
   earnedByHost,
@@ -169,6 +177,10 @@ interface Snapshot {
   notifications: NotificationEntry[];
   /** Founding Host spots still open, from the server's own count. */
   foundingRemaining: number;
+  /** This host's shareable referral code, assigned by the server on first read. */
+  referralCode: string;
+  /** This host's referrals, as safe status summaries — no referred-host data. */
+  referrals: ReferralSummary[];
 }
 
 export function App() {
@@ -260,6 +272,9 @@ export function App() {
   const [confirmingIdentity, setConfirmingIdentity] = useState(false);
   const identityStartedRef = useRef(false);
   const identityReturnHandledRef = useRef(false);
+
+  // A referral link's ?ref= code, captured before sign-in and applied once after.
+  const referralAttributedRef = useRef(false);
 
   const [authBusy, setAuthBusy] = useState(false);
 
@@ -557,6 +572,8 @@ export function App() {
         sessions,
         notifications,
         foundingRemaining,
+        referralCode,
+        referrals,
       ] = await Promise.all([
           repo.getProfile(),
           repo.listPublicSpaces(),
@@ -568,6 +585,10 @@ export function App() {
           repo.getSessionCount(),
           repo.listNotifications(),
           repo.foundingHostsRemaining(),
+          // The referral area is a small dashboard extra; a hiccup fetching it
+          // must never keep somebody out of their whole account.
+          repo.myReferralCode().catch(() => ""),
+          repo.listReferrals().catch(() => []),
         ]);
 
       // Address details are per-space and authorization-gated, so they are
@@ -590,6 +611,8 @@ export function App() {
         sessions,
         notifications,
         foundingRemaining,
+        referralCode,
+        referrals,
       };
     };
 
@@ -782,6 +805,50 @@ export function App() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void confirmIdentityVerification();
   }, [data, go, confirmIdentityVerification]);
+
+  /**
+   * A referral link, remembered from before sign-in.
+   *
+   * The code arrives as ?ref= on the very first visit, long before there is an
+   * account to attribute it to — and it has to survive the whole auth redirect.
+   * So it is copied into localStorage and stripped from the URL on arrival, then
+   * applied once the account exists. Only the ref param is removed, so a link
+   * that also carries another marker keeps it.
+   */
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    const code = url.searchParams.get(REFERRAL_PARAM);
+    if (!code) return;
+    // Remembered unbound: the first account to attempt it will bind it to itself.
+    writePendingReferral({ code, boundTo: null });
+    url.searchParams.delete(REFERRAL_PARAM);
+    window.history.replaceState({}, "", url.pathname + url.search + url.hash);
+  }, []);
+
+  /**
+   * Lock the attribution once there is an account to attribute.
+   *
+   * The code is kept until the server has actually processed it — an attribution
+   * or a safe no-op both clear it, but a transient failure keeps it so a later
+   * load retries, and it is bound to this account so a different person signing
+   * in on the same device can never inherit it. All the anti-abuse itself is the
+   * server's; this only has to deliver the code without losing or misplacing it.
+   */
+  useEffect(() => {
+    if (referralAttributedRef.current || !data || typeof window === "undefined") return;
+    referralAttributedRef.current = true;
+    void runAttribution({
+      read: readPendingReferral,
+      write: writePendingReferral,
+      clear: clearPendingReferral,
+      currentUserId: data.profile.id,
+      attribute: (code) => repo.attributeReferral(code),
+    }).then((outcome) => {
+      // Kept means a transient failure — let a later data load try once more.
+      if (outcome === "kept") referralAttributedRef.current = false;
+    });
+  }, [data, repo]);
 
   /**
    * Returning from Stripe Identity in the native shell — no URL marker, so a
@@ -1270,6 +1337,8 @@ export function App() {
           foundingNumber={profile.foundingNumber}
           foundingRemaining={data.foundingRemaining}
           completedSessions={hostFacts.sessionsHosted}
+          referralCode={data.referralCode}
+          referrals={data.referrals}
         />
   );
 

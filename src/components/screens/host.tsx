@@ -5,6 +5,8 @@ import {
   ArrowLeft,
   Award,
   Bell,
+  Check,
+  Copy,
   MessageCircle,
   Building2,
   ChevronRight,
@@ -14,6 +16,7 @@ import {
   ShieldAlert,
   ShieldCheck,
   User,
+  Users,
   Wallet,
 } from "lucide-react";
 
@@ -29,7 +32,13 @@ import { RequestQueue } from "@/components/request-queue";
 import { StandingNotice } from "@/components/standing-notice";
 import { WeekSchedule } from "@/components/week-schedule";
 import type { AvailabilityBlock } from "@/lib/availability";
-import type { BookingRequest, HostBooking, HostSpace, Profile } from "@/lib/domain";
+import type {
+  BookingRequest,
+  HostBooking,
+  HostSpace,
+  Profile,
+  ReferralSummary,
+} from "@/lib/domain";
 import { errorMessage } from "@/lib/error-message";
 import { formatCents } from "@/lib/money";
 import { PAYOUT_DELAY_DAYS, describeSpeed } from "@/lib/payouts";
@@ -38,6 +47,7 @@ import type { MilestoneKey } from "@/lib/milestones";
 import { claimWindowEndsAt } from "@/lib/claims";
 import { FOUNDING_HOST_LABEL, foundingSpotsRemainingLabel } from "@/lib/founding";
 import { hostAchievementProgress } from "@/lib/host-achievements";
+import { REFERRAL_STATUS_LABEL, referralLink } from "@/lib/referrals";
 import { HOST_TERMS_VERSION, hasAcceptedHostTerms } from "@/lib/host-terms";
 import { listingGaps } from "@/lib/listing-quality";
 import { FALLBACK_ZONE, zoneAbbreviation } from "@/lib/timezone";
@@ -206,6 +216,118 @@ function HostRecognition({
 }
 
 /* ------------------------------------------------------------------ */
+/*  Referrals                                                          */
+/* ------------------------------------------------------------------ */
+
+/**
+ * A host's referral area — share a link, watch factual progress.
+ *
+ * Deliberately quiet: a link to copy, a count, and one line per referred host
+ * showing only how far they have got. There is no money here — no "earned", no
+ * amount, no balance — because the economics are a later, unapproved package.
+ * The referred host is never named; each row is a neutral "Referred host", so a
+ * referrer learns progress and nothing private. All of it is server-derived.
+ */
+function HostReferrals({
+  referralCode,
+  referrals,
+}: {
+  referralCode: string;
+  referrals: ReferralSummary[];
+}) {
+  const [copied, setCopied] = useState(false);
+
+  // Nothing to share yet (a code has not been assigned) — say nothing rather
+  // than render an empty control.
+  if (!referralCode) return null;
+
+  const link = referralLink(referralCode);
+  const qualified = referrals.filter((r) => r.status === "qualified").length;
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch {
+      // Clipboard blocked (older webview, denied permission) — the code is on
+      // screen to copy by hand, so this is a convenience, not a dependency.
+    }
+  };
+
+  return (
+    <div
+      className="mb-5 rounded-2xl p-4"
+      style={{ backgroundColor: "#fff", border: "1px solid #E7EEF6" }}
+    >
+      <div className="flex items-center justify-between">
+        <p className="font-body font-semibold text-[11px] uppercase tracking-[0.22em] text-sky-text">
+          Refer a host
+        </p>
+        <span className="flex items-center gap-1.5 text-ink-soft">
+          <Users size={13} />
+          <span className="font-body font-medium text-[13px]">
+            {referrals.length} referred
+          </span>
+        </span>
+      </div>
+
+      <p className="font-body font-normal text-[13.5px] leading-relaxed text-ink-soft mt-2">
+        Share your link with someone who has a space. It follows them from sign-up
+        to their first completed session.
+      </p>
+
+      <div
+        className="flex items-center gap-2 mt-3 rounded-xl px-3 py-2.5"
+        style={{ backgroundColor: "#F4F8FC", border: "1px solid #E7EEF6" }}
+      >
+        <span className="font-mono text-[13px] text-navy truncate flex-1" title={link}>
+          {referralCode}
+        </span>
+        <button
+          type="button"
+          onClick={() => void copy()}
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg font-body font-medium text-[13px] press shrink-0"
+          style={{ backgroundColor: copied ? "#E3F0E6" : "#E3F0FB", color: copied ? "#2E7D46" : "#2E7CC4" }}
+        >
+          {copied ? <Check size={13} /> : <Copy size={13} />}
+          {copied ? "Copied" : "Copy link"}
+        </button>
+      </div>
+
+      {referrals.length > 0 && (
+        <ul className="flex flex-col mt-3.5">
+          {referrals.map((r, i) => (
+            <li
+              key={r.id}
+              className="flex items-center justify-between py-2.5"
+              style={{ borderTop: i === 0 ? "none" : "1px solid #EEF3F8" }}
+            >
+              <span className="font-body font-normal text-[14px] text-navy">Referred host</span>
+              <span
+                className="font-body font-medium text-[12.5px] px-2.5 py-1 rounded-full"
+                style={
+                  r.status === "qualified"
+                    ? { backgroundColor: "#EEF4FA", color: "#2E7CC4" }
+                    : { backgroundColor: "#F1F4F8", color: "#5B7A9C" }
+                }
+              >
+                {REFERRAL_STATUS_LABEL[r.status]}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {qualified > 0 && (
+        <p className="font-body font-normal text-[12.5px] text-ink-faint mt-2">
+          {qualified} qualified — {qualified === 1 ? "a referred host has" : "referred hosts have"} completed a first paid session.
+        </p>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /*  Host dashboard                                                     */
 /* ------------------------------------------------------------------ */
 
@@ -231,6 +353,8 @@ export function HostDashboard({
   foundingNumber,
   foundingRemaining,
   completedSessions,
+  referralCode,
+  referrals,
 }: {
   spaces: HostSpace[];
   bookings: HostBooking[];
@@ -278,6 +402,9 @@ export function HostDashboard({
   foundingNumber: number | null;
   foundingRemaining: number;
   completedSessions: number;
+  /** This host's shareable referral code, and their referrals as safe summaries. */
+  referralCode: string;
+  referrals: ReferralSummary[];
 }) {
   /*
    * A host's bookings are for their own rooms, so the hour belongs on the
@@ -573,6 +700,12 @@ export function HostDashboard({
               foundingRemaining={foundingRemaining}
               completedSessions={completedSessions}
             />
+
+            {/*
+              Referrals sit with the host's other standing — a quiet share area,
+              not a task. Shown once regardless of the active space tab.
+            */}
+            <HostReferrals referralCode={referralCode} referrals={referrals} />
 
             <div className="mb-3">
               <p className="font-body font-semibold text-[12px] uppercase tracking-[0.2em] mb-2.5 text-sky-text">

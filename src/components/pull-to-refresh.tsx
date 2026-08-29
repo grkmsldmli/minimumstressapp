@@ -223,11 +223,18 @@ export function usePullToRefresh(
 export function PullToRefresh({
   onRefresh,
   className = "",
+  header,
   children,
   style,
 }: {
   onRefresh: () => Promise<unknown> | unknown;
   className?: string;
+  /**
+   * Optional content that scrolls at the very top of the container, above the
+   * pull indicator — so a header can scroll away with the content while the paw
+   * still reveals directly below it, not above it, on pull.
+   */
+  header?: React.ReactNode;
   children: React.ReactNode;
   style?: React.CSSProperties;
 }) {
@@ -244,6 +251,7 @@ export function PullToRefresh({
       className={`overflow-y-auto ${className}`}
       style={{ overscrollBehaviorY: "contain", ...style }}
     >
+      {header}
       <div
         className="flex items-center justify-center overflow-hidden"
         style={{

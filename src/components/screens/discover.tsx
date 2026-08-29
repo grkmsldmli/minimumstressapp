@@ -205,18 +205,72 @@ export function Discover({
     });
   }, [byCategory, nearbyOrder, query]);
 
-  // The navy hero is split so only the small app row stays fixed while browsing.
-  // Everything below it — the headline, the orientation line, and the search
-  // field — lives in `heroLower` and scrolls away inside the one scroll
-  // container, giving the cards most of the screen once the user scrolls.
+  // The whole navy hero is one continuous block — the app row, the headline, the
+  // orientation line, and the search field — that scrolls away together inside
+  // the one scroll container. It is handed to PullToRefresh as its `header`, so
+  // the paw reveals directly below the search field, not above the greeting, and
+  // the cards get most of the screen once the user scrolls.
   const NAVY = "radial-gradient(130% 130% at 20% 0%, #1E4066 0%, #16304E 80%)";
 
-  const heroLower = (
+  const hero = (
     <div
-      className="px-6 pb-7 relative overflow-hidden shrink-0 rounded-b-[30px]"
+      className="px-6 pt-8 pb-7 relative overflow-hidden shrink-0 rounded-b-[30px]"
       style={{ background: NAVY }}
     >
-      <div className="pt-1 relative z-10">
+      <Ambient />
+      <div className="flex items-center justify-between gap-2 relative z-10">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <button type="button" onClick={onGoProfile} className="press shrink-0" aria-label="Your profile">
+            <LogoBadge size={34} />
+          </button>
+          <div className="min-w-0">
+            <div className="flex items-center gap-1.5">
+              <GreetIcon size={11} color="#8FC6F5" className="shrink-0" />
+              <p className="font-body font-normal text-[13.5px] tracking-wide text-white/70 truncate">
+                {greetingName ? `${greeting}, ${greetingName}` : greeting}
+              </p>
+            </div>
+            {/* Which side they are on, on the screen they spend most time on. */}
+            <div className="mt-1">
+              <AccountBadge accountType="practitioner" tone="dark" />
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <RoundButton label="Your bookings" onClick={onGoBookings}>
+            <Calendar size={15} color="#fff" />
+          </RoundButton>
+          <RoundButton label="What we've sent you" onClick={onGoNotifications}>
+            <Bell size={15} color="#fff" />
+            {/*
+              A dot only when something failed to arrive. An unread badge
+              would nag about messages somebody has already had by email;
+              the one thing worth interrupting for is one they never got.
+            */}
+            {undeliveredCount > 0 && (
+              <span
+                className="absolute rounded-full"
+                style={{
+                  top: 1,
+                  right: 1,
+                  width: 8,
+                  height: 8,
+                  backgroundColor: "#F2695C",
+                  border: "1.5px solid #16304E",
+                }}
+              />
+            )}
+          </RoundButton>
+          <RoundButton
+            label={view === "list" ? "Show map" : "Show list"}
+            onClick={() => setView(view === "list" ? "map" : "list")}
+          >
+            {view === "list" ? <MapIcon size={15} color="#fff" /> : <List size={15} color="#fff" />}
+          </RoundButton>
+        </div>
+      </div>
+
+      <div className="pt-6 relative z-10">
         <Headline pre="Find your" accent="space." size={24} light />
         {/*
           One calm orientation line, secondary to the inventory below: what the
@@ -325,79 +379,19 @@ export function Discover({
         </button>
       )}
 
-      {/*
-        Only this small app row stays fixed. The rest of the navy hero —
-        headline, orientation, and search — is `heroLower`, which scrolls away
-        inside the one scroll container so the cards get most of the screen.
-      */}
-      <div
-        className="px-6 pt-8 pb-4 relative overflow-hidden shrink-0"
-        style={{ background: NAVY }}
-      >
-        <Ambient />
-        <div className="flex items-center justify-between gap-2 relative z-10">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <button type="button" onClick={onGoProfile} className="press shrink-0" aria-label="Your profile">
-              <LogoBadge size={34} />
-            </button>
-            <div className="min-w-0">
-              <div className="flex items-center gap-1.5">
-                <GreetIcon size={11} color="#8FC6F5" className="shrink-0" />
-                <p className="font-body font-normal text-[13.5px] tracking-wide text-white/70 truncate">
-                  {greetingName ? `${greeting}, ${greetingName}` : greeting}
-                </p>
-              </div>
-              {/* Which side they are on, on the screen they spend most time on. */}
-              <div className="mt-1">
-                <AccountBadge accountType="practitioner" tone="dark" />
-              </div>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <RoundButton label="Your bookings" onClick={onGoBookings}>
-              <Calendar size={15} color="#fff" />
-            </RoundButton>
-            <RoundButton label="What we've sent you" onClick={onGoNotifications}>
-              <Bell size={15} color="#fff" />
-              {/*
-                A dot only when something failed to arrive. An unread badge
-                would nag about messages somebody has already had by email;
-                the one thing worth interrupting for is one they never got.
-              */}
-              {undeliveredCount > 0 && (
-                <span
-                  className="absolute rounded-full"
-                  style={{
-                    top: 1,
-                    right: 1,
-                    width: 8,
-                    height: 8,
-                    backgroundColor: "#F2695C",
-                    border: "1.5px solid #16304E",
-                  }}
-                />
-              )}
-            </RoundButton>
-            <RoundButton
-              label={view === "list" ? "Show map" : "Show list"}
-              onClick={() => setView(view === "list" ? "map" : "list")}
-            >
-              {view === "list" ? <MapIcon size={15} color="#fff" /> : <List size={15} color="#fff" />}
-            </RoundButton>
-          </div>
-        </div>
-      </div>
-
       {view === "map" ? (
         <>
-          {heroLower}
+          {hero}
           {chips}
           <MapView spaces={visible} isPro={isPro} onOpen={onOpenSpace} you={you} />
         </>
       ) : (
-        <PullToRefresh className="flex-1 pb-8" onRefresh={onRefresh}>
-          {heroLower}
-          {/* Chips stick just below the fixed app row, so filters stay reachable. */}
+        <PullToRefresh header={hero} className="flex-1 pb-8" onRefresh={onRefresh}>
+          {/*
+            Chips are the only thing that stays: they stick just below the Pro
+            banner once the whole hero has scrolled away, so filters stay
+            reachable while browsing.
+          */}
           <div className="sticky top-0 z-20 bg-white">{chips}</div>
           {active === "all" && visible.length > 0 && (
             <>

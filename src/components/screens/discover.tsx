@@ -205,6 +205,76 @@ export function Discover({
     });
   }, [byCategory, nearbyOrder, query]);
 
+  // The navy hero is split so only the small app row stays fixed while browsing.
+  // Everything below it — the headline, the orientation line, and the search
+  // field — lives in `heroLower` and scrolls away inside the one scroll
+  // container, giving the cards most of the screen once the user scrolls.
+  const NAVY = "radial-gradient(130% 130% at 20% 0%, #1E4066 0%, #16304E 80%)";
+
+  const heroLower = (
+    <div
+      className="px-6 pb-7 relative overflow-hidden shrink-0 rounded-b-[30px]"
+      style={{ background: NAVY }}
+    >
+      <div className="pt-1 relative z-10">
+        <Headline pre="Find your" accent="space." size={24} light />
+        {/*
+          One calm orientation line, secondary to the inventory below: what the
+          app is for, for a practitioner arriving with clients of their own.
+        */}
+        <p className="font-body font-normal text-[13px] leading-relaxed text-white/55 mt-1.5">
+          Book professional space by the hour for your own clients — one all-in price, no lease.
+        </p>
+      </div>
+
+      <div
+        className="flex items-center gap-2.5 mt-5 px-4 py-3 rounded-full relative z-10"
+        style={{
+          backgroundColor: "rgba(255,255,255,0.1)",
+          border: "1px solid rgba(255,255,255,0.16)",
+        }}
+      >
+        <Search size={14} color="#8FC6F5" />
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search spaces"
+          aria-label="Search spaces"
+          className="font-body font-normal text-[14px] outline-none w-full min-w-0 bg-transparent text-white placeholder:text-white/50 placeholder:truncate"
+        />
+        {query && (
+          <button
+            type="button"
+            onClick={() => setQuery("")}
+            aria-label="Clear search"
+            className="press shrink-0"
+          >
+            <X size={13} color="#8FC6F5" />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+
+  const chips = (
+    <div className="flex gap-2 px-6 py-4 overflow-x-auto no-scrollbar shrink-0">
+      <FilterChip active={active === "all"} onClick={() => setFilter("all")}>
+        <AllCategoriesIcon size={12} />
+        All
+      </FilterChip>
+      {offered.map((category) => (
+        <FilterChip
+          key={category.key}
+          active={active === category.key}
+          onClick={() => setFilter(category.key)}
+        >
+          <CatIcon cat={category.key} size={12} />
+          {category.shortLabel}
+        </FilterChip>
+      ))}
+    </div>
+  );
+
   return (
     <div className="h-full flex flex-col screen-in bg-white">
       {!isPro && (
@@ -255,9 +325,14 @@ export function Discover({
         </button>
       )}
 
+      {/*
+        Only this small app row stays fixed. The rest of the navy hero —
+        headline, orientation, and search — is `heroLower`, which scrolls away
+        inside the one scroll container so the cards get most of the screen.
+      */}
       <div
-        className="px-6 pt-8 pb-7 rounded-b-[30px] relative overflow-hidden shrink-0"
-        style={{ background: "radial-gradient(130% 130% at 20% 0%, #1E4066 0%, #16304E 80%)" }}
+        className="px-6 pt-8 pb-4 relative overflow-hidden shrink-0"
+        style={{ background: NAVY }}
       >
         <Ambient />
         <div className="flex items-center justify-between gap-2 relative z-10">
@@ -311,67 +386,19 @@ export function Discover({
             </RoundButton>
           </div>
         </div>
-
-        <div className="mt-4 relative z-10">
-          <Headline pre="Find your" accent="space." size={24} light />
-          {/*
-            One calm orientation line, secondary to the inventory below: what the
-            app is for, for a practitioner arriving with clients of their own.
-          */}
-          <p className="font-body font-normal text-[13px] leading-relaxed text-white/55 mt-1.5">
-            Book professional space by the hour for your own clients — one all-in price, no lease.
-          </p>
-        </div>
-
-        <div
-          className="flex items-center gap-2.5 mt-5 px-4 py-3 rounded-full relative z-10"
-          style={{
-            backgroundColor: "rgba(255,255,255,0.1)",
-            border: "1px solid rgba(255,255,255,0.16)",
-          }}
-        >
-          <Search size={14} color="#8FC6F5" />
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search spaces"
-            aria-label="Search spaces"
-            className="font-body font-normal text-[14px] outline-none w-full min-w-0 bg-transparent text-white placeholder:text-white/50 placeholder:truncate"
-          />
-          {query && (
-            <button
-              type="button"
-              onClick={() => setQuery("")}
-              aria-label="Clear search"
-              className="press shrink-0"
-            >
-              <X size={13} color="#8FC6F5" />
-            </button>
-          )}
-        </div>
-      </div>
-
-      <div className="flex gap-2 px-6 py-4 overflow-x-auto no-scrollbar shrink-0">
-        <FilterChip active={active === "all"} onClick={() => setFilter("all")}>
-          <AllCategoriesIcon size={12} />
-          All
-        </FilterChip>
-        {offered.map((category) => (
-          <FilterChip
-            key={category.key}
-            active={active === category.key}
-            onClick={() => setFilter(category.key)}
-          >
-            <CatIcon cat={category.key} size={12} />
-            {category.shortLabel}
-          </FilterChip>
-        ))}
       </div>
 
       {view === "map" ? (
-        <MapView spaces={visible} isPro={isPro} onOpen={onOpenSpace} you={you} />
+        <>
+          {heroLower}
+          {chips}
+          <MapView spaces={visible} isPro={isPro} onOpen={onOpenSpace} you={you} />
+        </>
       ) : (
         <PullToRefresh className="flex-1 pb-8" onRefresh={onRefresh}>
+          {heroLower}
+          {/* Chips stick just below the fixed app row, so filters stay reachable. */}
+          <div className="sticky top-0 z-20 bg-white">{chips}</div>
           {active === "all" && visible.length > 0 && (
             <>
               <SectionLabel className="px-6">Open right now</SectionLabel>

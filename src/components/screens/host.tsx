@@ -491,11 +491,74 @@ export function HostDashboard({
     .reduce((sum, b) => sum + b.netCents, 0);
   const hoursFilled = spaceBookings.filter((b) => b.status === "completed").length;
 
+  // The navy hero is split so only the small app row stays fixed. The studio
+  // context below it — space tabs, name, rate, address — is `heroLower`, which
+  // scrolls away inside the one scroll container so the calendar gets the room.
+  // `-mx-6` makes it full-bleed inside the px-6 scroll containers below.
+  const NAVY_HOST = "radial-gradient(140% 120% at 15% 0%, #1E4066 0%, #16304E 85%)";
+  const heroLower = (
+    <div
+      className="-mx-6 px-6 pt-1 pb-7 rounded-b-[30px] relative overflow-hidden shrink-0"
+      style={{ background: NAVY_HOST }}
+    >
+      {spaces.length > 1 && (
+        <div className="flex gap-2 mb-3 overflow-x-auto no-scrollbar relative z-10">
+          {spaces.map((space) => (
+            <button
+              key={space.id}
+              type="button"
+              onClick={() => setActiveId(space.id)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full font-body text-[14px] whitespace-nowrap press text-white"
+              style={{
+                backgroundColor: space.id === active.id ? "#3B9BE8" : "rgba(255,255,255,0.1)",
+                border: `1px solid ${space.id === active.id ? "#3B9BE8" : "rgba(255,255,255,0.18)"}`,
+              }}
+            >
+              {space.name}
+              {space.status === "pending" && (
+                <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: "#F2A79E" }} />
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div className="flex items-center gap-2 relative z-10">
+        <p className="font-body font-semibold text-[12px] uppercase tracking-[0.2em] text-sky-soft">
+          Host studio
+        </p>
+        <AccountBadge accountType="host" tone="dark" />
+      </div>
+      <div className="mt-1 relative z-10">
+        <Headline pre={`${active.name} —`} accent={roomTypeFor(active.category)} size={23} light />
+      </div>
+      <p className="font-body font-normal text-[14px] text-white/65 mt-1 relative z-10">
+        {pending
+          ? "Under review — usually same day"
+          : `${formatCents(active.hourlyRateCents)} an hour, yours in full`}
+      </p>
+      {/*
+        The address, on the host's own screen. It is withheld from practitioners
+        until they have booked, but this is the owner looking at their own
+        listing, and a host with several rooms needs to see which one they read.
+      */}
+      {active.addressLine && (
+        <p className="font-body font-normal text-[13.5px] text-white/45 mt-1 relative z-10">
+          {active.addressLine}
+        </p>
+      )}
+    </div>
+  );
+
   return (
     <div className="h-full flex flex-col screen-in bg-white">
+      {/*
+        Only this small app row stays fixed; the studio context (heroLower) below
+        scrolls away with the content so the calendar gets most of the screen.
+      */}
       <div
-        className="px-6 pt-8 pb-8 relative rounded-b-[30px] overflow-hidden shrink-0"
-        style={{ background: "radial-gradient(140% 120% at 15% 0%, #1E4066 0%, #16304E 85%)" }}
+        className="px-6 pt-8 pb-4 relative overflow-hidden shrink-0"
+        style={{ background: NAVY_HOST }}
       >
         <Ambient />
         {/*
@@ -504,7 +567,7 @@ export function HostDashboard({
           marketplace, so the guard bounced straight back here and the button
           did nothing every time it was pressed.
         */}
-        <div className="flex items-center justify-between mb-4 relative z-10">
+        <div className="flex items-center justify-between relative z-10">
           <LogoBadge size={30} />
           <div className="flex items-center gap-2">
             <button
@@ -553,61 +616,12 @@ export function HostDashboard({
           </div>
         </div>
 
-        {spaces.length > 1 && (
-          <div className="flex gap-2 mb-3 overflow-x-auto no-scrollbar relative z-10">
-            {spaces.map((space) => (
-              <button
-                key={space.id}
-                type="button"
-                onClick={() => setActiveId(space.id)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full font-body text-[14px] whitespace-nowrap press text-white"
-                style={{
-                  backgroundColor: space.id === active.id ? "#3B9BE8" : "rgba(255,255,255,0.1)",
-                  border: `1px solid ${space.id === active.id ? "#3B9BE8" : "rgba(255,255,255,0.18)"}`,
-                }}
-              >
-                {space.name}
-                {space.status === "pending" && (
-                  <span
-                    className="w-1.5 h-1.5 rounded-full"
-                    style={{ backgroundColor: "#F2A79E" }}
-                  />
-                )}
-              </button>
-            ))}
-          </div>
-        )}
-
-        <div className="flex items-center gap-2 relative z-10">
-          <p className="font-body font-semibold text-[12px] uppercase tracking-[0.2em] text-sky-soft">
-            Host studio
-          </p>
-          <AccountBadge accountType="host" tone="dark" />
-        </div>
-        <div className="mt-1 relative z-10">
-          <Headline pre={`${active.name} —`} accent={roomTypeFor(active.category)} size={23} light />
-        </div>
-        <p className="font-body font-normal text-[14px] text-white/65 mt-1 relative z-10">
-          {pending
-            ? "Under review — usually same day"
-            : `${formatCents(active.hourlyRateCents)} an hour, yours in full`}
-        </p>
-        {/*
-          The address, on the host's own screen. It is withheld from
-          practitioners until they have booked, but this is the owner looking
-          at their own listing, and a host with several rooms needs to see
-          which one they are reading.
-        */}
-        {active.addressLine && (
-          <p className="font-body font-normal text-[13.5px] text-white/45 mt-1 relative z-10">
-            {active.addressLine}
-          </p>
-        )}
       </div>
 
       {pending ? (
-        <div className="flex-1 overflow-y-auto px-6 pt-8 pb-8">
-          <div className="flex flex-col items-center text-center">
+        <div className="flex-1 overflow-y-auto px-6 pb-8">
+          {heroLower}
+          <div className="flex flex-col items-center text-center mt-6">
             <div
               className="w-14 h-14 rounded-full flex items-center justify-center mb-4"
               style={{ backgroundColor: "#FEF2F0" }}
@@ -649,28 +663,24 @@ export function HostDashboard({
           </button>
         </div>
       ) : (
-        <>
+        <PullToRefresh className="flex-1 px-6 pb-8" onRefresh={onRefresh}>
+          {heroLower}
           {/*
-          Said on the dashboard, not only in the list.
-
-          A host whose space is hidden used to come back to a screen that
-          looked entirely normal — no bookings, and nothing anywhere to explain
-          why. The switch that caused it was three taps inside Edit, so it was
-          also the last place anybody would look.
-        */}
-        {hidden && (
-          <div
-            className="rounded-xl p-4 mb-3"
-            style={{ backgroundColor: "#F1F3F6", border: "1px solid #DDE3EA" }}
-          >
-            <p className="font-body font-medium text-[14.5px] text-navy">This space is hidden</p>
-            <p className="font-body font-normal text-[14px] leading-relaxed mt-1 text-ink-soft">
-              Nobody can find or book it — you can put it back from Your spaces.
-            </p>
-          </div>
-        )}
-
-          <PullToRefresh className="flex-1 px-6 pt-5 pb-8" onRefresh={onRefresh}>
+            Said on the dashboard, not only in the list. A host whose space is
+            hidden used to come back to a screen that looked entirely normal —
+            no bookings, and nothing to explain why.
+          */}
+          {hidden && (
+            <div
+              className="rounded-xl p-4 mt-3 mb-3"
+              style={{ backgroundColor: "#F1F3F6", border: "1px solid #DDE3EA" }}
+            >
+              <p className="font-body font-medium text-[14.5px] text-navy">This space is hidden</p>
+              <p className="font-body font-normal text-[14px] leading-relaxed mt-1 text-ink-soft">
+                Nobody can find or book it — you can put it back from Your spaces.
+              </p>
+            </div>
+          )}
             {/*
               Recognition first, right under the studio hero. Founding status and
               milestones are the host's own standing — part of who they are here,
@@ -835,7 +845,6 @@ export function HostDashboard({
 
             <HostLegalCard version={hostTermsVersion} acceptedAt={hostTermsAcceptedAt} />
           </PullToRefresh>
-        </>
       )}
     </div>
   );

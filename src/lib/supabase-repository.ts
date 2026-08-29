@@ -95,6 +95,7 @@ import type {
   PublicSpace,
   ReferralStatus,
   ReferralSummary,
+  RewardState,
   SpaceAccessDetails,
   SpaceEdit,
 } from "./domain";
@@ -1123,15 +1124,36 @@ export class SupabaseRepository implements Repository {
   }
 
   async listReferrals(): Promise<ReferralSummary[]> {
-    const { data, error } = await this.db.rpc("my_referrals");
-    if (error) throw asError(error);
-    return ((data ?? []) as { id: string; status: ReferralStatus; joined_at: string }[]).map(
-      (row) => ({
+    // The referral list and the reward ledger are read separately (the shipped
+    // my_referrals keeps its signature) and merged here by referral id. Both are
+    // server-scoped to the caller.
+    const [referrals, rewards] = await Promise.all([
+      this.db.rpc("my_referrals"),
+      this.db.rpc("my_referral_rewards"),
+    ]);
+    if (referrals.error) throw asError(referrals.error);
+    if (rewards.error) throw asError(rewards.error);
+
+    const rewardBy = new Map(
+      ((rewards.data ?? []) as {
+        referral_id: string;
+        amount_cents: number;
+        payout_state: RewardState;
+      }[]).map((r) => [r.referral_id, r]),
+    );
+
+    return (
+      (referrals.data ?? []) as { id: string; status: ReferralStatus; joined_at: string }[]
+    ).map((row) => {
+      const reward = rewardBy.get(row.id);
+      return {
         id: row.id,
         status: row.status,
         joinedAt: new Date(row.joined_at),
-      }),
-    );
+        rewardCents: reward?.amount_cents ?? 0,
+        rewardState: reward?.payout_state ?? null,
+      };
+    });
   }
 
   async attributeReferral(code: string): Promise<void> {

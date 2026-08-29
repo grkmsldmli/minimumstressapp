@@ -47,7 +47,12 @@ import type { MilestoneKey } from "@/lib/milestones";
 import { claimWindowEndsAt } from "@/lib/claims";
 import { FOUNDING_HOST_LABEL, foundingSpotsRemainingLabel } from "@/lib/founding";
 import { hostAchievementProgress } from "@/lib/host-achievements";
-import { REFERRAL_STATUS_LABEL, referralLink } from "@/lib/referrals";
+import {
+  REFERRAL_STATUS_LABEL,
+  referralLink,
+  rewardLabel,
+  rewardsSummaryLabel,
+} from "@/lib/referrals";
 import { HOST_TERMS_VERSION, hasAcceptedHostTerms } from "@/lib/host-terms";
 import { listingGaps } from "@/lib/listing-quality";
 import { FALLBACK_ZONE, zoneAbbreviation } from "@/lib/timezone";
@@ -240,6 +245,9 @@ function HostReferrals({
 
   const link = referralLink(referralCode);
   const qualified = referrals.filter((r) => r.status === "qualified").length;
+  // Real ledger total, or null when nothing has been earned. Never a stored
+  // balance, and never says "paid" — no payout has run.
+  const rewardsSummary = rewardsSummaryLabel(referrals);
 
   const copy = async () => {
     try {
@@ -269,9 +277,19 @@ function HostReferrals({
         </span>
       </div>
 
+      {/*
+        The real earned total, shown only when there is one. Factual and calm —
+        no balance, no "paid", because no payout has been sent.
+      */}
+      {rewardsSummary && (
+        <p className="font-display italic font-semibold text-[19px] text-navy mt-2">
+          {rewardsSummary}
+        </p>
+      )}
+
       <p className="font-body font-normal text-[13.5px] leading-relaxed text-ink-soft mt-2">
         Share your link with someone who has a space. It follows them from sign-up
-        to their first completed session.
+        to their first completed session. A qualified referral earns you $25.
       </p>
 
       <div
@@ -301,15 +319,27 @@ function HostReferrals({
               style={{ borderTop: i === 0 ? "none" : "1px solid #EEF3F8" }}
             >
               <span className="font-body font-normal text-[14px] text-navy">Referred host</span>
-              <span
-                className="font-body font-medium text-[12.5px] px-2.5 py-1 rounded-full"
-                style={
-                  r.status === "qualified"
-                    ? { backgroundColor: "#EEF4FA", color: "#2E7CC4" }
-                    : { backgroundColor: "#F1F4F8", color: "#5B7A9C" }
-                }
-              >
-                {REFERRAL_STATUS_LABEL[r.status]}
+              <span className="flex items-center gap-2">
+                {/*
+                  The reward, only once the referral has qualified. "paid" is
+                  shown only if the server marks it paid — otherwise it is earned.
+                */}
+                {r.rewardCents > 0 && (
+                  <span className="font-body font-medium text-[12.5px] text-navy">
+                    {rewardLabel(r.rewardCents)}
+                    {r.rewardState === "paid" ? " · paid" : ""}
+                  </span>
+                )}
+                <span
+                  className="font-body font-medium text-[12.5px] px-2.5 py-1 rounded-full"
+                  style={
+                    r.status === "qualified"
+                      ? { backgroundColor: "#EEF4FA", color: "#2E7CC4" }
+                      : { backgroundColor: "#F1F4F8", color: "#5B7A9C" }
+                  }
+                >
+                  {REFERRAL_STATUS_LABEL[r.status]}
+                </span>
               </span>
             </li>
           ))}

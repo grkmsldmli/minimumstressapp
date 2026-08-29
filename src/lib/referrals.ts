@@ -1,5 +1,6 @@
 import { APP_URL } from "./company";
-import type { ReferralStatus } from "./domain";
+import type { ReferralStatus, ReferralSummary, RewardState } from "./domain";
+import { formatCents } from "./money";
 
 /**
  * Host referrals, on the app's side of the line.
@@ -30,6 +31,61 @@ export const REFERRAL_STATUS_LABEL: Record<ReferralStatus, string> = {
   space_live: "Space live",
   qualified: "Referral qualified",
 };
+
+/* ------------------------------------------------------------------ */
+/*  Rewards — $25 per qualified referral, referrer only                */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The reward one qualified referral earns, in cents. Frozen in the ledger at
+ * creation (migration 0062); this constant is what the app shows, pinned to the
+ * SQL by a sync test so the two can never disagree.
+ */
+export const REFERRAL_REWARD_CENTS = 2500;
+
+/**
+ * The word for a reward's payout state — kept strictly honest.
+ *
+ * A reward is "earned" the moment its referral qualifies. It is never "paid"
+ * until a payment has actually happened (payout is not part of this package, so
+ * nothing reads "paid" yet). "pending" is reserved for a payout in flight.
+ */
+export const REWARD_STATE_LABEL: Record<RewardState, string> = {
+  earned: "earned",
+  paid: "paid",
+};
+
+/** Money without a trailing ".00" — rewards are whole dollars, so "$25" not "$25.00". */
+function rewardMoney(cents: number): string {
+  return formatCents(cents).replace(/\.00$/, "");
+}
+
+/** "$25 reward" — the per-referral line shown only once a referral qualifies. */
+export function rewardLabel(cents: number): string {
+  return `${rewardMoney(cents)} reward`;
+}
+
+/** The cents earned across referrals — summed from the ledger rows, not stored. */
+export function rewardsEarnedCents(referrals: readonly ReferralSummary[]): number {
+  return referrals.reduce((sum, r) => sum + (r.rewardCents > 0 ? r.rewardCents : 0), 0);
+}
+
+/** The cents actually paid out — only rewards the server marks 'paid'. */
+export function rewardsPaidCents(referrals: readonly ReferralSummary[]): number {
+  return referrals.reduce((sum, r) => sum + (r.rewardState === "paid" ? r.rewardCents : 0), 0);
+}
+
+/**
+ * The card's summary line, or null when there is nothing earned yet.
+ *
+ * "$50 earned from referrals" — the real ledger total. If any of it has actually
+ * been paid, that is said separately, so "earned" never implies "paid".
+ */
+export function rewardsSummaryLabel(referrals: readonly ReferralSummary[]): string | null {
+  const earned = rewardsEarnedCents(referrals);
+  if (earned <= 0) return null;
+  return `${rewardMoney(earned)} earned from referrals`;
+}
 
 /* ------------------------------------------------------------------ */
 /*  A referral code that survives the trip from link to attribution    */

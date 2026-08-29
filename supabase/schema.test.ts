@@ -91,7 +91,7 @@ describe("migrations apply cleanly", () => {
         `select table_name from information_schema.tables
          where table_schema = 'public' and table_type = 'BASE TABLE'`,
       );
-      expect(tables.rows).toHaveLength(17);
+      expect(tables.rows).toHaveLength(18);
     } finally {
       await fresh.close();
     }
@@ -157,6 +157,8 @@ describe("migrations apply cleanly", () => {
       "messages",
       "notifications",
       "profiles",
+      // The append-only reward ledger — $25 per qualified referral (0062).
+      "referral_rewards",
       "referrals",
       // The server-only referrer ledger — code authority and durable eligibility
       // (migration 0061).

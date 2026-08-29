@@ -788,6 +788,57 @@ export function ProScreen({
 /*  Practitioner profile                                               */
 /* ------------------------------------------------------------------ */
 
+/**
+ * "What you'll need to book" — the three requirements, and only what each one
+ * factually confirms.
+ *
+ * Every line describes what the requirement is for, never a claim that Minimum
+ * Stress certifies or approves the practitioner. It sets expectations before the
+ * booking gate and says plainly that browsing needs none of it — the current
+ * state of each requirement is shown in the rows beneath, so this does not
+ * repeat it.
+ */
+function BookingRequirements() {
+  const items = [
+    { icon: ShieldCheck, label: "Identity", why: "Confirms the account belongs to you." },
+    {
+      icon: FileUp,
+      label: "Liability insurance",
+      why: "Helps protect you and the host if something goes wrong.",
+    },
+    {
+      icon: FileCheck,
+      label: "Professional proof",
+      why: "Shows that your listed profession is supported by relevant documentation.",
+    },
+  ];
+
+  return (
+    <div
+      className="rounded-2xl p-4 mb-2.5"
+      style={{ backgroundColor: "#F4F8FC", border: "1px solid #E7EEF6" }}
+    >
+      <p className="font-body font-semibold text-[13.5px] text-navy mb-3">What you&rsquo;ll need to book</p>
+      <ul className="flex flex-col gap-3">
+        {items.map(({ icon: Icon, label, why }) => (
+          <li key={label} className="flex items-start gap-2.5">
+            <Icon size={15} color="#3B9BE8" className="mt-0.5 shrink-0" />
+            <div>
+              <p className="font-body font-medium text-[14px] leading-snug text-navy">{label}</p>
+              <p className="font-body font-normal text-[13px] leading-relaxed text-ink-soft mt-0.5">
+                {why}
+              </p>
+            </div>
+          </li>
+        ))}
+      </ul>
+      <p className="font-body font-normal text-[13px] leading-relaxed text-ink-faint mt-3.5">
+        You can browse spaces now. Complete these before your first booking.
+      </p>
+    </div>
+  );
+}
+
 export function PractitionerProfile({
   profile,
   onRefresh,
@@ -854,6 +905,16 @@ export function PractitionerProfile({
       <PullToRefresh className="flex-1 px-6 pt-5 pb-8" onRefresh={onRefresh}>
         {/* Professional — first, because it gates booking eligibility. */}
         <GroupLabel>Professional</GroupLabel>
+
+        {/*
+          What booking will ask for, said once and up front, so the gate at the
+          end is a reminder rather than a surprise. Factual only: each line is
+          what the requirement confirms, never a claim that the platform vouches
+          for the practitioner. The "why" lives here so the rows below can stay
+          the plain current state without repeating it.
+        */}
+        <BookingRequirements />
+
         <div className="flex flex-col gap-2.5">
           <ProfileRow
             icon={FileUp}

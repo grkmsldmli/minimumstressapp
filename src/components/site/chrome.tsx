@@ -146,7 +146,9 @@ export function SiteHeader() {
 const FOR_PRACTITIONERS = {
   links: [
     { label: "Find a space", href: "/spaces" },
-    { label: "How it works", href: "/#how-it-works" },
+    // Mirrors the Hosts column's "How hosting works" → /for-hosts: a dedicated
+    // explainer page for the other side, in place of the old homepage anchor.
+    { label: "How booking works", href: "/for-practitioners" },
     { label: "Recurring bookings", href: "/#recurring" },
     { label: "Trust & safety", href: "/trust" },
     { label: "Questions", href: "/faq" },

@@ -175,13 +175,15 @@ describe("the exact address is private until booked", () => {
    * the precise coordinates and the way inside belong to whoever paid for the
    * hour, and come back through space_access_details().
    */
-  it("gives an anonymous browser no exact location", async () => {
-    const [space] = await asAnon<{
+  it("gives a signed-in browser no exact location", async () => {
+    // spaces_public is closed to anon since 0064, so the marketplace user is who
+    // reads it — and even they get only the coarse projection.
+    const [space] = await asUser<{
       address_line: string | null;
       lat: number | null;
       lng: number | null;
       entry_instructions?: string;
-    }>(`select * from spaces_public where id = '${SPACE}'`);
+    }>(STRANGER, `select * from spaces_public where id = '${SPACE}'`);
 
     // The exact street and precise point are NULL shims, kept only so the
     // previously deployed client's select does not error mid rollout (migration
@@ -193,7 +195,7 @@ describe("the exact address is private until booked", () => {
   });
 
   it("never publishes the entry instructions", async () => {
-    const columns = await asAnon(`select * from spaces_public where id = '${SPACE}'`);
+    const columns = await asUser(STRANGER, `select * from spaces_public where id = '${SPACE}'`);
 
     expect(columns).toHaveLength(1);
     expect(Object.keys(columns[0])).not.toContain("entry_instructions");
@@ -242,7 +244,7 @@ describe("the exact address is private until booked", () => {
 
 describe("listings that are not live stay hidden", () => {
   it("keeps a pending space out of the public view", async () => {
-    const found = await asAnon(`select id from spaces_public where id = '${PENDING_SPACE}'`);
+    const found = await asUser(STRANGER, `select id from spaces_public where id = '${PENDING_SPACE}'`);
     expect(found).toEqual([]);
   });
 
@@ -250,6 +252,51 @@ describe("listings that are not live stay hidden", () => {
     const found = await asUser(HOST, `select id from spaces where id = '${PENDING_SPACE}'`);
     expect(found).toHaveLength(1);
   });
+});
+
+/**
+ * Individual inventory is inside the signed-in marketplace (migration 0064).
+ *
+ * The marketing site is anonymous; the app is signed in. So `anon` may read
+ * only the aggregate inventory — where the marketplace operates and roughly
+ * what it costs — and no per-listing projection or host profile. A signed-in
+ * marketplace user still reads all of it, which is what keeps Discover working.
+ * This is the boundary the whole privacy change turns on, asserted as the two
+ * roles rather than trusted to a grant nobody exercises.
+ */
+describe("the public inventory views are closed to anonymous visitors", () => {
+  const PER_LISTING = [
+    "spaces_public",
+    "space_media_public",
+    "availability_public",
+    "space_ratings",
+    "public_reviews",
+    "public_host_profiles",
+  ];
+
+  for (const view of PER_LISTING) {
+    it(`refuses anonymous select on ${view}`, async () => {
+      await expect(asAnon(`select * from ${view} limit 1`)).rejects.toThrow(/permission denied/i);
+    });
+
+    it(`still lets a signed-in marketplace user read ${view}`, async () => {
+      // Not throwing is the assertion; the row set may legitimately be empty.
+      await expect(asUser(STRANGER, `select * from ${view} limit 1`)).resolves.toBeDefined();
+    });
+  }
+
+  const AGGREGATE = [
+    "city_inventory",
+    "city_type_inventory",
+    "city_category_inventory",
+    "space_demand",
+  ];
+
+  for (const view of AGGREGATE) {
+    it(`still lets an anonymous visitor read the aggregate ${view}`, async () => {
+      await expect(asAnon(`select * from ${view} limit 1`)).resolves.toBeDefined();
+    });
+  }
 });
 
 describe("bookings are visible only to the two parties", () => {
@@ -443,7 +490,9 @@ describe("profiles keep their payment identifiers to themselves", () => {
   });
 
   it("exposes only name, avatar and the two safe host signals", async () => {
-    const [host] = await asAnon(`select * from public_host_profiles where id = '${HOST}'`);
+    // public_host_profiles is closed to anon since 0064; a signed-in browser is
+    // who reads it, and still sees only the safe columns.
+    const [host] = await asUser(STRANGER, `select * from public_host_profiles where id = '${HOST}'`);
     // Name, avatar, whether they are Founding (a boolean), and their highest
     // session milestone (a bucket, not the raw count). Nothing private —
     // migration 0060.
@@ -458,8 +507,9 @@ describe("profiles keep their payment identifiers to themselves", () => {
 
   it("gives a practitioner no public presence at all", async () => {
     // The view is named for hosts but originally returned every profile, so a
-    // practitioner's name and photo were readable by any anonymous caller.
-    const found = await asAnon(
+    // practitioner's name and photo were readable by any signed-in caller.
+    const found = await asUser(
+      STRANGER,
       `select id from public_host_profiles where id = '${PRACTITIONER}'`,
     );
     expect(found).toEqual([]);
@@ -577,7 +627,8 @@ describe("profiles keep their payment identifiers to themselves", () => {
 
   it("drops a host from public view once they have no live listing", async () => {
     await db.exec(`update spaces set status = 'delisted' where host_id = '${HOST}'`);
-    const afterDelisting = await asAnon(
+    const afterDelisting = await asUser(
+      STRANGER,
       `select id from public_host_profiles where id = '${HOST}'`,
     );
     await db.exec(`update spaces set status = 'active' where id = '${SPACE}'`);
@@ -639,7 +690,8 @@ describe("hosts can only manage their own listings", () => {
        values ('${SPACE}', 1, 540, 1020)`,
     );
 
-    const found = await asAnon(`select id from availability_public where space_id = '${SPACE}'`);
+    // availability_public is closed to anon since 0064; the signed-in browser sees it.
+    const found = await asUser(STRANGER, `select id from availability_public where space_id = '${SPACE}'`);
     expect(found).toHaveLength(1);
   });
 
@@ -650,7 +702,8 @@ describe("hosts can only manage their own listings", () => {
        values ('${PENDING_SPACE}', 2, 540, 1020)`,
     );
 
-    const found = await asAnon(
+    const found = await asUser(
+      STRANGER,
       `select id from availability_public where space_id = '${PENDING_SPACE}'`,
     );
     expect(found).toEqual([]);
@@ -1153,7 +1206,8 @@ describe("the map point", () => {
   });
 
   it("is a point near the studio, not its own position", async () => {
-    const [shown] = await asAnon<{ approx_lat: number; approx_lng: number }>(
+    const [shown] = await asUser<{ approx_lat: number; approx_lng: number }>(
+      STRANGER,
       `select approx_lat, approx_lng from spaces_public where id = '${MAP_SPACE}'`,
     );
 
@@ -1164,7 +1218,8 @@ describe("the map point", () => {
   });
 
   it("carries the approximate point, not the street", async () => {
-    const [shown] = await asAnon<{ address_line: string | null; approx_lat: number | null }>(
+    const [shown] = await asUser<{ address_line: string | null; approx_lat: number | null }>(
+      STRANGER,
       `select address_line, approx_lat from spaces_public where id = '${MAP_SPACE}'`,
     );
 
@@ -1451,7 +1506,10 @@ describe("two studios on the same platform", () => {
    * behaviour and would make an assertion about it a test of test order.
    */
   it("shows a second host's live room to somebody browsing", async () => {
-    const rooms = await asAnon<{ name: string }>(`select name from spaces_public order by name`);
+    const rooms = await asUser<{ name: string }>(
+      STRANGER,
+      `select name from spaces_public order by name`,
+    );
     expect(rooms.map((r) => r.name)).toContain("Cedar Room");
   });
 });

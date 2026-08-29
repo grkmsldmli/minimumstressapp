@@ -15,6 +15,7 @@ import type {
   SpaceAccessDetails,
 } from "@/lib/domain";
 import { apiFetch } from "@/lib/api-fetch";
+import { SPACE_DEEP_LINK_PARAM, readSpaceDeepLink, resolveSpaceDeepLink } from "@/lib/space-deep-link";
 import { errorMessage } from "@/lib/error-message";
 import { delayFor, isTransient } from "@/lib/transient";
 import { hostFactsFrom, practitionerFactsFrom } from "@/lib/milestone-facts";
@@ -279,6 +280,14 @@ export function App() {
   // A referral link's ?ref= code, captured before sign-in and applied once after.
   const referralAttributedRef = useRef(false);
 
+  // A ?space= deep link's target listing, captured (and stripped) on arrival and
+  // opened once the authenticated catalogue has loaded. Held in a ref so it
+  // survives the sign-in flow without re-rendering, and never resolved
+  // anonymously: the id is only ever matched against listings this user already
+  // loaded, so a removed or inaccessible one simply falls through to Discover.
+  const pendingSpaceRef = useRef<string | null>(null);
+  const spaceDeepLinkConsumedRef = useRef(false);
+
   const [authBusy, setAuthBusy] = useState(false);
 
   /**
@@ -437,9 +446,11 @@ export function App() {
    */
   const sortByLocation = useCallback(async (query: string) => {
     try {
-      // Public and unauthenticated — no session needed, so a plain fetch, not
-      // apiFetch. It reaches no user data; attaching a token would be pointless.
-      const response = await fetch(`/api/spaces/nearby?${query}`);
+      // Distance ranking is inside the signed-in marketplace now, so this needs
+      // the session — apiFetch, which carries the cookie on the web and the
+      // native bearer token in the shell. The response is still only ids and
+      // coarse labels; the coordinates it sorts on never leave the server.
+      const response = await apiFetch(`/api/spaces/nearby?${query}`);
       const body = (await response.json()) as {
         spaces?: { id: string; distanceLabel: string }[];
         error?: string;
@@ -853,6 +864,51 @@ export function App() {
     url.searchParams.delete(REFERRAL_PARAM);
     window.history.replaceState({}, "", url.pathname + url.search + url.hash);
   }, []);
+
+  /**
+   * A ?space=<id> deep link, captured and stripped on arrival.
+   *
+   * Public listing pages redirect here (migration 0064). The id is remembered
+   * and the parameter removed immediately, so it never lingers in history or
+   * re-fires on a later navigation. Opening it waits for the signed-in catalogue
+   * — the effect below — so a signed-out arrival is carried through sign-in
+   * first. Only the space param is removed; any other marker on the link stays.
+   */
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    const id = readSpaceDeepLink(url.search);
+    if (!id) return;
+    pendingSpaceRef.current = id;
+    url.searchParams.delete(SPACE_DEEP_LINK_PARAM);
+    window.history.replaceState({}, "", url.pathname + url.search + url.hash);
+  }, []);
+
+  /**
+   * Open the deep-linked listing once there is an account and a catalogue.
+   *
+   * Runs when the signed-in data lands — after sign-in for a signed-out arrival,
+   * or on resume for a returning one. The id is matched only against listings
+   * already loaded for this user: the public catalogue, or their own listings.
+   * A removed, unlisted or inaccessible one matches nothing, opens nothing, and
+   * leaves them on Discover — no anonymous lookup, no way to probe what exists,
+   * no crash. Fires at most once, and the role guard below still decides whether
+   * a host may see a practitioner's Detail at all.
+   */
+  useEffect(() => {
+    if (!data || spaceDeepLinkConsumedRef.current) return;
+    const id = pendingSpaceRef.current;
+    if (!id) return;
+
+    spaceDeepLinkConsumedRef.current = true;
+    pendingSpaceRef.current = null;
+
+    const open = resolveSpaceDeepLink(id, [data.spaces, data.mySpaces]);
+    if (!open) return;
+
+    setActiveSpaceId(open);
+    go("detail");
+  }, [data, go, setActiveSpaceId]);
 
   /**
    * Lock the attribution once there is an account to attribute.

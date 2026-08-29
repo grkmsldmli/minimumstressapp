@@ -110,6 +110,16 @@ import { type ClaimKind, claimType, overstayCents } from "./claims";
 import { type RefundReason, questionFor } from "./refunds";
 import { FALLBACK_ZONE } from "./timezone";
 
+/**
+ * How long a signed space-media URL stays valid.
+ *
+ * The bucket is private since 0064, so listing photographs are reached through
+ * short-lived signed URLs minted with the caller's own session rather than a
+ * world-readable public URL. An hour comfortably outlasts a browse without
+ * leaving a link that works forever if it leaks out of the page.
+ */
+const SPACE_MEDIA_TTL_SECONDS = 60 * 60;
+
 /** Rows as PostgREST returns them, before mapping into domain shapes. */
 interface SpaceRow {
   id: string;
@@ -640,6 +650,31 @@ export class SupabaseRepository implements Repository {
     return this.db.storage.from(bucket).getPublicUrl(path).data.publicUrl;
   }
 
+  /**
+   * Signed URLs for the private space-media bucket (0064), in one batch.
+   *
+   * A public URL would work for everybody including a signed-out stranger, which
+   * is exactly what that migration closed. Signing runs as the caller under the
+   * storage policy, so a marketplace user gets URLs for active listings' media
+   * and an anonymous caller — with no session and no policy — gets none. The
+   * result maps each storage path to its URL; a path that failed to sign is
+   * absent, and its image simply does not load rather than the screen breaking.
+   */
+  private async signSpaceMedia(paths: string[]): Promise<Map<string, string>> {
+    const unique = [...new Set(paths)];
+    if (unique.length === 0) return new Map();
+
+    const { data } = await this.db.storage
+      .from("space-media")
+      .createSignedUrls(unique, SPACE_MEDIA_TTL_SECONDS);
+
+    const urls = new Map<string, string>();
+    for (const item of data ?? []) {
+      if (item.path && item.signedUrl) urls.set(item.path, item.signedUrl);
+    }
+    return urls;
+  }
+
   async listPublicSpaces(): Promise<PublicSpace[]> {
     const { data: spaces, error } = await this.db.from("spaces_public").select("*");
     if (error) throw asError(error);
@@ -664,11 +699,16 @@ export class SupabaseRepository implements Repository {
       ]),
     );
 
+    // One batch of signed URLs for the private media bucket (0064), shared
+    // across every card on the screen.
+    const mediaUrls = await this.signSpaceMedia(((media ?? []) as MediaRow[]).map((m) => m.storage_path));
+
     return spaces.map((row: SpaceRow) =>
       this.toPublicSpace(
         row,
         (blocks ?? []).filter((b: AvailabilityRow) => b.space_id === row.id),
         (media ?? []).filter((m: MediaRow) => m.space_id === row.id),
+        (path) => mediaUrls.get(path) ?? "",
         ratingFor.get(row.id),
         hostSignals.get(row.host_id),
       ),
@@ -690,13 +730,23 @@ export class SupabaseRepository implements Repository {
       this.hostSignalsFor([data.host_id]),
     ]);
 
-    return this.toPublicSpace(data, blocks ?? [], media ?? [], undefined, hostSignals.get(data.host_id));
+    const mediaUrls = await this.signSpaceMedia(((media ?? []) as MediaRow[]).map((m) => m.storage_path));
+
+    return this.toPublicSpace(
+      data,
+      blocks ?? [],
+      media ?? [],
+      (path) => mediaUrls.get(path) ?? "",
+      undefined,
+      hostSignals.get(data.host_id),
+    );
   }
 
   private toPublicSpace(
     row: SpaceRow,
     blocks: AvailabilityRow[],
     media: MediaRow[],
+    mediaUrl: (path: string) => string,
     rating?: { count: number; average: number },
     hostSignal?: { founding: boolean; milestone: number },
   ): PublicSpace {
@@ -730,7 +780,7 @@ export class SupabaseRepository implements Repository {
       description: row.description ?? "",
       media: media.map((m) => ({
         id: m.id,
-        url: this.publicUrl("space-media", m.storage_path),
+        url: mediaUrl(m.storage_path),
         kind: m.kind,
       })),
       availability: blocks.map((b) => ({
@@ -1248,11 +1298,16 @@ export class SupabaseRepository implements Repository {
       this.db.from("space_media").select("*").in("space_id", ids).order("position"),
     ]);
 
+    // The host reads their own media from the private bucket (0064); the owner
+    // branch of the storage policy lets them sign it at any listing status.
+    const mediaUrls = await this.signSpaceMedia(((media ?? []) as MediaRow[]).map((m) => m.storage_path));
+
     return spaces.map((row: SpaceRow): HostSpace => {
       const base = this.toPublicSpace(
         row,
         (blocks ?? []).filter((b: AvailabilityRow) => b.space_id === row.id),
         (media ?? []).filter((m: MediaRow) => m.space_id === row.id),
+        (path) => mediaUrls.get(path) ?? "",
       );
       return {
         ...base,

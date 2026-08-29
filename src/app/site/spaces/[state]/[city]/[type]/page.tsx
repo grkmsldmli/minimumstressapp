@@ -1,10 +1,9 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 
 import { SiteFooter, SiteHeader } from "@/components/site/chrome";
-import { SpaceCards } from "@/components/site/space-cards";
-import { WEBSITE } from "@/lib/company";
+import { APP_URL, WEBSITE } from "@/lib/company";
 import {
   type CityRow,
   type CityTypeRow,
@@ -15,11 +14,9 @@ import {
   priceRange,
   stateSlug,
 } from "@/lib/directory";
-import { citiesWithSpaces, cityTypesWithSpaces, listingBySlug, spacesIn } from "@/lib/directory-data";
-import { ListingPage } from "@/components/site/listing-page";
-import { isListingSlug, listingSlug } from "@/lib/listing-url";
+import { citiesWithSpaces, cityTypesWithSpaces } from "@/lib/directory-data";
+import { idFromSlug, isListingSlug } from "@/lib/listing-url";
 import { formatCents, publicHourlyTotalCents } from "@/lib/money";
-import { type CategoryKey, roomTypeFor } from "@/lib/taxonomy";
 import { spaceTypeBySlug } from "@/lib/space-types";
 
 /**
@@ -68,22 +65,12 @@ export async function generateMetadata({
    * One room rather than a category of them. Checked first because it is the
    * cheaper question — a use slug is one of ten names we control, so anything
    * ending in an id is a listing and nothing else can be.
+   *
+   * An individual room is no longer a public page (0064): the route redirects
+   * into the app. Emitting a title, description or canonical here would leak the
+   * very listing the page is careful not to render, so it emits none.
    */
-  if (isListingSlug(type)) {
-    const listing = await listingBySlug(type, { state, city });
-    if (!listing) return {};
-
-    return {
-      title: `${listing.name} — ${listing.city}, ${listing.state}`,
-      description:
-        `${roomTypeFor(listing.category as CategoryKey)} in ${listing.city}, ` +
-        `${formatCents(publicHourlyTotalCents(listing.hourlyRateCents))} an hour, fees included. ` +
-        `${listing.description}`.slice(0, 200),
-      alternates: {
-        canonical: `${WEBSITE}/spaces/${state}/${city}/${listingSlug(listing.name, listing.id)}`,
-      },
-    };
-  }
+  if (isListingSlug(type)) return {};
 
   const found = await resolve(state, city, type);
   if (!found) return {};
@@ -115,16 +102,17 @@ export default async function CityTypePage({
   const { state, city, type } = await params;
 
   if (isListingSlug(type)) {
-    const listing = await listingBySlug(type, { state, city });
-    if (!listing) notFound();
-    return <ListingPage listing={listing} />;
+    // Individual listings live inside the signed-in marketplace now (0064).
+    // Redirect rather than render, passing the id straight through so the app
+    // can open the room — nothing about the listing is read or shown first.
+    const id = idFromSlug(type);
+    redirect(id ? `${APP_URL}?space=${encodeURIComponent(id)}` : APP_URL);
   }
 
   const found = await resolve(state, city, type);
   if (!found) notFound();
 
   const spaceType = spaceTypeBySlug(type)!;
-  const spaces = await spacesIn(found.city.state, found.city.city, spaceType.slug);
   const prices = priceRange(found.use);
 
   return (
@@ -160,12 +148,33 @@ export default async function CityTypePage({
             </p>
           )}
 
-          <div className="mt-10">
-            <SpaceCards spaces={spaces} />
+          {/*
+            The rooms themselves are in the app, not on this page (0064). The
+            public directory names the town, the use and a price band; which
+            studio, at what address, is for people signed in to the marketplace.
+          */}
+          <div
+            className="mt-10 rounded-2xl p-6"
+            style={{ backgroundColor: "#f8fbfd", border: "1px solid #e7eef6" }}
+          >
+            <h2 className="text-[19px]" style={{ color: "#0F2F55" }}>
+              See {spaceType.plural.toLowerCase()} in {found.city.city}
+            </h2>
+            <p className="mt-2 text-[15px] leading-[1.75]" style={{ color: "#5f6673" }}>
+              Individual rooms, their photos and hours, and booking are in the app. Browse what&rsquo;s
+              available and book by the hour.
+            </p>
+            <a
+              href={APP_URL}
+              className="mt-4 inline-block rounded-full px-6 py-3 text-[14.5px] font-medium text-white"
+              style={{ backgroundColor: "#0F2F55" }}
+            >
+              Browse spaces
+            </a>
           </div>
 
           <div
-            className="mt-14 rounded-2xl p-6"
+            className="mt-6 rounded-2xl p-6"
             style={{ backgroundColor: "#f8fbfd", border: "1px solid #e7eef6" }}
           >
             <h2 className="text-[19px]" style={{ color: "#0F2F55" }}>

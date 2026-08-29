@@ -386,6 +386,12 @@ describe("private columns stay out of the public views", () => {
     // RLS and hands every practitioner's balance to whoever asks. A public
     // subset view *with* it errors instead, because anon holds no grant on
     // the base table — safety there comes from the column list, not from RLS.
+    //
+    // "Public" here means definer, not anonymously readable. Migration 0064
+    // closed the per-listing definer views (spaces_public, public_host_profiles,
+    // availability_public, space_media_public, public_reviews, space_ratings) to
+    // anon while leaving the aggregate ones open; who may read each is asserted
+    // by role in rls.test.ts. This test is only about definer vs invoker.
     const PER_USER = [
       "credit_balances",
       "bookings_with_access_code",
@@ -421,6 +427,10 @@ describe("private columns stay out of the public views", () => {
        */
       "city_inventory",
       "city_type_inventory",
+      // The category-level aggregate (0064), so the public directory's category
+      // filter never has to read a per-listing view. A room has one category, so
+      // the count is exact and still reveals nothing about an individual room.
+      "city_category_inventory",
       /*
        * The demand counts. Public because a host is shown them, and safe to
        * be public because it is counts: no email, no id, no row. The table
@@ -480,6 +490,38 @@ describe("private columns stay out of the public views", () => {
     // A definer function without a pinned search_path is a privilege
     // escalation waiting to happen.
     expect(fn.proconfig ?? []).toContain("search_path=public");
+  });
+});
+
+/**
+ * Listing photographs are not world-readable (migration 0064).
+ *
+ * Closing the views is only half the boundary: while the bucket was public, an
+ * object was fetchable by anyone who had, or guessed, its path — no view needed.
+ * So the bucket is private and the blanket public-read policy is replaced with
+ * one only a signed-in caller matches. A structural check, because the storage
+ * fetch path is not exercised in PGlite; the functional contract is that the
+ * app signs its own URLs (supabase-repository) and anon holds no read policy.
+ */
+describe("space media is not world-readable", () => {
+  it("makes the space-media bucket private", async () => {
+    const [bucket] = await rows<{ public: boolean }>(
+      `select public from storage.buckets where id = 'space-media'`,
+    );
+    expect(bucket.public).toBe(false);
+  });
+
+  it("drops the blanket public-read policy for a signed-in one", async () => {
+    const policies = await rows<{ policyname: string }>(
+      `select policyname from pg_policies
+       where schemaname = 'storage' and tablename = 'objects'
+         and policyname like 'space-media:%' and cmd = 'SELECT'`,
+    );
+    const names = policies.map((p) => p.policyname);
+    // The old world-readable policy is gone…
+    expect(names).not.toContain("space-media: public read");
+    // …replaced by one only a signed-in caller can satisfy.
+    expect(names).toContain("space-media: read active listings or own");
   });
 });
 
@@ -779,7 +821,12 @@ describe("0043 — where a space is and what it suits", () => {
         'verified', now()
       )`;
 
+    // Three active rooms, which is also the floor at which a price is published
+    // at all (0064 withholds a min/median/max below three, so it can never be an
+    // individual host's rate). The point here is that pending and delisted rooms
+    // count towards neither the number nor the statistics.
     await db.exec(add("active", 3000));
+    await db.exec(add("active", 4000));
     await db.exec(add("active", 5000));
     // Neither of these can be booked, so neither belongs on a page.
     await db.exec(add("pending", 9900));
@@ -794,7 +841,7 @@ describe("0043 — where a space is and what it suits", () => {
        where city = 'Belmont' and state = 'CA'`,
     );
 
-    expect(belmont.space_count).toBe(2);
+    expect(belmont.space_count).toBe(3);
     // The pending room is the expensive one. A page quoting it would be
     // quoting a price nobody can pay.
     expect(belmont.max_cents).toBe(5000);

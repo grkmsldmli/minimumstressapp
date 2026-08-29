@@ -677,6 +677,16 @@ export class MockRepository implements Repository {
     return { notice: explainRedaction(redaction.found) };
   }
 
+  // The mock has no second participant, so every message is the demo user's own
+  // and nothing is ever unread. Enough for the screen to render its empty state.
+  async markMessagesRead(): Promise<number> {
+    return 0;
+  }
+
+  async unreadMessageCounts(): Promise<Record<string, number>> {
+    return {};
+  }
+
   /* ---------------- standing ---------------- */
 
   async getSessionCount(): Promise<number> {

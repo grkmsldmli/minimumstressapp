@@ -1088,6 +1088,22 @@ export class SupabaseRepository implements Repository {
     return { notice: payload.notice ?? null };
   }
 
+  async markMessagesRead(bookingId: string): Promise<number> {
+    const { data, error } = await this.db.rpc("mark_messages_read", { p_booking_id: bookingId });
+    if (error) throw asError(error);
+    return typeof data === "number" ? data : 0;
+  }
+
+  async unreadMessageCounts(): Promise<Record<string, number>> {
+    const { data, error } = await this.db.rpc("unread_message_counts");
+    if (error) throw asError(error);
+    const counts: Record<string, number> = {};
+    for (const row of (data ?? []) as { booking_id: string; unread: number }[]) {
+      counts[row.booking_id] = row.unread;
+    }
+    return counts;
+  }
+
   /* ---------------- standing ---------------- */
 
   /**

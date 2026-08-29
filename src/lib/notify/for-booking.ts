@@ -378,6 +378,58 @@ export async function notifyBookingCreated(
   }
 }
 
+/**
+ * Tell the other side of a booking that a message is waiting.
+ *
+ * Names the booking and nothing else — never the message text (masked or not),
+ * the address, or a door code (see the new_message wording). Deduped by the
+ * message id, so a retried send never notifies twice, while a genuinely new
+ * message always does. The recipient is whichever participant did not send.
+ */
+export async function notifyNewMessage(
+  admin: SupabaseClient,
+  bookingId: string,
+  senderId: string,
+  messageId: string,
+): Promise<void> {
+  try {
+    const { data } = await admin
+      .from("bookings")
+      .select("practitioner_id, starts_at, spaces!inner(name, host_id, timezone)")
+      .eq("id", bookingId)
+      .maybeSingle();
+
+    const booking = data as unknown as {
+      practitioner_id: string;
+      starts_at: string;
+      spaces: { name: string; host_id: string; timezone: string };
+    } | null;
+    if (!booking) return;
+
+    const recipientId =
+      senderId === booking.practitioner_id ? booking.spaces.host_id : booking.practitioner_id;
+    if (!recipientId || recipientId === senderId) return;
+
+    const recipient = await recipientFor(admin, recipientId);
+    if (!recipient || hasOptedOut(recipient, "new_message")) return;
+
+    await notify({
+      kind: "new_message",
+      recipient,
+      // Per message, so a retry collides on the dedupe key and a new message does
+      // not — never a permanent per-thread dedupe that would notify once only.
+      subjectId: messageId,
+      bookingId,
+      context: {
+        spaceName: booking.spaces.name,
+        when: formatWhen(new Date(booking.starts_at), booking.spaces.timezone),
+      },
+    });
+  } catch (error) {
+    console.error(`New-message notification failed for ${bookingId}:`, error);
+  }
+}
+
 export async function notifyCancellation(
   admin: SupabaseClient,
   bookingId: string,

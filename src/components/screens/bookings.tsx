@@ -366,6 +366,7 @@ export function MyBookings({
   onReview,
   onAskRefund,
   onMessage,
+  unreadFor,
 }: {
   bookings: Booking[];
   /** Pull-to-refresh: re-fetches the practitioner's bookings in place. */
@@ -385,6 +386,8 @@ export function MyBookings({
   onAskRefund?: (id: string) => void;
   /** Opens the thread for a booking. */
   onMessage?: (id: string) => void;
+  /** Unread incoming messages for a booking, for the message badge. */
+  unreadFor?: (id: string) => number;
 }) {
   const [openId, setOpenId] = useState<string | null>(null);
   const [now, setNow] = useState(() => new Date());
@@ -441,6 +444,7 @@ export function MyBookings({
               open={openId === booking.id}
               onToggle={() => setOpenId(openId === booking.id ? null : booking.id)}
               onMessage={onMessage ? () => onMessage(booking.id) : undefined}
+              unread={unreadFor?.(booking.id) ?? 0}
               onCancel={() => onCancel(booking.id).then(() => setOpenId(null))}
             />
           ))}
@@ -536,6 +540,7 @@ function UpcomingBooking({
   onToggle,
   onCancel,
   onMessage,
+  unread = 0,
   addressLine,
   isPro,
   onGoPro,
@@ -549,6 +554,8 @@ function UpcomingBooking({
   /** Rejects on failure; the card stays open and shows why. */
   onCancel: () => Promise<unknown>;
   onMessage?: () => void;
+  /** Unread incoming messages on this booking, for the badge. */
+  unread?: number;
   /**
    * From the public listing, not from `access`.
    *
@@ -702,6 +709,15 @@ function UpcomingBooking({
                 style={{ border: "1px solid #DCE7F2", color: "#16304E" }}
               >
                 <MessageCircle size={13} /> Message the studio
+                {unread > 0 && (
+                  <span
+                    className="ml-1 min-w-[18px] h-[18px] px-1 rounded-full flex items-center justify-center font-body font-semibold text-[11px] text-white"
+                    style={{ backgroundColor: "#F2695C" }}
+                    aria-label={`${unread} unread`}
+                  >
+                    {unread}
+                  </span>
+                )}
               </button>
             )}
 

@@ -114,6 +114,19 @@ export interface Repository {
    */
   sendMessage(bookingId: string, body: string): Promise<{ notice: string | null }>;
 
+  /**
+   * Mark the caller's incoming messages on a booking as read. Server-authoritative
+   * (only read_at changes, only on messages addressed to the caller); returns how
+   * many were newly marked, so a no-op is a plain 0.
+   */
+  markMessagesRead(bookingId: string): Promise<number>;
+
+  /**
+   * Unread incoming messages per booking, keyed by booking id — server truth
+   * (the caller's own messages never count). Bookings with none are absent.
+   */
+  unreadMessageCounts(): Promise<Record<string, number>>;
+
   /* ---------------- standing ---------------- */
 
   getSessionCount(): Promise<number>;

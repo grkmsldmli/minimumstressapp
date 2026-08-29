@@ -382,6 +382,7 @@ export function HostDashboard({
   completedSessions,
   referralCode,
   referrals,
+  unreadFor,
 }: {
   spaces: HostSpace[];
   bookings: HostBooking[];
@@ -432,6 +433,8 @@ export function HostDashboard({
   /** This host's shareable referral code, and their referrals as safe summaries. */
   referralCode: string;
   referrals: ReferralSummary[];
+  /** Unread incoming messages for a booking, for the message badge. */
+  unreadFor?: (bookingId: string) => number;
 }) {
   /*
    * A host's bookings are for their own rooms, so the hour belongs on the
@@ -760,6 +763,7 @@ export function HostDashboard({
                     timeZone={zoneOf(booking.spaceId)}
                     index={i}
                     onMessage={onMessageBooking ? () => onMessageBooking(booking.id) : undefined}
+                    unread={unreadFor?.(booking.id) ?? 0}
                   />
                 ))}
               </div>
@@ -1647,6 +1651,7 @@ function HostBookingRow({
   onReview,
   onReportProblem,
   onMessage,
+  unread = 0,
 }: {
   booking: HostBooking;
   /** The room's zone — the clock this session's hour is written on. */
@@ -1656,6 +1661,8 @@ function HostBookingRow({
   onReview?: () => void;
   onReportProblem?: () => void;
   onMessage?: () => void;
+  /** Unread incoming messages on this booking, for the badge. */
+  unread?: number;
 }) {
   const cancelled = booking.status.startsWith("cancelled");
 
@@ -1721,6 +1728,15 @@ function HostBookingRow({
           style={{ border: "1px solid #DCE7F2", color: "#16304E" }}
         >
           <MessageCircle size={13} /> Message
+          {unread > 0 && (
+            <span
+              className="ml-1 min-w-[18px] h-[18px] px-1 rounded-full flex items-center justify-center font-body font-semibold text-[11px] text-white"
+              style={{ backgroundColor: "#F2695C" }}
+              aria-label={`${unread} unread`}
+            >
+              {unread}
+            </span>
+          )}
         </button>
       )}
 

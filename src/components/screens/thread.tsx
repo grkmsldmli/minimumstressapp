@@ -32,6 +32,8 @@ export function Thread({
   otherName,
   spaceName,
   when,
+  canSend,
+  disabledReason,
   onBack,
   onSend,
 }: {
@@ -40,6 +42,10 @@ export function Thread({
   otherName: string;
   spaceName: string;
   when: string;
+  /** Whether this booking can still receive new messages (server-enforced too). */
+  canSend: boolean;
+  /** Why the composer is disabled, shown in its place. Null when it is enabled. */
+  disabledReason: string | null;
   onBack: () => void;
   onSend: (body: string) => Promise<{ notice: string | null }>;
 }) {
@@ -58,7 +64,7 @@ export function Thread({
 
   const send = async () => {
     const text = draft.trim();
-    if (!text || sending) return;
+    if (!text || sending || !canSend) return;
 
     setSending(true);
     setError(null);
@@ -161,6 +167,13 @@ export function Thread({
         <p className="mx-6 mb-2 font-body font-normal text-[14px] text-coral-deep">{error}</p>
       )}
 
+      {!canSend ? (
+        <div className="px-6 pt-3 pb-6 shrink-0" style={{ borderTop: "1px solid #F0ECE0" }}>
+          <p className="font-body font-normal text-[14px] leading-relaxed text-ink-faint text-center">
+            {disabledReason ?? "This booking can no longer receive messages."}
+          </p>
+        </div>
+      ) : (
       <div className="px-6 pt-3 pb-6 shrink-0" style={{ borderTop: "1px solid #F0ECE0" }}>
         <form
           onSubmit={(e) => {
@@ -200,6 +213,7 @@ export function Thread({
           </button>
         </form>
       </div>
+      )}
     </div>
   );
 }

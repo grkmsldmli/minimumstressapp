@@ -81,6 +81,7 @@ import { Notifications } from "./screens/notifications";
 import { PaymentSheet } from "./screens/payment-sheet";
 import { ReviewScreen } from "./screens/review";
 import { Thread, type ThreadMessage } from "./screens/thread";
+import { bookingAcceptsMessages, messagingDisabledReason } from "@/lib/messaging";
 import {
   CredentialUpload,
   InsuranceUpload,
@@ -181,6 +182,8 @@ interface Snapshot {
   referralCode: string;
   /** This host's referrals, as safe status summaries — no referred-host data. */
   referrals: ReferralSummary[];
+  /** Unread incoming messages per booking id, from server truth. */
+  unreadCounts: Record<string, number>;
 }
 
 export function App() {
@@ -348,10 +351,11 @@ export function App() {
 
   useEffect(() => {
     if (!threadBookingId) return;
+    const bookingId = threadBookingId;
 
     let cancelled = false;
-    void (async () => {
-      const messages = await repo.listMessages(threadBookingId);
+    const load = async () => {
+      const messages = await repo.listMessages(bookingId);
       if (cancelled) return;
       setThread(
         messages.map((m) => ({
@@ -362,10 +366,30 @@ export function App() {
           redactedKinds: m.redactedKinds,
         })),
       );
-    })();
+      // Reading the thread marks its incoming messages read (server truth); clear
+      // this booking's badge locally so it does not linger until the next load.
+      const marked = await repo.markMessagesRead(bookingId).catch(() => 0);
+      if (!cancelled && marked > 0) {
+        setData((prev) =>
+          prev ? { ...prev, unreadCounts: { ...prev.unreadCounts, [bookingId]: 0 } } : prev,
+        );
+      }
+    };
+
+    void load();
+    /*
+     * A safe poll rather than Supabase Realtime. Realtime on the messages table
+     * broadcasts the whole changed row — original_body included — to subscribers,
+     * and column-level grants are not reliably applied to that payload, so a live
+     * subscription would reintroduce the very leak 0063 closes. Re-reading the
+     * redacted view every few seconds brings in incoming messages without ever
+     * putting original_body on the wire. Stops the moment the thread closes.
+     */
+    const poll = setInterval(() => void load(), 5000);
 
     return () => {
       cancelled = true;
+      clearInterval(poll);
     };
   }, [repo, threadBookingId, revision]);
 
@@ -574,6 +598,7 @@ export function App() {
         foundingRemaining,
         referralCode,
         referrals,
+        unreadCounts,
       ] = await Promise.all([
           repo.getProfile(),
           repo.listPublicSpaces(),
@@ -589,6 +614,8 @@ export function App() {
           // must never keep somebody out of their whole account.
           repo.myReferralCode().catch(() => ""),
           repo.listReferrals().catch(() => []),
+          // Unread message badges — a convenience; an empty map on failure.
+          repo.unreadMessageCounts().catch(() => ({})),
         ]);
 
       // Address details are per-space and authorization-gated, so they are
@@ -613,6 +640,7 @@ export function App() {
         foundingRemaining,
         referralCode,
         referrals,
+        unreadCounts,
       };
     };
 
@@ -1075,6 +1103,7 @@ export function App() {
     access,
     cancellations,
     sessions,
+    unreadCounts,
   } =
     data;
 
@@ -1339,6 +1368,7 @@ export function App() {
           completedSessions={hostFacts.sessionsHosted}
           referralCode={data.referralCode}
           referrals={data.referrals}
+          unreadFor={(id) => unreadCounts[id] ?? 0}
         />
   );
 
@@ -1733,6 +1763,14 @@ export function App() {
 
       if (!subject) return <Fallback onBack={back} />;
 
+      // The same lifecycle rule the server enforces, from the fields this side
+      // holds: a practitioner's booking carries approvalState, a host's does not.
+      const messageEligibility = mine
+        ? { status: mine.status, approvalState: mine.approvalState }
+        : { status: (theirs as HostBooking).status };
+      const canSend = bookingAcceptsMessages(messageEligibility);
+      const disabledReason = messagingDisabledReason(messageEligibility);
+
       return (
         <Thread
           messages={thread}
@@ -1745,6 +1783,8 @@ export function App() {
               spaces.find((s) => s.id === theirs?.spaceId)?.timeZone ??
               FALLBACK_ZONE,
           )}
+          canSend={canSend}
+          disabledReason={disabledReason}
           onBack={() => {
             setThreadBookingId(null);
             back();
@@ -1803,6 +1843,7 @@ export function App() {
             setThreadBookingId(id);
             go("thread");
           }}
+          unreadFor={(id) => unreadCounts[id] ?? 0}
         />
       );
 

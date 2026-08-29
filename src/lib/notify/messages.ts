@@ -27,6 +27,7 @@ export const NOTIFICATION_KINDS = [
   "request_declined",
   "request_expired",
   "access_code_ready",
+  "new_message",
   "cancelled_by_practitioner",
   "cancelled_by_host",
   "reliability_warning",
@@ -329,6 +330,25 @@ export function render(kind: NotificationKind, context: MessageContext): Message
         sms: [spaceName, address ? `— ${address}` : null, accessCode ? `Code ${accessCode}` : null]
           .filter(Boolean)
           .join(" "),
+      };
+
+    /**
+     * The other side wrote something. Names the booking and nothing else — never
+     * the message text (masked or not), the address, or a door code. The point
+     * is only "there is a reply waiting"; the reply itself is read in the app.
+     */
+    case "new_message":
+      return {
+        subject: `New message about ${spaceName}`,
+        body: lines(
+          greeting(name),
+          `You have a new message about your booking at ${spaceName}${
+            context.when ? ` on ${when}` : ""
+          }.`,
+          `Open the app to read it and reply.`,
+          SIGN_OFF,
+        ),
+        sms: null,
       };
 
     case "cancelled_by_practitioner":

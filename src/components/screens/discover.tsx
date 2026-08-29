@@ -77,6 +77,7 @@ export function Discover({
   onChooseLocation,
   distanceLabels,
   locationError,
+  onRequestSpace,
 }: {
   spaces: PublicSpace[];
   isPro: boolean;
@@ -105,6 +106,12 @@ export function Discover({
   /** Coarse label per space id — "0.8 mi". Never a coordinate. */
   distanceLabels: Record<string, string>;
   locationError: string | null;
+  /**
+   * Record where a practitioner was looking when nothing suitable came back, so
+   * the empty state is a demand signal rather than a dead end. Reuses the open
+   * space-request capture — only the town is required.
+   */
+  onRequestSpace: (input: { lookingIn: string; spaceType?: string | null }) => Promise<void>;
 }) {
   const [filter, setFilter] = useState<Filter>("all");
   const [query, setQuery] = useState("");
@@ -306,7 +313,14 @@ export function Discover({
         </div>
 
         <div className="mt-4 relative z-10">
-          <Headline pre="Where will you" accent="practice today?" size={24} light />
+          <Headline pre="Find your" accent="space." size={24} light />
+          {/*
+            One calm orientation line, secondary to the inventory below: what the
+            app is for, for a practitioner arriving with clients of their own.
+          */}
+          <p className="font-body font-normal text-[13px] leading-relaxed text-white/55 mt-1.5">
+            Book professional space by the hour for your own clients — one all-in price, no lease.
+          </p>
         </div>
 
         <div
@@ -454,7 +468,7 @@ export function Discover({
               <p className="font-body font-normal text-[15px] text-ink-soft">
                 {query.trim()
                   ? `Nothing matches “${query.trim()}”.`
-                  : "No spaces listed yet."}
+                  : "No space near you yet? Tell us where you practice."}
               </p>
               {query.trim() && (
                 <button
@@ -465,6 +479,12 @@ export function Discover({
                   Clear search
                 </button>
               )}
+              {/*
+                The empty state is a demand signal, not a dead end — and only
+                here, so it never competes with real inventory. Reuses the open
+                space-request capture (/api/spaces/request).
+              */}
+              <RequestSpaceCard onRequestSpace={onRequestSpace} defaultTown={savedPostcode ?? ""} />
             </div>
           ) : (
             <div className="px-6 flex flex-col gap-2.5">
@@ -799,6 +819,116 @@ function MapView({
             </button>
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The empty state's one useful action: record where a practitioner is looking.
+ *
+ * Not a dead end and not a promise. It reuses the open space-request capture
+ * (/api/spaces/request via onRequestSpace) and asks for the one thing that
+ * endpoint needs — a town — so an empty search becomes a demand signal. Shown
+ * only when nothing matched, so it never competes with real inventory.
+ */
+function RequestSpaceCard({
+  onRequestSpace,
+  defaultTown,
+}: {
+  onRequestSpace: (input: { lookingIn: string; spaceType?: string | null }) => Promise<void>;
+  defaultTown: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [town, setTown] = useState(defaultTown);
+  const [status, setStatus] = useState<"idle" | "sending" | "done" | "error">("idle");
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = async () => {
+    const value = town.trim();
+    if (!value || status === "sending") return;
+    setStatus("sending");
+    setError(null);
+    try {
+      await onRequestSpace({ lookingIn: value });
+      setStatus("done");
+    } catch (failure) {
+      setError(
+        failure instanceof Error && failure.message
+          ? failure.message
+          : "That didn’t send. Try again.",
+      );
+      setStatus("error");
+    }
+  };
+
+  if (status === "done") {
+    return (
+      <div
+        className="mt-4 rounded-2xl p-4"
+        style={{ backgroundColor: "#F4F8FC", border: "1px solid #E7EEF6" }}
+      >
+        <p className="font-body font-normal text-[14.5px] leading-relaxed text-navy">
+          Got it. We’ll use your request to help bring spaces to your area.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="mt-4 rounded-2xl p-4"
+      style={{ backgroundColor: "#F4F8FC", border: "1px solid #E7EEF6" }}
+    >
+      {!open ? (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="w-full py-2.5 rounded-xl font-body font-medium text-[15px] press text-white"
+          style={{ backgroundColor: "#3B9BE8" }}
+        >
+          Request a space
+        </button>
+      ) : (
+        <>
+          <p className="font-body font-normal text-[13.5px] leading-relaxed text-ink-soft mb-2.5">
+            Which town or area do you practice in?
+          </p>
+          <div className="flex gap-2 items-center">
+            <input
+              value={town}
+              onChange={(e) => setTown(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  void submit();
+                }
+              }}
+              maxLength={80}
+              placeholder="Town or area"
+              aria-label="Town or area you practice in"
+              className="flex-1 font-body text-[14.5px] px-3.5 py-2.5 rounded-xl outline-none text-navy min-w-0"
+              style={{ border: "1px solid #DCE7F2" }}
+            />
+            <button
+              type="button"
+              onClick={() => void submit()}
+              disabled={!town.trim() || status === "sending"}
+              className="px-4 py-2.5 rounded-xl font-body font-medium text-[15px] press text-white shrink-0"
+              style={{ backgroundColor: town.trim() && status !== "sending" ? "#3B9BE8" : "#DCE7F2" }}
+            >
+              {status === "sending" ? "Sending…" : "Send"}
+            </button>
+          </div>
+          {status === "error" && (
+            <p className="font-body font-normal text-[13.5px] leading-relaxed text-coral-deep mt-2">
+              {error}{" "}
+              <button type="button" onClick={() => void submit()} className="press text-sky-text">
+                Try again
+              </button>
+            </p>
+          )}
+        </>
       )}
     </div>
   );

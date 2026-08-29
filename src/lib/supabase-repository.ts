@@ -821,6 +821,18 @@ export class SupabaseRepository implements Repository {
     };
   }
 
+  async requestSpace(input: { lookingIn: string; spaceType?: string | null }): Promise<void> {
+    const response = await apiFetch("/api/spaces/request", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lookingIn: input.lookingIn, spaceType: input.spaceType ?? null }),
+    });
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => ({}))) as { error?: string };
+      throw new Error(payload.error ?? `Could not record that (${response.status})`);
+    }
+  }
+
   /* ---------------- bookings ---------------- */
 
   async listMyBookings(): Promise<Booking[]> {

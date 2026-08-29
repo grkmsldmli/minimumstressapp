@@ -1306,6 +1306,7 @@ export function App() {
           onChooseLocation={(choice) => void chooseLocation(choice)}
           distanceLabels={distanceLabels}
           locationError={locationError}
+          onRequestSpace={(input) => repo.requestSpace(input)}
         />
   );
 

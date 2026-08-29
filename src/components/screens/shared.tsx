@@ -93,8 +93,7 @@ export function Splash({ next }: { next: () => void }) {
 
       <div className="w-full relative z-10">
         <p className="font-body font-normal text-[14px] leading-relaxed text-white/65 mb-6">
-          Private rooms for every kind of practice — movement, coaching, meditation,
-          and healing.
+          Bring your clients. Book only the space you need — by the hour, no lease.
         </p>
         <PrimaryButton onClick={next}>Begin</PrimaryButton>
       </div>
@@ -137,16 +136,16 @@ export function HowItWorks({ next, onBack }: { next: () => void; onBack?: () => 
         <DiagramNode x={223} y={188} label="Space" delay={220}>
           <Building2 size={20} color="#fff" />
         </DiagramNode>
-        <DiagramNode x={57} y={188} label="Payout" delay={340} coral>
+        <DiagramNode x={57} y={188} label="Session" delay={340} coral>
           <Sparkles size={20} color="#fff" />
         </DiagramNode>
       </div>
 
       <div className="relative z-10 w-full text-center">
         <p className="font-body font-normal text-[14px] leading-relaxed text-white/60 mb-6">
-          Practitioners book the hour. Studios fill the gap.
+          Book professional space by the hour, or list the space you have.
           <br />
-          Payout follows every completed session.
+          No lease, no deposit.
         </p>
         <PrimaryButton onClick={next}>Find a space</PrimaryButton>
       </div>
@@ -615,7 +614,8 @@ export function RoleSelect({
           <Users color="#fff" size={20} />
           <p className="font-body font-medium text-[16.5px] text-white mt-3">I teach or practice</p>
           <p className="font-body font-normal text-[13.5px] text-white/80 mt-1">
-            Find a private room for the time you need — no membership, one all-in price.
+            Bring your own clients. Book professional space by the hour — no lease, one all-in
+            price.
           </p>
           <span className="inline-flex items-center gap-1 font-body text-[15px] font-medium text-white mt-3">
             Browse spaces <ChevronRight size={14} />

@@ -693,6 +693,12 @@ export class MockRepository implements Repository {
     return this.bookings.filter((b) => b.status === "completed").length;
   }
 
+  async requestSpace(): Promise<void> {
+    // The demo has no backend; a space request simply succeeds so the empty
+    // state's flow can be seen end to end.
+    return;
+  }
+
   async foundingHostsRemaining(): Promise<number> {
     // The demo has no other hosts going live, so the fifty stand almost whole.
     // The two seed founders above are other accounts, not this one, so this is

@@ -178,11 +178,21 @@ export interface Profile {
  */
 export type ReferralStatus = "joined" | "space_live" | "qualified";
 
+/** The payout state of a referral reward. 'earned' until a payout is actually sent. */
+export type RewardState = "earned" | "paid";
+
 export interface ReferralSummary {
-  /** The referral's stable id — the anchor a future reward would attach to. */
+  /** The referral's stable id — the anchor its reward attaches to. */
   id: string;
   status: ReferralStatus;
   joinedAt: Date;
+  /**
+   * The reward this referral has earned, in cents. 0 until it qualifies — a
+   * reward exists only for a qualified referral (migration 0062).
+   */
+  rewardCents: number;
+  /** The reward's payout state, or null when there is no reward yet. */
+  rewardState: RewardState | null;
 }
 
 export interface SpaceMedia {

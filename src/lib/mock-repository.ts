@@ -702,10 +702,30 @@ export class MockRepository implements Repository {
     // A little seeded texture across the three statuses so the dashboard area
     // shows each state. No referred-host identity here, the same as the server.
     const day = 24 * 60 * 60 * 1000;
+    // Only the qualified referral carries a reward — earned, not paid, since no
+    // payout runs. The others show $0 / no reward, the same as the server.
     return [
-      { id: "ref_demo_1", status: "qualified", joinedAt: new Date(Date.now() - 40 * day) },
-      { id: "ref_demo_2", status: "space_live", joinedAt: new Date(Date.now() - 12 * day) },
-      { id: "ref_demo_3", status: "joined", joinedAt: new Date(Date.now() - 3 * day) },
+      {
+        id: "ref_demo_1",
+        status: "qualified",
+        joinedAt: new Date(Date.now() - 40 * day),
+        rewardCents: 2500,
+        rewardState: "earned",
+      },
+      {
+        id: "ref_demo_2",
+        status: "space_live",
+        joinedAt: new Date(Date.now() - 12 * day),
+        rewardCents: 0,
+        rewardState: null,
+      },
+      {
+        id: "ref_demo_3",
+        status: "joined",
+        joinedAt: new Date(Date.now() - 3 * day),
+        rewardCents: 0,
+        rewardState: null,
+      },
     ];
   }
 

@@ -74,6 +74,14 @@ export interface Repository {
   getPublicSpace(id: string): Promise<PublicSpace | null>;
 
   /**
+   * Record what a practitioner was looking for when nothing suitable came back,
+   * so an empty search is a demand signal rather than a dead end. Reuses the
+   * open space-request capture — the town is required, the space type optional;
+   * no new data model, no reward, no promise beyond "we'll write when one opens".
+   */
+  requestSpace(input: { lookingIn: string; spaceType?: string | null }): Promise<void>;
+
+  /**
    * Null unless the caller holds a booking on this space. Separate from
    * getPublicSpace so the privileged read is an explicit, auditable call
    * rather than an extra field that might get logged or cached alongside

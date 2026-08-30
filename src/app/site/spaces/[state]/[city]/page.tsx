@@ -3,8 +3,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 
 import { SiteFooter, SiteHeader } from "@/components/site/chrome";
-import { SpaceCards } from "@/components/site/space-cards";
-import { WEBSITE } from "@/lib/company";
+import { APP_URL, WEBSITE } from "@/lib/company";
 import {
   type CityRow,
   citySlug,
@@ -15,7 +14,7 @@ import {
   stateSlug,
   usesInCity,
 } from "@/lib/directory";
-import { citiesWithSpaces, cityTypesWithSpaces, spacesIn } from "@/lib/directory-data";
+import { citiesWithSpaces, cityTypesWithSpaces } from "@/lib/directory-data";
 import { formatCents, publicHourlyTotalCents } from "@/lib/money";
 import { spaceTypeBySlug } from "@/lib/space-types";
 
@@ -85,10 +84,7 @@ export default async function CityPage({
   // crawler as well as to a person.
   if (!row) notFound();
 
-  const [spaces, allTypes] = await Promise.all([
-    spacesIn(row.state, row.city),
-    cityTypesWithSpaces(),
-  ]);
+  const allTypes = await cityTypesWithSpaces();
 
   const uses = usesInCity(
     allTypes.filter((type) => type.state === row.state && type.city === row.city),
@@ -173,12 +169,35 @@ export default async function CityPage({
             </>
           )}
 
-          <div className="mt-10">
-            <SpaceCards spaces={spaces} />
+          {/*
+            The individual rooms live inside the app, not on this page (0064).
+            The public directory says a town has inventory and roughly what it
+            costs; which studio, run by whom, with which photos, is for people
+            signed in to the marketplace. So this sends them there rather than
+            listing the rooms out here.
+          */}
+          <div
+            className="mt-10 rounded-2xl p-6"
+            style={{ backgroundColor: "#f8fbfd", border: "1px solid #e7eef6" }}
+          >
+            <h2 className="text-[19px]" style={{ color: "#0F2F55" }}>
+              See what&rsquo;s open in {row.city}
+            </h2>
+            <p className="mt-2 text-[15px] leading-[1.75]" style={{ color: "#5f6673" }}>
+              Individual rooms, their photos and hours, and booking are in the app. Browse what&rsquo;s
+              available and book by the hour.
+            </p>
+            <a
+              href={APP_URL}
+              className="mt-4 inline-block rounded-full px-6 py-3 text-[14.5px] font-medium text-white"
+              style={{ backgroundColor: "#0F2F55" }}
+            >
+              Browse spaces
+            </a>
           </div>
 
           <div
-            className="mt-14 rounded-2xl p-6"
+            className="mt-6 rounded-2xl p-6"
             style={{ backgroundColor: "#f8fbfd", border: "1px solid #e7eef6" }}
           >
             <h2 className="text-[19px]" style={{ color: "#0F2F55" }}>

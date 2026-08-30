@@ -46,9 +46,12 @@ export interface CityRow {
   state: string;
   city: string;
   spaceCount: number;
-  minCents: number;
-  maxCents: number;
-  medianCents: number;
+  // Null below three active rooms: an aggregate over one or two listings would
+  // expose an individual host's price, so the view withholds it (migration
+  // 0064) and this reflects that it can be absent.
+  minCents: number | null;
+  maxCents: number | null;
+  medianCents: number | null;
 }
 
 export interface CityTypeRow extends CityRow {
@@ -245,5 +248,9 @@ export function usesInCity(types: CityTypeRow[]): CityTypeRow[] {
  */
 export function priceRange(row: CityRow): { from: number; to: number; median: number } | null {
   if (row.spaceCount < MIN_LISTINGS_TO_INDEX) return null;
+  // The view already NULLs these below the threshold (0064); this is the same
+  // rule read from the other side, so a range is printed only when all three
+  // statistics are actually present.
+  if (row.minCents === null || row.maxCents === null || row.medianCents === null) return null;
   return { from: row.minCents, to: row.maxCents, median: row.medianCents };
 }

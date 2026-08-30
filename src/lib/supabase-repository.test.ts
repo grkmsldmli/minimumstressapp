@@ -342,3 +342,58 @@ describe("upload builds card + detail variants", () => {
   // when application code catches it, so the assertion cannot be made cleanly.
   // The behaviour is a plain try/catch around buildImageVariants.
 });
+
+describe("removing media cleans up all its storage objects", () => {
+  // A db stand-in for removeSpaceMedia: the row read, a delete that resolves,
+  // and a storage remove that records the paths it was asked to delete.
+  function removeDb(row: Row) {
+    const removed: string[] = [];
+    const selectChain: Record<string, unknown> = {
+      eq: () => selectChain,
+      maybeSingle: async () => ({ data: row, error: null }),
+    };
+    const deleteChain: Record<string, unknown> = {
+      eq: () => deleteChain,
+      then: (resolve: (v: { error: null }) => unknown) => resolve({ error: null }),
+    };
+    const db = {
+      auth: { getUser: async () => ({ data: { user: { id: "host-1" } }, error: null }) },
+      from: () => ({ select: () => selectChain, delete: () => deleteChain }),
+      storage: {
+        from: () => ({
+          remove: async (paths: string[]) => {
+            removed.push(...paths);
+            return { error: null };
+          },
+        }),
+      },
+    } as unknown as SupabaseClient;
+    return { db, removed };
+  }
+
+  it("removes both the detail and the card variant for new media", async () => {
+    const { db, removed } = removeDb({
+      storage_path: "host-1/space-1/detail.webp",
+      card_path: "host-1/space-1/card.webp",
+    });
+    const repo = new SupabaseRepository(db);
+    vi.spyOn(repo, "listMySpaces").mockResolvedValue([{ id: "sp1" }] as never);
+
+    await repo.removeSpaceMedia("sp1", "m1");
+
+    expect([...removed].sort()).toEqual(["host-1/space-1/card.webp", "host-1/space-1/detail.webp"]);
+  });
+
+  it("removes only storage_path for old media with no card variant", async () => {
+    const { db, removed } = removeDb({
+      storage_path: "host-1/space-1/original.jpg",
+      card_path: null,
+    });
+    const repo = new SupabaseRepository(db);
+    vi.spyOn(repo, "listMySpaces").mockResolvedValue([{ id: "sp1" }] as never);
+
+    await repo.removeSpaceMedia("sp1", "m2");
+
+    expect(removed).toEqual(["host-1/space-1/original.jpg"]);
+  });
+});

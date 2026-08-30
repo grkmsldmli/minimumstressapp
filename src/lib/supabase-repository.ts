@@ -1586,7 +1586,7 @@ export class SupabaseRepository implements Repository {
   async removeSpaceMedia(spaceId: string, mediaId: string): Promise<HostSpace> {
     const { data: row, error: readError } = await this.db
       .from("space_media")
-      .select("storage_path")
+      .select("storage_path, card_path")
       .eq("id", mediaId)
       .eq("space_id", spaceId)
       .maybeSingle();
@@ -1601,13 +1601,21 @@ export class SupabaseRepository implements Repository {
     if (error) throw asError(error);
 
     /*
-     * The row goes first, the file second.
+     * The row goes first, the files second.
      *
      * If the storage delete fails the listing is already correct and an
      * orphaned object is a cleanup job. The other order leaves a row pointing
      * at a file that is gone, which is a broken image on somebody's screen.
+     *
+     * Both the detail (storage_path) and the card variant (card_path, 0066) are
+     * removed; an old row with no card variant has just the one path, and a
+     * degenerate row where the two happen to match is deduped so it is not
+     * removed twice.
      */
-    await this.db.storage.from("space-media").remove([row.storage_path as string]);
+    const paths = [...new Set([row.storage_path as string, row.card_path as string | null].filter(
+      (path): path is string => typeof path === "string" && path.length > 0,
+    ))];
+    await this.db.storage.from("space-media").remove(paths);
 
     const [updated] = (await this.listMySpaces()).filter((s) => s.id === spaceId);
     return updated;

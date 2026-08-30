@@ -2,7 +2,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { PGlite } from "@electric-sql/pglite";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 /**
  * Exercises the RLS policies as real users rather than asserting they exist.
@@ -835,6 +835,65 @@ describe("messages stay inside their booking", () => {
          values ('${id}', '${PRACTITIONER}', 'call me on 415 555 0134')`,
       ),
     ).rejects.toThrow();
+  });
+});
+
+/**
+ * Reporting and blocking (0067), the App Store Guideline 1.2 controls. The
+ * routes act with the service role after a participant check; these assert the
+ * database defences behind them — who may write a report, who may block, and
+ * that a block actually closes the channel.
+ */
+describe("reporting and blocking a booking party", () => {
+  const bookingId = async () => {
+    const [row] = await asUser<{ id: string }>(PRACTITIONER, `select id::text from bookings limit 1`);
+    return row.id;
+  };
+
+  afterEach(async () => {
+    // A leftover block would sever the shared message fixture for later tests.
+    await db.exec(`delete from blocked_users`);
+    await db.exec(`delete from messages where body = 'still open'`);
+  });
+
+  it("does not let a client write a report directly — it is route-only", async () => {
+    const id = await bookingId();
+    for (const who of [PRACTITIONER, STRANGER]) {
+      await expect(
+        asUser(
+          who,
+          `insert into message_reports (booking_id, reporter_id, reported_user_id, reason)
+           values ('${id}', '${who}', '${HOST}', 'x')`,
+        ),
+      ).rejects.toThrow();
+    }
+  });
+
+  it("gives clients no read of reports at all", async () => {
+    await expect(asUser(PRACTITIONER, `select id from message_reports`)).rejects.toThrow();
+    await expect(asAnon(`select id from message_reports`)).rejects.toThrow();
+  });
+
+  it("does not let a client read or write blocks directly — route-only", async () => {
+    await expect(
+      asUser(PRACTITIONER, `insert into blocked_users (blocker_id, blocked_id) values ('${PRACTITIONER}', '${HOST}')`),
+    ).rejects.toThrow();
+    await expect(asUser(PRACTITIONER, `select blocker_id from blocked_users`)).rejects.toThrow();
+    await expect(asAnon(`select blocker_id from blocked_users`)).rejects.toThrow();
+  });
+
+  it("severs the message channel once either party blocks the other", async () => {
+    const id = await bookingId();
+    // With no block, a send (the route writes as the service role) is allowed.
+    await expect(
+      db.exec(`insert into messages (booking_id, sender_id, body) values ('${id}', '${PRACTITIONER}', 'still open')`),
+    ).resolves.toBeDefined();
+    // The host blocks the practitioner…
+    await db.exec(`insert into blocked_users (blocker_id, blocked_id) values ('${HOST}', '${PRACTITIONER}')`);
+    // …and now even a service-role insert is refused by the send guard.
+    await expect(
+      db.exec(`insert into messages (booking_id, sender_id, body) values ('${id}', '${PRACTITIONER}', 'blocked')`),
+    ).rejects.toThrow(/messaging is unavailable/i);
   });
 });
 

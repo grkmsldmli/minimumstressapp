@@ -135,6 +135,20 @@ export interface Repository {
    */
   unreadMessageCounts(): Promise<Record<string, number>>;
 
+  /**
+   * Report the other party in a booking (App Store Guideline 1.2). The server
+   * derives who the other party is from the booking and records who, which
+   * booking, and why for staff review — never an address, code, or message.
+   */
+  reportBooking(bookingId: string, reason: string): Promise<void>;
+
+  /**
+   * Block the other party in a booking so neither can message the other. The
+   * booking, its records and its access details are untouched — only the chat
+   * closes. A repeat block is a no-op.
+   */
+  blockBookingParty(bookingId: string): Promise<void>;
+
   /* ---------------- standing ---------------- */
 
   getSessionCount(): Promise<number>;

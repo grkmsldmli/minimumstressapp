@@ -91,7 +91,8 @@ describe("migrations apply cleanly", () => {
         `select table_name from information_schema.tables
          where table_schema = 'public' and table_type = 'BASE TABLE'`,
       );
-      expect(tables.rows).toHaveLength(18);
+      // +2 in 0067: blocked_users and message_reports.
+      expect(tables.rows).toHaveLength(20);
     } finally {
       await fresh.close();
     }
@@ -149,11 +150,15 @@ describe("migrations apply cleanly", () => {
     expect(found.map((r) => r.table_name)).toEqual([
       "account_type_change_requests",
       "availability",
+      // A user severs the message channel with another (App Store 1.2, 0067).
+      "blocked_users",
       "bookings",
       "credit_ledger",
       // The durable Founding 50 ledger — server-only, so a spot once earned is
       // never re-opened by a deletion (migration 0060).
       "founding_hosts",
+      // Booking-chat abuse reports for staff review (App Store 1.2, 0067).
+      "message_reports",
       "messages",
       "notifications",
       "profiles",

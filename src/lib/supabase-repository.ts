@@ -22,6 +22,7 @@
  */
 
 import { apiFetch } from "./api-fetch";
+import { openExternal } from "./native";
 import { type HeldBookingRow, isHeldBooking } from "./booking-visibility";
 import { payoutSetupFrom } from "./payout-setup";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -550,10 +551,14 @@ export class SupabaseRepository implements Repository {
     }
 
     const { url } = (await response.json()) as { url: string };
-    window.location.href = url;
+    // On the web this navigates; in the native shell it opens the Stripe-hosted
+    // checkout in the system browser, never an embedded purchase webview
+    // (App Store Guideline 3.1.1). Pro is granted only by the webhook (server
+    // truth), which the app reconciles on resume when the user returns.
+    openExternal(url);
 
-    // The redirect ends this page. Returning the current profile keeps the
-    // signature honest for the moment before the browser leaves.
+    // The redirect ends this page (web) or hands off to Safari (native).
+    // Returning the current profile keeps the signature honest for that moment.
     return this.getProfile();
   }
 
@@ -1173,6 +1178,32 @@ export class SupabaseRepository implements Repository {
     const { data, error } = await this.db.rpc("mark_messages_read", { p_booking_id: bookingId });
     if (error) throw asError(error);
     return typeof data === "number" ? data : 0;
+  }
+
+  async reportBooking(bookingId: string, reason: string): Promise<void> {
+    // The server derives the reported party from the booking and verifies the
+    // caller is a participant. Nothing but who / which booking / why is stored.
+    const response = await apiFetch("/api/messages/report", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bookingId, reason }),
+    });
+    if (!response.ok) {
+      const body = (await response.json().catch(() => ({}))) as { error?: string };
+      throw new Error(body.error ?? "We couldn't file that report just now.");
+    }
+  }
+
+  async blockBookingParty(bookingId: string): Promise<void> {
+    const response = await apiFetch("/api/messages/block", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bookingId }),
+    });
+    if (!response.ok) {
+      const body = (await response.json().catch(() => ({}))) as { error?: string };
+      throw new Error(body.error ?? "We couldn't block that person just now.");
+    }
   }
 
   async unreadMessageCounts(): Promise<Record<string, number>> {

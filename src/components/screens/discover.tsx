@@ -637,8 +637,18 @@ function FeaturedCard({
       */}
       <div className="h-[145px] relative">
         {cover ? (
+          // The card thumbnail variant (0066), not the full detail image; the
+          // first featured card is above the fold so it loads eagerly and at
+          // high priority, the rest defer.
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={cover.url} alt="" className="absolute inset-0 w-full h-full object-cover" />
+          <img
+            src={cover.cardUrl}
+            alt=""
+            className="absolute inset-0 w-full h-full object-cover"
+            loading={index === 0 ? "eager" : "lazy"}
+            decoding="async"
+            fetchPriority={index === 0 ? "high" : "auto"}
+          />
         ) : (
           <div
             className="absolute inset-0 flex items-center justify-center"
@@ -724,11 +734,15 @@ function SpaceRow({
       }}
     >
       {cover ? (
+        // The card thumbnail variant (0066), never the full detail image, and
+        // lazy — list rows are below the fold as they stream in.
         // eslint-disable-next-line @next/next/no-img-element
         <img
-          src={cover.url}
+          src={cover.cardUrl}
           alt=""
           className="w-14 h-14 rounded-xl shrink-0 object-cover"
+          loading="lazy"
+          decoding="async"
         />
       ) : (
         <div

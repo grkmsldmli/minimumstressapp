@@ -847,6 +847,7 @@ export class MockRepository implements Repository {
       ...files.map((item) => ({
         id: id("media"),
         url: `mock://space-media/${item.file.name}`,
+        cardUrl: `mock://space-media/${item.file.name}`,
         kind: item.kind,
       })),
     ];
@@ -926,11 +927,10 @@ export class MockRepository implements Repository {
       // The mock has no storage, so a preview URL is the only thing it can
       // show — and it is enough, because the tab that made it is the tab that
       // reads it. Callers release these with releasePickedMedia.
-      media: input.media.map((m) => ({
-        id: id("md"),
-        url: URL.createObjectURL(m.file),
-        kind: m.kind,
-      })),
+      media: input.media.map((m) => {
+        const url = URL.createObjectURL(m.file);
+        return { id: id("md"), url, cardUrl: url, kind: m.kind };
+      }),
       availability: normalize(input.availability),
       mapX: input.mapX,
       mapY: input.mapY,

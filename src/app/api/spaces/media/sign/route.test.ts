@@ -34,17 +34,24 @@ vi.mock("@/lib/supabase/server", () => {
     { id: "sp-active-B", host_id: "host-B", status: "active" },
     { id: "sp-pending-B", host_id: "host-B", status: "pending" },
   ];
+  // Image rows carry a card variant (0066); the "old" one predates it and has
+  // only its original in storage_path.
   const MEDIA = [
-    { storage_path: "host-A/sp-active/a.jpg", space_id: "sp-active" },
-    { storage_path: "host-A/sp-pending/p.jpg", space_id: "sp-pending" },
-    { storage_path: "host-A/sp-delisted/d.jpg", space_id: "sp-delisted" },
-    { storage_path: "host-B/sp-active-B/b.jpg", space_id: "sp-active-B" },
-    { storage_path: "host-B/sp-pending-B/pb.jpg", space_id: "sp-pending-B" },
+    { storage_path: "host-A/sp-active/a.jpg", card_path: "host-A/sp-active/a-card.webp", space_id: "sp-active" },
+    { storage_path: "host-A/sp-active/old.jpg", card_path: null, space_id: "sp-active" },
+    { storage_path: "host-A/sp-pending/p.jpg", card_path: "host-A/sp-pending/p-card.webp", space_id: "sp-pending" },
+    { storage_path: "host-A/sp-delisted/d.jpg", card_path: "host-A/sp-delisted/d-card.webp", space_id: "sp-delisted" },
+    { storage_path: "host-B/sp-active-B/b.jpg", card_path: "host-B/sp-active-B/b-card.webp", space_id: "sp-active-B" },
+    { storage_path: "host-B/sp-pending-B/pb.jpg", card_path: "host-B/sp-pending-B/pb-card.webp", space_id: "sp-pending-B" },
   ];
   const table = (rows: Record<string, unknown>[]) => ({
     select: () => ({
+      // .in() on a column with null values simply never matches null (as Postgres).
       in: (column: string, values: unknown[]) =>
-        Promise.resolve({ data: rows.filter((r) => values.includes(r[column])), error: null }),
+        Promise.resolve({
+          data: rows.filter((r) => r[column] != null && values.includes(r[column])),
+          error: null,
+        }),
     }),
   });
   return {
@@ -130,6 +137,31 @@ describe("signing listing media", () => {
 
   it("never signs an unregistered path", async () => {
     const urls = await signedFor(["host-A/made-up/x.jpg"]);
+    expect(urls).toEqual({});
+  });
+
+  it("signs the card variant of an active listing", async () => {
+    const urls = await signedFor(["host-A/sp-active/a-card.webp"]);
+    expect(urls["host-A/sp-active/a-card.webp"]).toMatch(/^https:\/\/cdn\.example\/sign\//);
+  });
+
+  it("signs the detail and card variant of a listing together", async () => {
+    const urls = await signedFor(["host-A/sp-active/a.jpg", "host-A/sp-active/a-card.webp"]);
+    expect(Object.keys(urls).sort()).toEqual(["host-A/sp-active/a-card.webp", "host-A/sp-active/a.jpg"]);
+  });
+
+  it("does not sign a pending listing's card variant for a practitioner", async () => {
+    const urls = await signedFor(["host-A/sp-pending/p-card.webp"]);
+    expect(urls).toEqual({});
+  });
+
+  it("still signs an old original that has no card variant", async () => {
+    const urls = await signedFor(["host-A/sp-active/old.jpg"]);
+    expect(urls["host-A/sp-active/old.jpg"]).toBeDefined();
+  });
+
+  it("never signs a card path tied to no media row", async () => {
+    const urls = await signedFor(["host-A/sp-active/not-a-real-card.webp"]);
     expect(urls).toEqual({});
   });
 

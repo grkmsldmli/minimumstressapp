@@ -43,17 +43,24 @@ export async function POST(request: NextRequest): Promise<Response> {
 
     // Service role only after the caller is known, and only to read the truth
     // the authorisation turns on — no RLS involved, so no cross-table policy
-    // subquery is needed. Two narrow reads rather than a PostgREST embed, so the
-    // authorisation is plain to read and does not depend on a relationship name.
+    // subquery is needed. A requested path is real only if it is a media row's
+    // storage_path or its card variant (0066), so both columns are looked up;
+    // an arbitrary string matches neither and signs nothing.
     const admin = supabaseAdmin();
 
-    const { data: mediaRows, error: mediaError } = await admin
-      .from("space_media")
-      .select("storage_path, space_id")
-      .in("storage_path", requested);
-    if (mediaError) throw new Error("media lookup failed");
+    type MediaRow = { storage_path: string; card_path: string | null; space_id: string };
+    const [byStorage, byCard] = await Promise.all([
+      admin.from("space_media").select("storage_path, card_path, space_id").in("storage_path", requested),
+      admin.from("space_media").select("storage_path, card_path, space_id").in("card_path", requested),
+    ]);
+    if (byStorage.error || byCard.error) throw new Error("media lookup failed");
 
-    const media = (mediaRows ?? []) as { storage_path: string; space_id: string }[];
+    // One row per media item, however it was matched.
+    const rows = new Map<string, MediaRow>();
+    for (const row of [...(byStorage.data ?? []), ...(byCard.data ?? [])] as MediaRow[]) {
+      rows.set(row.storage_path, row);
+    }
+    const media = [...rows.values()];
     const spaceIds = [...new Set(media.map((m) => m.space_id))];
     if (spaceIds.length === 0) {
       return Response.json({ urls: {} } satisfies MediaSignResponse);
@@ -69,26 +76,25 @@ export async function POST(request: NextRequest): Promise<Response> {
       ((spaceRows ?? []) as { id: string; status: string; host_id: string }[]).map((s) => [s.id, s]),
     );
 
-    // A path is allowed when its space is active, or owned by the caller.
-    // Deduped, because two media rows could point at one path.
-    const allowed = [
-      ...new Set(
-        media
-          .filter((m) => {
-            const space = spaceById.get(m.space_id);
-            return space && (space.status === "active" || space.host_id === user.id);
-          })
-          .map((m) => m.storage_path),
-      ),
-    ];
+    // A media item is allowed when its space is active, or owned by the caller.
+    // Only the requested columns of an allowed row are signed — never a path the
+    // caller did not ask for, and never one tied to no record.
+    const requestedSet = new Set(requested);
+    const allowed = new Set<string>();
+    for (const m of media) {
+      const space = spaceById.get(m.space_id);
+      if (!space || !(space.status === "active" || space.host_id === user.id)) continue;
+      if (requestedSet.has(m.storage_path)) allowed.add(m.storage_path);
+      if (m.card_path && requestedSet.has(m.card_path)) allowed.add(m.card_path);
+    }
 
-    if (allowed.length === 0) {
+    if (allowed.size === 0) {
       return Response.json({ urls: {} } satisfies MediaSignResponse);
     }
 
     const { data: signed } = await admin.storage
       .from("space-media")
-      .createSignedUrls(allowed, MEDIA_SIGN_TTL_SECONDS);
+      .createSignedUrls([...allowed], MEDIA_SIGN_TTL_SECONDS);
 
     const urls: Record<string, string> = {};
     for (const item of signed ?? []) {

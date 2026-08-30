@@ -1872,6 +1872,12 @@ export function App() {
             refresh();
             return result;
           }}
+          onReport={(reason) => repo.reportBooking(threadBookingId, reason)}
+          onBlock={async () => {
+            await repo.blockBookingParty(threadBookingId);
+            // The thread can no longer send after a block; reflect it.
+            refresh();
+          }}
         />
       );
     }

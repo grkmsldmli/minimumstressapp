@@ -7019,6 +7019,18 @@ drop policy if exists "space-media: read active listings or own" on storage.obje
 -- either column against its own media row. Anonymous access stays closed — the
 -- view is recreated (a new column needs a fresh view) and re-granted to
 -- authenticated and service_role only, never anon (0064).
+--
+-- ROLLOUT ORDER: apply this migration BEFORE deploying the code, because the new
+-- signing route selects space_media.card_path and would error against a database
+-- that has no such column. This is an expand-only migration, so applying it
+-- while the CURRENTLY DEPLOYED (old) code is still running is safe:
+--   * card_path is nullable with no default — old inserts that omit it still
+--     succeed (card_path stays NULL);
+--   * space_media_public is widened, not narrowed — the old client reads it with
+--     select(*) and simply ignores the extra column; no old code references it;
+--   * the old signing route only queries storage_path, which is unchanged.
+-- So the safe sequence is: apply 0066 → deploy the new code. Backward
+-- compatibility is asserted in supabase/schema.test.ts.
 
 alter table space_media add column if not exists card_path text;
 
@@ -7034,3 +7046,124 @@ create view space_media_public as
 -- omitted: individual listing media is private (0064), reached through signed URLs.
 grant select on space_media_public to authenticated;
 grant select on space_media_public to service_role;
+
+
+-- ===================================================================
+-- 0067_message_safety_controls.sql
+-- ===================================================================
+
+-- User-safety controls for booking messaging (App Store Guideline 1.2).
+--
+-- The app has one user-to-user surface — the per-booking message thread — so the
+-- store requires a way to report the other party and to block an abusive one.
+-- Both are kept narrowly booking-related; this is not a social network.
+--
+-- Nothing here touches a booking's records or its access details. The address
+-- and door code come from space_access_details(), not from messaging, so a block
+-- severs the chat without ever stranding someone at a locked door, and a report
+-- stores who / which booking / why — never an address, a code, or a message.
+
+-- ------------------------------------------------------------------
+-- 1. Blocks. A user severs the message channel with another. Their own row(s)
+--    only — a client can never read or write someone else's blocks.
+-- ------------------------------------------------------------------
+create table if not exists blocked_users (
+  blocker_id uuid not null references profiles(id) on delete cascade,
+  blocked_id uuid not null references profiles(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (blocker_id, blocked_id),
+  check (blocker_id <> blocked_id)
+);
+
+alter table blocked_users enable row level security;
+revoke all on blocked_users from anon, authenticated;
+grant select, insert, delete on blocked_users to authenticated;
+
+create policy "blocked_users: manage own blocks"
+  on blocked_users for all
+  to authenticated
+  using (blocker_id = auth.uid())
+  with check (blocker_id = auth.uid());
+
+-- ------------------------------------------------------------------
+-- 2. Reports. A booking participant reports the other party. Staff review open
+--    reports with the service role; a client only ever writes its own, and reads
+--    none — so one user's report is never visible to another.
+-- ------------------------------------------------------------------
+create table if not exists message_reports (
+  id uuid primary key default gen_random_uuid(),
+  booking_id uuid not null references bookings(id) on delete cascade,
+  reporter_id uuid not null references profiles(id) on delete cascade,
+  reported_user_id uuid not null references profiles(id) on delete cascade,
+  reason text not null,
+  status text not null default 'open',
+  created_at timestamptz not null default now(),
+  check (char_length(reason) between 1 and 2000),
+  check (status in ('open', 'reviewing', 'closed'))
+);
+
+create index if not exists message_reports_open_idx
+  on message_reports (created_at)
+  where status = 'open';
+
+alter table message_reports enable row level security;
+revoke all on message_reports from anon, authenticated;
+grant insert on message_reports to authenticated;
+
+-- Only a participant of the booking, filing as themselves, may write a report.
+-- No select policy: staff read through the service role, never the client.
+create policy "message_reports: participant files own"
+  on message_reports for insert
+  to authenticated
+  with check (
+    reporter_id = auth.uid()
+    and exists (
+      select 1 from bookings b
+      join spaces s on s.id = b.space_id
+      where b.id = booking_id
+        and (b.practitioner_id = auth.uid() or s.host_id = auth.uid())
+    )
+  );
+
+-- ------------------------------------------------------------------
+-- 3. A block severs the channel. The send guard already gates on a confirmed,
+--    uncancelled booking (0063); extend it so neither party can post once either
+--    has blocked the other. The booking, its records and its access details are
+--    untouched — only the chat closes.
+-- ------------------------------------------------------------------
+create or replace function enforce_message_sendable()
+returns trigger
+language plpgsql
+as $$
+declare
+  b record;
+  practitioner uuid;
+  host uuid;
+begin
+  select captured_at, status into b from bookings where id = new.booking_id;
+  if b is null
+     or b.captured_at is null
+     or b.status in ('cancelled_by_practitioner', 'cancelled_by_host') then
+    raise exception 'messaging is available only on a confirmed booking'
+      using errcode = 'check_violation';
+  end if;
+
+  select bk.practitioner_id, sp.host_id into practitioner, host
+  from bookings bk join spaces sp on sp.id = bk.space_id
+  where bk.id = new.booking_id;
+
+  if exists (
+    select 1 from blocked_users
+    where (blocker_id = practitioner and blocked_id = host)
+       or (blocker_id = host and blocked_id = practitioner)
+  ) then
+    raise exception 'messaging is unavailable for this booking'
+      using errcode = 'check_violation';
+  end if;
+
+  return new;
+end;
+$$;
+
+-- The trigger from 0063 already calls enforce_message_sendable(); replacing the
+-- function is enough.

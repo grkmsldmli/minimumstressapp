@@ -687,6 +687,14 @@ export class MockRepository implements Repository {
     return {};
   }
 
+  async reportBooking(): Promise<void> {
+    // The mock has no staff queue; recording nothing is enough for local flows.
+  }
+
+  async blockBookingParty(): Promise<void> {
+    // No message channel to sever in the mock.
+  }
+
   /* ---------------- standing ---------------- */
 
   async getSessionCount(): Promise<number> {

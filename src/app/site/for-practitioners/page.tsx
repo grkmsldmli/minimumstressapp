@@ -74,7 +74,7 @@ const STEPS = [
   {
     n: "03",
     title: "Complete what you need to book",
-    body: "First-time checks take a few minutes. After that, booking is a couple of taps.",
+    body: "Complete identity, liability insurance, and professional proof before your first booking.",
   },
   {
     n: "04",
@@ -218,13 +218,12 @@ export default function ForPractitionersPage() {
           </div>
 
           {/*
-            The real rule, stated plainly and without dressing it up as a badge
-            of quality. Browsing is open; the checks are a gate on booking, not
-            a certification we award.
+            The rule is Step 3 above, stated once. Browsing is open; the checks
+            are a gate on booking, not a certification we award — and there is no
+            promise about how long they take, because we do not control that.
           */}
           <p className="mt-8 max-w-2xl text-[15px] leading-[1.75]" style={{ color: "#5f6673" }}>
-            You can browse first. Identity, liability insurance, and professional proof are required
-            before your first booking.
+            You can browse before you complete them.
           </p>
         </section>
 

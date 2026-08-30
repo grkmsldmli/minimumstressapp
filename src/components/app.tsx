@@ -15,7 +15,14 @@ import type {
   SpaceAccessDetails,
 } from "@/lib/domain";
 import { apiFetch } from "@/lib/api-fetch";
-import { SPACE_DEEP_LINK_PARAM, readSpaceDeepLink, resolveSpaceDeepLink } from "@/lib/space-deep-link";
+import {
+  SPACE_DEEP_LINK_PARAM,
+  clearPendingSpace,
+  readPendingSpace,
+  readSpaceDeepLink,
+  resolveSpaceDeepLink,
+  writePendingSpace,
+} from "@/lib/space-deep-link";
 import { errorMessage } from "@/lib/error-message";
 import { delayFor, isTransient } from "@/lib/transient";
 import { hostFactsFrom, practitionerFactsFrom } from "@/lib/milestone-facts";
@@ -870,18 +877,30 @@ export function App() {
    *
    * Public listing pages redirect here (migration 0064). The id is remembered
    * and the parameter removed immediately, so it never lingers in history or
-   * re-fires on a later navigation. Opening it waits for the signed-in catalogue
-   * — the effect below — so a signed-out arrival is carried through sign-in
-   * first. Only the space param is removed; any other marker on the link stays.
+   * re-fires on a later navigation. It is also persisted with a short TTL,
+   * because a signed-out arrival that signs in with a provider leaves the app
+   * entirely (OAuth redirects to /auth/callback), and the in-mount ref alone
+   * would not survive that reload — on the way back there is no ?space in the
+   * URL, so the persisted intent is restored instead. The same-mount email-code
+   * flow keeps working straight from the ref. Only the space param is removed;
+   * ?ref, ?pro and ?identity on the same link are left untouched.
    */
   useEffect(() => {
     if (typeof window === "undefined") return;
     const url = new URL(window.location.href);
-    const id = readSpaceDeepLink(url.search);
-    if (!id) return;
-    pendingSpaceRef.current = id;
-    url.searchParams.delete(SPACE_DEEP_LINK_PARAM);
-    window.history.replaceState({}, "", url.pathname + url.search + url.hash);
+    const fromUrl = readSpaceDeepLink(url.search);
+    if (fromUrl) {
+      pendingSpaceRef.current = fromUrl;
+      writePendingSpace(fromUrl);
+      url.searchParams.delete(SPACE_DEEP_LINK_PARAM);
+      window.history.replaceState({}, "", url.pathname + url.search + url.hash);
+      return;
+    }
+    // No parameter on this load — but an OAuth round trip strips it before the
+    // full redirect, so restore the intent persisted across that reload if it is
+    // still fresh.
+    const persisted = readPendingSpace();
+    if (persisted) pendingSpaceRef.current = persisted;
   }, []);
 
   /**
@@ -902,6 +921,8 @@ export function App() {
 
     spaceDeepLinkConsumedRef.current = true;
     pendingSpaceRef.current = null;
+    // Consumed once, however it resolves — so it never reopens on a later reload.
+    clearPendingSpace();
 
     const open = resolveSpaceDeepLink(id, [data.spaces, data.mySpaces]);
     if (!open) return;

@@ -109,16 +109,7 @@ import { type CategoryKey, isRoomSetupKey, roomTypeFor } from "./taxonomy";
 import { type ClaimKind, claimType, overstayCents } from "./claims";
 import { type RefundReason, questionFor } from "./refunds";
 import { FALLBACK_ZONE } from "./timezone";
-
-/**
- * How long a signed space-media URL stays valid.
- *
- * The bucket is private since 0064, so listing photographs are reached through
- * short-lived signed URLs minted with the caller's own session rather than a
- * world-readable public URL. An hour comfortably outlasts a browse without
- * leaving a link that works forever if it leaks out of the page.
- */
-const SPACE_MEDIA_TTL_SECONDS = 60 * 60;
+import { MEDIA_SIGN_MAX_BATCH, type MediaSignResponse } from "./media-sign";
 
 /** Rows as PostgREST returns them, before mapping into domain shapes. */
 interface SpaceRow {
@@ -651,27 +642,40 @@ export class SupabaseRepository implements Repository {
   }
 
   /**
-   * Signed URLs for the private space-media bucket (0064), in one batch.
+   * Signed URLs for private listing media, minted by the server.
    *
-   * A public URL would work for everybody including a signed-out stranger, which
-   * is exactly what that migration closed. Signing runs as the caller under the
-   * storage policy, so a marketplace user gets URLs for active listings' media
-   * and an anonymous caller — with no session and no policy — gets none. The
-   * result maps each storage path to its URL; a path that failed to sign is
-   * absent, and its image simply does not load rather than the screen breaking.
+   * The space-media bucket is private, and a browser cannot sign its own URLs
+   * for it — a storage policy that authorises by listing has to subquery
+   * `spaces`, which is subject to that table's owner-only RLS, so it can never
+   * clear a non-owner practitioner. So signing goes through an authenticated
+   * same-origin route that checks database truth with the service role and hands
+   * back only the paths this caller may see (active listings, or their own). No
+   * public-URL fallback: a path the server did not authorise simply has no URL,
+   * and its image does not load rather than leaking a world-readable link.
+   *
+   * Batched, and chunked to the route's ceiling so a busy screen never loses
+   * images to the cap. A failed request drops that chunk rather than the load.
    */
   private async signSpaceMedia(paths: string[]): Promise<Map<string, string>> {
     const unique = [...new Set(paths)];
-    if (unique.length === 0) return new Map();
-
-    const { data } = await this.db.storage
-      .from("space-media")
-      .createSignedUrls(unique, SPACE_MEDIA_TTL_SECONDS);
-
     const urls = new Map<string, string>();
-    for (const item of data ?? []) {
-      if (item.path && item.signedUrl) urls.set(item.path, item.signedUrl);
+
+    for (let start = 0; start < unique.length; start += MEDIA_SIGN_MAX_BATCH) {
+      const chunk = unique.slice(start, start + MEDIA_SIGN_MAX_BATCH);
+      try {
+        const response = await apiFetch("/api/spaces/media/sign", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ paths: chunk }),
+        });
+        if (!response.ok) continue;
+        const body = (await response.json()) as MediaSignResponse;
+        for (const [path, url] of Object.entries(body.urls ?? {})) urls.set(path, url);
+      } catch {
+        // Network or parse failure: skip this chunk, never a public fallback.
+      }
     }
+
     return urls;
   }
 

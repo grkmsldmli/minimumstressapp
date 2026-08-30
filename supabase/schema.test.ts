@@ -511,17 +511,47 @@ describe("space media is not world-readable", () => {
     expect(bucket.public).toBe(false);
   });
 
-  it("drops the blanket public-read policy for a signed-in one", async () => {
-    const policies = await rows<{ policyname: string }>(
+  it("leaves no client read policy on space-media", async () => {
+    // 0064's world-readable policy is gone and its broken replacement was
+    // dropped in 0065 with nothing to take its place. Listing media is read only
+    // through the server signing route, which uses the service role — so no
+    // storage.objects SELECT policy is needed, and none exists. Anon, and every
+    // client, can therefore read no listing media directly.
+    const selects = await rows<{ policyname: string }>(
       `select policyname from pg_policies
        where schemaname = 'storage' and tablename = 'objects'
          and policyname like 'space-media:%' and cmd = 'SELECT'`,
     );
-    const names = policies.map((p) => p.policyname);
-    // The old world-readable policy is gone…
-    expect(names).not.toContain("space-media: public read");
-    // …replaced by one only a signed-in caller can satisfy.
-    expect(names).toContain("space-media: read active listings or own");
+    expect(selects).toEqual([]);
+  });
+
+  it("keeps the host write, update and delete policies untouched", async () => {
+    const cmds = (
+      await rows<{ cmd: string }>(
+        `select cmd from pg_policies
+         where schemaname = 'storage' and tablename = 'objects'
+           and policyname like 'space-media:%'`,
+      )
+    )
+      .map((p) => p.cmd)
+      .sort();
+    // The three from 0017, and no SELECT among them.
+    expect(cmds).toEqual(["DELETE", "INSERT", "UPDATE"]);
+  });
+
+  it("has no storage read policy that subqueries spaces", async () => {
+    // The architecture rule: authorising media by listing lives in the server
+    // route, never in a storage policy subquery against spaces/spaces_public —
+    // which is subject to spaces' owner-only RLS and cannot clear a practitioner
+    // (0017's note, confirmed by 0064). No storage SELECT policy may reference
+    // either.
+    const selects = await rows<{ qual: string | null }>(
+      `select qual from pg_policies
+       where schemaname = 'storage' and tablename = 'objects' and cmd = 'SELECT'`,
+    );
+    for (const policy of selects) {
+      expect(policy.qual ?? "").not.toMatch(/\bspaces\b|spaces_public/);
+    }
   });
 });
 

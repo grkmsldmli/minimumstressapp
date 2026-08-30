@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -141,5 +144,57 @@ describe("createBooking → payment preparation", () => {
     const repo = repoWith([]);
 
     await expect(repo.createBooking(input)).rejects.toThrow(/just booked/);
+  });
+});
+
+describe("listing media is signed by the server, never the browser", () => {
+  const spaceRow: Row = {
+    id: "s1",
+    host_id: "h1",
+    name: "Willow Room",
+    category: "physical",
+    hourly_rate_cents: 5000,
+    capacity: 3,
+    access_type: "keypad",
+    buffer_minutes: 0,
+    timezone: "America/Los_Angeles",
+    map_x: 50,
+    map_y: 50,
+    suitable_for: [],
+  };
+  const mediaRow: Row = { id: "m1", space_id: "s1", storage_path: "h1/s1/cover.jpg", kind: "image", position: 0 };
+
+  const repoWithMedia = () =>
+    new SupabaseRepository(makeDb({ spaces_public: [spaceRow], space_media_public: [mediaRow] }));
+
+  it("gets media URLs from the authenticated sign route", async () => {
+    apiFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ urls: { "h1/s1/cover.jpg": "https://cdn.example/sign/h1/s1/cover.jpg?token=t" } }),
+    });
+
+    const [space] = await repoWithMedia().listPublicSpaces();
+
+    expect(apiFetch).toHaveBeenCalledWith("/api/spaces/media/sign", expect.objectContaining({ method: "POST" }));
+    const sent = JSON.parse((apiFetch.mock.calls[0][1] as { body: string }).body) as { paths: string[] };
+    expect(sent.paths).toContain("h1/s1/cover.jpg");
+    expect(space.media[0].url).toBe("https://cdn.example/sign/h1/s1/cover.jpg?token=t");
+  });
+
+  it("leaves an unauthorised path with no URL — never a public fallback", async () => {
+    apiFetch.mockResolvedValue({ ok: true, json: async () => ({ urls: {} }) });
+
+    const [space] = await repoWithMedia().listPublicSpaces();
+
+    expect(space.media[0].url).toBe("");
+  });
+
+  it("does not browser-sign space media or fall back to a public URL", () => {
+    // The bucket is private and a browser cannot authorise itself; guarded here
+    // so nobody reintroduces client-side signing or a public URL for it.
+    const source = readFileSync(join(import.meta.dirname, "supabase-repository.ts"), "utf8");
+    expect(source).not.toMatch(/createSignedUrls?/);
+    expect(source).not.toMatch(/publicUrl\(\s*["']space-media["']/);
+    expect(source).not.toMatch(/getPublicUrl[^\n]*space-media/);
   });
 });

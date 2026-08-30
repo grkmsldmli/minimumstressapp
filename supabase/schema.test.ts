@@ -556,6 +556,37 @@ describe("space media is not world-readable", () => {
 });
 
 /**
+ * 0066 (the card variant) is an expand-only migration, so it is safe to apply
+ * before the new code deploys — the currently deployed code keeps working
+ * against a database that has the extra column. This pins the two properties
+ * that make that true, so a later change cannot quietly turn the migration into
+ * a breaking one.
+ */
+describe("the card_path migration is backward-compatible", () => {
+  it("adds card_path as a nullable column, so old inserts that omit it still work", async () => {
+    const [column] = await rows<{ is_nullable: string; column_default: string | null }>(
+      `select is_nullable, column_default from information_schema.columns
+       where table_name = 'space_media' and column_name = 'card_path'`,
+    );
+    expect(column.is_nullable).toBe("YES");
+    expect(column.column_default).toBeNull();
+  });
+
+  it("widens space_media_public to a superset the old client still reads via select(*)", async () => {
+    const columns = (
+      await rows<{ column_name: string }>(
+        `select column_name from information_schema.columns where table_name = 'space_media_public'`,
+      )
+    )
+      .map((c) => c.column_name)
+      .sort();
+    // The original 0002 columns, plus card_path — nothing removed or renamed, so
+    // old code selecting * gets everything it did and one column it ignores.
+    expect(columns).toEqual(["card_path", "id", "kind", "position", "space_id", "storage_path"]);
+  });
+});
+
+/**
  * Before a booking, spaces_public carries only a coarse point and the area —
  * never the exact address or the precise coordinates. The exact location coming
  * back once a booking is held is proven end to end against space_access_details

@@ -197,7 +197,10 @@ export interface ReferralSummary {
 
 export interface SpaceMedia {
   id: string;
+  /** Detail-size image for the gallery (the original, on media predating 0066). */
   url: string;
+  /** Card thumbnail for lists; falls back to `url` when there is no card variant. */
+  cardUrl: string;
   kind: MediaKind;
 }
 

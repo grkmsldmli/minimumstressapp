@@ -138,10 +138,19 @@ export function SpaceGallery({
                  * A plain img, deliberately. These are Supabase storage URLs
                  * on a host next/image would have to be configured for, and
                  * the gallery is already full-bleed at one size — the loader
-                 * round trip buys nothing here.
+                 * round trip buys nothing here. `url` is the detail variant
+                 * (0066); only the first frame is on screen at rest, so it loads
+                 * eagerly and the rest defer until swiped to.
                  */
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={item.url} alt="" className="w-full h-full object-cover" />
+                <img
+                  src={item.url}
+                  alt=""
+                  className="w-full h-full object-cover"
+                  loading={i === 0 ? "eager" : "lazy"}
+                  decoding="async"
+                  fetchPriority={i === 0 ? "high" : "auto"}
+                />
               )}
             </div>
           ))}

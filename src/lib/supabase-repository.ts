@@ -110,6 +110,7 @@ import { type ClaimKind, claimType, overstayCents } from "./claims";
 import { type RefundReason, questionFor } from "./refunds";
 import { FALLBACK_ZONE } from "./timezone";
 import { MEDIA_SIGN_MAX_BATCH, type MediaSignResponse } from "./media-sign";
+import { buildImageVariants } from "./image-variants";
 
 /** Rows as PostgREST returns them, before mapping into domain shapes. */
 interface SpaceRow {
@@ -189,6 +190,9 @@ interface MediaRow {
   id: string;
   space_id: string;
   storage_path: string;
+  // The card thumbnail variant (0066); null on older rows and on video, where
+  // the app falls back to storage_path.
+  card_path: string | null;
   kind: "image" | "video";
 }
 
@@ -705,7 +709,11 @@ export class SupabaseRepository implements Repository {
 
     // One batch of signed URLs for the private media bucket (0064), shared
     // across every card on the screen.
-    const mediaUrls = await this.signSpaceMedia(((media ?? []) as MediaRow[]).map((m) => m.storage_path));
+    const mediaUrls = await this.signSpaceMedia(
+      ((media ?? []) as MediaRow[]).flatMap((m) =>
+        m.card_path ? [m.storage_path, m.card_path] : [m.storage_path],
+      ),
+    );
 
     return spaces.map((row: SpaceRow) =>
       this.toPublicSpace(
@@ -734,7 +742,11 @@ export class SupabaseRepository implements Repository {
       this.hostSignalsFor([data.host_id]),
     ]);
 
-    const mediaUrls = await this.signSpaceMedia(((media ?? []) as MediaRow[]).map((m) => m.storage_path));
+    const mediaUrls = await this.signSpaceMedia(
+      ((media ?? []) as MediaRow[]).flatMap((m) =>
+        m.card_path ? [m.storage_path, m.card_path] : [m.storage_path],
+      ),
+    );
 
     return this.toPublicSpace(
       data,
@@ -784,7 +796,10 @@ export class SupabaseRepository implements Repository {
       description: row.description ?? "",
       media: media.map((m) => ({
         id: m.id,
+        // Detail-size for the gallery; the card thumbnail for lists, falling back
+        // to the detail URL when a row has no card variant (older media, video).
         url: mediaUrl(m.storage_path),
+        cardUrl: (m.card_path ? mediaUrl(m.card_path) : "") || mediaUrl(m.storage_path),
         kind: m.kind,
       })),
       availability: blocks.map((b) => ({
@@ -1304,7 +1319,11 @@ export class SupabaseRepository implements Repository {
 
     // The host reads their own media from the private bucket (0064); the owner
     // branch of the storage policy lets them sign it at any listing status.
-    const mediaUrls = await this.signSpaceMedia(((media ?? []) as MediaRow[]).map((m) => m.storage_path));
+    const mediaUrls = await this.signSpaceMedia(
+      ((media ?? []) as MediaRow[]).flatMap((m) =>
+        m.card_path ? [m.storage_path, m.card_path] : [m.storage_path],
+      ),
+    );
 
     return spaces.map((row: SpaceRow): HostSpace => {
       const base = this.toPublicSpace(
@@ -1548,18 +1567,13 @@ export class SupabaseRepository implements Repository {
     let position = ((existing?.[0]?.position as number) ?? -1) + 1;
 
     for (const item of files) {
-      const path = spaceMediaPath(hostId, spaceId, item.file.type, crypto.randomUUID());
-
-      const { error: uploadError } = await this.db.storage
-        .from("space-media")
-        .upload(path, item.file, { contentType: item.file.type, upsert: false });
-      if (uploadError) throw asError(uploadError);
+      const { storage_path, card_path } = await this.uploadListingMedia(hostId, spaceId, item);
 
       // Uploaded first, recorded second, so a row always points at bytes that
       // are already there.
       const { error } = await this.db
         .from("space_media")
-        .insert({ space_id: spaceId, storage_path: path, kind: item.kind, position });
+        .insert({ space_id: spaceId, storage_path, card_path, kind: item.kind, position });
       if (error) throw asError(error);
 
       position += 1;
@@ -1715,28 +1729,68 @@ export class SupabaseRepository implements Repository {
    * is a convenience for the person filling it in; this is the last point
    * before bytes reach a bucket, and the only one that is not a UI.
    */
-  private async uploadSpaceFiles(
-    spaceId: string,
+  /**
+   * Uploads one listing media item and returns the paths recorded for it.
+   *
+   * An image is resized into a card and a detail variant (0066) and both are
+   * stored — no full-size original is kept, since nothing serves one. If the
+   * browser cannot build variants (an unusual format, a canvas failure), the
+   * original is uploaded unchanged so an upload never fails for the sake of the
+   * optimisation; a backfill can improve it later. Video is uploaded as-is and
+   * has no card variant. The bucket is private throughout; nothing here reads.
+   */
+  private async uploadListingMedia(
     hostId: string,
-    input: NewSpaceInput,
-  ): Promise<void> {
-    const mediaRows: { space_id: string; storage_path: string; kind: MediaKind; position: number }[] =
-      [];
-
-    for (const [index, item] of input.media.entries()) {
-      const reason = rejectionReason(item.file, item.kind);
-      if (reason) throw new Error(reason);
-
-      const path = spaceMediaPath(hostId, spaceId, item.file.type, crypto.randomUUID());
-      const { error } = await this.db.storage.from("space-media").upload(path, item.file, {
-        contentType: item.file.type,
+    spaceId: string,
+    item: { file: File; kind: MediaKind },
+  ): Promise<{ storage_path: string; card_path: string | null }> {
+    const put = async (blob: Blob, type: string): Promise<string> => {
+      const path = spaceMediaPath(hostId, spaceId, type, crypto.randomUUID());
+      const { error } = await this.db.storage.from("space-media").upload(path, blob, {
+        contentType: type,
         // Never overwrite. A generated name should not collide, and if it
         // somehow did, replacing another listing's photo is the wrong repair.
         upsert: false,
       });
       if (error) throw asError(error);
+      return path;
+    };
 
-      mediaRows.push({ space_id: spaceId, storage_path: path, kind: item.kind, position: index });
+    if (item.kind !== "image") {
+      return { storage_path: await put(item.file, item.file.type), card_path: null };
+    }
+
+    try {
+      const { card, detail } = await buildImageVariants(item.file);
+      // storage_path is the detail variant; the original is not retained.
+      const storage_path = await put(detail, detail.type);
+      const card_path = await put(card, card.type);
+      return { storage_path, card_path };
+    } catch {
+      // The optimisation failed — keep the upload working with the original.
+      return { storage_path: await put(item.file, item.file.type), card_path: null };
+    }
+  }
+
+  private async uploadSpaceFiles(
+    spaceId: string,
+    hostId: string,
+    input: NewSpaceInput,
+  ): Promise<void> {
+    const mediaRows: {
+      space_id: string;
+      storage_path: string;
+      card_path: string | null;
+      kind: MediaKind;
+      position: number;
+    }[] = [];
+
+    for (const [index, item] of input.media.entries()) {
+      const reason = rejectionReason(item.file, item.kind);
+      if (reason) throw new Error(reason);
+
+      const { storage_path, card_path } = await this.uploadListingMedia(hostId, spaceId, item);
+      mediaRows.push({ space_id: spaceId, storage_path, card_path, kind: item.kind, position: index });
     }
 
     if (mediaRows.length > 0) {

@@ -26,6 +26,8 @@
 	<string>Minimum Stress uses the camera so you can take a profile photo.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Minimum Stress uses your photos so you can choose a profile photo or upload a document like an insurance certificate.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Minimum Stress uses your location to show spaces near you. You can also enter a ZIP code instead.</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UIApplicationSceneManifest</key>

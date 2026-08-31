@@ -49,10 +49,12 @@ import { supabaseBackendEnabled } from "@/lib/repository-factory";
 import {
   ensureProfile,
   sendEmailCode,
+  signInWithPassword,
   signInWithProvider,
   verifyEmailCode,
 } from "@/lib/supabase/auth";
 
+import { describeAuthError } from "@/lib/auth-error";
 import { type Provider, enabledProviders } from "@/lib/auth-providers";
 import { isNativeApp } from "@/lib/native";
 import { BOOKING_HORIZON_DAYS } from "@/lib/money";
@@ -1034,6 +1036,36 @@ export function App() {
               try {
                 await sendEmailCode(value);
                 go("auth-verify");
+              } catch (error) {
+                setAuthError(describeAuthError(error));
+              } finally {
+                setAuthBusy(false);
+              }
+            })();
+          }}
+          onPassword={(value, password) => {
+            // Reached only for the reviewer address, and only the screen decides
+            // that (lib/reviewer-login.ts). Password sign-in resolves in one
+            // step — there is no code screen after it — so this both signs in
+            // and lands the account, the way verifyEmailCode does above.
+            setEmail(value);
+            setAuthError(null);
+
+            if (!onSupabase) {
+              // Mock mode has no auth server to check a password against; behave
+              // like the code flow and let the in-memory repository take over.
+              void mutate(() => repo.updateProfile({ email: value }));
+              go("role");
+              return;
+            }
+
+            setAuthBusy(true);
+            void (async () => {
+              try {
+                await signInWithPassword(value, password);
+                await ensureProfile();
+                refresh();
+                go("discover");
               } catch (error) {
                 setAuthError(describeAuthError(error));
               } finally {
@@ -2118,11 +2150,6 @@ export function App() {
  * The fallback covers a network failure, where there is no message at all and
  * the honest thing is to say the attempt did not reach us.
  */
-function describeAuthError(error: unknown): string {
-  const message = error instanceof Error ? error.message.trim() : "";
-  return message || "We couldn't reach the server. Check your connection and try again.";
-}
-
 /** Reached only if a screen is opened without the record it needs. */
 /**
  * Something did not load, said out loud.

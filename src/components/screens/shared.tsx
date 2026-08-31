@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, Building2, ChevronRight, Mail, Sparkles, Users } from "lucide-react";
+import { ArrowLeft, Building2, ChevronRight, Lock, Mail, Sparkles, Users } from "lucide-react";
 
 import { Ambient, BreathingLogo, Headline, Wordmark } from "@/components/brand";
 import { PrimaryButton } from "@/components/primitives";
 import { PROVIDER_LABELS, type Provider } from "@/lib/auth-providers";
+import { isReviewerEmail } from "@/lib/reviewer-login";
 
 const NAVY_WASH =
   "radial-gradient(120% 90% at 50% 0%, #1E4066 0%, #16304E 55%, #0E2138 100%)";
@@ -239,6 +240,7 @@ function GoogleGlyph({ size = 16 }: { size?: number }) {
 
 export function AuthEntry({
   onEmail,
+  onPassword,
   onProvider,
   providers,
   error,
@@ -246,6 +248,13 @@ export function AuthEntry({
   onBack,
 }: {
   onEmail: (email: string) => void;
+  /**
+   * The one address that signs in with a password instead of a code (see
+   * lib/reviewer-login.ts). The screen calls this in place of onEmail only when
+   * that address is typed; for everyone else the password box never appears and
+   * the emailed-code flow is untouched.
+   */
+  onPassword: (email: string, password: string) => void;
   onProvider: (provider: Provider) => void;
   /**
    * The ways in that actually work, read from the auth server rather than
@@ -259,9 +268,14 @@ export function AuthEntry({
   onBack?: () => void;
 }) {
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   // A trailing-dot or spaceless check catches the common typo without
   // pretending to validate deliverability, which only the OTP can do.
   const looksLikeEmail = /^\S+@\S+\.\S+$/.test(email.trim());
+  // The single account that signs in with a password. When it is typed, the
+  // form asks for one and signs in directly; every other address sends a code.
+  const reviewer = isReviewerEmail(email);
+  const canSubmit = looksLikeEmail && !busy && (!reviewer || password.length > 0);
 
   return (
     <NavyScreen className="justify-center gap-10 px-8 pt-16 pb-9" onBack={onBack}>
@@ -336,7 +350,9 @@ export function AuthEntry({
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            if (looksLikeEmail && !busy) onEmail(email.trim());
+            if (!canSubmit) return;
+            if (reviewer) onPassword(email.trim(), password);
+            else onEmail(email.trim());
           }}
         >
           <div
@@ -358,14 +374,46 @@ export function AuthEntry({
               className="font-body text-[15px] outline-none w-full bg-transparent text-white placeholder:text-white/40"
             />
           </div>
+          {/*
+            Appears only for the one address that has a password (reviewer),
+            and never for anyone else — so the code flow above is what every
+            ordinary sign-in still sees. No label naming who this is for: it
+            reads as a plain password field.
+          */}
+          {reviewer && (
+            <div
+              className="flex items-center gap-2.5 px-4 py-3.5 rounded-2xl mt-2.5"
+              style={{
+                backgroundColor: "rgba(255,255,255,0.1)",
+                border: "1px solid rgba(255,255,255,0.16)",
+              }}
+            >
+              <Lock size={15} color="#8FC6F5" />
+              <input
+                type="password"
+                autoComplete="current-password"
+                aria-label="Password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Password"
+                className="font-body text-[15px] outline-none w-full bg-transparent text-white placeholder:text-white/40"
+              />
+            </div>
+          )}
           {error && (
             <p className="font-body font-normal text-[14px] mt-2.5 leading-relaxed text-coral-soft">
               {error}
             </p>
           )}
           <div className="mt-3">
-            <PrimaryButton type="submit" disabled={!looksLikeEmail || busy}>
-              {busy ? "Sending…" : "Send code"}
+            <PrimaryButton type="submit" disabled={!canSubmit}>
+              {reviewer
+                ? busy
+                  ? "Signing in…"
+                  : "Sign In"
+                : busy
+                  ? "Sending…"
+                  : "Send code"}
             </PrimaryButton>
           </div>
         </form>

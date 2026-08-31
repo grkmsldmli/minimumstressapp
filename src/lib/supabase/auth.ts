@@ -62,6 +62,25 @@ export async function verifyEmailCode(email: string, token: string): Promise<voi
 }
 
 /**
+ * Password sign-in, for the one account that has no inbox to receive a code.
+ *
+ * This is not a second front door for everyone: the screen only calls it for
+ * the reviewer address (see lib/reviewer-login.ts), and the passwordless flow
+ * above is unchanged for every other user. On success it establishes exactly
+ * the same session as the code flow — the same browser client, the same stored
+ * token — so bearer and native behaviour after login are identical.
+ *
+ * The password is handed straight to Supabase and never stored, returned or
+ * logged. A failure surfaces as Supabase's own error ("Invalid login
+ * credentials"), which the caller renders through the shared, user-safe
+ * describeAuthError — the password is never part of that message.
+ */
+export async function signInWithPassword(email: string, password: string): Promise<void> {
+  const { error } = await supabaseBrowser().auth.signInWithPassword({ email, password });
+  if (error) throw error;
+}
+
+/**
  * Hands off to Apple or Google.
  *
  * Both need configuring in the Supabase dashboard before they will do anything;

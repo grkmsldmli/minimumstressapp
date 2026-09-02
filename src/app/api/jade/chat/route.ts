@@ -6,6 +6,7 @@ import { jsonObject } from "@/lib/api/validate";
 import Anthropic from "@anthropic-ai/sdk";
 
 import {
+  JADE_HISTORY_MESSAGES,
   JADE_MAX_TOKENS,
   JADE_MODEL,
   JADE_SYSTEM_PROMPT,
@@ -44,7 +45,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     if (!messages || messages.length === 0) return jsonError("messages is required", 400);
 
     const turns = messages
-      .slice(-6)
+      .slice(-JADE_HISTORY_MESSAGES)
       .filter(
         (turn): turn is { role: string; content: string } =>
           !!turn &&

@@ -7,6 +7,7 @@ import { SUPPORT_EMAIL } from "@/lib/company";
 import {
   JADE_AVATAR,
   JADE_GREETING,
+  JADE_HISTORY_MESSAGES,
   MAX_MODEL_MESSAGES_PER_DAY,
   QUICK_REPLIES,
   answerLocally,
@@ -119,7 +120,9 @@ export function JadeChat() {
    * from the expensive one, which is the entire point of having it.
    */
   const say = async (text: string) => {
-    history.current = [...history.current, { role: "assistant" as const, content: text }].slice(-10);
+    history.current = [...history.current, { role: "assistant" as const, content: text }].slice(
+      -JADE_HISTORY_MESSAGES,
+    );
 
     if (reducedMotion.current) {
       setMessages((prior) => [...prior, { role: "bot", text }]);
@@ -186,7 +189,9 @@ export function JadeChat() {
     setShowChips(false);
     setDraft("");
     setMessages((prior) => [...prior, { role: "user", text }]);
-    history.current = [...history.current, { role: "user" as const, content: text }].slice(-10);
+    history.current = [...history.current, { role: "user" as const, content: text }].slice(
+      -JADE_HISTORY_MESSAGES,
+    );
 
     /* ---- the table, which costs nothing ---- */
     const local = answerLocally(text);
@@ -220,7 +225,7 @@ export function JadeChat() {
       const response = await fetch("/api/jade/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: history.current.slice(-6) }),
+        body: JSON.stringify({ messages: history.current.slice(-JADE_HISTORY_MESSAGES) }),
       });
 
       const data: unknown = await response.json().catch(() => null);

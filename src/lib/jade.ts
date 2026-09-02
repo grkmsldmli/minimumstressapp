@@ -65,6 +65,22 @@ export const JADE_MODEL = "claude-sonnet-5";
 export const JADE_MAX_TOKENS = 400;
 
 /**
+ * How many of the most recent messages the model is shown each turn.
+ *
+ * The one number that decides how far back Luna can remember. It was six, and a
+ * real conversation proved that too short: somebody said "prenatal yoga" on
+ * their first message and, six messages later, Luna had genuinely lost it and
+ * asked again. Twelve is six exchanges — enough that a detail from the top of a
+ * natural chat is still in view near the end — while staying a firm cap so a
+ * long transcript cannot become a long bill.
+ *
+ * Shared, so the widget and the route cannot disagree: the client trims the
+ * history it sends to this, and the route trims again to the same, and both
+ * numbers move together from here.
+ */
+export const JADE_HISTORY_MESSAGES = 12;
+
+/**
  * How many model-backed questions one person gets in a day.
  *
  * Was fifteen, and a visitor hit it on their second message — "naber",
@@ -108,6 +124,10 @@ export const JADE_SYSTEM_PROMPT = [
   "- If they say something is not what they meant, drop it and follow them. Never repeat a suggestion they turned down.",
   "- Compliments, small talk and jokes get a short human reply, then one useful question.",
   "- Never end on a dead stop. Leave them something to answer or somewhere to go.",
+
+  "WHEN SOMEBODY WANTS A SPACE (they name a use, a group size, or just ask for a space):",
+  "- Answer first, with something useful, before any question. Tell them each listing shows its capacity so they can see which ones fit, and hand them [find a space](/spaces). Example: 'Absolutely — you can browse yoga and movement-friendly spaces in the Bay Area, and each listing shows its capacity so you can see which fit five. [Find a space](/spaces).'",
+  "- Only after that, and only if it would genuinely narrow things down, ask one optional question — which part of the Bay Area, or roughly when. Never open a space request with 'which town?' when you could already point them to browse.",
 
   "WHAT MINIMUM STRESS IS:",
   "- A marketplace for studios and private workout and session spaces. People book the hours they need; hosts open up the hours their space is standing empty.",

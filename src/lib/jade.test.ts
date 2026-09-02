@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   JADE_GREETING,
+  JADE_HISTORY_MESSAGES,
   JADE_SYSTEM_PROMPT,
   QUICK_REPLIES,
   answerLocally,
@@ -189,6 +190,14 @@ describe("the weak conversation, guarded in the prompt", () => {
     expect(prompt).toContain("do not walk through the whole booking process unless they ask");
   });
 
+  it("makes a space request answer-first, never a leading 'which town?'", () => {
+    // The B regression: it opened "I need a yoga space for 5" with a question
+    // instead of the capacity fact and a browse link.
+    expect(prompt).toContain("when somebody wants a space");
+    expect(prompt).toContain("answer first, with something useful, before any question");
+    expect(prompt).toContain("never open a space request with 'which town?'");
+  });
+
   it("remembers what was said and does not ask the same thing twice", () => {
     expect(prompt).toContain("remember everything said in this conversation");
     expect(prompt).toContain("never ask for the town more than once");
@@ -209,6 +218,19 @@ describe("the weak conversation, guarded in the prompt", () => {
     expect(JADE_SYSTEM_PROMPT).toContain("[contact support](/contact)");
     // The counter-example the model is warned against.
     expect(JADE_SYSTEM_PROMPT).toContain("[/spaces](/spaces) is wrong");
+  });
+});
+
+/**
+ * How far back she can remember.
+ *
+ * A live conversation forgot a detail from its first message by the sixth,
+ * because the window was six. Twelve is the shared cap the widget and the route
+ * both trim to — one number, tested here so a drift in either is caught.
+ */
+describe("conversation memory window", () => {
+  it("shows the model the last twelve messages, not six", () => {
+    expect(JADE_HISTORY_MESSAGES).toBe(12);
   });
 });
 

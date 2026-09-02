@@ -6,7 +6,6 @@ import { jsonObject } from "@/lib/api/validate";
 import Anthropic from "@anthropic-ai/sdk";
 
 import {
-  CHAT_PROXY_URL,
   JADE_MAX_TOKENS,
   JADE_MODEL,
   JADE_SYSTEM_PROMPT,
@@ -17,23 +16,14 @@ import {
 /**
  * The chat call, made from here rather than from the browser.
  *
- * The proxy keeps an allowlist of origins and knows exactly one:
- * `https://minimumstress.com`. Anything else — a staging subdomain, www,
- * localhost — gets a 403, and the visitor is shown a connection error while
- * the network is perfectly fine. That allowlist lives in a different Vercel
- * project, and waiting on a change there to make the widget work anywhere is
- * a dependency this did not need.
+ * Server-side for three reasons: the API key never reaches the client, the
+ * system prompt is defined here and never accepted from the caller, and the
+ * request can be counted and rate limited before it costs anything.
  *
- * A server-to-server request sends no Origin header at all, so the allowlist
- * has nothing to refuse. The widget now talks to this route, which is
- * same-origin by definition and works on every hostname the site is ever
- * served from.
- *
- * Two things fall out of it. The proxy's address stops being in the client
- * bundle, and the prompt goes with it — neither was secret, but neither is
- * anybody's business either. And the request can be counted before it costs
- * anything, which the browser-side cap never really did: localStorage is the
- * caller's to clear, and a script does not load the page.
+ * The model is our own Anthropic account and nothing else — there is no longer
+ * a shared upstream proxy behind this. Without a key there is nobody to ask, so
+ * the call fails cleanly (the widget shows a connection notice) rather than
+ * reaching for anything off-platform.
  */
 export async function POST(request: NextRequest): Promise<Response> {
   return handled(async () => {
@@ -84,20 +74,14 @@ export async function POST(request: NextRequest): Promise<Response> {
       languageDirective(detectLanguage(typeof latest === "string" ? latest : ""));
 
     /*
-     * Our own model when we have a key, the old proxy when we do not.
-     *
-     * The proxy was never ours to configure: it ignored the `model` field —
-     * an invented model id still came back with a reply — and ignored
-     * `max_tokens` too, so a five-token cap returned fifty words. Both of
-     * those are the parts you tune, which is the argument for calling the
-     * API directly.
-     *
-     * The fallback stays until the key is set in the deploy, so a missing
-     * environment variable degrades to what already worked instead of taking
-     * the chat down.
+     * Our own model, or nothing. Without a key there is nobody to ask, so this
+     * fails cleanly rather than reaching for the old shared proxy — the widget
+     * treats a 502 the same as a dropped connection and asks them to retry. The
+     * key has to be set in the deploy for model-backed answers to work; the
+     * built-in routing table answers either way.
      */
     if (!process.env.ANTHROPIC_API_KEY) {
-      return await viaLegacyProxy(system, turns);
+      return jsonError("Luna is unavailable right now", 502);
     }
 
     const anthropic = new Anthropic();
@@ -133,34 +117,5 @@ export async function POST(request: NextRequest): Promise<Response> {
     }
 
     return Response.json({ reply });
-  });
-}
-
-/**
- * The old path, kept as a fallback.
- *
- * Same request the widget has always made, minus the browser origin the
- * proxy's allowlist refuses. Deletable the day the key is set everywhere.
- */
-async function viaLegacyProxy(
-  system: string,
-  turns: Anthropic.MessageParam[],
-): Promise<Response> {
-  const upstream = await fetch(CHAT_PROXY_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ max_tokens: JADE_MAX_TOKENS, system, messages: turns }),
-  });
-
-  const text = await upstream.text();
-
-  if (!upstream.ok) {
-    console.error(`Jade proxy returned ${upstream.status}: ${text.slice(0, 200)}`);
-    return jsonError("Jade is unavailable right now", 502);
-  }
-
-  return new Response(text, {
-    status: 200,
-    headers: { "Content-Type": "application/json" },
   });
 }

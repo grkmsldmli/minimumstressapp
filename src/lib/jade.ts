@@ -64,10 +64,6 @@ export const JADE_MODEL = "claude-sonnet-5";
  */
 export const JADE_MAX_TOKENS = 400;
 
-/** Where the model call goes when we have no key of our own. */
-export const CHAT_PROXY_URL = "https://ms-chat-proxy.vercel.app/api/chat";
-export const CHAT_CUSTOMER_URL = "https://ms-chat-proxy.vercel.app/api/customer";
-
 /**
  * How many model-backed questions one person gets in a day.
  *
@@ -244,11 +240,9 @@ export const QUICK_REPLIES = [
 export const JADE_GREETING = "Hi, I'm Luna. How can I assist you today? 🌿";
 
 export interface LocalAnswer {
-  /** What Jade says. Markdown links are rendered. */
+  /** What Luna says. Markdown links are rendered. */
   en: string;
   tr: string;
-  /** Starts a flow that collects an email before anything is sent onward. */
-  intake?: "support" | "host_interest" | "email_signup";
 }
 
 /**
@@ -309,9 +303,11 @@ const ROUTES: { match: readonly string[]; answer: LocalAnswer }[] = [
       "mail listesi", "listeye ekle", "listene ekle", "bulten", "bülten",
     ],
     answer: {
-      en: "Happily 🌿 Which email address should I use?",
-      tr: "Memnuniyetle 🌿 Hangi e-posta adresini kullanayım?",
-      intake: "email_signup",
+      // No mailing-list backend and no signup page to send anyone to, so this
+      // says what is true instead of collecting an address that would go
+      // nowhere. No "you're subscribed", because nobody would be.
+      en: "I can't add you to a mailing list from here — that isn't something set up in chat yet.",
+      tr: "Buradan seni bir e-posta listesine ekleyemiyorum — bu henüz sohbette mevcut değil.",
     },
   },
 ];

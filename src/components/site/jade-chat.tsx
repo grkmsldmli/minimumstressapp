@@ -194,7 +194,7 @@ export function JadeChat() {
         message: note,
         conversation: history.current
           .slice(-10)
-          .map((m) => `${m.role === "assistant" ? "Jade" : "User"}: ${m.content}`)
+          .map((m) => `${m.role === "assistant" ? "Luna" : "User"}: ${m.content}`)
           .join("\n\n"),
         page_url: typeof window === "undefined" ? "" : window.location.href,
         language,
@@ -344,7 +344,7 @@ export function JadeChat() {
           */
           if (messages.length === 0) void say(JADE_GREETING);
         }}
-        aria-label="Chat with Jade"
+        aria-label="Chat with Luna"
         aria-expanded={open}
         className={`fixed bottom-6 right-6 z-[9999] flex h-12 w-12 items-center justify-center rounded-full text-white transition-transform hover:scale-105 active:scale-95 ${nudge && !open ? "jade-nudge" : ""}`}
         style={{
@@ -368,7 +368,7 @@ export function JadeChat() {
           className="jade-panel fixed bottom-6 right-6 z-[9998] flex h-[476px] max-h-[calc(100vh-96px)] w-[min(336px,calc(100vw-24px))] flex-col overflow-hidden rounded-[18px] bg-white"
           style={{ boxShadow: "0 8px 40px rgba(15,47,85,.16)" }}
           role="dialog"
-          aria-label="Chat with Jade"
+          aria-label="Chat with Luna"
         >
           <div
             className="flex shrink-0 items-center gap-3 px-5 py-4"
@@ -384,7 +384,7 @@ export function JadeChat() {
             />
             <div className="flex-1">
               <p className="text-[15px] text-white" style={{ fontFamily: "var(--font-dm-serif)" }}>
-                Jade
+                Luna
               </p>
               {/*
                 The company, not the job title. "Front desk" describes what she
@@ -416,7 +416,7 @@ export function JadeChat() {
                 <div className="jade-message flex items-end gap-2">
                   <Avatar />
                   <div className="rounded-[4px_16px_16px_16px] bg-white px-4 py-3 shadow-sm">
-                    <span className="flex gap-1" role="status" aria-label="Jade is typing">
+                    <span className="flex gap-1" role="status" aria-label="Luna is typing">
                       {[0, 1, 2].map((dot) => (
                         <span
                           key={dot}
@@ -464,7 +464,7 @@ export function JadeChat() {
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
               disabled={busy}
-              placeholder="Ask Jade anything…"
+              placeholder="Ask Luna anything…"
               aria-label="Message"
               className="flex-1 rounded-full px-4 py-2.5 text-[13px] outline-none disabled:opacity-70"
               style={{ border: "1.5px solid #e2e8f0", backgroundColor: "#f8fafc", color: "#1a1a2e" }}

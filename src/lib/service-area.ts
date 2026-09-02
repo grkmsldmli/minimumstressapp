@@ -36,6 +36,13 @@ export interface Point {
 /** The area's name, for saying where we are rather than only where we are not. */
 export const SERVICE_AREA_NAME = "the San Francisco Bay Area";
 
+/**
+ * The country, said the same way. The area sits inside it, and "where do you
+ * operate" is asked at both scales — a visitor abroad wants the country, a
+ * visitor in California wants the metro. One source for both so neither drifts.
+ */
+export const SERVICE_COUNTRY = "the United States";
+
 export function isInServiceArea(point: Point): boolean {
   return distanceBetween(CENTRE, point) <= RADIUS_MILES;
 }

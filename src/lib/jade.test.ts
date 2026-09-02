@@ -1,3 +1,6 @@
+import { existsSync, readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
 import { describe, expect, it } from "vitest";
 
 import {
@@ -44,14 +47,10 @@ describe("what is still not the model's to answer", () => {
 
   it("sends a support question to a person, without promising a handoff it cannot do", () => {
     const refund = answerLocally("I need a refund");
-    // No intake: the widget writes to no support inbox, so it neither collects
-    // an email nor claims to forward one — it points to the real channel.
-    expect(refund?.intake).toBeUndefined();
+    // It points to the real channel and never claims to forward or file anything.
     expect(refund?.en).toContain("(/contact)");
     expect(refund?.en).not.toMatch(/pass it|to the team|forward|escalate|open a ticket/i);
     expect(refund?.tr).not.toMatch(/ilet|yönlendir/i);
-    // The newsletter opt-in still collects an email — that flow is unchanged.
-    expect(answerLocally("add me to the mailing list")?.intake).toBe("email_signup");
   });
 });
 
@@ -234,6 +233,56 @@ describe("Luna, and the honest handoff", () => {
     expect(prompt).toContain("you cannot send, forward, escalate, or file anything");
     expect(prompt).toContain("there is no ticket system");
     expect(prompt).toContain("never say you will pass a message on");
+  });
+
+  it("never claims a mailing-list signup succeeded, because none can", () => {
+    // There is no newsletter backend. Every phrasing that reaches the table
+    // must say it cannot, and none may imply success.
+    for (const phrase of ["add me to the mailing list", "newsletter", "subscribe me", "mail listesi"]) {
+      const answer = answerLocally(phrase);
+      expect(answer, phrase).not.toBeNull();
+      expect(answer?.en.toLowerCase(), phrase).toContain("can't add you to a mailing list");
+      expect(answer?.en, phrase).not.toMatch(
+        /subscribed|added you|you're on the list|you are on the list|passed .* to the team/i,
+      );
+      expect(answer?.tr, phrase).not.toMatch(/eklendin|abone oldun|listeye ekledim|ilettim/i);
+    }
+  });
+});
+
+/**
+ * The old Shopify proxy, gone for good.
+ *
+ * Every model answer once fell back to `ms-chat-proxy.vercel.app/api/chat` when
+ * no key was set, and every "lead" was forwarded to its `/api/customer`. The
+ * new platform must not depend on either, so this reads the source and proves
+ * the dependency is not just unused but absent — a reference re-added later
+ * fails here rather than in production.
+ */
+describe("no Luna flow depends on ms-chat-proxy", () => {
+  const read = (rel: string) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf8");
+
+  it("has no ms-chat-proxy reference in the assistant, its chat route, or the widget", () => {
+    for (const rel of [
+      "./jade.ts",
+      "../app/api/jade/chat/route.ts",
+      "../components/site/jade-chat.tsx",
+    ]) {
+      expect(read(rel), rel).not.toContain("ms-chat-proxy");
+    }
+  });
+
+  it("no longer ships the legacy lead route or its forward to /api/jade/lead", () => {
+    expect(existsSync(fileURLToPath(new URL("../app/api/jade/lead/route.ts", import.meta.url)))).toBe(
+      false,
+    );
+    expect(read("../components/site/jade-chat.tsx")).not.toContain("/api/jade/lead");
+  });
+
+  it("leaves no false 'passed to the team' language in the widget or the table", () => {
+    for (const rel of ["./jade.ts", "../components/site/jade-chat.tsx"]) {
+      expect(read(rel), rel).not.toMatch(/to the team|ekibe ilet|i've passed/i);
+    }
   });
 });
 

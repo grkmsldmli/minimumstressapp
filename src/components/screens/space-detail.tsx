@@ -168,11 +168,12 @@ export function SpaceDetail({
    * The hero collapses as the page scrolls, driven by the one scroll container's
    * own position — not a second scroll area, and not a scroll-timeline, which
    * iOS Safari does not run. A passive listener reads scrollTop once per frame
-   * and writes a single custom property; there is no layout read interleaved
-   * with the write, so nothing thrashes, and SpaceGallery's height simply
-   * follows `--hero-h`. At the top the hero is its full self; a short scroll
-   * trims it to about two-thirds and it holds there; scrolling back up restores
-   * it. The number the hero starts at (320) matches the height passed below.
+   * and writes a single unitless custom property, `--hero-p` (0..1). Nothing
+   * layout-valued is written: the hero box stays a constant 320px and only a
+   * compositor clip-path (plus the title's translate) consume `--hero-p`, so the
+   * whole listing subtree and the gallery's swipe geometry never reflow. At the
+   * top the hero is its full self; a short scroll clips it to about two-thirds
+   * and it holds there; scrolling back up restores it. See the render below.
    */
   const scrollRef = useRef<HTMLDivElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -181,18 +182,14 @@ export function SpaceDetail({
     const root = rootRef.current;
     if (!scroller || !root) return;
 
-    const EXPANDED = 320;
-    const COLLAPSED = 200;
+    // Distance, in px of scroll, over which the hero fully collapses.
     const DISTANCE = 160;
     let frame = 0;
 
     const apply = () => {
       frame = 0;
       const p = Math.min(1, Math.max(0, scroller.scrollTop / DISTANCE));
-      root.style.setProperty(
-        "--hero-h",
-        `${Math.round(EXPANDED - (EXPANDED - COLLAPSED) * p)}px`,
-      );
+      root.style.setProperty("--hero-p", p.toFixed(4));
     };
     const onScroll = () => {
       if (!frame) frame = requestAnimationFrame(apply);
@@ -315,37 +312,16 @@ export function SpaceDetail({
    * at the bottom of it.
    */
   return (
-    <div ref={rootRef} className="h-full flex flex-col relative screen-in bg-white">
-      <SpaceGallery media={space.media} category={space.category} height={320}>
-        <button
-          type="button"
-          onClick={onBack}
-          aria-label="Back"
-          className="w-9 h-9 rounded-full flex items-center justify-center press"
-          style={{ backgroundColor: "rgba(255,255,255,0.22)", backdropFilter: "blur(8px)" }}
-        >
-          <ArrowLeft size={16} color="#fff" />
-        </button>
-        <div>
-          <span
-            className="px-2.5 py-1 rounded-full font-body text-[12px] text-white"
-            style={{ backgroundColor: "rgba(255,255,255,0.2)", backdropFilter: "blur(6px)" }}
-          >
-            {roomTypeFor(space.category)}
-          </span>
-          <h2
-            className="font-display italic font-semibold text-[28px] text-white leading-tight mt-2"
-            style={{ textShadow: "0 2px 12px rgba(0,0,0,0.25)" }}
-          >
-            {space.name}
-          </h2>
-          <p className="font-body font-normal text-[13.5px] text-white/80 mt-0.5">
-            {space.distanceLabel} · fits {space.capacity}
-          </p>
-        </div>
-      </SpaceGallery>
-
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 pt-5">
+    <div ref={rootRef} className="h-full relative overflow-hidden screen-in bg-white">
+      {/*
+        One full-height scroller with the hero as a fixed overlay on top of it
+        (added at the end of this root, z-10). The 320px spacer reserves the
+        hero's space at rest, so content scrolls up under the collapsing hero
+        without ever changing the hero's layout height. The booking bar stays a
+        sticky footer inside this same scroller.
+      */}
+      <div ref={scrollRef} className="absolute inset-0 overflow-y-auto px-6 pt-5">
+        <div aria-hidden style={{ height: 320 }} />
         <p className="font-body font-normal text-[15px] leading-relaxed text-ink-muted">
           {space.description}
         </p>
@@ -923,6 +899,54 @@ export function SpaceDetail({
         </>
         )}
       </div>
+      </div>
+
+      {/*
+        The hero, painted over the scroller (z-10) and collapsed from the bottom
+        by the scroll progress. Only clip-path animates (compositor), so the
+        320px box, the horizontal gallery and its swipe geometry never change;
+        the title slides up with the clip so it stays visible and legible.
+      */}
+      <div
+        className="absolute inset-x-0 top-0 z-10"
+        style={{
+          clipPath: "inset(0 0 calc(var(--hero-p, 0) * 120px) 0)",
+          willChange: "clip-path",
+        }}
+      >
+        <SpaceGallery media={space.media} category={space.category} height={320}>
+          <button
+            type="button"
+            onClick={onBack}
+            aria-label="Back"
+            className="w-9 h-9 rounded-full flex items-center justify-center press"
+            style={{ backgroundColor: "rgba(255,255,255,0.22)", backdropFilter: "blur(8px)" }}
+          >
+            <ArrowLeft size={16} color="#fff" />
+          </button>
+          <div
+            style={{
+              transform: "translate3d(0, calc(var(--hero-p, 0) * -120px), 0)",
+              willChange: "transform",
+            }}
+          >
+            <span
+              className="px-2.5 py-1 rounded-full font-body text-[12px] text-white"
+              style={{ backgroundColor: "rgba(255,255,255,0.2)", backdropFilter: "blur(6px)" }}
+            >
+              {roomTypeFor(space.category)}
+            </span>
+            <h2
+              className="font-display italic font-semibold text-[28px] text-white leading-tight mt-2"
+              style={{ textShadow: "0 2px 12px rgba(0,0,0,0.25)" }}
+            >
+              {space.name}
+            </h2>
+            <p className="font-body font-normal text-[13.5px] text-white/80 mt-0.5">
+              {space.distanceLabel} · fits {space.capacity}
+            </p>
+          </div>
+        </SpaceGallery>
       </div>
     </div>
   );

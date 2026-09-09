@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { ArrowLeft, Building2, ChevronRight, Lock, Mail, Sparkles, Users } from "lucide-react";
 
 import { Ambient, BreathingLogo, Headline, Wordmark } from "@/components/brand";
@@ -53,48 +53,43 @@ export function NavyScreen({
 /*  Splash — the 4-7-8 cycle, narrated                                 */
 /* ------------------------------------------------------------------ */
 
-const BREATH_PHASES = [
-  { label: "breathe in", ms: 4000 },
-  { label: "hold", ms: 7000 },
-  { label: "breathe out", ms: 8000 },
-] as const;
-
 export function Splash({ next }: { next: () => void }) {
-  const [phase, setPhase] = useState(0);
-
-  useEffect(() => {
-    const id = setTimeout(
-      () => setPhase((p) => (p + 1) % BREATH_PHASES.length),
-      BREATH_PHASES[phase].ms,
-    );
-    return () => clearTimeout(id);
-  }, [phase]);
-
   return (
     <NavyScreen className="items-center justify-between text-center px-8 pt-14 pb-9">
       <div className="flex flex-col items-center relative z-10">
         <Wordmark size={13} />
         <div className="mt-5">
-          <Headline pre="Space for your" accent="mind, body & spirit." size={28} light />
+          <Headline pre="A place for your" accent="practice." size={28} light />
         </div>
       </div>
 
       <div className="flex flex-col items-center gap-6 relative z-10">
         <BreathingLogo size={160} />
         <div>
-          <p
-            className="font-body font-normal text-[13.5px] text-white/60 tracking-[0.12em] uppercase"
-            aria-live="polite"
+          {/*
+            The caption cross-fades on the SAME 19s CSS clock as the logo
+            (globals.css: .breath-caption + bcIn/bcHold/bcOut), so word and scale
+            never drift and there is no JS timer to leak or re-render per phase.
+            Decorative for assistive tech; the static line below is what a screen
+            reader announces, and under reduced motion the CSS pins one word.
+          */}
+          <div
+            className="breath-caption font-body font-normal text-[13.5px] text-white/60 tracking-[0.12em] uppercase"
+            aria-hidden="true"
           >
-            {BREATH_PHASES[phase].label}
-          </p>
+            <span className="bc bc-in">breathe in</span>
+            <span className="bc bc-hold">hold</span>
+            <span className="bc bc-out">breathe out</span>
+          </div>
+          <p className="sr-only">Breathe with the logo — in for four, hold for seven, out for eight.</p>
           <p className="font-body text-[12px] text-white/35 tracking-[0.3em] mt-1">4 · 7 · 8</p>
         </div>
       </div>
 
       <div className="w-full relative z-10">
         <p className="font-body font-normal text-[14px] leading-relaxed text-white/65 mb-6">
-          Bring your clients. Book only the space you need — by the hour, no lease.
+          Bring your clients. Find professional spaces that fit the way you work — without a lease or
+          long-term commitment.
         </p>
         <PrimaryButton onClick={next}>Begin</PrimaryButton>
       </div>
@@ -114,7 +109,7 @@ export function HowItWorks({ next, onBack }: { next: () => void; onBack?: () => 
           How it works
         </p>
         <div className="mt-2">
-          <Headline pre="One" accent="simple loop." size={26} light />
+          <Headline pre="Work with" accent="more freedom." size={26} light />
         </div>
       </div>
 
@@ -144,11 +139,9 @@ export function HowItWorks({ next, onBack }: { next: () => void; onBack?: () => 
 
       <div className="relative z-10 w-full text-center">
         <p className="font-body font-normal text-[14px] leading-relaxed text-white/60 mb-6">
-          Book professional space by the hour, or list the space you have.
-          <br />
-          No lease, no deposit.
+          Find a space for your practice, or make yours available when it works for you.
         </p>
-        <PrimaryButton onClick={next}>Find a space</PrimaryButton>
+        <PrimaryButton onClick={next}>Continue</PrimaryButton>
       </div>
     </NavyScreen>
   );

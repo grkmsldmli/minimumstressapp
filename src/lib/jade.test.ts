@@ -235,6 +235,26 @@ describe("conversation memory window", () => {
 });
 
 /**
+ * Product positioning — broader than "an hourly room marketplace", and never
+ * claiming the not-yet-built Work features exist.
+ */
+describe("product positioning", () => {
+  const prompt = JADE_SYSTEM_PROMPT.toLowerCase();
+
+  it("frames Minimum Stress as a professional platform, not only an hourly room marketplace", () => {
+    expect(prompt).toContain("professional platform for independent wellness");
+    expect(prompt).toContain("flexible professional infrastructure without a lease");
+    expect(prompt).toContain("do not define it as only an hourly room marketplace");
+  });
+
+  it("forbids claiming future Work features that do not exist", () => {
+    expect(prompt).toContain("not a job board");
+    expect(prompt).toContain("client-matching service");
+    expect(prompt).toContain("practitioners bring their own clients");
+  });
+});
+
+/**
  * The rename, and the promise she is no longer allowed to make.
  *
  * The assistant is Luna to anyone reading; the internal names stay Jade to keep

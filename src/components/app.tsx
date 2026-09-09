@@ -633,7 +633,10 @@ export function App() {
           repo.getSessionCount(),
           repo.listNotifications(),
           repo.foundingHostsRemaining(),
-          repo.foundingPractitionersRemaining(),
+          // Falls back to 0 (badge simply hidden) so the whole account still
+          // loads if the code is ever deployed before migration 0068 adds the
+          // founding_practitioners_remaining() function.
+          repo.foundingPractitionersRemaining().catch(() => 0),
           // The referral area is a small dashboard extra; a hiccup fetching it
           // must never keep somebody out of their whole account.
           repo.myReferralCode().catch(() => ""),

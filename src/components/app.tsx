@@ -188,6 +188,8 @@ interface Snapshot {
   notifications: NotificationEntry[];
   /** Founding Host spots still open, from the server's own count. */
   foundingRemaining: number;
+  /** Founding Practitioner spots still open, from the server's own count. */
+  foundingPractitionerRemaining: number;
   /** This host's shareable referral code, assigned by the server on first read. */
   referralCode: string;
   /** This host's referrals, as safe status summaries — no referred-host data. */
@@ -616,6 +618,7 @@ export function App() {
         sessions,
         notifications,
         foundingRemaining,
+        foundingPractitionerRemaining,
         referralCode,
         referrals,
         unreadCounts,
@@ -630,6 +633,7 @@ export function App() {
           repo.getSessionCount(),
           repo.listNotifications(),
           repo.foundingHostsRemaining(),
+          repo.foundingPractitionersRemaining(),
           // The referral area is a small dashboard extra; a hiccup fetching it
           // must never keep somebody out of their whole account.
           repo.myReferralCode().catch(() => ""),
@@ -658,6 +662,7 @@ export function App() {
         sessions,
         notifications,
         foundingRemaining,
+        foundingPractitionerRemaining,
         referralCode,
         referrals,
         unreadCounts,
@@ -1992,6 +1997,7 @@ export function App() {
             if (!response.ok) throw new Error(body.error ?? "That did not send.");
           }}
           disputesWaiting={disputes.filter((d) => d.awaitingYou).length}
+          foundingRemaining={data.foundingPractitionerRemaining}
           onGoInsurance={() => go("verify")}
           onGoCredential={() => go("credential")}
           onVerifyIdentity={() => {

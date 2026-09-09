@@ -343,6 +343,12 @@ export class SupabaseRepository implements Repository {
       // client (migration 0060). Both null on a host who is not one of the fifty.
       foundingHostAt: data?.founding_host_at ? new Date(data.founding_host_at) : null,
       foundingNumber: (data?.founding_number as number | null) ?? null,
+      // The practitioner-side mirror, written by the server the moment a first
+      // real session completes (migration 0068). Both null until then.
+      foundingPractitionerAt: data?.founding_practitioner_at
+        ? new Date(data.founding_practitioner_at)
+        : null,
+      foundingPractitionerNumber: (data?.founding_practitioner_number as number | null) ?? null,
       // Read back only for its owner — this query runs as the signed-in user,
       // and no policy lets anyone select another person's profile row.
       emergencyContact: {
@@ -1238,6 +1244,14 @@ export class SupabaseRepository implements Repository {
     // A plain count of the fifty still open, from the database's own reckoning
     // of who holds a founding number — never a stored countdown.
     const { data, error } = await this.db.rpc("founding_hosts_remaining");
+    if (error) throw asError(error);
+    return typeof data === "number" ? data : (data ?? 0);
+  }
+
+  async foundingPractitionersRemaining(): Promise<number> {
+    // The practitioner-side twin of the above — the database's own count of the
+    // fifty still open, never a stored countdown.
+    const { data, error } = await this.db.rpc("founding_practitioners_remaining");
     if (error) throw asError(error);
     return typeof data === "number" ? data : (data ?? 0);
   }

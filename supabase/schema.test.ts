@@ -91,8 +91,9 @@ describe("migrations apply cleanly", () => {
         `select table_name from information_schema.tables
          where table_schema = 'public' and table_type = 'BASE TABLE'`,
       );
-      // +2 in 0067: blocked_users and message_reports.
-      expect(tables.rows).toHaveLength(20);
+      // +2 in 0067: blocked_users and message_reports. +1 in 0068:
+      // founding_practitioners.
+      expect(tables.rows).toHaveLength(21);
     } finally {
       await fresh.close();
     }
@@ -157,6 +158,9 @@ describe("migrations apply cleanly", () => {
       // The durable Founding 50 ledger — server-only, so a spot once earned is
       // never re-opened by a deletion (migration 0060).
       "founding_hosts",
+      // Its practitioner-side twin — the first fifty to complete a real, paid
+      // session, server-only and equally permanent (migration 0068).
+      "founding_practitioners",
       // Booking-chat abuse reports for staff review (App Store 1.2, 0067).
       "message_reports",
       "messages",

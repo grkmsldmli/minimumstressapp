@@ -50,7 +50,7 @@ import type { AccessDetails } from "./access-details";
 import type { MediaKind, SpaceEdit } from "./domain";
 import type { NotificationEntry } from "./notify/history";
 import { knownUses } from "./booking-use";
-import { FOUNDING_HOST_LIMIT } from "./founding";
+import { FOUNDING_HOST_LIMIT, FOUNDING_PRACTITIONER_LIMIT } from "./founding";
 import { knownSpaceTypes } from "./space-types";
 import { type CategoryKey, type RoomSetupKey, roomTypeFor } from "./taxonomy";
 import { SESSION_MINUTES } from "./session";
@@ -306,6 +306,8 @@ export class MockRepository implements Repository {
     milestonesSeen: [],
     foundingHostAt: null,
     foundingNumber: null,
+    foundingPractitionerAt: null,
+    foundingPractitionerNumber: null,
   };
 
   private publicSpaces: PublicSpace[] = [];
@@ -712,6 +714,12 @@ export class MockRepository implements Repository {
     // The two seed founders above are other accounts, not this one, so this is
     // a plausible number rather than a manufactured countdown.
     return FOUNDING_HOST_LIMIT - 2;
+  }
+
+  async foundingPractitionersRemaining(): Promise<number> {
+    // Same reasoning on the practitioner side: a plausible, near-whole cohort
+    // rather than a manufactured countdown.
+    return FOUNDING_PRACTITIONER_LIMIT - 1;
   }
 
   /* ---------------- referrals ---------------- */

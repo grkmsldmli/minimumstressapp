@@ -1,0 +1,49 @@
+name: CI
+
+# Every pull request and every push to main runs the same gate a developer
+# runs locally: install, lint, unit tests, a production build, and a full
+# typecheck. The native iOS shell loads the live site, so a red build here is a
+# red app.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# One run per ref; a newer push cancels an in-flight run on the same branch.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Lint, test, build, typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm test
+
+      # Build before typecheck on purpose: Next generates the route and global
+      # types (PageProps, LayoutProps, RouteContext) into .next/types during the
+      # build, and a standalone `tsc --noEmit` on a fresh checkout fails without
+      # them. Build also runs Next's own type check as a first pass.
+      - name: Production build
+        run: npm run build
+
+      - name: Typecheck
+        run: npm run typecheck

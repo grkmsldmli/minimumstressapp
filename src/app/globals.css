@@ -187,7 +187,7 @@ html.native .app-frame {
      column on the navy ground — a real tablet layout, not a stretched form
      and not a mockup. */
   width: 100%;
-  max-width: 600px;
+  max-width: 680px;
   height: 100vh;
   height: 100dvh;
   border: 0;
@@ -210,16 +210,50 @@ html.native .app-frame select {
   font-size: 16px;
 }
 
-/* Onboarding/auth (NavyScreen) on a tall native screen: cap the content column
-   so `justify-between` does not fling the headline and button to the extremes
-   of a 1024px+ iPad, and centre it. The content column is `min-h-full` so it
-   fills a phone normally; here we release that floor and cap + auto-margin it
-   (flexbox auto margins centre it in the column parent). */
+/* Onboarding/auth (NavyScreen), native.
+ *
+ * Phone (< 768): unchanged from what ships today — a content-sized column
+ * centred by flex auto-margins, so justify-between keeps its phone rhythm.
+ *
+ * The NavyScreen wrapper scrolls rather than clips, on every native size. This
+ * is what removes the regression: the tablet rule below used to cap the column
+ * at 860px and centre it with auto-margins INSIDE this overflow-hidden wrapper,
+ * so any onboarding taller than 860px overflowed and was cropped symmetrically
+ * top and bottom. With the wrapper allowed to scroll, an over-tall column is
+ * reachable instead of cut off (harmless on a phone, where nothing overflows). */
+html.native .navy-outer {
+  overflow-y: auto;
+}
 html.native .navy-screen {
   min-height: 0;
   max-height: 860px;
   margin-top: auto;
   margin-bottom: auto;
+}
+
+/* Tablet (>= 768, i.e. iPad — native iPhones are all narrower): centre a capped
+ * column with adaptive spacing, and let it grow-and-scroll rather than clip.
+ * `min-height: 100%` + `justify-content: center` in a scrolling parent centres
+ * when it fits and scrolls from the top when it does not — none of the
+ * auto-margin top-clipping the phone rule risks on an over-tall screen. */
+@media (min-width: 768px) {
+  /* The wrapper becomes a plain block scroller (not a flex column). A flex
+     parent re-centres an over-tall child and leaves its top unreachable — the
+     same clip the auto-margins caused. As a block, scrollTop 0 is the content's
+     true top, so the min-height + justify-content:center column below centres
+     when it fits and scrolls fully (top included) when it does not. */
+  html.native .navy-outer {
+    display: block;
+  }
+  html.native .navy-screen {
+    min-height: 100%;
+    max-height: none;
+    margin: 0;
+    justify-content: center;
+    gap: 1.5rem;
+    padding-top: 2.5rem;
+    padding-bottom: 2.5rem;
+  }
 }
 
 /* ------------------------------------------------------------------ */

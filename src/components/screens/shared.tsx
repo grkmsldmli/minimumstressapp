@@ -29,7 +29,7 @@ export function NavyScreen({
 }) {
   return (
     <div
-      className="h-full flex flex-col screen-in relative overflow-hidden"
+      className="navy-outer h-full flex flex-col screen-in relative overflow-hidden"
       style={{ background: NAVY_WASH }}
     >
       <Ambient />

@@ -185,7 +185,7 @@ export function InsuranceUpload({
             type="button"
             onClick={onBack}
             aria-label="Back"
-            className="w-9 h-9 rounded-full flex items-center justify-center press absolute left-8 top-8 z-20"
+            className="w-9 h-9 rounded-full flex items-center justify-center press absolute left-8 top-8 safe-top-8 z-20"
             style={{ backgroundColor: "rgba(255,255,255,0.14)" }}
           >
             <ArrowLeft size={16} color="#fff" />
@@ -404,7 +404,7 @@ export function CredentialUpload({
             type="button"
             onClick={onBack}
             aria-label="Back"
-            className="w-9 h-9 rounded-full flex items-center justify-center press absolute left-8 top-8 z-20"
+            className="w-9 h-9 rounded-full flex items-center justify-center press absolute left-8 top-8 safe-top-8 z-20"
             style={{ backgroundColor: "rgba(255,255,255,0.14)" }}
           >
             <ArrowLeft size={16} color="#fff" />
@@ -663,7 +663,7 @@ export function ProScreen({
   return (
     <div className="h-full flex flex-col screen-in bg-white">
       <div
-        className="px-6 pt-8 pb-9 relative rounded-b-[30px] overflow-hidden text-center shrink-0"
+        className="px-6 pt-8 safe-pt-8 pb-9 relative rounded-b-[30px] overflow-hidden text-center shrink-0"
         style={{ background: "radial-gradient(140% 120% at 50% 0%, #1E4066 0%, #16304E 85%)" }}
       >
         <Ambient />
@@ -671,7 +671,7 @@ export function ProScreen({
           type="button"
           onClick={onBack}
           aria-label="Back"
-          className="w-9 h-9 rounded-full flex items-center justify-center press absolute left-6 top-8 z-20"
+          className="w-9 h-9 rounded-full flex items-center justify-center press absolute left-6 top-8 safe-top-8 z-20"
           style={{ backgroundColor: "rgba(255,255,255,0.14)" }}
         >
           <ArrowLeft size={16} color="#fff" />
@@ -753,7 +753,7 @@ export function ProScreen({
         </p>
       </div>
 
-      <div className="px-6 pb-7 shrink-0">
+      <div className="px-6 pb-7 safe-pb-7 shrink-0">
         {failed && (
           <p
             className="font-body font-normal text-[14px] leading-relaxed mb-3 rounded-xl p-3"
@@ -911,7 +911,7 @@ export function PractitionerProfile({
         sub={`${bookingsCount} booking${bookingsCount === 1 ? "" : "s"} so far${profile.email ? ` · ${profile.email}` : ""}`}
       />
 
-      <PullToRefresh className="flex-1 px-6 pt-5 pb-8" onRefresh={onRefresh}>
+      <PullToRefresh className="flex-1 px-6 pt-5 pb-8 safe-pb-8" onRefresh={onRefresh}>
         {/*
           Founding Practitioner — a small, permanent recognition, server-derived
           (profile.foundingPractitionerNumber, migration 0068). Earned shows a
@@ -1204,7 +1204,7 @@ export function ProfileHeader({
 
   return (
     <div
-      className="px-6 pt-8 pb-8 relative rounded-b-[30px] overflow-hidden text-center shrink-0"
+      className="px-6 pt-8 safe-pt-8 pb-8 relative rounded-b-[30px] overflow-hidden text-center shrink-0"
       style={{ background: "radial-gradient(130% 130% at 50% 0%, #1E4066 0%, #16304E 80%)" }}
     >
       <Ambient />
@@ -1212,7 +1212,7 @@ export function ProfileHeader({
         type="button"
         onClick={onBack}
         aria-label="Back"
-        className="w-9 h-9 rounded-full flex items-center justify-center press absolute left-6 top-8 z-20"
+        className="w-9 h-9 rounded-full flex items-center justify-center press absolute left-6 top-8 safe-top-8 z-20"
         style={{ backgroundColor: "rgba(255,255,255,0.14)" }}
       >
         <ArrowLeft size={16} color="#fff" />

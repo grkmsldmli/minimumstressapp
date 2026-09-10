@@ -104,19 +104,22 @@ body {
 .app-frame {
   position: relative;
   overflow: hidden;
-  /* Navy, so the safe-area strip under the status bar matches the app's navy
-     headers instead of showing a white gap. */
+  /* Navy is only a last-resort ground now (a transient transition gap shows navy
+     rather than white, and it fills the iPad side-letterbox and landscape ears).
+     Safe-area insets are NOT applied here: padding the frame insets each screen's
+     own background and reveals this navy as top/bottom bands around white screens.
+     Instead the frame is edge-to-edge and each screen re-homes the insets onto its
+     own content (see the .safe-* helpers below), so backgrounds bleed to the
+     physical edges while content stays clear of the status bar / home indicator. */
   background: #16304e;
   width: 100%;
   /* 100vh first as the floor: older Android WebViews (Appetize's included) do
      not understand dvh, and an invalid height falls back to auto — which
      collapses the frame to its content and leaves the white body showing below
-     ("half screen"). Browsers that do understand dvh take the second line. */
+     ("half screen"). Browsers that do understand dvh take the second line. This is
+     the single viewport-height owner; no screen declares its own vh/dvh. */
   height: 100vh;
   height: 100dvh;
-  /* Clear the status bar / notch on a real phone (0 in a browser, so desktop
-     is unaffected). Without it the app header ran under the clock and battery. */
-  padding-top: env(safe-area-inset-top);
 }
 
 @media (min-width: 500px) {
@@ -183,9 +186,8 @@ html.native .app-stage {
 }
 
 html.native .app-frame {
-  /* iPhone (< 600) fills the width edge-to-edge; iPad centres a ~600px
-     column on the navy ground — a real tablet layout, not a stretched form
-     and not a mockup. */
+  /* iPhone fills the width edge-to-edge; iPad centres a ~680px column on the
+     navy ground — a real tablet layout, not a stretched form and not a mockup. */
   width: 100%;
   max-width: 680px;
   height: 100vh;
@@ -193,13 +195,14 @@ html.native .app-frame {
   border: 0;
   border-radius: 0;
   box-shadow: none;
+  /* Ground only (iPad side-letterbox, landscape ears, transient transition gap).
+     No safe-area padding here: that would inset each screen's own background and
+     show this navy as top/bottom bands. Each screen re-homes the insets onto its
+     own content via the .safe-* helpers below, so backgrounds bleed to the edges. */
   background: #16304e;
-  /* All four insets, so the notch, home indicator and landscape ears are
-     cleared; the navy ground shows through, never white. */
-  padding-top: env(safe-area-inset-top);
-  padding-bottom: env(safe-area-inset-bottom);
-  padding-left: env(safe-area-inset-left);
-  padding-right: env(safe-area-inset-right);
+  /* Keyboard: when a field is focused the browser scrolls it into the visual
+     viewport; this keeps the last row / CTA clear of the home indicator too. */
+  scroll-padding-bottom: env(safe-area-inset-bottom);
 }
 
 /* The iOS 16px input floor is scoped to < 500px above, which misses a native
@@ -209,6 +212,31 @@ html.native .app-frame textarea,
 html.native .app-frame select {
   font-size: 16px;
 }
+
+/* ------------------------------------------------------------------ */
+/*  Safe-area content helpers                                          */
+/*                                                                     */
+/*  The frame is edge-to-edge (no safe-area padding), so a screen's own */
+/*  background bleeds behind the status bar / home indicator / notch    */
+/*  ears. These re-home the inset onto the ONE piece of the screen that */
+/*  meets a system area: the topmost header/hero gets a safe-pt-*; the  */
+/*  bottom-most scroll region or pinned action bar gets a safe-pb-*; an */
+/*  absolutely-positioned back button gets a safe-top-* (its `top` is   */
+/*  measured from the padding box, so container padding does not move    */
+/*  it). Each folds the element's existing Tailwind base padding into a  */
+/*  calc(base + env()), so on web env()=0 → value == base and desktop is */
+/*  unchanged; scoped to html.native so they always win over the base    */
+/*  utility and never touch the browser mockup.                         */
+/* ------------------------------------------------------------------ */
+html.native .safe-top-4 { top: calc(1rem + env(safe-area-inset-top)); }
+html.native .safe-top-5 { top: calc(1.25rem + env(safe-area-inset-top)); }
+html.native .safe-top-6 { top: calc(1.5rem + env(safe-area-inset-top)); }
+html.native .safe-top-8 { top: calc(2rem + env(safe-area-inset-top)); }
+html.native .safe-pt-6 { padding-top: calc(1.5rem + env(safe-area-inset-top)); }
+html.native .safe-pt-8 { padding-top: calc(2rem + env(safe-area-inset-top)); }
+html.native .safe-pb-6 { padding-bottom: calc(1.5rem + env(safe-area-inset-bottom)); }
+html.native .safe-pb-7 { padding-bottom: calc(1.75rem + env(safe-area-inset-bottom)); }
+html.native .safe-pb-8 { padding-bottom: calc(2rem + env(safe-area-inset-bottom)); }
 
 /* Onboarding/auth (NavyScreen), native.
  *
@@ -222,33 +250,31 @@ html.native .app-frame select {
  * top and bottom. With the wrapper allowed to scroll, an over-tall column is
  * reachable instead of cut off (harmless on a phone, where nothing overflows). */
 html.native .navy-outer {
+  /* One block scroller at every native size. As a block (not a flex column),
+     scrollTop 0 is the true content top, so the column fills/centres when it fits
+     and scrolls fully — top reachable — when it does not (small device, large
+     type, keyboard open). A flex parent re-centres an over-tall child and leaves
+     its top unreachable; that was the earlier onboarding clip.
+     Safe-area padding lives here so the NAVY_WASH background (painted under the
+     padding, border-box) bleeds to the physical edges while the content column
+     stays clear of the status bar, home indicator and landscape ears. */
+  display: block;
   overflow-y: auto;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right)
+    env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
 html.native .navy-screen {
-  min-height: 0;
-  max-height: 860px;
-  margin-top: auto;
-  margin-bottom: auto;
+  /* Fill when short (so per-screen justify-between keeps the phone rhythm),
+     grow-and-scroll when tall. No max-height cap, no auto-margins. */
+  min-height: 100%;
+  max-height: none;
+  margin: 0;
 }
 
 /* Tablet (>= 768, i.e. iPad — native iPhones are all narrower): centre a capped
- * column with adaptive spacing, and let it grow-and-scroll rather than clip.
- * `min-height: 100%` + `justify-content: center` in a scrolling parent centres
- * when it fits and scrolls from the top when it does not — none of the
- * auto-margin top-clipping the phone rule risks on an over-tall screen. */
+   column with adaptive spacing instead of the phone's full-height distribution. */
 @media (min-width: 768px) {
-  /* The wrapper becomes a plain block scroller (not a flex column). A flex
-     parent re-centres an over-tall child and leaves its top unreachable — the
-     same clip the auto-margins caused. As a block, scrollTop 0 is the content's
-     true top, so the min-height + justify-content:center column below centres
-     when it fits and scrolls fully (top included) when it does not. */
-  html.native .navy-outer {
-    display: block;
-  }
   html.native .navy-screen {
-    min-height: 100%;
-    max-height: none;
-    margin: 0;
     justify-content: center;
     gap: 1.5rem;
     padding-top: 2.5rem;

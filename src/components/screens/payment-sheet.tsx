@@ -106,7 +106,7 @@ function SheetBody({
   return (
     <div className="h-full flex flex-col screen-in bg-white">
       <div
-        className="px-6 pt-8 pb-6 relative rounded-b-[30px] overflow-hidden shrink-0"
+        className="px-6 pt-8 safe-pt-8 pb-6 relative rounded-b-[30px] overflow-hidden shrink-0"
         style={{ background: "radial-gradient(130% 130% at 20% 0%, #1E4066 0%, #16304E 80%)" }}
       >
         <Ambient />
@@ -129,7 +129,7 @@ function SheetBody({
         </p>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-6 pt-5 pb-8">
+      <div className="flex-1 overflow-y-auto px-6 pt-5 pb-8 safe-pb-8">
         {/* The same breakdown as the listing, so the total cannot surprise. */}
         <div
           className="rounded-2xl p-4 mb-5"
@@ -212,7 +212,7 @@ function SheetBody({
         )}
       </div>
 
-      <div className="px-6 pt-3 pb-6 shrink-0" style={{ borderTop: "1px solid #F0ECE0" }}>
+      <div className="px-6 pt-3 pb-6 safe-pb-6 shrink-0" style={{ borderTop: "1px solid #F0ECE0" }}>
         {/*
           The confirm is a real network wait. The button keeps its exact size and
           position and stays disabled — only its inner label swaps for the brand's

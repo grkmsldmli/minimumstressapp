@@ -24,7 +24,7 @@ import { CATEGORIES } from "@/lib/taxonomy";
  */
 export const metadata: Metadata = {
   title: "About",
-  description: `${BRAND} is the professional platform for independent wellness work — book professional space for your practice by the hour, without a lease.`,
+  description: `${BRAND} is the professional platform for independent wellness work — book flexible professional space for your practice, without a lease.`,
   alternates: { canonical: "/about" },
 };
 
@@ -34,7 +34,7 @@ const STEPS = [
     body: "Search by what you practise and where you are. Listings show the room, the rate, the area, what is in it and what it suits. The exact address reaches you once your booking is confirmed.",
   },
   {
-    title: "Book the hour",
+    title: "Book your time",
     body: "Pick a time inside the host's open hours and pay when you book. The money is held, not sent on, until the session has actually happened.",
   },
   {
@@ -73,8 +73,9 @@ export default function About() {
           </p>
           <p className="font-body font-normal text-[16px] text-white/75 mt-4 leading-relaxed">
             {BRAND} is the professional platform for independent wellness work. Practitioners book
-            professional space by the hour — movement, coaching, meditation and more — and the people
-            who own that space fill the hours they are not using. No lease, no long-term commitment.
+            professional space when they need it — movement, coaching, meditation and more — and the
+            people who own that space fill the hours they are not using. No lease, no long-term
+            commitment.
           </p>
         </div>
       </header>

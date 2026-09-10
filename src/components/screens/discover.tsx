@@ -214,7 +214,7 @@ export function Discover({
 
   const hero = (
     <div
-      className="px-6 pt-8 pb-7 relative overflow-hidden shrink-0 rounded-b-[30px]"
+      className="px-6 pt-8 safe-pt-8 pb-7 relative overflow-hidden shrink-0 rounded-b-[30px]"
       style={{ background: NAVY }}
     >
       <Ambient />
@@ -277,7 +277,7 @@ export function Discover({
           app is for, for a practitioner arriving with clients of their own.
         */}
         <p className="font-body font-normal text-[13px] leading-relaxed text-white/55 mt-1.5">
-          Book professional space by the hour for your own clients — one all-in price, no lease.
+          Professional spaces for your practice — flexible, simple, no lease.
         </p>
       </div>
 
@@ -336,7 +336,11 @@ export function Discover({
           type="button"
           onClick={onGoPro}
           className="flex items-center justify-between gap-3 px-6 py-2.5 press shrink-0"
-          style={{ backgroundColor: "#16304E" }}
+          style={{
+            backgroundColor: "#16304E",
+            // Topmost element when !isPro — clear the status bar (0 on web).
+            paddingTop: "calc(0.625rem + env(safe-area-inset-top))",
+          }}
         >
           {/*
             This said "book instantly, no extra fee". Pro has never waived the
@@ -386,7 +390,7 @@ export function Discover({
           <MapView spaces={visible} isPro={isPro} onOpen={onOpenSpace} you={you} />
         </>
       ) : (
-        <PullToRefresh header={hero} className="flex-1 pb-8" onRefresh={onRefresh}>
+        <PullToRefresh header={hero} className="flex-1 pb-8 safe-pb-8" onRefresh={onRefresh}>
           {/*
             Chips are the only thing that stays: they stick just below the Pro
             banner once the whole hero has scrolled away, so filters stay

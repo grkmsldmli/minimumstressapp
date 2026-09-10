@@ -29,7 +29,7 @@ export function Legal({ onBack, onOpen }: { onBack: () => void; onOpen: (path: s
   return (
     <div className="h-full flex flex-col screen-in bg-white">
       <div
-        className="px-6 pt-8 pb-6 relative rounded-b-[30px] overflow-hidden shrink-0"
+        className="px-6 pt-8 safe-pt-8 pb-6 relative rounded-b-[30px] overflow-hidden shrink-0"
         style={{ background: "radial-gradient(130% 130% at 20% 0%, #1E4066 0%, #16304E 80%)" }}
       >
         <Ambient />
@@ -56,7 +56,7 @@ export function Legal({ onBack, onOpen }: { onBack: () => void; onOpen: (path: s
         </p>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-6 pt-5 pb-8">
+      <div className="flex-1 overflow-y-auto px-6 pt-5 pb-8 safe-pb-8">
         <div className="flex flex-col gap-2.5">
           {LEGAL_TOPICS.map((topic) => {
             const covered = SECTIONS.filter((section) => topic.covers.includes(section.key));

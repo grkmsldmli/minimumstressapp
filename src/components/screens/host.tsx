@@ -481,7 +481,7 @@ export function HostDashboard({
   const NAVY_HOST = "radial-gradient(140% 120% at 15% 0%, #1E4066 0%, #16304E 85%)";
   const hero = (
     <div
-      className="-mx-6 px-6 pt-8 pb-7 rounded-b-[30px] relative overflow-hidden shrink-0"
+      className="-mx-6 px-6 pt-8 safe-pt-8 pb-7 rounded-b-[30px] relative overflow-hidden shrink-0"
       style={{ background: NAVY_HOST }}
     >
       <Ambient />
@@ -608,7 +608,7 @@ export function HostDashboard({
   return (
     <div className="h-full flex flex-col screen-in bg-white">
       {pending ? (
-        <div className="flex-1 overflow-y-auto px-6 pb-8">
+        <div className="flex-1 overflow-y-auto px-6 pb-8 safe-pb-8">
           {hero}
           <div className="flex flex-col items-center text-center mt-6">
             <div
@@ -652,7 +652,7 @@ export function HostDashboard({
           </button>
         </div>
       ) : (
-        <PullToRefresh header={hero} className="flex-1 px-6 pb-8" onRefresh={onRefresh}>
+        <PullToRefresh header={hero} className="flex-1 px-6 pb-8 safe-pb-8" onRefresh={onRefresh}>
           {/*
             Said on the dashboard, not only in the list. A host whose space is
             hidden used to come back to a screen that looked entirely normal —
@@ -920,7 +920,7 @@ function HostEmptyState({
   return (
     <div className="h-full flex flex-col screen-in bg-white">
       <div
-        className="px-6 pt-8 pb-14 relative rounded-b-[30px] overflow-hidden shrink-0"
+        className="px-6 pt-8 safe-pt-8 pb-14 relative rounded-b-[30px] overflow-hidden shrink-0"
         style={{ background: "radial-gradient(140% 120% at 15% 0%, #1E4066 0%, #16304E 85%)" }}
       >
         <Ambient />
@@ -1003,7 +1003,7 @@ export function EditAvailability({
   return (
     <div className="h-full flex flex-col screen-in bg-white">
       <div
-        className="px-6 pt-8 pb-6 relative rounded-b-[30px] overflow-hidden shrink-0"
+        className="px-6 pt-8 safe-pt-8 pb-6 relative rounded-b-[30px] overflow-hidden shrink-0"
         style={{ background: "radial-gradient(140% 120% at 15% 0%, #1E4066 0%, #16304E 85%)" }}
       >
         <Ambient />
@@ -1024,7 +1024,7 @@ export function EditAvailability({
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-6 pt-5 pb-8">
+      <div className="flex-1 overflow-y-auto px-6 pt-5 pb-8 safe-pb-8">
         <p className="font-body font-normal text-[13.5px] mb-3 text-ink-faint">
           Turn on the days you&apos;re open. This repeats every week until you change it again.
           Times are {zoneAbbreviation(new Date(), space.timeZone)}, taken from the listing&apos;s
@@ -1033,7 +1033,7 @@ export function EditAvailability({
         <WeekSchedule blocks={blocks} onChange={setBlocks} />
       </div>
 
-      <div className="px-6 pt-3 pb-6 shrink-0" style={{ borderTop: "1px solid #F0ECE0" }}>
+      <div className="px-6 pt-3 pb-6 safe-pb-6 shrink-0" style={{ borderTop: "1px solid #F0ECE0" }}>
         {/*
           It said "Saved" and left, without waiting to find out. A host who
           lost their connection mid-tap watched the word appear, went back, and
@@ -1137,7 +1137,7 @@ export function Earnings({
   return (
     <div className="h-full flex flex-col screen-in bg-white">
       <div
-        className="px-6 pt-8 pb-6 relative rounded-b-[30px] overflow-hidden shrink-0"
+        className="px-6 pt-8 safe-pt-8 pb-6 relative rounded-b-[30px] overflow-hidden shrink-0"
         style={{ background: "radial-gradient(130% 130% at 20% 0%, #1E4066 0%, #16304E 80%)" }}
       >
         <Ambient />
@@ -1155,7 +1155,7 @@ export function Earnings({
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-6 pt-5 pb-8">
+      <div className="flex-1 overflow-y-auto px-6 pt-5 pb-8 safe-pb-8">
         <div className="grid grid-cols-2 gap-3">
           <StatCard label="This month" value={formatCents(monthCents)} />
           <StatCard label="Year to date" value={formatCents(yearCents)} />
@@ -1341,7 +1341,7 @@ export function HostProfile({
         sub={`${activeCount} active space${activeCount === 1 ? "" : "s"}${pendingCount > 0 ? ` · ${pendingCount} pending` : ""}`}
       />
 
-      <div className="flex-1 overflow-y-auto px-6 pt-5 pb-8">
+      <div className="flex-1 overflow-y-auto px-6 pt-5 pb-8 safe-pb-8">
         <GroupLabel>Hosting</GroupLabel>
         <div className="flex flex-col gap-2.5">
           {/*

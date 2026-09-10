@@ -66,7 +66,7 @@ export function RefundRequest({
     return (
       <div className="h-full flex flex-col bg-white screen-in">
         <Header onBack={onBack} title="Sent" />
-        <div className="flex-1 overflow-y-auto px-6 pt-8">
+        <div className="flex-1 overflow-y-auto px-6 pt-8 safe-pt-8">
           <p className="font-display italic font-semibold text-[20px] text-navy">
             {answer.state === "approved"
               ? "Refunded"
@@ -85,7 +85,7 @@ export function RefundRequest({
             </p>
           )}
         </div>
-        <div className="px-6 pt-3 pb-6 shrink-0">
+        <div className="px-6 pt-3 pb-6 safe-pb-6 shrink-0">
           <PrimaryButton onClick={onBack}>Done</PrimaryButton>
         </div>
       </div>
@@ -96,7 +96,7 @@ export function RefundRequest({
     <div className="h-full flex flex-col bg-white screen-in">
       <Header onBack={onBack} title="Ask for a refund" />
 
-      <div className="flex-1 overflow-y-auto px-6 pt-5 pb-8">
+      <div className="flex-1 overflow-y-auto px-6 pt-5 pb-8 safe-pb-8">
         <p className="font-body font-medium text-[15px] text-navy">
           {booking.spaceName} · {sessionDayLong(booking.startsAt, booking.timeZone)}
         </p>
@@ -187,7 +187,7 @@ export function RefundRequest({
         )}
       </div>
 
-      <div className="px-6 pt-3 pb-6 shrink-0" style={{ borderTop: "1px solid #F0ECE0" }}>
+      <div className="px-6 pt-3 pb-6 safe-pb-6 shrink-0" style={{ borderTop: "1px solid #F0ECE0" }}>
         <PrimaryButton onClick={() => void send()} disabled={!canSend}>
           {sending ? "Sending…" : "Send"}
         </PrimaryButton>
@@ -208,7 +208,7 @@ function Header({ onBack, title }: { onBack: () => void; title: string }) {
        * arrow was a ghost. Three screens shared the fault and all three are in
        * the money flow, which is the worst place to lose a way back.
        */
-      className="px-6 pt-8 pb-6 relative rounded-b-[30px] overflow-hidden shrink-0"
+      className="px-6 pt-8 safe-pt-8 pb-6 relative rounded-b-[30px] overflow-hidden shrink-0"
       style={{ background: "radial-gradient(140% 120% at 15% 0%, #1E4066 0%, #16304E 85%)" }}
     >
       <Ambient />

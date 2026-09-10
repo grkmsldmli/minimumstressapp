@@ -182,7 +182,7 @@ export function SpaceGallery({
       />
 
       {media.length > 1 && (
-        <div className="absolute top-4 right-4 flex gap-1.5 pointer-events-none">
+        <div className="safe-top-4 absolute right-4 flex gap-1.5 pointer-events-none">
           {media.map((item, i) => (
             <span
               key={item.id}
@@ -198,7 +198,7 @@ export function SpaceGallery({
         </div>
       )}
 
-      <div className="absolute inset-0 flex flex-col justify-between p-6 pointer-events-none">
+      <div className="safe-pt-6 absolute inset-0 flex flex-col justify-between p-6 pointer-events-none">
         {/*
           The overlay itself ignores pointers so a swipe passes through to the
           gallery underneath; the controls inside it take them back. Without

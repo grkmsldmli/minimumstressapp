@@ -38,8 +38,11 @@ export function NavyScreen({
           type="button"
           onClick={onBack}
           aria-label="Back"
-          className="absolute left-5 top-5 z-20 w-9 h-9 rounded-full flex items-center justify-center press"
-          style={{ backgroundColor: "rgba(255,255,255,0.14)" }}
+          className="safe-top-5 absolute z-20 w-9 h-9 rounded-full flex items-center justify-center press"
+          style={{
+            backgroundColor: "rgba(255,255,255,0.14)",
+            left: "calc(1.25rem + env(safe-area-inset-left))",
+          }}
         >
           <ArrowLeft size={16} color="#fff" />
         </button>

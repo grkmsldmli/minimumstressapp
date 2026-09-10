@@ -235,7 +235,7 @@ export function EditSpace({
 
   return (
     <div className="h-full flex flex-col screen-in bg-white">
-      <div className="px-6 pt-8 pb-5 shrink-0 flex items-center gap-3">
+      <div className="px-6 pt-8 safe-pt-8 pb-5 shrink-0 flex items-center gap-3">
         <button
           type="button"
           onClick={onBack}
@@ -255,7 +255,7 @@ export function EditSpace({
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-6 pb-8">
+      <div className="flex-1 overflow-y-auto px-6 pb-8 safe-pb-8">
         <Label>Photos</Label>
         <SpaceMediaManager media={space.media} onAdd={onAddMedia} onRemove={onRemoveMedia} />
 

@@ -46,7 +46,7 @@ export function HostSpaces({
   return (
     <div className="h-full flex flex-col screen-in bg-white">
       <div
-        className="px-6 pt-8 pb-6 relative rounded-b-[30px] overflow-hidden shrink-0"
+        className="px-6 pt-8 safe-pt-8 pb-6 relative rounded-b-[30px] overflow-hidden shrink-0"
         style={{ background: "radial-gradient(140% 120% at 15% 0%, #1E4066 0%, #16304E 85%)" }}
       >
         <Ambient />
@@ -64,7 +64,7 @@ export function HostSpaces({
         </div>
       </div>
 
-      <PullToRefresh className="flex-1 px-6 pt-5 pb-8" onRefresh={onRefresh}>
+      <PullToRefresh className="flex-1 px-6 pt-5 pb-8 safe-pb-8" onRefresh={onRefresh}>
         <div className="flex flex-col gap-2.5">
           {spaces.map((space) => (
             <SpaceRow

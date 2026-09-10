@@ -115,7 +115,7 @@ export function Thread({
   return (
     <div className="h-full flex flex-col screen-in bg-white">
       <div
-        className="px-6 pt-8 pb-5 relative rounded-b-[30px] overflow-hidden shrink-0"
+        className="px-6 pt-8 safe-pt-8 pb-5 relative rounded-b-[30px] overflow-hidden shrink-0"
         style={{ background: "radial-gradient(140% 120% at 15% 0%, #1E4066 0%, #16304E 85%)" }}
       >
         <Ambient />
@@ -246,13 +246,13 @@ export function Thread({
       )}
 
       {!canSend ? (
-        <div className="px-6 pt-3 pb-6 shrink-0" style={{ borderTop: "1px solid #F0ECE0" }}>
+        <div className="px-6 pt-3 pb-6 safe-pb-6 shrink-0" style={{ borderTop: "1px solid #F0ECE0" }}>
           <p className="font-body font-normal text-[14px] leading-relaxed text-ink-faint text-center">
             {disabledReason ?? "This booking can no longer receive messages."}
           </p>
         </div>
       ) : (
-      <div className="px-6 pt-3 pb-6 shrink-0" style={{ borderTop: "1px solid #F0ECE0" }}>
+      <div className="px-6 pt-3 pb-6 safe-pb-6 shrink-0" style={{ borderTop: "1px solid #F0ECE0" }}>
         <form
           onSubmit={(e) => {
             e.preventDefault();

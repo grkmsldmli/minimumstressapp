@@ -780,7 +780,7 @@ export function SpaceDetail({
         reach the screen edges past the scroll's own horizontal padding.
       */}
       <div
-        className="sticky bottom-0 -mx-6 px-6 pt-4 pb-6"
+        className="sticky bottom-0 -mx-6 px-6 pt-4 pb-6 safe-pb-6"
         style={{ background: "linear-gradient(to top, #FFFFFF 75%, transparent)" }}
       >
         {/*

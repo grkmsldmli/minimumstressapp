@@ -107,6 +107,11 @@ export const viewport: Viewport = {
   initialScale: 1,
   viewportFit: "cover",
   themeColor: "#16304E",
+  // When the on-screen keyboard opens, shrink the layout viewport with it
+  // (Android especially) so a focused field is scrolled into view instead of
+  // being covered. The frame stays 100dvh — never svh — so the layout never
+  // collapses; this only changes how the keyboard interacts with the viewport.
+  interactiveWidget: "resizes-content",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

@@ -45,7 +45,7 @@ export function Disputes({
          * arrow was a ghost. Three screens shared the fault and all three are in
          * the money flow, which is the worst place to lose a way back.
          */
-        className="px-6 pt-8 pb-6 relative rounded-b-[30px] overflow-hidden shrink-0"
+        className="px-6 pt-8 safe-pt-8 pb-6 relative rounded-b-[30px] overflow-hidden shrink-0"
         style={{ background: "radial-gradient(140% 120% at 15% 0%, #1E4066 0%, #16304E 85%)" }}
       >
         <Ambient />
@@ -63,7 +63,7 @@ export function Disputes({
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-6 pt-5 pb-8">
+      <div className="flex-1 overflow-y-auto px-6 pt-5 pb-8 safe-pb-8">
         {disputes.length === 0 ? (
           <div className="flex flex-col items-center text-center pt-10">
             <div

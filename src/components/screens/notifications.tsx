@@ -31,7 +31,7 @@ export function Notifications({
   return (
     <div className="h-full flex flex-col screen-in bg-white">
       <div
-        className="px-6 pt-8 pb-6 relative rounded-b-[30px] overflow-hidden shrink-0"
+        className="px-6 pt-8 safe-pt-8 pb-6 relative rounded-b-[30px] overflow-hidden shrink-0"
         style={{ background: "radial-gradient(130% 130% at 20% 0%, #1E4066 0%, #16304E 80%)" }}
       >
         <button
@@ -66,7 +66,7 @@ export function Notifications({
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto px-6 pt-5 pb-8">
+      <div className="flex-1 overflow-y-auto px-6 pt-5 pb-8 safe-pb-8">
         {entries.length === 0 ? (
           <p className="font-body font-normal text-[14px] leading-relaxed text-ink-soft">
             Nothing yet. Alerts about your bookings appear here.

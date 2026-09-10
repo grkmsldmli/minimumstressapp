@@ -29,7 +29,7 @@ export function NavyScreen({
 }) {
   return (
     <div
-      className={`h-full flex flex-col screen-in relative overflow-hidden ${className}`}
+      className="h-full flex flex-col screen-in relative overflow-hidden"
       style={{ background: NAVY_WASH }}
     >
       <Ambient />
@@ -44,7 +44,16 @@ export function NavyScreen({
           <ArrowLeft size={16} color="#fff" />
         </button>
       )}
-      {children}
+      {/*
+        The content column. `min-h-full` fills a phone (so justify-between keeps
+        its familiar rhythm); on native tall screens (.navy-screen in
+        globals.css) the floor is released and the column is capped and centred,
+        so onboarding does not stretch down a 1024px+ iPad. Width is already
+        capped to ~600px by html.native .app-frame; mx-auto centres it.
+      */}
+      <div className={`navy-screen relative z-10 flex flex-col w-full mx-auto min-h-full ${className}`}>
+        {children}
+      </div>
     </div>
   );
 }

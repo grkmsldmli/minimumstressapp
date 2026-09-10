@@ -160,6 +160,69 @@ body {
 }
 
 /* ------------------------------------------------------------------ */
+/*  Native (Capacitor) — never the desktop phone mockup                 */
+/*                                                                      */
+/*  `html.native` is stamped by AppStateProvider when                   */
+/*  window.Capacitor.isNativePlatform() is true — a robust, width-       */
+/*  independent signal, so a native iPad (which is wide enough to hit    */
+/*  the 500px mockup branch) does NOT render a fake phone. Both native   */
+/*  iPhone and iPad get full-viewport, edge-to-edge, safe-area-aware     */
+/*  layout. `html.native .app-frame` is (0,1,1) specificity, so it beats */
+/*  both the base rule and the min-width:500px rule at every width with  */
+/*  no !important. Ordinary desktop web (no `.native`) is untouched.     */
+/* ------------------------------------------------------------------ */
+html.native .app-stage {
+  /* The ground behind the capped column and behind the side insets on an
+     iPad is the app's navy — never a white strip. */
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: #16304e;
+}
+
+html.native .app-frame {
+  /* iPhone (< 600) fills the width edge-to-edge; iPad centres a ~600px
+     column on the navy ground — a real tablet layout, not a stretched form
+     and not a mockup. */
+  width: 100%;
+  max-width: 600px;
+  height: 100vh;
+  height: 100dvh;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: #16304e;
+  /* All four insets, so the notch, home indicator and landscape ears are
+     cleared; the navy ground shows through, never white. */
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+
+/* The iOS 16px input floor is scoped to < 500px above, which misses a native
+   iPad — re-assert it for native at any width so focusing a field never zooms. */
+html.native .app-frame input,
+html.native .app-frame textarea,
+html.native .app-frame select {
+  font-size: 16px;
+}
+
+/* Onboarding/auth (NavyScreen) on a tall native screen: cap the content column
+   so `justify-between` does not fling the headline and button to the extremes
+   of a 1024px+ iPad, and centre it. The content column is `min-h-full` so it
+   fills a phone normally; here we release that floor and cap + auto-margin it
+   (flexbox auto margins centre it in the column parent). */
+html.native .navy-screen {
+  min-height: 0;
+  max-height: 860px;
+  margin-top: auto;
+  margin-bottom: auto;
+}
+
+/* ------------------------------------------------------------------ */
 /*  Motion — the breathing motif and screen transitions                */
 /* ------------------------------------------------------------------ */
 

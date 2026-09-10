@@ -908,6 +908,8 @@ export interface WorkOpportunity {
   urgent: boolean;
   distanceLabel: string | null;
   interestState: WorkInterestState | null;
+  /** The practitioner's own interest row id, when they have one (to withdraw). */
+  interestId: string | null;
   /** Derived display state of the request. */
   state: WorkRequestState;
 }

@@ -2382,6 +2382,7 @@ function mapOpportunity(raw: unknown): WorkOpportunity {
     urgent: Boolean(o.urgent),
     distanceLabel: (o.distanceLabel as string | null) ?? null,
     interestState: (o.interestState as WorkInterestState | null) ?? null,
+    interestId: (o.interestId as string | null) ?? null,
     state: o.state as WorkRequestState,
   };
 }

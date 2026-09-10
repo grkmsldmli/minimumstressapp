@@ -5,6 +5,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   Booking,
   BookingRequest,
+  ClassTemplate,
+  CoverageRequest,
   HostBooking,
   HostSpace,
   Profile,
@@ -12,8 +14,14 @@ import type {
   OpenDispute,
   PublicReview,
   ReferralSummary,
+  RequestInterest,
   SpaceAccessDetails,
+  WorkOpportunity,
+  WorkPreferences,
 } from "@/lib/domain";
+import type { AvailabilityBlock } from "@/lib/availability";
+import { viewerZone } from "@/lib/timezone";
+import { type WorkEligibilityGap, workEligibility } from "@/lib/work/eligibility";
 import { apiFetch } from "@/lib/api-fetch";
 import {
   SPACE_DEEP_LINK_PARAM,
@@ -101,6 +109,10 @@ import {
 } from "./screens/practitioner-extras";
 import { AuthEntry, AuthVerify, HowItWorks, RoleSelect, Splash } from "./screens/shared";
 import { SpaceDetail } from "./screens/space-detail";
+import { WorkPractitioner, WorkStudio } from "./screens/work";
+import { WorkAvailabilityEditor } from "./screens/work-availability";
+import { ClassTemplates } from "./screens/class-templates";
+import { CoverageDetail, CoveragePost } from "./screens/coverage";
 
 /**
  * Whether this account can confirm a booking on these dates, decided on the
@@ -197,7 +209,25 @@ interface Snapshot {
   referrals: ReferralSummary[];
   /** Unread incoming messages per booking id, from server truth. */
   unreadCounts: Record<string, number>;
+  /* ---- Work (empty/default for the side that does not use each) ---- */
+  workPreferences: WorkPreferences;
+  workAvailability: AvailabilityBlock[];
+  workOpportunities: WorkOpportunity[];
+  classTemplates: ClassTemplate[];
+  coverageRequests: CoverageRequest[];
 }
+
+/** Work preferences a fetch failure falls back to — everything off, nothing set. */
+const WORK_PREFERENCES_FALLBACK: WorkPreferences = {
+  availableForWork: false,
+  workTimeZone: "America/Los_Angeles",
+  hasLocation: false,
+  basePostcode: null,
+  maxTravelMiles: null,
+  minPayCents: null,
+  openToOnetime: true,
+  openToRecurring: false,
+};
 
 export function App() {
   const {
@@ -224,11 +254,17 @@ export function App() {
     claimBookingId,
     setClaimBookingId,
     setThreadBookingId,
+    activeCoverageId,
+    setActiveCoverageId,
     revision,
     refresh,
   } = useApp();
 
   const [data, setData] = useState<Snapshot | null>(null);
+  const [coverageInterest, setCoverageInterest] = useState<RequestInterest[]>([]);
+  const [loadingInterest, setLoadingInterest] = useState(false);
+  const [workBusyId, setWorkBusyId] = useState<string | null>(null);
+  const [workSaving, setWorkSaving] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
   const [roleError, setRoleError] = useState<string | null>(null);
@@ -628,6 +664,11 @@ export function App() {
         referralCode,
         referrals,
         unreadCounts,
+        workPreferences,
+        workAvailability,
+        workOpportunities,
+        classTemplates,
+        coverageRequests,
       ] = await Promise.all([
           repo.getProfile(),
           repo.listPublicSpaces(),
@@ -649,6 +690,13 @@ export function App() {
           repo.listReferrals().catch(() => []),
           // Unread message badges — a convenience; an empty map on failure.
           repo.unreadMessageCounts().catch(() => ({})),
+          // Work is a whole extra area; a hiccup fetching any of it must never
+          // keep somebody out of their account. Each side reads only its own.
+          repo.getWorkPreferences().catch(() => WORK_PREFERENCES_FALLBACK),
+          repo.getWorkAvailability().catch(() => []),
+          repo.listWorkOpportunities().catch(() => []),
+          repo.listClassTemplates().catch(() => []),
+          repo.listCoverageRequests().catch(() => []),
         ]);
 
       // Address details are per-space and authorization-gated, so they are
@@ -675,6 +723,11 @@ export function App() {
         referralCode,
         referrals,
         unreadCounts,
+        workPreferences,
+        workAvailability,
+        workOpportunities,
+        classTemplates,
+        coverageRequests,
       };
     };
 
@@ -724,6 +777,32 @@ export function App() {
       cancelled = true;
     };
   }, [repo, revision, needsAccount]);
+
+  /**
+   * The interest on the coverage request the studio is looking at.
+   *
+   * Loaded on its own (not part of the shell snapshot) because it is a
+   * per-request, host-only, cross-account read, and re-run on `revision` so a
+   * confirm or a new interest refreshes it.
+   */
+  useEffect(() => {
+    if (screen !== "coverage-detail" || !activeCoverageId) return;
+    let cancelled = false;
+    void (async () => {
+      setLoadingInterest(true);
+      try {
+        const rows = await repo.listRequestInterest(activeCoverageId);
+        if (!cancelled) setCoverageInterest(rows);
+      } catch {
+        if (!cancelled) setCoverageInterest([]);
+      } finally {
+        if (!cancelled) setLoadingInterest(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [repo, screen, activeCoverageId, revision]);
 
   const mutate = useCallback(
     async (action: () => Promise<unknown>) => {
@@ -1295,6 +1374,11 @@ export function App() {
     cancellations,
     sessions,
     unreadCounts,
+    workPreferences,
+    workAvailability,
+    workOpportunities,
+    classTemplates,
+    coverageRequests,
   } =
     data;
 
@@ -1471,6 +1555,7 @@ export function App() {
           }}
           onGoPro={() => go("pro")}
           onGoBookings={() => go("bookings")}
+          onGoWork={() => go("work")}
           onGoNotifications={() => go("notifications")}
           undeliveredCount={data.notifications.filter((n) => n.state === "failed").length}
           onGoProfile={() => go("practitioner-profile")}
@@ -1533,6 +1618,7 @@ export function App() {
           }}
           onOpenEarnings={() => go("earnings")}
           onOpenProfile={() => go("host-profile")}
+          onGoWork={() => go("work")}
           onGoNotifications={() => go("notifications")}
           undeliveredCount={data.notifications.filter((n) => n.state === "failed").length}
           onReviewBooking={(bookingId) => {
@@ -1564,6 +1650,165 @@ export function App() {
         />
   );
 
+  /* ---------------- Work ---------------- */
+
+  // The same person-level gate the booking side uses, so "matchable" reads the
+  // same as "bookable". Computed from stored, server-written columns.
+  const workEligible = workEligibility(
+    {
+      accountType: profile.accountType,
+      profession: profile.profession,
+      identityVerified: profile.identityVerifiedAt !== null,
+      credentialVerified: profile.credentialReview.state === "verified",
+      insurance: {
+        hasCertificate: profile.insuranceDocName !== null,
+        state: profile.insuranceReview.state,
+        effectiveDate: profile.insuranceEffectiveDate,
+        expiresAt: profile.insuranceExpiresAt,
+      },
+      cancellations,
+    },
+    now,
+  );
+
+  const fixWorkGap = (gap: WorkEligibilityGap) => {
+    if (gap === "identity") go("verify");
+    else if (gap === "credential") go("credential");
+    else go("practitioner-profile");
+  };
+
+  const activeCoverage = coverageRequests.find((r) => r.id === activeCoverageId) ?? null;
+
+  const renderWork = () =>
+    profile.accountType === "host" ? (
+      <WorkStudio
+        requests={coverageRequests}
+        templateCount={classTemplates.length}
+        hasSpaces={mySpaces.length > 0}
+        onNewCoverage={() => go("coverage-post")}
+        onOpenTemplates={() => go("class-templates")}
+        onOpenRequest={(id) => {
+          setActiveCoverageId(id);
+          go("coverage-detail");
+        }}
+        onRefresh={onPullRefresh}
+        onBack={back}
+      />
+    ) : (
+      <WorkPractitioner
+        eligible={workEligible.eligible}
+        gaps={workEligible.gaps}
+        preferences={workPreferences}
+        availabilityCount={workAvailability.length}
+        opportunities={workOpportunities}
+        foundingNumber={profile.foundingPractitionerNumber}
+        foundingRemaining={data.foundingPractitionerRemaining}
+        busyRequestId={workBusyId}
+        onToggleAvailable={() =>
+          void mutate(() =>
+            repo.updateWorkPreferences({
+              availableForWork: !workPreferences.availableForWork,
+              workTimeZone: viewerZone(),
+            }),
+          )
+        }
+        onEditAvailability={() => go("work-availability")}
+        onExpressInterest={(requestId) => {
+          setWorkBusyId(requestId);
+          void mutate(() => repo.expressWorkInterest(requestId, null)).finally(() =>
+            setWorkBusyId(null),
+          );
+        }}
+        onWithdrawInterest={(interestId) => {
+          setWorkBusyId(interestId);
+          void mutate(() => repo.withdrawWorkInterest(interestId)).finally(() =>
+            setWorkBusyId(null),
+          );
+        }}
+        onFixGap={fixWorkGap}
+        onRefresh={onPullRefresh}
+        onBack={back}
+      />
+    );
+
+  const renderWorkAvailability = () => (
+    <WorkAvailabilityEditor
+      initialBlocks={workAvailability}
+      preferences={workPreferences}
+      saving={workSaving}
+      onSave={(blocks, prefs) => {
+        setWorkSaving(true);
+        void mutate(async () => {
+          await repo.setWorkAvailability(blocks);
+          await repo.updateWorkPreferences(prefs);
+        })
+          .then(() => back())
+          .finally(() => setWorkSaving(false));
+      }}
+      onBack={back}
+    />
+  );
+
+  const renderClassTemplates = () => (
+    <ClassTemplates
+      templates={classTemplates}
+      saving={workSaving}
+      onCreate={(input) => {
+        setWorkSaving(true);
+        void mutate(() => repo.createClassTemplate(input)).finally(() => setWorkSaving(false));
+      }}
+      onUpdate={(id, input) => {
+        setWorkSaving(true);
+        void mutate(() => repo.updateClassTemplate(id, input)).finally(() => setWorkSaving(false));
+      }}
+      onArchive={(id) => void mutate(() => repo.archiveClassTemplate(id))}
+      onBack={back}
+    />
+  );
+
+  const renderCoveragePost = () => (
+    <CoveragePost
+      spaces={mySpaces.map((s) => ({ id: s.id, name: s.name, timeZone: s.timeZone }))}
+      templates={classTemplates}
+      saving={workSaving}
+      onSubmit={(input) => {
+        setWorkSaving(true);
+        void mutate(() => repo.createCoverageRequest(input))
+          .then(() => back())
+          .finally(() => setWorkSaving(false));
+      }}
+      onBack={back}
+    />
+  );
+
+  const renderCoverageDetail = () => {
+    if (!activeCoverage) return renderWork();
+    return (
+      <CoverageDetail
+        request={activeCoverage}
+        interest={coverageInterest}
+        loadingInterest={loadingInterest}
+        busyInterestId={workBusyId}
+        cancelling={workSaving}
+        onConfirm={(interestId) => {
+          if (!activeCoverageId) return;
+          setWorkBusyId(interestId);
+          void mutate(() => repo.confirmRequestInterest(activeCoverageId, interestId)).finally(() =>
+            setWorkBusyId(null),
+          );
+        }}
+        onCancel={() => {
+          if (!activeCoverageId) return;
+          setWorkSaving(true);
+          void mutate(() => repo.cancelCoverageRequest(activeCoverageId))
+            .then(() => back())
+            .finally(() => setWorkSaving(false));
+        }}
+        onBack={back}
+      />
+    );
+  };
+
   /**
    * A host never lands on the practitioner side, and the reverse.
    *
@@ -1582,6 +1827,7 @@ export function App() {
     "pro",
     "practitioner-profile",
     "verify",
+    "work-availability",
   ];
   const hostOnly: Screen[] = [
     "host",
@@ -1590,7 +1836,12 @@ export function App() {
     "edit-space",
     "earnings",
     "host-profile",
+    "class-templates",
+    "coverage-post",
+    "coverage-detail",
   ];
+  // "work" is intentionally in neither list: both sides have a Work home, and
+  // renderWork() below branches on accountType.
 
   const previewingOwnListing =
     screen === "detail" && mySpaces.some((space) => space.id === activeSpaceId);
@@ -2222,6 +2473,17 @@ export function App() {
           onSignOut={signOut}
         />
       );
+
+    case "work":
+      return renderWork();
+    case "work-availability":
+      return renderWorkAvailability();
+    case "class-templates":
+      return renderClassTemplates();
+    case "coverage-post":
+      return renderCoveragePost();
+    case "coverage-detail":
+      return renderCoverageDetail();
   }
 }
 

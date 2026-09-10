@@ -607,10 +607,13 @@ export async function listOpportunities(
   // visible even after they toggle availability off.
   const { data: myInterest } = await admin
     .from("work_interest")
-    .select("request_id, state")
+    .select("id, request_id, state")
     .eq("practitioner_id", practitionerId);
   const interestByRequest = new Map(
-    (myInterest ?? []).map((i) => [i.request_id as string, i.state as WorkInterestState]),
+    (myInterest ?? []).map((i) => [
+      i.request_id as string,
+      { id: i.id as string, state: i.state as WorkInterestState },
+    ]),
   );
 
   // Open requests to match against (only when available), plus every request the
@@ -646,6 +649,13 @@ export async function listOpportunities(
       if (!candidate.facts.availableForWork) continue;
       if (!matchCandidate(requestFactsFrom(row, space), candidate.facts, now).matches) continue;
     }
+    // A withdrawn interest with no live match should drop off the list.
+    if (mine && (mine.state === "withdrawn" || mine.state === "declined")) {
+      const stillMatches =
+        candidate.facts.availableForWork &&
+        matchCandidate(requestFactsFrom(row, space), candidate.facts, now).matches;
+      if (mine.state === "withdrawn" && !stillMatches) continue;
+    }
     const dist =
       candidate.facts.base && space?.lat != null && space?.lng != null
         ? distanceLabel(distanceBetween(candidate.facts.base, { lat: space.lat, lng: space.lng }, "mi"))
@@ -663,7 +673,8 @@ export async function listOpportunities(
       notes: row.notes,
       urgent: row.urgent,
       distanceLabel: dist,
-      interestState: mine,
+      interestState: mine?.state ?? null,
+      interestId: mine?.id ?? null,
       state: effectiveRequestState(
         { state: row.state, startsAt: new Date(row.starts_at), endsAt: new Date(row.ends_at) },
         now,

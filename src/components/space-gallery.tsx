@@ -88,15 +88,15 @@ export function SpaceGallery({
 
   return (
     /*
-     * Height is the passed number by default, but yields to `--hero-h` when an
-     * ancestor sets it — which is how the detail screen collapses the hero as
-     * the page scrolls, without this component knowing anything about scrolling.
-     * Where no ancestor sets the variable, the fallback keeps every other caller
-     * at exactly the height it asked for.
+     * A constant box. The detail screen collapses the hero compositor-side by
+     * clipping this box and translating its title (driven by `--hero-p` on an
+     * ancestor), so the box's own layout height never changes and the horizontal
+     * gallery's scroll-snap geometry and media never relayout mid-scroll. Every
+     * caller simply gets the height it asked for.
      */
     <div
       className="relative shrink-0 overflow-hidden"
-      style={{ height: `var(--hero-h, ${height}px)` }}
+      style={{ height: `${height}px` }}
     >
       {media.length === 0 ? (
         <div
@@ -175,6 +175,9 @@ export function SpaceGallery({
         style={{
           height: 160,
           background: "linear-gradient(to top, rgba(10,26,44,0.72), transparent)",
+          // Rides up with the title as the detail hero collapses so the title
+          // keeps its scrim; 0 for any caller that doesn't set --hero-p.
+          transform: "translate3d(0, calc(var(--hero-p, 0) * -120px), 0)",
         }}
       />
 

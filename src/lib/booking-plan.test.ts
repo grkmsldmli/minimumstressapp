@@ -167,12 +167,17 @@ describe("a slot has to be one the host actually opened", () => {
   it("refuses a day the host is closed", () => {
     // Saturday. Inside the horizon now that everyone sees the week, so the
     // only thing left refusing it is the schedule — which is what this is for.
-    const saturday = new Date(2026, 7, 8, 14, 0, 0);
+    const saturday = at(14, 5); // Aug 8, a Saturday, built in the room's zone
     expect(plan({ startsAt: saturday })).toMatchObject({ reason: "slot_not_open" });
   });
 
   it("refuses a half-hour start even inside an open block", () => {
-    const halfPast = new Date(2026, 7, 3, 14, 30, 0);
+    // 14:30 in the room's zone, not the runner's. A raw new Date(2026, 7, 3, 14, 30)
+    // is 14:30 UTC — already past NOW on a UTC runner, so it would fail as
+    // slot_in_past rather than exercising the half-hour rule.
+    const halfPast = instantFrom(MONDAY, 14 * 60 + 30, ZONE);
+    expect(halfPast).not.toBeNull();
+    if (!halfPast) return;
     expect(plan({ startsAt: halfPast })).toEqual({ ok: false, reason: "slot_not_open" });
   });
 
@@ -352,7 +357,7 @@ describe("how many sessions can be held at once", () => {
    * tapped. Somebody at their limit is at their limit everywhere.
    */
   it("says so before complaining about the hour", () => {
-    const closed = new Date(2026, 7, 8, 14, 0, 0);
+    const closed = at(14, 5); // Aug 8, a Saturday, built in the room's zone
     expect(plan({ upcomingCount: MAX_UPCOMING_BOOKINGS_FREE, startsAt: closed })).toEqual({
       ok: false,
       reason: "too_many_upcoming",

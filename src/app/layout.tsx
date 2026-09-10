@@ -36,7 +36,7 @@ const poppins = Poppins({
  * home screen, and a browser bar over every screen.
  */
 const DESCRIPTION =
-  "Private rooms for every kind of practice — movement, coaching, meditation, and healing.";
+  "Minimum Stress is the professional platform for independent wellness work — find and book professional space for your practice, without a lease.";
 
 /**
  * The title, which was the brand name and nothing else.

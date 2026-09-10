@@ -72,9 +72,6 @@ export const LIMITS = {
    */
   jade: { limit: 20, windowMs: 3_600_000 },
 
-  /** Leads. Cheap to store and easy to flood, so counted separately. */
-  jadeLead: { limit: 5, windowMs: 3_600_000 },
-
   /**
    * And the same ceiling per destination address.
    *

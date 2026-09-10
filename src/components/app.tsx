@@ -48,6 +48,7 @@ import type { LocationChoice } from "@/components/location-prompt";
 import { supabaseBackendEnabled } from "@/lib/repository-factory";
 import {
   ensureProfile,
+  exchangeOAuthCode,
   sendEmailCode,
   signInWithPassword,
   signInWithProvider,
@@ -56,7 +57,7 @@ import {
 
 import { describeAuthError } from "@/lib/auth-error";
 import { type Provider, enabledProviders } from "@/lib/auth-providers";
-import { isNativeApp } from "@/lib/native";
+import { NATIVE_AUTH_REDIRECT, capacitorPlugin, hasNativeOAuthSupport, isNativeApp } from "@/lib/native";
 import { BOOKING_HORIZON_DAYS } from "@/lib/money";
 import { SESSION_MS } from "@/lib/session";
 import { explainRejection } from "@/lib/booking-plan";
@@ -188,6 +189,8 @@ interface Snapshot {
   notifications: NotificationEntry[];
   /** Founding Host spots still open, from the server's own count. */
   foundingRemaining: number;
+  /** Founding Practitioner spots still open, from the server's own count. */
+  foundingPractitionerRemaining: number;
   /** This host's shareable referral code, assigned by the server on first read. */
   referralCode: string;
   /** This host's referrals, as safe status summaries — no referred-host data. */
@@ -560,14 +563,19 @@ export function App() {
   useEffect(() => {
     if (!onSupabase) return;
 
-    // The native shell signs in by email code only. Third-party OAuth is a
-    // full-page redirect to the provider, and Google refuses that inside a
-    // WebView ("disallowed_useragent"); the email code has no redirect and
-    // works there. Offering only email also keeps the store build clear of
-    // Apple's Sign in with Apple requirement, which is triggered by third-party
-    // social login. So the app skips the provider lookup and the buttons stay
-    // hidden (the state already starts empty); the web keeps all of them.
-    if (isNativeApp()) return;
+    // Both web and native ask the auth server which providers are enabled and
+    // render only those (never a hardcoded button that would fail). Native OAuth
+    // opens the provider in the system browser and returns via a deep link — see
+    // signInWithProvider and the appUrlOpen handler below.
+    //
+    // SAFETY FOR THE LIVE BINARY: a native build only fetches providers when it
+    // can actually complete the flow — i.e. it ships the Capacitor Browser/App
+    // plugins (hasNativeOAuthSupport). The current App Store binary (1.0.0) does
+    // not, so it stays email-only and can never show a Google/Apple button that
+    // dead-ends; the 1.0.1 binary that ships those plugins lights the buttons up
+    // once the providers are also enabled server-side. So this whole OAuth path
+    // is dormant on today's live app regardless of Supabase configuration.
+    if (isNativeApp() && !hasNativeOAuthSupport()) return;
 
     const stop = new AbortController();
     void enabledProviders(
@@ -616,6 +624,7 @@ export function App() {
         sessions,
         notifications,
         foundingRemaining,
+        foundingPractitionerRemaining,
         referralCode,
         referrals,
         unreadCounts,
@@ -630,6 +639,10 @@ export function App() {
           repo.getSessionCount(),
           repo.listNotifications(),
           repo.foundingHostsRemaining(),
+          // Falls back to 0 (badge simply hidden) so the whole account still
+          // loads if the code is ever deployed before migration 0068 adds the
+          // founding_practitioners_remaining() function.
+          repo.foundingPractitionersRemaining().catch(() => 0),
           // The referral area is a small dashboard extra; a hiccup fetching it
           // must never keep somebody out of their whole account.
           repo.myReferralCode().catch(() => ""),
@@ -658,6 +671,7 @@ export function App() {
         sessions,
         notifications,
         foundingRemaining,
+        foundingPractitionerRemaining,
         referralCode,
         referrals,
         unreadCounts,
@@ -786,6 +800,74 @@ export function App() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (marker === "started") void confirmProSubscription();
   }, [data, go, confirmProSubscription]);
+
+  /**
+   * A cancelled or denied WEB OAuth returns to /?authError=<reason> (see
+   * auth/callback/route.ts) — the app boots on splash, so without this the
+   * message is dropped. Surface it once on the sign-in screen and strip the
+   * marker so a reload cannot replay it. Native reports its own errors below.
+   */
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    const reason = url.searchParams.get("authError");
+    if (!reason) return;
+    url.searchParams.delete("authError");
+    window.history.replaceState({}, "", url.pathname + url.search + url.hash);
+    const friendly = /denied|cancel/i.test(reason)
+      ? "Sign-in was cancelled."
+      : describeAuthError(new Error(reason));
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setAuthError(friendly);
+    go("auth-entry");
+  }, [go]);
+
+  /**
+   * Native OAuth returns through the custom-scheme deep link (see
+   * signInWithProvider): the system browser finished the provider flow, and here
+   * we exchange the code for a session in the localStorage client and land the
+   * user — or surface a cancellation/error. The native return does not re-run
+   * the mount bootstrap, so this routes to discover itself. Dormant on the web
+   * and until the native build ships the Capacitor App/Browser plugins.
+   */
+  useEffect(() => {
+    if (!isNativeApp()) return;
+    const capApp = capacitorPlugin<{
+      addListener: (
+        event: string,
+        cb: (data: { url?: string }) => void,
+      ) => Promise<{ remove: () => void }>;
+    }>("App");
+    if (!capApp) return;
+
+    const browser = capacitorPlugin<{ close?: () => Promise<void> }>("Browser");
+    const sub = capApp.addListener("appUrlOpen", (event) => {
+      const url = event?.url;
+      if (!url || !url.startsWith(NATIVE_AUTH_REDIRECT)) return;
+      void (async () => {
+        const params = new URL(url).searchParams;
+        const reason = params.get("error_description") ?? params.get("error");
+        const code = params.get("code");
+        try {
+          if (reason) throw new Error(reason);
+          if (!code) throw new Error("Sign-in was cancelled.");
+          await exchangeOAuthCode(code);
+          await ensureProfile();
+          refresh();
+          go("discover");
+        } catch (error) {
+          setAuthError(describeAuthError(error));
+          go("auth-entry");
+        } finally {
+          await browser?.close?.();
+        }
+      })();
+    });
+
+    return () => {
+      void sub.then((s) => s.remove());
+    };
+  }, [go, refresh]);
 
   /**
    * Returning from Stripe in the native shell. There is no URL marker — the
@@ -1992,6 +2074,7 @@ export function App() {
             if (!response.ok) throw new Error(body.error ?? "That did not send.");
           }}
           disputesWaiting={disputes.filter((d) => d.awaitingYou).length}
+          foundingRemaining={data.foundingPractitionerRemaining}
           onGoInsurance={() => go("verify")}
           onGoCredential={() => go("credential")}
           onVerifyIdentity={() => {

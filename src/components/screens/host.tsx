@@ -97,9 +97,10 @@ function HostRecognition({
   foundingRemaining: number;
   completedSessions: number;
 }) {
-  const isFounding = foundingNumber !== null;
-  const spotsOpen = foundingRemaining > 0;
-  const showFounding = isFounding || spotsOpen;
+  // Earned Founding Host is shown inline in the studio hero now, not here, so
+  // this section only carries the invitation — and only to a host who has not
+  // earned it while real spots remain.
+  const showFoundingPrompt = foundingNumber === null && foundingRemaining > 0;
   const progress = hostAchievementProgress(completedSessions);
 
   // The bar fills from the last milestone to the next, so it reads as distance
@@ -112,47 +113,24 @@ function HostRecognition({
 
   return (
     <div className="mb-5 flex flex-col gap-2.5">
-      {showFounding && (
+      {showFoundingPrompt && (
         <div
           className="rounded-2xl p-4"
-          style={{
-            background: isFounding
-              ? "linear-gradient(135deg, #16304E 0%, #22496F 100%)"
-              : "#F4F8FC",
-            border: isFounding ? "none" : "1px solid #E7EEF6",
-          }}
+          style={{ backgroundColor: "#F4F8FC", border: "1px solid #E7EEF6" }}
         >
           <p
             className="font-body font-semibold text-[11px] uppercase tracking-[0.22em]"
-            style={{ color: isFounding ? "rgba(255,255,255,0.55)" : "#5B7A9C" }}
+            style={{ color: "#5B7A9C" }}
           >
             Founding 50 · Bay Area
           </p>
-          {isFounding ? (
-            <div className="flex items-center gap-2.5 mt-2">
-              <span
-                className="w-8 h-8 rounded-full flex items-center justify-center shrink-0"
-                style={{ backgroundColor: "rgba(255,255,255,0.12)" }}
-              >
-                <Award size={16} color="#EBD9A8" />
-              </span>
-              <div>
-                <p className="font-display italic font-semibold text-[19px] leading-none text-white">
-                  {FOUNDING_HOST_LABEL}
-                </p>
-              </div>
-            </div>
-          ) : (
-            <>
-              <p className="font-display italic font-semibold text-[19px] text-navy mt-1.5">
-                {foundingSpotsRemainingLabel(foundingRemaining)}
-              </p>
-              <p className="font-body font-normal text-[13.5px] leading-relaxed text-ink-soft mt-1">
-                Bring your first listing live to claim one of the fifty — a
-                permanent place, not a discount.
-              </p>
-            </>
-          )}
+          <p className="font-display italic font-semibold text-[19px] text-navy mt-1.5">
+            {foundingSpotsRemainingLabel(foundingRemaining)}
+          </p>
+          <p className="font-body font-normal text-[13.5px] leading-relaxed text-ink-soft mt-1">
+            Bring your first listing live to claim one of the fifty — a
+            permanent place, not a discount.
+          </p>
         </div>
       )}
 
@@ -455,6 +433,9 @@ export function HostDashboard({
 
   const pending = active.status === "pending";
   const hidden = active.status === "delisted";
+  // Server-derived, same source the recognition section reads. Shown inline in
+  // the hero rather than as its own card — see the note where it renders.
+  const isFoundingHost = foundingNumber !== null;
   const spaceBookings = bookings.filter((b) => b.spaceId === active.id);
 
   /**
@@ -588,6 +569,20 @@ export function HostDashboard({
           </p>
           <AccountBadge accountType="host" tone="dark" />
         </div>
+        {/*
+          Founding Host reads here, in the metadata above the studio name, as a
+          quiet one-line status rather than the large card it used to be — the
+          award mark and two words, no container. It stays secondary to the
+          title below it, and appears nowhere else on the screen.
+        */}
+        {isFoundingHost && (
+          <div className="flex items-center gap-1.5 mt-2">
+            <Award size={13} color="#EBD9A8" />
+            <span className="font-body font-medium text-[12.5px] text-white/80">
+              {FOUNDING_HOST_LABEL}
+            </span>
+          </div>
+        )}
         <div className="mt-1">
           <Headline pre={`${active.name} —`} accent={roomTypeFor(active.category)} size={23} light />
         </div>

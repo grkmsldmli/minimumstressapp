@@ -162,6 +162,16 @@ export interface Repository {
    */
   foundingHostsRemaining(): Promise<number>;
 
+  /**
+   * How many Founding Practitioner spots are still open, derived from real rows.
+   *
+   * Straight from `founding_practitioners_remaining()` — a count of practitioners
+   * who have earned a founding number, subtracted from fifty, never stored or
+   * seeded. Shown to a practitioner who has not earned the status while spots
+   * remain.
+   */
+  foundingPractitionersRemaining(): Promise<number>;
+
   /* ---------------- referrals ---------------- */
 
   /**

@@ -49,7 +49,11 @@ describe("the room's own clock", () => {
   });
 
   it("gives the hour in the room's zone", () => {
-    expect(sessionHour(NINE_PM_PACIFIC, PACIFIC)).toMatch(/^9\s?PM$/i);
+    // The room-local hour is 9 PM. A zone suffix (e.g. "9 PM PDT") is appended
+    // only when the viewer is elsewhere than the room — which is the case under
+    // a UTC test runner (GitHub Actions) and not under a Pacific one — so the
+    // suffix is optional here rather than asserted either way.
+    expect(sessionHour(NINE_PM_PACIFIC, PACIFIC)).toMatch(/^9\s?PM( \S+)?$/i);
   });
 
   it("puts the day and the hour together", () => {

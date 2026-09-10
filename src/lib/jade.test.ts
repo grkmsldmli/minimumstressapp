@@ -1,7 +1,11 @@
+import { existsSync, readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
 import { describe, expect, it } from "vitest";
 
 import {
   JADE_GREETING,
+  JADE_HISTORY_MESSAGES,
   JADE_SYSTEM_PROMPT,
   QUICK_REPLIES,
   answerLocally,
@@ -10,6 +14,7 @@ import {
   isDecline,
   languageDirective,
 } from "./jade";
+import { SERVICE_AREA_NAME, SERVICE_COUNTRY } from "./service-area";
 
 /**
  * Jade answers with the model. The table is a safety rail, not a script.
@@ -41,9 +46,12 @@ describe("what is still not the model's to answer", () => {
     expect(hours?.en).toContain("one hour");
   });
 
-  it("collects an email before passing anything to the team", () => {
-    expect(answerLocally("I need a refund")?.intake).toBe("support");
-    expect(answerLocally("add me to the mailing list")?.intake).toBe("email_signup");
+  it("sends a support question to a person, without promising a handoff it cannot do", () => {
+    const refund = answerLocally("I need a refund");
+    // It points to the real channel and never claims to forward or file anything.
+    expect(refund?.en).toContain("(/contact)");
+    expect(refund?.en).not.toMatch(/pass it|to the team|forward|escalate|open a ticket/i);
+    expect(refund?.tr).not.toMatch(/ilet|yönlendir/i);
   });
 });
 
@@ -120,17 +128,202 @@ describe("the facts the model answers from", () => {
     expect(prompt).toContain("use what they already told you");
   });
 
-  it("points only at routes that exist", () => {
-    const paths = JADE_SYSTEM_PROMPT.match(/\/[a-z-]+(?=\s|$)/gm) ?? [];
+  it("uses only real routes, and only as markdown links with word labels", () => {
     const real = ["/spaces", "/rent-out-your", "/for-hosts", "/faq", "/trust", "/assessments", "/contact"];
-    for (const path of paths) {
+
+    // Every link target the model is shown must be a route that exists.
+    const targets = [...JADE_SYSTEM_PROMPT.matchAll(/\]\((\/[a-z-]+)\)/g)].map((m) => m[1]);
+    expect(targets.length).toBeGreaterThan(0);
+    for (const path of targets) {
       expect(real, `${path} is not a route`).toContain(path);
     }
+
+    // And no link is left showing the raw path as its label — the "[/spaces]"
+    // bug — anywhere except the single line that teaches the model to avoid it.
+    const withoutTheLesson = JADE_SYSTEM_PROMPT.split("\n")
+      .filter((line) => !line.includes("is wrong and reads as broken"))
+      .join("\n");
+    expect(withoutTheLesson).not.toMatch(/\[\/[a-z-]+\]/);
   });
 
   it("carries no Shopify paths", () => {
     for (const dead of ["/pages/", "/collections/", "/blogs/"]) {
       expect(JADE_SYSTEM_PROMPT, dead).not.toContain(dead);
+    }
+  });
+});
+
+/**
+ * The weak conversation, turned into fixtures.
+ *
+ * A real transcript went in circles: it did not know which country it was in,
+ * printed a link as "[/spaces](/spaces)", asked for a town it was never given
+ * three times, and recited the booking steps at somebody who only wanted a
+ * yoga space. The model is not run here, so each regression is held at the one
+ * place it is fixable — the facts and rules the prompt now carries.
+ */
+describe("the weak conversation, guarded in the prompt", () => {
+  const prompt = JADE_SYSTEM_PROMPT.toLowerCase();
+
+  it("knows which country and area it operates in, rather than deflecting", () => {
+    // "which country are you in?" → the United States, currently the Bay Area.
+    expect(prompt).toContain("the united states");
+    expect(prompt).toContain("the san francisco bay area");
+    expect(prompt).toContain("never say you are not sure where the company operates");
+  });
+
+  it("is drawn from the canonical service-area source, not a hardcoded string", () => {
+    // The wording comes from lib/service-area.ts, so the area cannot drift from
+    // the boundary the app enforces at listing time.
+    expect(JADE_SYSTEM_PROMPT).toContain(SERVICE_AREA_NAME);
+    expect(JADE_SYSTEM_PROMPT).toContain(SERVICE_COUNTRY);
+  });
+
+  it("says yes to a town inside the area instead of sending it to Contact", () => {
+    // "Is this available in San Francisco?" → yes, that is in our area.
+    expect(prompt).toContain("that is in our area");
+  });
+
+  it("answers first and keeps it short, not a recited process", () => {
+    expect(prompt).toContain("answer first");
+    expect(prompt).toContain("one to three short sentences");
+    expect(prompt).toContain("do not walk through the whole booking process unless they ask");
+  });
+
+  it("makes a space request answer-first, never a leading 'which town?'", () => {
+    // The B regression: it opened "I need a yoga space for 5" with a question
+    // instead of the capacity fact and a browse link.
+    expect(prompt).toContain("when somebody wants a space");
+    expect(prompt).toContain("answer first, with something useful, before any question");
+    expect(prompt).toContain("never open a space request with 'which town?'");
+  });
+
+  it("remembers what was said and does not ask the same thing twice", () => {
+    expect(prompt).toContain("remember everything said in this conversation");
+    expect(prompt).toContain("never ask for the town more than once");
+    expect(prompt).toContain("ask at most one clarifying question");
+  });
+
+  it("lets a group booker see capacity rather than inventing a filter", () => {
+    expect(prompt).toContain("every listing shows its capacity");
+  });
+
+  it("does not funnel every uncertain question to support", () => {
+    expect(prompt).toContain("do not send every uncertain question to support");
+    expect(prompt).toContain("only when a person is actually needed");
+  });
+
+  it("gives links a human label and never the raw path", () => {
+    expect(JADE_SYSTEM_PROMPT).toContain("[find a space](/spaces)");
+    expect(JADE_SYSTEM_PROMPT).toContain("[contact support](/contact)");
+    // The counter-example the model is warned against.
+    expect(JADE_SYSTEM_PROMPT).toContain("[/spaces](/spaces) is wrong");
+  });
+});
+
+/**
+ * How far back she can remember.
+ *
+ * A live conversation forgot a detail from its first message by the sixth,
+ * because the window was six. Twelve is the shared cap the widget and the route
+ * both trim to — one number, tested here so a drift in either is caught.
+ */
+describe("conversation memory window", () => {
+  it("shows the model the last twelve messages, not six", () => {
+    expect(JADE_HISTORY_MESSAGES).toBe(12);
+  });
+});
+
+/**
+ * Product positioning — broader than "an hourly room marketplace", and never
+ * claiming the not-yet-built Work features exist.
+ */
+describe("product positioning", () => {
+  const prompt = JADE_SYSTEM_PROMPT.toLowerCase();
+
+  it("frames Minimum Stress as a professional platform, not only an hourly room marketplace", () => {
+    expect(prompt).toContain("professional platform for independent wellness");
+    expect(prompt).toContain("flexible professional infrastructure without a lease");
+    expect(prompt).toContain("do not define it as only an hourly room marketplace");
+  });
+
+  it("forbids claiming future Work features that do not exist", () => {
+    expect(prompt).toContain("not a job board");
+    expect(prompt).toContain("client-matching service");
+    expect(prompt).toContain("practitioners bring their own clients");
+  });
+});
+
+/**
+ * The rename, and the promise she is no longer allowed to make.
+ *
+ * The assistant is Luna to anyone reading; the internal names stay Jade to keep
+ * the change to the surface. And there is no support inbox behind this widget,
+ * so the one thing she must never do is say she will pass something on.
+ */
+describe("Luna, and the honest handoff", () => {
+  it("introduces herself as Luna, with no Jade left in what a visitor reads", () => {
+    expect(JADE_GREETING).toContain("Luna");
+    expect(JADE_GREETING).not.toContain("Jade");
+    expect(JADE_SYSTEM_PROMPT).toContain("You are Luna");
+    // The prompt is spoken as her, so the old name must be gone from it entirely.
+    expect(JADE_SYSTEM_PROMPT).not.toContain("Jade");
+  });
+
+  it("forbids the model from claiming any handoff it cannot perform", () => {
+    const prompt = JADE_SYSTEM_PROMPT.toLowerCase();
+    expect(prompt).toContain("you cannot send, forward, escalate, or file anything");
+    expect(prompt).toContain("there is no ticket system");
+    expect(prompt).toContain("never say you will pass a message on");
+  });
+
+  it("never claims a mailing-list signup succeeded, because none can", () => {
+    // There is no newsletter backend. Every phrasing that reaches the table
+    // must say it cannot, and none may imply success.
+    for (const phrase of ["add me to the mailing list", "newsletter", "subscribe me", "mail listesi"]) {
+      const answer = answerLocally(phrase);
+      expect(answer, phrase).not.toBeNull();
+      expect(answer?.en.toLowerCase(), phrase).toContain("can't add you to a mailing list");
+      expect(answer?.en, phrase).not.toMatch(
+        /subscribed|added you|you're on the list|you are on the list|passed .* to the team/i,
+      );
+      expect(answer?.tr, phrase).not.toMatch(/eklendin|abone oldun|listeye ekledim|ilettim/i);
+    }
+  });
+});
+
+/**
+ * The old Shopify proxy, gone for good.
+ *
+ * Every model answer once fell back to `ms-chat-proxy.vercel.app/api/chat` when
+ * no key was set, and every "lead" was forwarded to its `/api/customer`. The
+ * new platform must not depend on either, so this reads the source and proves
+ * the dependency is not just unused but absent — a reference re-added later
+ * fails here rather than in production.
+ */
+describe("no Luna flow depends on ms-chat-proxy", () => {
+  const read = (rel: string) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf8");
+
+  it("has no ms-chat-proxy reference in the assistant, its chat route, or the widget", () => {
+    for (const rel of [
+      "./jade.ts",
+      "../app/api/jade/chat/route.ts",
+      "../components/site/jade-chat.tsx",
+    ]) {
+      expect(read(rel), rel).not.toContain("ms-chat-proxy");
+    }
+  });
+
+  it("no longer ships the legacy lead route or its forward to /api/jade/lead", () => {
+    expect(existsSync(fileURLToPath(new URL("../app/api/jade/lead/route.ts", import.meta.url)))).toBe(
+      false,
+    );
+    expect(read("../components/site/jade-chat.tsx")).not.toContain("/api/jade/lead");
+  });
+
+  it("leaves no false 'passed to the team' language in the widget or the table", () => {
+    for (const rel of ["./jade.ts", "../components/site/jade-chat.tsx"]) {
+      expect(read(rel), rel).not.toMatch(/to the team|ekibe ilet|i've passed/i);
     }
   });
 });

@@ -164,6 +164,15 @@ export interface Profile {
    */
   foundingHostAt: Date | null;
   foundingNumber: number | null;
+
+  /**
+   * The practitioner-side mirror of the two above. Both null for everyone who
+   * is not a Founding Practitioner, and set together the moment a practitioner
+   * finishes their first real, paid session — by the server alone (migration
+   * 0068 refuses a client write and caps the number at 1..50). See lib/founding.
+   */
+  foundingPractitionerAt: Date | null;
+  foundingPractitionerNumber: number | null;
 }
 
 /**

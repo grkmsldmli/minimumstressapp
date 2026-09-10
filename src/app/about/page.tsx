@@ -24,7 +24,7 @@ import { CATEGORIES } from "@/lib/taxonomy";
  */
 export const metadata: Metadata = {
   title: "About",
-  description: `${BRAND} is a marketplace for private rooms you book for as long as you need — movement, coaching, meditation and healing.`,
+  description: `${BRAND} is the professional platform for independent wellness work — book professional space for your practice by the hour, without a lease.`,
   alternates: { canonical: "/about" },
 };
 
@@ -69,12 +69,12 @@ export default function About() {
             {BRAND}
           </h1>
           <p className="font-body font-medium text-[18px] text-white/85 mt-3">
-            Private rooms, on your schedule.
+            A place for your practice.
           </p>
           <p className="font-body font-normal text-[16px] text-white/75 mt-4 leading-relaxed">
-            {BRAND} is a marketplace where wellness practitioners rent a room for an hour, and the
-            people who own those rooms fill the hours they are not using. Movement, coaching,
-            meditation and healing.
+            {BRAND} is the professional platform for independent wellness work. Practitioners book
+            professional space by the hour — movement, coaching, meditation and more — and the people
+            who own that space fill the hours they are not using. No lease, no long-term commitment.
           </p>
         </div>
       </header>

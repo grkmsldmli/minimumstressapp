@@ -3,6 +3,7 @@
 import { Fragment, type ReactNode, useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
+  Award,
   Bell,
   Briefcase,
   Check,
@@ -30,6 +31,10 @@ import { StandingSummary } from "@/components/standing-notice";
 import { shortName } from "@/components/document-status";
 import { AvatarUpload, DocumentUpload } from "@/components/uploads";
 import { SUPPORT_EMAIL } from "@/lib/company";
+import {
+  FOUNDING_PRACTITIONER_LABEL,
+  foundingPractitionerSpotsRemainingLabel,
+} from "@/lib/founding";
 import type { AccountType, Profile } from "@/lib/domain";
 import { PRACTITIONER_PROFESSIONS } from "@/lib/professions";
 import { type InsuranceStatus, insuranceStatus } from "@/lib/insurance";
@@ -857,6 +862,7 @@ export function PractitionerProfile({
   onVerifyIdentity,
   identityChecking = false,
   onSignOut,
+  foundingRemaining,
 }: {
   profile: Profile;
   /** Pull-to-refresh: re-fetches profile/account state in place. */
@@ -889,6 +895,9 @@ export function PractitionerProfile({
   /** True during the short wait after returning from Stripe, while the webhook lands. */
   identityChecking?: boolean;
   onSignOut: () => void;
+  /** Founding Practitioner spots still open, server-derived. Only shown, as one
+   *  quiet line, to a practitioner who has not earned the status. */
+  foundingRemaining: number;
 }) {
   return (
     <div className="h-full flex flex-col screen-in bg-white">
@@ -903,6 +912,33 @@ export function PractitionerProfile({
       />
 
       <PullToRefresh className="flex-1 px-6 pt-5 pb-8" onRefresh={onRefresh}>
+        {/*
+          Founding Practitioner — a small, permanent recognition, server-derived
+          (profile.foundingPractitionerNumber, migration 0068). Earned shows a
+          quiet award mark, not a card; unearned shows a single factual line
+          while real spots remain. Never client-assigned, never manufactured.
+        */}
+        {profile.foundingPractitionerNumber !== null ? (
+          <div className="flex items-center gap-2 mb-5">
+            <span
+              className="w-7 h-7 rounded-full flex items-center justify-center shrink-0"
+              style={{ backgroundColor: "#F1F7FD" }}
+            >
+              <Award size={15} color="#2E7CC4" />
+            </span>
+            <span className="font-body font-medium text-[14px] text-navy">
+              {FOUNDING_PRACTITIONER_LABEL}
+            </span>
+          </div>
+        ) : (
+          foundingRemaining > 0 && (
+            <p className="font-body font-normal text-[13px] leading-relaxed text-ink-soft mb-5">
+              {foundingPractitionerSpotsRemainingLabel(foundingRemaining)} — earned on your first
+              completed session.
+            </p>
+          )
+        )}
+
         {/* Professional — first, because it gates booking eligibility. */}
         <GroupLabel>Professional</GroupLabel>
 

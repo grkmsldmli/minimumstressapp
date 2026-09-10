@@ -57,7 +57,7 @@ import {
 
 import { describeAuthError } from "@/lib/auth-error";
 import { type Provider, enabledProviders } from "@/lib/auth-providers";
-import { NATIVE_AUTH_REDIRECT, capacitorPlugin, isNativeApp } from "@/lib/native";
+import { NATIVE_AUTH_REDIRECT, capacitorPlugin, hasNativeOAuthSupport, isNativeApp } from "@/lib/native";
 import { BOOKING_HORIZON_DAYS } from "@/lib/money";
 import { SESSION_MS } from "@/lib/session";
 import { explainRejection } from "@/lib/booking-plan";
@@ -566,9 +566,17 @@ export function App() {
     // Both web and native ask the auth server which providers are enabled and
     // render only those (never a hardcoded button that would fail). Native OAuth
     // opens the provider in the system browser and returns via a deep link — see
-    // signInWithProvider and the appUrlOpen handler below — so, unlike before,
-    // native is no longer email-only. A provider stays hidden until it is turned
-    // on in Supabase, so this is inert until that external config is done.
+    // signInWithProvider and the appUrlOpen handler below.
+    //
+    // SAFETY FOR THE LIVE BINARY: a native build only fetches providers when it
+    // can actually complete the flow — i.e. it ships the Capacitor Browser/App
+    // plugins (hasNativeOAuthSupport). The current App Store binary (1.0.0) does
+    // not, so it stays email-only and can never show a Google/Apple button that
+    // dead-ends; the 1.0.1 binary that ships those plugins lights the buttons up
+    // once the providers are also enabled server-side. So this whole OAuth path
+    // is dormant on today's live app regardless of Supabase configuration.
+    if (isNativeApp() && !hasNativeOAuthSupport()) return;
+
     const stop = new AbortController();
     void enabledProviders(
       process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",

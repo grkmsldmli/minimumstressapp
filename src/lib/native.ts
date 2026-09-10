@@ -61,3 +61,20 @@ export function capacitorPlugin<T = unknown>(name: string): T | null {
   const cap = (window as { Capacitor?: { Plugins?: Record<string, unknown> } }).Capacitor;
   return (cap?.Plugins?.[name] as T | undefined) ?? null;
 }
+
+/**
+ * Whether THIS native binary can actually complete a system-browser OAuth flow
+ * — i.e. it bundles the Capacitor Browser (to open the provider) and App (to
+ * catch the deep-link return) plugins.
+ *
+ * The reason it is not enough to check isNativeApp(): the current App Store
+ * binary (1.0.0) does NOT ship those plugins, so a Google/Apple button there
+ * would open nothing and dead-end. Gating provider buttons on this keeps the
+ * live binary email-only no matter what is enabled server-side; the 1.0.1
+ * binary that ships the plugins turns it true and OAuth can appear. Always
+ * false on the web (isNativeApp() is false there), where OAuth uses redirects,
+ * not these plugins.
+ */
+export function hasNativeOAuthSupport(): boolean {
+  return isNativeApp() && capacitorPlugin("Browser") !== null && capacitorPlugin("App") !== null;
+}

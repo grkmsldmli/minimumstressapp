@@ -1,17 +1,21 @@
 -- Founding Practitioner — the practitioner-side mirror of Founding Host (0060).
 --
 -- FOUNDING PRACTITIONER is a permanent legacy status for the first 50 unique
--- practitioners to complete a real, paid session — booking status 'completed'
--- with the card captured, and not a host booking their own room. One person is
--- one spot however many sessions they run, it is earned at the qualifying
--- session, and it is never taken away. Like Founding Host it carries no price or
--- benefit; it is recognition only.
+-- practitioners who complete professional onboarding — a genuine, vetted early
+-- professional, not the first to run a transaction. One person is one spot, it
+-- is earned the moment onboarding is complete, and it is never taken away. Like
+-- Founding Host it carries no price or benefit; it is recognition only.
 --
--- The trigger point is the exact analog of the host's "first listing goes live":
--- the booking sweep's upcoming -> completed transition (api/cron), at which
--- point captured_at is already set (0030). The qualifying row can never later be
--- un-completed or deleted — keep_held_session_permanent (0060) already
--- guarantees that — so the earned status is durable with no extra machinery.
+-- "Onboarding complete" is defined entirely from server-truth on the profile:
+-- a practitioner account, a completed professional profile (a name and a chosen
+-- profession), plus the three verification VERDICTS that are all server-written
+-- and client-unwritable (identity 0057, insurance 0054, credential 0058, guarded
+-- by enforce_profile_verdicts_server_only). It mirrors the app's own "ready to
+-- book" gate in lib/booking-plan: verified identity + verified insurance +
+-- verified credential. It deliberately keys on the permanent staff VERDICT
+-- ('verified'), never the insurance date-window, so the status can never flip
+-- false when cover later lapses. There is no "available for work" requirement —
+-- that product does not exist yet.
 --
 -- Authority is the founding_practitioners ledger below, not the profile: a
 -- profile can be scrubbed, so counting live profile rows would let a departed
@@ -58,6 +62,17 @@ as $$
 declare
   ins boolean := tg_op = 'INSERT';
 begin
+  -- The award functions flip this transaction-local flag before they project a
+  -- founding number onto the profile. That nested write can run under a client's
+  -- own auth.uid() — when a practitioner completes their profile as the last
+  -- onboarding step and thereby triggers their own award — so without this
+  -- carve-out the server's write would be refused as if the client had made it.
+  -- The flag is only ever set inside the SECURITY DEFINER award functions, which
+  -- no client can call, so it cannot be forged from the outside.
+  if current_setting('app.founding_award', true) = 'on' then
+    return new;
+  end if;
+
   if auth.uid() is not null
      and (
        new.founding_host_at is distinct from (case when ins then null else old.founding_host_at end)
@@ -112,6 +127,10 @@ declare
 begin
   perform pg_advisory_xact_lock(hashtext('founding_practitioner_allocation'));
 
+  -- Let enforce_founding_server_only accept the projection writes below even when
+  -- this award was triggered by a client-authored profile update (see that guard).
+  perform set_config('app.founding_award', 'on', true);
+
   select founding_number, earned_at into existing_num, existing_at
     from founding_practitioners where practitioner_id = p_practitioner_id;
   if existing_num is not null then
@@ -160,71 +179,100 @@ revoke all on function founding_practitioners_remaining() from public;
 grant execute on function founding_practitioners_remaining() to anon, authenticated, service_role;
 
 -- ------------------------------------------------------------------
--- The one qualifying moment, allocated in the same transaction.
+-- Who qualifies — one predicate, shared by the trigger and the backfill.
 --
--- Earned when a booking moves upcoming -> completed (the sweep), provided the
--- card was captured and it is not a host booking their own room — the same
--- "real, money-moved session between two people" that session_counts (0016)
--- defines. Definer-run so the allocation does not depend on the caller's role.
--- If all fifty are gone the award returns without a number and the update
--- commits normally. The captured_at and self-booking guards live here because a
--- trigger WHEN clause cannot join spaces.
+-- Takes a whole profiles row and returns whether that practitioner has
+-- completed professional onboarding. IMMUTABLE (only scalar comparisons on its
+-- argument, no table reads), so it is legal inside a trigger WHEN clause.
+--
+-- Credential and insurance are required for every practitioner here, mirroring
+-- the app's live booking gate (lib/booking-plan: requiresCredential is true for
+-- every profession today, and insurance is checked for every booking). If the
+-- product later makes either optional for some professions, this predicate — and
+-- founding-sql-sync's expectations — must move with professions.ts.
 -- ------------------------------------------------------------------
-create or replace function allocate_founding_practitioner_on_session()
+create or replace function profile_founding_practitioner_qualified(p profiles)
+returns boolean
+language sql
+immutable
+as $$
+  select
+    p.account_type = 'practitioner'
+    and p.display_name is not null
+    and length(btrim(p.display_name)) > 0
+    and p.profession is not null
+    and p.identity_verified_at is not null
+    and p.insurance_doc_state = 'verified'
+    and p.credential_doc_state = 'verified';
+$$;
+
+-- ------------------------------------------------------------------
+-- The qualifying moment, allocated in the same transaction.
+--
+-- Earned on the profile UPDATE that first makes the predicate true — whether
+-- that update is a server verdict (identity webhook, staff insurance/credential
+-- review) or the practitioner completing their name/profession as the last step.
+-- Definer-run so allocation does not depend on the caller's role. The award's
+-- own nested projection update leaves the row already-qualified, so the WHEN is
+-- false on it and there is no recursion. No AFTER INSERT trigger is needed: a
+-- fresh profile can never be born qualified (the verdicts all start null/pending
+-- and are set only by later, separate server writes).
+-- ------------------------------------------------------------------
+create or replace function allocate_founding_practitioner_on_profile()
 returns trigger
 language plpgsql
 security definer
 set search_path = public
 as $$
-declare
-  v_host_id uuid;
 begin
-  if new.captured_at is null then
-    return null;
-  end if;
-  select host_id into v_host_id from spaces where id = new.space_id;
-  if v_host_id is null or v_host_id = new.practitioner_id then
-    return null;
-  end if;
-  perform award_founding_practitioner(new.practitioner_id);
+  perform award_founding_practitioner(new.id);
   return null;
 end;
 $$;
 
+-- Remove the earlier paid-session trigger/function (this migration is not yet
+-- applied anywhere, but the drops keep a re-run against any partially-applied
+-- database clean).
 drop trigger if exists bookings_allocate_founding_practitioner on bookings;
-create trigger bookings_allocate_founding_practitioner
-  after update on bookings
+drop function if exists allocate_founding_practitioner_on_session();
+
+drop trigger if exists profiles_allocate_founding_practitioner on profiles;
+create trigger profiles_allocate_founding_practitioner
+  after update on profiles
   for each row
-  when (old.status = 'upcoming' and new.status = 'completed')
-  execute function allocate_founding_practitioner_on_session();
+  when (
+    profile_founding_practitioner_qualified(new)
+    and not profile_founding_practitioner_qualified(old)
+  )
+  execute function allocate_founding_practitioner_on_profile();
 
 -- ------------------------------------------------------------------
--- One-time backfill for practitioners already qualifying when this ships.
+-- One-time backfill for practitioners already onboarded when this ships.
 --
--- The trigger only fires on future completions, so without this every
--- practitioner who has already run a real session would be passed over. This
--- grants them their place, deterministic and derived entirely from real rows.
+-- The trigger only fires on future profile updates, so without this every
+-- practitioner already fully verified would be passed over. This grants them
+-- their place, deterministic and derived entirely from server-truth columns.
 --
--- Qualification is a completed, captured booking that is not self-booked.
--- Practitioners are ordered by the moment of their earliest qualifying session
--- (starts_at — the session's own time), tie-broken by id. One person takes one
--- spot however many sessions they have run, numbers run 1..50 and stop, and a
--- practitioner who somehow already holds a valid assignment is left untouched.
--- Idempotent: run again and every qualifier is already numbered, the rest find
--- no spots under fifty, and nothing changes.
+-- Ordered by when the LAST requirement landed — greatest() of the three verdict
+-- timestamps (identity, insurance, credential), all guaranteed present when the
+-- state is 'verified' by the 0054/0058 constraints — tie-broken by id. One
+-- person takes one spot, numbers run 1..50 and stop, and a practitioner who
+-- somehow already holds a valid assignment is left untouched. Idempotent: run
+-- again and every qualifier is already numbered, the rest find no spots under
+-- fifty, and nothing changes.
 -- ------------------------------------------------------------------
 with qualified as (
-  select b.practitioner_id,
-         min(b.starts_at) as first_session
-  from bookings b
-  join spaces s on s.id = b.space_id
-  where b.status = 'completed'
-    and b.captured_at is not null
-    and b.practitioner_id <> s.host_id
-  group by b.practitioner_id
+  select p.id as practitioner_id,
+         greatest(
+           p.identity_verified_at,
+           p.insurance_doc_reviewed_at,
+           p.credential_doc_reviewed_at
+         ) as qualified_at
+  from profiles p
+  where profile_founding_practitioner_qualified(p)
 ),
 candidates as (
-  select q.practitioner_id, q.first_session
+  select q.practitioner_id, q.qualified_at
   from qualified q
   where not exists (
     select 1 from founding_practitioners fp where fp.practitioner_id = q.practitioner_id
@@ -235,12 +283,12 @@ taken as (
 ),
 ranked as (
   select c.practitioner_id,
-         c.first_session,
-         row_number() over (order by c.first_session asc, c.practitioner_id asc) as rn
+         c.qualified_at,
+         row_number() over (order by c.qualified_at asc nulls last, c.practitioner_id asc) as rn
   from candidates c
 )
 insert into founding_practitioners (founding_number, practitioner_id, earned_at)
-select (select n from taken) + r.rn, r.practitioner_id, r.first_session
+select (select n from taken) + r.rn, r.practitioner_id, coalesce(r.qualified_at, now())
 from ranked r
 where (select n from taken) + r.rn <= 50;
 

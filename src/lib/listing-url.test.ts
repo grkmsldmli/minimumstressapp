@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { idFromSlug, isListingSlug, listingPath, listingSlug } from "./listing-url";
+import { idFromSlug, isListingSlug, listingPath, listingSlug, uuidPrefixRange } from "./listing-url";
 import { SPACE_TYPES } from "./space-types";
 
 /**
@@ -106,5 +106,51 @@ describe("the path", () => {
   it("declines to invent one for a room with no town", () => {
     expect(listingPath({ ...room, city: null })).toBeNull();
     expect(listingPath({ ...room, state: null })).toBeNull();
+  });
+});
+
+/**
+ * How the eight characters in the URL become a lookup that Postgres will run.
+ *
+ * The bug this replaces: `id like '4e313239%'` against a uuid column throws
+ * (`operator does not exist: uuid ~~ unknown`, 42883), so every listing page
+ * 404'd. A bounded range on the id compares uuid to uuid — no `like`, no cast —
+ * and brackets exactly the ids whose first group is the prefix.
+ */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+describe("the id-prefix range a listing URL resolves through", () => {
+  it("brackets the first group with the rest at its minimum and maximum", () => {
+    expect(uuidPrefixRange("3f2a91c4")).toEqual({
+      min: "3f2a91c4-0000-0000-0000-000000000000",
+      max: "3f2a91c4-ffff-ffff-ffff-ffffffffffff",
+    });
+  });
+
+  /*
+   * The whole point: the bounds are real uuids, so the query is `>=`/`<=`
+   * between uuids — never `like` on a uuid, which is the error that took every
+   * listing page down.
+   */
+  it("produces bounds that are valid uuids, so the comparison stays uuid-to-uuid", () => {
+    const range = uuidPrefixRange("4e313239");
+    expect(range).not.toBeNull();
+    expect(range!.min).toMatch(UUID);
+    expect(range!.max).toMatch(UUID);
+  });
+
+  it("contains the id the slug was built from, and sorts inside the bounds", () => {
+    const short = idFromSlug(listingSlug("Reformer Hit", ID))!;
+    const range = uuidPrefixRange(short)!;
+    // uuid comparison is byte order, which for canonical lowercase form is the
+    // same as comparing the strings — so the real id sits within the bounds.
+    expect(range.min <= ID).toBe(true);
+    expect(ID <= range.max).toBe(true);
+  });
+
+  it("returns null for anything that is not exactly eight lowercase hex", () => {
+    for (const bad of ["", "4e31323", "4e3132399", "4E313239", "4e31323g", "zzzzzzzz", "4e31 239"]) {
+      expect(uuidPrefixRange(bad), bad).toBeNull();
+    }
   });
 });

@@ -94,7 +94,7 @@ export function DocumentStatus({
  * which file this was. The stored name is generated anyway, so the extension
  * is the only part that carries meaning; the label above it says the rest.
  */
-function shortName(path: string): string {
+export function shortName(path: string): string {
   const tail = path.split("/").pop() ?? path;
   const dot = tail.lastIndexOf(".");
   return dot > 0 ? `Uploaded ${tail.slice(dot + 1).toUpperCase()}` : "Uploaded file";

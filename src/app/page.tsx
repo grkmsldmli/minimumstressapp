@@ -18,17 +18,11 @@ export const dynamic = "force-dynamic";
 
 export default function Home() {
   return (
-    <main className="w-full flex items-center justify-center py-8">
-      <div
-        className="relative overflow-hidden bg-white"
-        style={{
-          width: 385,
-          height: 780,
-          borderRadius: 44,
-          border: "9px solid #16304E",
-          boxShadow: "0 40px 90px -30px rgba(22,48,78,0.45)",
-        }}
-      >
+    // The phone mockup is desktop-only. On a real phone and in the native shell
+    // the app fills the viewport edge to edge — see .app-stage / .app-frame in
+    // globals.css, where the frame is gated to 500px and up.
+    <main className="app-stage">
+      <div className="app-frame">
         <AppStateProvider>
           <App />
         </AppStateProvider>

@@ -37,6 +37,7 @@ const LABELS: Record<NotificationKind, string> = {
   request_declined: "Your booking request was declined",
   request_expired: "Your booking request expired",
   access_code_ready: "Your door code was released",
+  new_message: "You have a new message",
   cancelled_by_practitioner: "A session was cancelled",
   cancelled_by_host: "The host cancelled a session",
   reliability_warning: "A note about late cancellations",
@@ -49,6 +50,8 @@ const LABELS: Record<NotificationKind, string> = {
   refund_taken_back: "A refund was taken back from a payout",
   claim_filed: "A studio raised something about a session",
   claim_decided: "A studio claim was decided",
+  insurance_verified: "Your insurance was verified",
+  insurance_rejected: "Your insurance needs another look",
 };
 
 /**

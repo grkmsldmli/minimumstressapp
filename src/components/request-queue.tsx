@@ -5,6 +5,7 @@ import { Check, Clock, Users, X } from "lucide-react";
 
 import { MAX_DECLINE_NOTE, minutesLeft } from "@/lib/booking-approval";
 import { bookingUse } from "@/lib/booking-use";
+import { PractitionerTrustSummary } from "@/components/practitioner-trust";
 import type { BookingRequest } from "@/lib/domain";
 import { errorMessage } from "@/lib/error-message";
 import { formatCents } from "@/lib/money";
@@ -103,7 +104,9 @@ function RequestCard({
           <p className="font-body font-medium text-[15.5px] text-navy truncate">
             {request.practitionerName}
           </p>
-          <p className="font-body font-normal text-[14px] mt-0.5 text-ink-soft">
+          {/* Who is booking, verified — read before deciding, in the same card. */}
+          <PractitionerTrustSummary craft={request.practitionerCraft} trust={request} />
+          <p className="font-body font-normal text-[14px] mt-1.5 text-ink-soft">
             {sessionDate(request.startsAt, zone)} · {sessionTime(request.startsAt, zone)}
           </p>
         </div>

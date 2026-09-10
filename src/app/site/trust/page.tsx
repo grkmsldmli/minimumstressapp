@@ -63,7 +63,7 @@ const SIDES = [
     who: "If you are booking a space",
     heading: "Before you arrive",
     points: [
-      "The address is on the listing, before you pay",
+      "The city and area on the listing; the exact address once you've booked",
       "What is in the room, and anything to bring",
       "Entry details released as your session approaches",
       "Cancellation terms shown before you confirm",
@@ -75,7 +75,7 @@ const SIDES = [
     points: [
       "You know who booked, and can message them",
       "The booking is paid before it stands",
-      "They confirm they carry their own insurance",
+      "They carry liability cover we verify before they can book",
       "Access exists only for that booking",
     ],
   },
@@ -99,6 +99,7 @@ const WHEN_WRONG = [
 const VERIFY = [
   "Listing information",
   "The right to offer the space",
+  "A professional's liability cover, before they can book",
   "Booking and payment status",
   "Access tied to the booking",
 ];
@@ -124,7 +125,7 @@ const FAQ = [
   },
   {
     q: "Can I cancel?",
-    a: `Cancel more than ${CANCEL_HOURS} hours before the session and you are refunded. Inside that window the booking stands, because the host held the hour for you.`,
+    a: `Cancel more than ${CANCEL_HOURS} hours before the session and you're refunded, apart from the card fee. Inside that window the booking stands, because the host held the hour for you.`,
   },
 ];
 

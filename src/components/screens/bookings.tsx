@@ -16,6 +16,7 @@ import {
 import { Ambient, BreathingLogo, Headline, categoryGradient } from "@/components/brand";
 import { BreathCoach } from "@/components/breath-coach";
 import { ConfettiBurst } from "@/components/primitives";
+import { PullToRefresh } from "@/components/pull-to-refresh";
 import { SpaceDirections } from "@/components/space-directions";
 import { CancellationConsequence } from "@/components/standing-notice";
 import type { Booking, SpaceAccessDetails } from "@/lib/domain";
@@ -354,6 +355,7 @@ function refundable(booking: Booking, now: Date): boolean {
 
 export function MyBookings({
   bookings,
+  onRefresh,
   accessFor,
   addressFor,
   isPro,
@@ -364,8 +366,11 @@ export function MyBookings({
   onReview,
   onAskRefund,
   onMessage,
+  unreadFor,
 }: {
   bookings: Booking[];
+  /** Pull-to-refresh: re-fetches the practitioner's bookings in place. */
+  onRefresh: () => Promise<unknown> | unknown;
   accessFor: (spaceId: string) => SpaceAccessDetails | null;
   /** The public street, which exists from the moment a room is listed. */
   addressFor: (spaceId: string) => string | null;
@@ -381,6 +386,8 @@ export function MyBookings({
   onAskRefund?: (id: string) => void;
   /** Opens the thread for a booking. */
   onMessage?: (id: string) => void;
+  /** Unread incoming messages for a booking, for the message badge. */
+  unreadFor?: (id: string) => number;
 }) {
   const [openId, setOpenId] = useState<string | null>(null);
   const [now, setNow] = useState(() => new Date());
@@ -416,7 +423,7 @@ export function MyBookings({
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-6 pt-5 pb-8">
+      <PullToRefresh className="flex-1 px-6 pt-5 pb-8" onRefresh={onRefresh}>
 
         <SectionLabel>Upcoming</SectionLabel>
         {upcoming.length === 0 && (
@@ -437,6 +444,7 @@ export function MyBookings({
               open={openId === booking.id}
               onToggle={() => setOpenId(openId === booking.id ? null : booking.id)}
               onMessage={onMessage ? () => onMessage(booking.id) : undefined}
+              unread={unreadFor?.(booking.id) ?? 0}
               onCancel={() => onCancel(booking.id).then(() => setOpenId(null))}
             />
           ))}
@@ -518,7 +526,7 @@ export function MyBookings({
             </div>
           </>
         )}
-      </div>
+      </PullToRefresh>
     </div>
   );
 }
@@ -532,6 +540,7 @@ function UpcomingBooking({
   onToggle,
   onCancel,
   onMessage,
+  unread = 0,
   addressLine,
   isPro,
   onGoPro,
@@ -545,6 +554,8 @@ function UpcomingBooking({
   /** Rejects on failure; the card stays open and shows why. */
   onCancel: () => Promise<unknown>;
   onMessage?: () => void;
+  /** Unread incoming messages on this booking, for the badge. */
+  unread?: number;
   /**
    * From the public listing, not from `access`.
    *
@@ -698,6 +709,15 @@ function UpcomingBooking({
                 style={{ border: "1px solid #DCE7F2", color: "#16304E" }}
               >
                 <MessageCircle size={13} /> Message the studio
+                {unread > 0 && (
+                  <span
+                    className="ml-1 min-w-[18px] h-[18px] px-1 rounded-full flex items-center justify-center font-body font-semibold text-[11px] text-white"
+                    style={{ backgroundColor: "#F2695C" }}
+                    aria-label={`${unread} unread`}
+                  >
+                    {unread}
+                  </span>
+                )}
               </button>
             )}
 

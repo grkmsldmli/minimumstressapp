@@ -1,8 +1,18 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 
 import type { Profile } from "@/lib/domain";
+import { isNativeApp } from "@/lib/native";
 import { type AppRepository, createRepository, supabaseBackendEnabled } from "@/lib/repository-factory";
 import { supabaseBrowser } from "@/lib/supabase/client";
 
@@ -23,6 +33,7 @@ export type Screen =
   | "auth-verify"
   | "role"
   | "verify"
+  | "credential"
   | "discover"
   | "detail"
   | "payment"
@@ -125,6 +136,22 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [threadBookingId, setThreadBookingId] = useState<string | null>(null);
   const [editingSpaceId, setEditingSpaceId] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);
+
+  /**
+   * Mark the document as native so CSS can drop the desktop phone mockup.
+   *
+   * The mockup (a fixed 385x780 bordered frame) is keyed to viewport width,
+   * which is wrong for a native iPad: it is wide enough to hit the desktop
+   * branch and renders a fake phone in the middle of the tablet. Native must be
+   * decided by Capacitor, never by width — so this stamps `html.native` and the
+   * CSS opts every native device (iPhone and iPad) into full-viewport, edge-to-
+   * edge, safe-area-aware layout. Done in an effect (not SSR) because
+   * window.Capacitor is client-only, so there is no hydration mismatch;
+   * useLayoutEffect runs before the hydrated tree paints to minimise any flash.
+   */
+  useLayoutEffect(() => {
+    if (isNativeApp()) document.documentElement.classList.add("native");
+  }, []);
 
   /**
    * Someone already signed in should not be asked to sign in.

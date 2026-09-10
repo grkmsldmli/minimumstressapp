@@ -34,6 +34,7 @@ import type {
   PublicReview,
   Profile,
   PublicSpace,
+  ReferralSummary,
   SpaceAccessDetails,
 } from "./domain";
 import {
@@ -43,12 +44,13 @@ import {
   resolveCancellation,
 } from "./money";
 import { explainRedaction, redact } from "./message-redaction";
-import type { CancellationEvent } from "./reliability";
+import { toCancellationEvents, type CancellationEvent } from "./reliability";
 import type { CreateBookingInput, Repository } from "./repository";
 import type { AccessDetails } from "./access-details";
 import type { MediaKind, SpaceEdit } from "./domain";
 import type { NotificationEntry } from "./notify/history";
 import { knownUses } from "./booking-use";
+import { FOUNDING_HOST_LIMIT, FOUNDING_PRACTITIONER_LIMIT } from "./founding";
 import { knownSpaceTypes } from "./space-types";
 import { type CategoryKey, type RoomSetupKey, roomTypeFor } from "./taxonomy";
 import { SESSION_MINUTES } from "./session";
@@ -275,6 +277,12 @@ export class MockRepository implements Repository {
     email: null,
     isPro: false,
     insuranceDocName: null,
+    insuranceReview: { state: "pending", reviewedAt: null },
+    insuranceEffectiveDate: null,
+    insuranceExpiresAt: null,
+    insuranceInsurer: null,
+    insurancePolicyNumber: null,
+    insuranceReviewNote: null,
     payoutSchedule: "standard",
     payoutSetup: "not_started",
     notifyBookings: true,
@@ -282,12 +290,24 @@ export class MockRepository implements Repository {
     notifyOffers: false,
     emergencyContact: { name: null, phone: null, relationship: null },
     accountType: null,
+    identityVerifiedAt: null,
+    profession: null,
+    credentialDocName: null,
+    credentialType: null,
+    credentialNumber: null,
+    credentialJurisdiction: null,
+    credentialReview: { state: null, reviewedAt: null },
+    credentialReviewNote: null,
     searchPostcode: null,
     termsVersion: null,
     termsAcceptedAt: null,
     hostTermsVersion: null,
     hostTermsAcceptedAt: null,
     milestonesSeen: [],
+    foundingHostAt: null,
+    foundingNumber: null,
+    foundingPractitionerAt: null,
+    foundingPractitionerNumber: null,
   };
 
   private publicSpaces: PublicSpace[] = [];
@@ -349,13 +369,19 @@ export class MockRepository implements Repository {
         allowedUses: [],
         bookingMode: "instant" as const,
         roomSetup: seed.roomSetup,
-        addressLine: seed.addressLine,
-        lat: seed.lat,
-        lng: seed.lng,
+        // The coarse point only, matching spaces_public. The exact address and
+        // lat/lng live in SEED_PRIVATE and come back through the access flow.
+        approxLat: seed.lat,
+        approxLng: seed.lng,
         access: seed.access,
         distanceLabel: seed.distanceLabel,
       reviewCount: 0,
       averageRating: null,
+      // A little seeded texture: the first two seed hosts founded, and a
+      // couple carry a session milestone, so the practitioner-facing badges
+      // have something to draw in the demo.
+      hostFoundingHost: index < 2,
+      hostSessionMilestone: index === 0 ? 100 : index === 1 ? 10 : 0,
       };
     });
   }
@@ -389,8 +415,59 @@ export class MockRepository implements Repository {
     return { ...this.profile };
   }
 
+  async uploadInsuranceCertificate(file: File): Promise<Profile> {
+    const reason = rejectionReason(file, "document");
+    if (reason) throw new Error(reason);
+
+    // No bucket here, so the name stands in for the stored file. A new
+    // certificate returns to pending review, exactly as the real repository
+    // resets it — the state the onboarding screen and admin queue read.
+    this.profile = {
+      ...this.profile,
+      insuranceDocName: file.name,
+      insuranceReview: { state: "pending", reviewedAt: null },
+      insuranceReviewNote: null,
+    };
+    return { ...this.profile };
+  }
+
+  async uploadCredentialCertificate(
+    file: File,
+    details: {
+      credentialType: string | null;
+      credentialNumber: string | null;
+      credentialJurisdiction: string | null;
+    },
+  ): Promise<Profile> {
+    const reason = rejectionReason(file, "document");
+    if (reason) throw new Error(reason);
+
+    // Mirrors the real repository: a new document returns review to pending and
+    // records what the practitioner typed. Only staff move it past pending.
+    this.profile = {
+      ...this.profile,
+      credentialDocName: file.name,
+      credentialType: details.credentialType,
+      credentialNumber: details.credentialNumber,
+      credentialJurisdiction: details.credentialJurisdiction,
+      credentialReview: { state: "pending", reviewedAt: null },
+      credentialReviewNote: null,
+    };
+    return { ...this.profile };
+  }
+
   async startProSubscription(): Promise<Profile> {
     this.profile = { ...this.profile, isPro: true };
+    return { ...this.profile };
+  }
+
+  /**
+   * Stands in for Stripe Identity. The demo has no hosted flow to send anyone
+   * to, so it simply marks them verified — the state the real webhook would
+   * write after Stripe confirmed a document and a selfie.
+   */
+  async startIdentityVerification(): Promise<Profile> {
+    this.profile = { ...this.profile, identityVerifiedAt: new Date() };
     return { ...this.profile };
   }
 
@@ -602,24 +679,113 @@ export class MockRepository implements Repository {
     return { notice: explainRedaction(redaction.found) };
   }
 
+  // The mock has no second participant, so every message is the demo user's own
+  // and nothing is ever unread. Enough for the screen to render its empty state.
+  async markMessagesRead(): Promise<number> {
+    return 0;
+  }
+
+  async unreadMessageCounts(): Promise<Record<string, number>> {
+    return {};
+  }
+
+  async reportBooking(): Promise<void> {
+    // The mock has no staff queue; recording nothing is enough for local flows.
+  }
+
+  async blockBookingParty(): Promise<void> {
+    // No message channel to sever in the mock.
+  }
+
   /* ---------------- standing ---------------- */
 
   async getSessionCount(): Promise<number> {
     return this.bookings.filter((b) => b.status === "completed").length;
   }
 
+  async requestSpace(): Promise<void> {
+    // The demo has no backend; a space request simply succeeds so the empty
+    // state's flow can be seen end to end.
+    return;
+  }
+
+  async foundingHostsRemaining(): Promise<number> {
+    // The demo has no other hosts going live, so the fifty stand almost whole.
+    // The two seed founders above are other accounts, not this one, so this is
+    // a plausible number rather than a manufactured countdown.
+    return FOUNDING_HOST_LIMIT - 2;
+  }
+
+  async foundingPractitionersRemaining(): Promise<number> {
+    // Same reasoning on the practitioner side: a plausible, near-whole cohort
+    // rather than a manufactured countdown.
+    return FOUNDING_PRACTITIONER_LIMIT - 1;
+  }
+
+  /* ---------------- referrals ---------------- */
+
+  async myReferralCode(): Promise<string> {
+    // Stable for the session, opaque, and not the user id — the same shape the
+    // real code has, so the share UI has something real to render.
+    return "MS7F2K9Q";
+  }
+
+  async listReferrals(): Promise<ReferralSummary[]> {
+    // A little seeded texture across the three statuses so the dashboard area
+    // shows each state. No referred-host identity here, the same as the server.
+    const day = 24 * 60 * 60 * 1000;
+    // Only the qualified referral carries a reward — earned, not paid, since no
+    // payout runs. The others show $0 / no reward, the same as the server.
+    return [
+      {
+        id: "ref_demo_1",
+        status: "qualified",
+        joinedAt: new Date(Date.now() - 40 * day),
+        rewardCents: 2500,
+        rewardState: "earned",
+      },
+      {
+        id: "ref_demo_2",
+        status: "space_live",
+        joinedAt: new Date(Date.now() - 12 * day),
+        rewardCents: 0,
+        rewardState: null,
+      },
+      {
+        id: "ref_demo_3",
+        status: "joined",
+        joinedAt: new Date(Date.now() - 3 * day),
+        rewardCents: 0,
+        rewardState: null,
+      },
+    ];
+  }
+
+  async attributeReferral(_code: string): Promise<void> {
+    // Nothing to attribute in a single-account demo; the real repo locks the
+    // relationship server-side.
+  }
+
   /* ---------------- credit ---------------- */
 
   async listCancellationHistory(): Promise<CancellationEvent[]> {
-    return this.bookings
-      .filter((b) => b.status === "cancelled_by_host" || b.status === "cancelled_by_practitioner")
-      .map((b) => ({
-        // The mock has no cancelled_at column, so the moment is taken as now.
-        // Real rows carry it; see SupabaseRepository.
-        at: new Date(),
-        sessionStart: b.startsAt,
-        by: b.status === "cancelled_by_host" ? ("host" as const) : ("practitioner" as const),
-      }));
+    // Built through the same toCancellationEvents rule the real repo uses. The
+    // mock has no reaper and no abandoned checkouts, so every cancellation here
+    // is a genuine one — and no captured_at/cancelled_at columns, so a non-null
+    // stand-in for each keeps them counting through the shared predicate rather
+    // than a second, divergent filter.
+    return toCancellationEvents(
+      this.bookings
+        .filter(
+          (b) => b.status === "cancelled_by_host" || b.status === "cancelled_by_practitioner",
+        )
+        .map((b) => ({
+          cancelledBy: b.status === "cancelled_by_host" ? "host" : "practitioner",
+          capturedAt: b.startsAt,
+          cancelledAt: new Date(),
+          sessionStart: b.startsAt,
+        })),
+    );
   }
 
   /* ---------------- hosting ---------------- */
@@ -697,6 +863,7 @@ export class MockRepository implements Repository {
       ...files.map((item) => ({
         id: id("media"),
         url: `mock://space-media/${item.file.name}`,
+        cardUrl: `mock://space-media/${item.file.name}`,
         kind: item.kind,
       })),
     ];
@@ -776,11 +943,10 @@ export class MockRepository implements Repository {
       // The mock has no storage, so a preview URL is the only thing it can
       // show — and it is enough, because the tab that made it is the tab that
       // reads it. Callers release these with releasePickedMedia.
-      media: input.media.map((m) => ({
-        id: id("md"),
-        url: URL.createObjectURL(m.file),
-        kind: m.kind,
-      })),
+      media: input.media.map((m) => {
+        const url = URL.createObjectURL(m.file);
+        return { id: id("md"), url, cardUrl: url, kind: m.kind };
+      }),
       availability: normalize(input.availability),
       mapX: input.mapX,
       mapY: input.mapY,
@@ -800,6 +966,10 @@ export class MockRepository implements Repository {
       distanceLabel: "your space",
       reviewCount: 0,
       averageRating: null,
+      // A host does not browse their own listing on the public map; the coarse
+      // point is the public view's field and is left null here.
+      approxLat: null,
+      approxLng: null,
       // New listings are never live: the brief defers review to a manual
       // process, so nothing reaches Discover until it is approved.
       status: "pending",
@@ -813,6 +983,9 @@ export class MockRepository implements Repository {
       subleaseReview: { state: "pending", reviewedAt: null },
       insuranceReview: { state: "pending", reviewedAt: null },
       reviewNote: null,
+      // A host's own listing carries no host badge for themselves in the demo.
+      hostFoundingHost: false,
+      hostSessionMilestone: 0,
     };
 
     this.mySpaces.push(space);
@@ -888,6 +1061,13 @@ export class MockRepository implements Repository {
       netCents: space.hourlyRateCents,
       // Nothing is settled before the session has happened.
       hostPaidAt: null,
+      // A verified, established practitioner, so the dashboard shows the trust
+      // summary with something in it.
+      identityVerified: true,
+      insuranceVerified: true,
+      credentialReviewed: true,
+      completedSessions: 12,
+      goodStanding: true,
     };
 
     this.hostBookings.push(booking);

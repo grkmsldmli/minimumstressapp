@@ -4,12 +4,16 @@ import {
   type CityRow,
   type CityTypeRow,
   MIN_LISTINGS_TO_INDEX,
+  MIN_LISTINGS_TO_SHOW,
   canonicalForCityType,
   citySlug,
   cityPath,
+  discoverableCity,
+  groupCities,
   indexableCity,
   indexableCityType,
   indexablePaths,
+  pickRouteListing,
   priceRange,
   stateSlug,
 } from "./directory";
@@ -79,6 +83,44 @@ describe("when a town page is worth indexing", () => {
   it("is, at it and above it", () => {
     expect(indexableCity({ spaceCount: MIN_LISTINGS_TO_INDEX })).toBe(true);
     expect(indexableCity({ spaceCount: 40 })).toBe(true);
+  });
+});
+
+/**
+ * Human discovery and search-engine indexing are two different questions on two
+ * different scales, and this is where they must not be allowed to collapse back
+ * into one. Showing a person a live room is a lower bar than advertising the
+ * page to a crawler, and the whole of the "Nothing is listed yet" bug was this
+ * distinction going missing.
+ */
+describe("when a town is worth showing a person", () => {
+  it("shows the first threshold below the indexing one — they are not the same number", () => {
+    expect(MIN_LISTINGS_TO_SHOW).toBeLessThan(MIN_LISTINGS_TO_INDEX);
+  });
+
+  it("is not, with nothing live in it", () => {
+    // Zero live rooms is the only genuine empty state the directory should show.
+    expect(discoverableCity({ spaceCount: 0 })).toBe(false);
+  });
+
+  it("is, from the very first live room", () => {
+    // One or two rooms: real inventory a person can book, so it must be shown —
+    // even though the page stays below the indexing bar (B and C).
+    expect(discoverableCity({ spaceCount: 1 })).toBe(true);
+    expect(discoverableCity({ spaceCount: 2 })).toBe(true);
+  });
+
+  it("separates being shown from being indexed for a one- or two-room town", () => {
+    for (const count of [1, 2]) {
+      expect(discoverableCity({ spaceCount: count }), `${count} shown`).toBe(true);
+      expect(indexableCity({ spaceCount: count }), `${count} indexed`).toBe(false);
+    }
+  });
+
+  it("shows and indexes a town once it clears the SEO bar", () => {
+    // Three rooms (D): visible to people and now also eligible for indexing.
+    expect(discoverableCity({ spaceCount: MIN_LISTINGS_TO_INDEX })).toBe(true);
+    expect(indexableCity({ spaceCount: MIN_LISTINGS_TO_INDEX })).toBe(true);
   });
 });
 
@@ -198,5 +240,104 @@ describe("a price range", () => {
     const edge = city({ spaceCount: MIN_LISTINGS_TO_INDEX });
     expect(indexableCity(edge)).toBe(true);
     expect(priceRange(edge)).not.toBeNull();
+  });
+});
+
+/**
+ * Choosing the one room a listing URL means from the id-prefix matches.
+ *
+ * Eight characters of a uuid are not unique, so a lookup can return more than
+ * one room. This is where a wrong listing must never be served: the town in the
+ * address is what tells a collision apart, and a genuine tie fails to a 404
+ * rather than a guess.
+ */
+describe("resolving a listing URL to one room", () => {
+  const room = (over: { id?: string; state?: string | null; city?: string | null }) => ({
+    id: "id",
+    name: "Reformer Hit",
+    state: "CA",
+    city: "San Carlos",
+    ...over,
+  });
+  const route = { state: "ca", city: "san-carlos" };
+
+  it("returns the single room in the town the address names", () => {
+    const only = room({ id: "4e313239-4d6a-4fd7-bcd2-711340d8962c" });
+    expect(pickRouteListing([only], route)).toBe(only);
+  });
+
+  it("returns nothing when the id's room is in a different town than the URL", () => {
+    // The prefix matched a room, but it is in Belmont and the address says San
+    // Carlos — resolving it would put a room at an address it is not at.
+    const elsewhere = room({ city: "Belmont" });
+    expect(pickRouteListing([elsewhere], route)).toBeNull();
+    // A wholly wrong route likewise finds nothing.
+    expect(pickRouteListing([room({})], { state: "tx", city: "dallas" })).toBeNull();
+  });
+
+  it("returns nothing for a room the geocoder never placed", () => {
+    expect(pickRouteListing([room({ city: null })], route)).toBeNull();
+    expect(pickRouteListing([room({ state: null })], route)).toBeNull();
+  });
+
+  it("picks the right room when a prefix collision spans two towns", () => {
+    const here = room({ id: "4e313239-aaaa-...", city: "San Carlos" });
+    const there = room({ id: "4e313239-bbbb-...", city: "Belmont" });
+    expect(pickRouteListing([here, there], route)).toBe(here);
+  });
+
+  it("refuses to guess when a collision is in the same town", () => {
+    // Same prefix, same town: a genuine tie. A 404 is correct; serving either
+    // one would be serving the wrong listing to half the visitors.
+    const a = room({ id: "4e313239-aaaa-..." });
+    const b = room({ id: "4e313239-bbbb-..." });
+    expect(pickRouteListing([a, b], route)).toBeNull();
+  });
+
+  it("returns nothing when the prefix matched no rooms at all", () => {
+    expect(pickRouteListing([], route)).toBeNull();
+  });
+});
+
+/**
+ * Grouping a category's listing rows into towns, for the type-filtered
+ * directory. It stands in for the `city_inventory` view, which has no category
+ * column — so it must group and count the same way the view does.
+ */
+describe("grouping listings into towns", () => {
+  it("counts rooms per town and keeps a price range", () => {
+    const rows = [
+      { state: "CA", city: "San Carlos", hourly_rate_cents: 4500 },
+      { state: "CA", city: "San Carlos", hourly_rate_cents: 6500 },
+      { state: "CA", city: "Belmont", hourly_rate_cents: 5000 },
+    ];
+    const towns = groupCities(rows).sort((a, b) => a.city.localeCompare(b.city));
+    expect(towns).toHaveLength(2);
+    const belmont = towns.find((t) => t.city === "Belmont")!;
+    const sanCarlos = towns.find((t) => t.city === "San Carlos")!;
+    expect(sanCarlos.spaceCount).toBe(2);
+    expect(sanCarlos.minCents).toBe(4500);
+    expect(sanCarlos.maxCents).toBe(6500);
+    expect(belmont.spaceCount).toBe(1);
+  });
+
+  it("drops rows with no town, exactly as the view's not-null filter does", () => {
+    const towns = groupCities([
+      { state: "CA", city: "San Carlos", hourly_rate_cents: 4500 },
+      { state: null, city: "San Carlos", hourly_rate_cents: 4500 },
+      { state: "CA", city: null, hourly_rate_cents: 4500 },
+    ]);
+    expect(towns).toHaveLength(1);
+    expect(towns[0].spaceCount).toBe(1);
+  });
+
+  it("is empty for no rows — the category has no live rooms", () => {
+    expect(groupCities([])).toEqual([]);
+  });
+
+  it("still counts a room whose rate is missing", () => {
+    const towns = groupCities([{ state: "CA", city: "Campbell", hourly_rate_cents: null }]);
+    expect(towns[0].spaceCount).toBe(1);
+    expect(towns[0].minCents).toBe(0);
   });
 });

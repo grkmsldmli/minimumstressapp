@@ -1,16 +1,28 @@
 import { createServerClient } from "@supabase/ssr";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 
+import { bearerToken } from "../auth-header";
 import { supabasePublishableKey, supabaseSecretKey, supabaseUrl } from "./env";
 
 /**
  * Server client carrying the caller's session, so RLS applies exactly as it
  * would in the browser. This is the default for anything server-rendered.
+ *
+ * The session normally rides in the cookie. The native shell has no cookie —
+ * the Capacitor WebView drops it, so it sends the same access token as a Bearer
+ * header instead (see supabase/client.ts and api-fetch.ts). When one is
+ * present it is passed to the client as an Authorization header, so its
+ * PostgREST requests act as that user under RLS exactly as the cookie would.
+ * This is a second transport for one session, not a second auth: the token is
+ * still a Supabase JWT, validated the same way. The web sends no such header
+ * and keeps using the cookie untouched.
  */
 export async function supabaseServer() {
   const store = await cookies();
+  const token = bearerToken((await headers()).get("authorization"));
 
   return createServerClient(supabaseUrl(), supabasePublishableKey(), {
+    ...(token ? { global: { headers: { Authorization: `Bearer ${token}` } } } : {}),
     cookies: {
       getAll: () => store.getAll(),
       setAll: (list) => {

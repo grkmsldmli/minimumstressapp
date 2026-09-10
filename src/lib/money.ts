@@ -331,6 +331,21 @@ export function bookingMoneyFromQuote(q: Quote): BookingMoney {
   };
 }
 
+/**
+ * The all-in hourly price shown on public pages: the host's rate plus the
+ * service fee every booking pays.
+ *
+ * Presentation only. It reads the same quote() the checkout uses (non-instant),
+ * so the figure a guest sees before booking is the figure they are charged —
+ * ahead of only the last-minute instant surcharge, which applies to same-hour
+ * slots and is shown at checkout. It changes no pricing, percentage or Stripe
+ * amount; it composes the ones that already exist so the site and the app quote
+ * the same number.
+ */
+export function publicHourlyTotalCents(hostRateCents: number): number {
+  return quote({ hostRateCents, isInstant: false, isPro: false }).totalCents;
+}
+
 export type CancellationActor = "practitioner" | "host";
 
 export interface CancellationOutcome {

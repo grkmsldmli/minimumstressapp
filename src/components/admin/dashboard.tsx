@@ -2,21 +2,34 @@
 
 import {
   AlertTriangle,
+  Archive,
   Building2,
   CalendarClock,
   Check,
   ChevronRight,
+  Eye,
+  EyeOff,
   FileText,
   Phone,
   Search,
+  Trash2,
   Users,
   X,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { errorMessage } from "@/lib/error-message";
-import type { AdminQueue, ListingRow, LiveSession, Person, SessionParty } from "@/lib/admin/queue";
+import type {
+  AdminQueue,
+  ListingRow,
+  LiveSession,
+  PendingCredential,
+  PendingInsurance,
+  Person,
+  SessionParty,
+} from "@/lib/admin/queue";
 import { formatCents } from "@/lib/money";
+import { isVerificationDocPath } from "@/lib/verification-docs";
 
 import { DisputeQueue } from "./disputes";
 import { Funnel } from "./funnel";
@@ -182,6 +195,8 @@ export function AdminDashboard() {
     urgent.length === 0 &&
     queue.escalations.length === 0 &&
     queue.pendingListings.length === 0 &&
+    queue.pendingInsurance.length === 0 &&
+    queue.pendingCredentials.length === 0 &&
     queue.accountChangeRequests.length === 0;
 
   return (
@@ -247,7 +262,7 @@ export function AdminDashboard() {
 
         <InTheRoom sessions={queue.liveSessions} />
 
-        <Directory people={queue.people} listings={queue.listings} />
+        <Directory people={queue.people} listings={queue.listings} act={act} busy={busy} />
 
         <div
           className="grid gap-4 mt-6"
@@ -494,6 +509,32 @@ export function AdminDashboard() {
               ))}
             </Panel>
 
+            <Panel title="Insurance waiting for review" count={queue.pendingInsurance.length}>
+              {queue.pendingInsurance.map((item) => (
+                <InsuranceReviewCard
+                  key={item.id}
+                  item={item}
+                  busy={busy === item.id}
+                  onView={() => item.docPath && void openDocument(item.docPath)}
+                  onVerify={(fields) => void act("verify_insurance", item.id, undefined, fields)}
+                  onReject={(note) => void act("reject_insurance", item.id, note)}
+                />
+              ))}
+            </Panel>
+
+            <Panel title="Credentials waiting for review" count={queue.pendingCredentials.length}>
+              {queue.pendingCredentials.map((item) => (
+                <CredentialReviewCard
+                  key={item.id}
+                  item={item}
+                  busy={busy === item.id}
+                  onView={() => item.docPath && void openDocument(item.docPath)}
+                  onVerify={() => void act("verify_credential", item.id)}
+                  onReject={(note) => void act("reject_credential", item.id, note)}
+                />
+              ))}
+            </Panel>
+
             <Panel title="Account change requests" count={queue.accountChangeRequests.length}>
               {queue.accountChangeRequests.map((request) => (
                 <Card key={request.id}>
@@ -689,10 +730,24 @@ function Party({ role, party }: { role: string; party: SessionParty }) {
   );
 }
 
-function Directory({ people, listings }: { people: Person[]; listings: ListingRow[] }) {
+function Directory({
+  people,
+  listings,
+  act,
+  busy,
+}: {
+  people: Person[];
+  listings: ListingRow[];
+  act: (action: string, id: string) => void | Promise<void>;
+  busy: string | null;
+}) {
   const [tab, setTab] = useState<"people" | "listings">("people");
   const [query, setQuery] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
+  // Arms a two-click action: the first click sets this to the listing's id, the
+  // second confirms. Reset whenever a row is toggled, so neither can linger.
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [confirmArchive, setConfirmArchive] = useState<string | null>(null);
 
   const term = query.trim().toLowerCase();
   const match = (...fields: (string | null)[]) =>
@@ -805,15 +860,19 @@ function Directory({ people, listings }: { people: Person[]; listings: ListingRo
                 <Row
                   key={listing.id}
                   open={openId === listing.id}
-                  onToggle={() => setOpenId(openId === listing.id ? null : listing.id)}
+                  onToggle={() => {
+                    setOpenId(openId === listing.id ? null : listing.id);
+                    setConfirmDelete(null);
+                    setConfirmArchive(null);
+                  }}
                   title={listing.name}
                   subtitle={listing.hostEmail}
-                  tag={listing.status}
+                  tag={listing.archivedAt ? "archived" : listing.status}
                   right={`${listing.sessions} ${listing.sessions === 1 ? "session" : "sessions"}`}
                   alert={listing.status === "pending"}
                   details={[
                     ["Host", listing.hostEmail ?? "unknown"],
-                    ["Status", listing.status],
+                    ["Status", listing.archivedAt ? "closed (archived)" : listing.status],
                     ["Type", listing.category || "unset"],
                     ["Host rate", `${formatCents(listing.hourlyRateCents)}/hr`],
                     ["Sessions", String(listing.sessions)],
@@ -827,6 +886,71 @@ function Directory({ people, listings }: { people: Person[]; listings: ListingRo
                     ["Listed", date(listing.createdAt)],
                     ["Listing id", listing.id],
                   ]}
+                  actions={
+                    <div className="flex flex-wrap gap-2 pb-3 pl-6">
+                      {/* Hold / resume — the reversible pair, not offered once a
+                          listing has been closed for good. */}
+                      {!listing.archivedAt &&
+                        (listing.status === "delisted" ? (
+                          <Action
+                            disabled={busy === listing.id}
+                            onClick={() => void act("relist_listing", listing.id)}
+                          >
+                            <Eye size={12} /> Put back on the site
+                          </Action>
+                        ) : (
+                          <Action
+                            disabled={busy === listing.id}
+                            onClick={() => void act("delist_listing", listing.id)}
+                          >
+                            <EyeOff size={12} /> Hold — take off the site
+                          </Action>
+                        ))}
+
+                      {/* Close for good — off the site, no new bookings, record
+                          kept. Two-click, and gone once it is already archived. */}
+                      {!listing.archivedAt &&
+                        (confirmArchive === listing.id ? (
+                          <Action
+                            disabled={busy === listing.id}
+                            onClick={() => void act("archive_listing", listing.id)}
+                          >
+                            <Archive size={12} /> Confirm — close for good
+                          </Action>
+                        ) : (
+                          <Action onClick={() => setConfirmArchive(listing.id)}>
+                            <Archive size={12} /> Close permanently
+                          </Action>
+                        ))}
+
+                      {/* Hard delete — cleanup, only for a listing nobody ever
+                          booked. The bookings FK refuses the rest at the database. */}
+                      {listing.sessions === 0 ? (
+                        confirmDelete === listing.id ? (
+                          <Action
+                            danger
+                            disabled={busy === listing.id}
+                            onClick={() => void act("delete_listing", listing.id)}
+                          >
+                            <Trash2 size={12} /> Confirm — delete for good
+                          </Action>
+                        ) : (
+                          <Action danger onClick={() => setConfirmDelete(listing.id)}>
+                            <Trash2 size={12} /> Delete permanently
+                          </Action>
+                        )
+                      ) : (
+                        !listing.archivedAt && (
+                          <span
+                            className="font-body text-[10.5px] self-center"
+                            style={{ color: MUTED }}
+                          >
+                            Has bookings — hold or close it, it cannot be deleted
+                          </span>
+                        )
+                      )}
+                    </div>
+                  }
                 />
               ))}
         </div>
@@ -890,6 +1014,7 @@ function Row({
   right,
   alert,
   details,
+  actions,
 }: {
   open: boolean;
   onToggle: () => void;
@@ -899,6 +1024,8 @@ function Row({
   right: string;
   alert: boolean;
   details: [string, string][];
+  /** Buttons shown under the details when the row is open. */
+  actions?: React.ReactNode;
 }) {
   return (
     <div style={{ borderBottom: `1px solid ${LINE}` }}>
@@ -941,24 +1068,27 @@ function Row({
       </button>
 
       {open && (
-        <div
-          className="grid gap-x-4 gap-y-1.5 pb-3 pl-6"
-          style={{ gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))" }}
-        >
-          {details.map(([label, value]) => (
-            <div key={label}>
-              <p
-                className="font-body font-light text-[9.5px] uppercase tracking-[0.1em]"
-                style={{ color: MUTED }}
-              >
-                {label}
-              </p>
-              <p className="font-body text-[11.5px] break-words" style={{ color: "#fff" }}>
-                {value}
-              </p>
-            </div>
-          ))}
-        </div>
+        <>
+          <div
+            className="grid gap-x-4 gap-y-1.5 pb-3 pl-6"
+            style={{ gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))" }}
+          >
+            {details.map(([label, value]) => (
+              <div key={label}>
+                <p
+                  className="font-body font-light text-[9.5px] uppercase tracking-[0.1em]"
+                  style={{ color: MUTED }}
+                >
+                  {label}
+                </p>
+                <p className="font-body text-[11.5px] break-words" style={{ color: "#fff" }}>
+                  {value}
+                </p>
+              </div>
+            ))}
+          </div>
+          {actions}
+        </>
       )}
     </div>
   );
@@ -1172,11 +1302,13 @@ function Action({
   onClick,
   disabled,
   primary = false,
+  danger = false,
 }: {
   children: React.ReactNode;
   onClick: () => void;
   disabled?: boolean;
   primary?: boolean;
+  danger?: boolean;
 }) {
   return (
     <button
@@ -1187,7 +1319,9 @@ function Action({
       style={
         primary
           ? { backgroundColor: disabled ? "#2A4763" : SKY, color: "#fff" }
-          : { border: `1px solid ${LINE}`, color: MUTED }
+          : danger
+            ? { border: `1px solid ${CORAL}`, color: CORAL }
+            : { border: `1px solid ${LINE}`, color: MUTED }
       }
     >
       {children}
@@ -1213,6 +1347,269 @@ function ResolveBox({ busy, onResolve }: { busy: boolean; onResolve: (note: stri
         {busy ? "…" : "Resolve"}
       </Action>
     </div>
+  );
+}
+
+/**
+ * Reading a certificate and turning it into a decision.
+ *
+ * Verifying is not a single click on purpose: the window is the decision. Staff
+ * read the two dates off the certificate and type them, because the booking
+ * gate refuses a verified row that carries none, and a one-tap "looks fine"
+ * would produce exactly that row. Rejecting takes a reason, shown to the
+ * professional the same way a listing rejection reaches a host.
+ */
+function InsuranceReviewCard({
+  item,
+  busy,
+  onView,
+  onVerify,
+  onReject,
+}: {
+  item: PendingInsurance;
+  busy: boolean;
+  onView: () => void;
+  onVerify: (fields: {
+    effectiveDate: string;
+    expiresAt: string;
+    insurer: string;
+    policyNumber: string;
+  }) => void;
+  onReject: (note: string) => void;
+}) {
+  const [effectiveDate, setEffectiveDate] = useState(item.effectiveDate ?? "");
+  const [expiresAt, setExpiresAt] = useState(item.expiresAt ?? "");
+  const [insurer, setInsurer] = useState(item.insurer ?? "");
+  const [policyNumber, setPolicyNumber] = useState(item.policyNumber ?? "");
+  const [rejecting, setRejecting] = useState(false);
+  const [note, setNote] = useState("");
+
+  const field = "flex-1 px-3 py-2 rounded-md font-body text-[11.5px] outline-none";
+  const fieldStyle = { backgroundColor: PANEL, color: "#fff", border: `1px solid ${LINE}` };
+  // Native date inputs already guarantee the YYYY-MM-DD shape or an empty
+  // string, so this reads as "both are set, and the window is the right way
+  // round" — the same rule the server enforces (0054), checked here so the
+  // button is off before a submit that would only bounce. String order is date
+  // order for this format.
+  const datesReady = Boolean(effectiveDate) && Boolean(expiresAt);
+  const windowBackwards = datesReady && expiresAt < effectiveDate;
+  const canVerify = datesReady && !windowBackwards;
+
+  /*
+   * A certificate added before document storage existed has a bare filename in
+   * insurance_doc_path and no object behind it. It can be named but never
+   * opened, so it cannot be reviewed — the practitioner has to add it again
+   * (their "Replace file" writes a real path and returns this to pending). Same
+   * rule the signing route enforces, so what the admin sees matches what opens.
+   */
+  const legacyDoc = item.docPath !== null && !isVerificationDocPath(item.docPath);
+
+  return (
+    <Card>
+      <p className="font-body font-medium text-[12.5px]" style={{ color: "#fff" }}>
+        {item.displayName ?? item.email ?? "A professional"}
+      </p>
+      <p className="font-body font-light text-[11.5px] mt-1" style={{ color: MUTED }}>
+        {item.email ?? "unknown"}
+      </p>
+
+      <div className="mt-3">
+        {!item.docPath ? (
+          <span className="font-body text-[11px]" style={{ color: CORAL }}>
+            No file uploaded
+          </span>
+        ) : legacyDoc ? (
+          <div>
+            <span className="font-body font-medium text-[11.5px]" style={{ color: CORAL }}>
+              Document unavailable
+            </span>
+            <p className="font-body font-light text-[11px] mt-1" style={{ color: MUTED }}>
+              This certificate was added before document storage was enabled. Ask the
+              practitioner to upload it again.
+            </p>
+          </div>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            <Doc label="Certificate" onClick={onView} />
+          </div>
+        )}
+      </div>
+
+      {rejecting ? (
+        <div className="flex gap-2 mt-3">
+          <input
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="Why is it being turned down? (shown to them)"
+            aria-label="Rejection reason"
+            className={field}
+            style={fieldStyle}
+          />
+          <Action danger disabled={busy || note.trim().length < 15} onClick={() => onReject(note)}>
+            {busy ? "…" : "Confirm"}
+          </Action>
+          <Action disabled={busy} onClick={() => setRejecting(false)}>
+            Cancel
+          </Action>
+        </div>
+      ) : (
+        <>
+          <div className="flex gap-2 mt-3">
+            <label className="flex-1">
+              <span className="block font-body text-[10px] uppercase tracking-wide mb-1" style={{ color: MUTED }}>
+                Effective date
+              </span>
+              <input
+                type="date"
+                value={effectiveDate}
+                onChange={(e) => setEffectiveDate(e.target.value)}
+                aria-label="Effective date"
+                max={expiresAt || undefined}
+                className="w-full px-3 py-2 rounded-md font-body text-[11.5px] outline-none"
+                style={{ ...fieldStyle, colorScheme: "dark" }}
+              />
+            </label>
+            <label className="flex-1">
+              <span className="block font-body text-[10px] uppercase tracking-wide mb-1" style={{ color: MUTED }}>
+                Expiration date
+              </span>
+              <input
+                type="date"
+                value={expiresAt}
+                onChange={(e) => setExpiresAt(e.target.value)}
+                aria-label="Expiration date"
+                min={effectiveDate || undefined}
+                className="w-full px-3 py-2 rounded-md font-body text-[11.5px] outline-none"
+                style={{ ...fieldStyle, colorScheme: "dark" }}
+              />
+            </label>
+          </div>
+          {windowBackwards && (
+            <p className="font-body text-[10.5px] mt-1.5" style={{ color: CORAL }}>
+              The expiration must be on or after the effective date.
+            </p>
+          )}
+          <div className="flex gap-2 mt-2">
+            <input
+              value={insurer}
+              onChange={(e) => setInsurer(e.target.value)}
+              placeholder="Insurer (optional)"
+              aria-label="Insurer"
+              className={field}
+              style={fieldStyle}
+            />
+            <input
+              value={policyNumber}
+              onChange={(e) => setPolicyNumber(e.target.value)}
+              placeholder="Policy no. (optional)"
+              aria-label="Policy number"
+              className={field}
+              style={fieldStyle}
+            />
+          </div>
+          <div className="flex gap-2 mt-3">
+            <Action
+              primary
+              disabled={busy || !canVerify || legacyDoc}
+              onClick={() => onVerify({ effectiveDate, expiresAt, insurer, policyNumber })}
+            >
+              <Check size={12} /> Verify
+            </Action>
+            <Action disabled={busy} onClick={() => setRejecting(true)}>
+              <X size={12} /> Reject
+            </Action>
+          </div>
+        </>
+      )}
+    </Card>
+  );
+}
+
+/**
+ * A credential awaiting a hand review. No dates — a license is valid-or-not, not
+ * windowed like insurance — so this only opens the document and records the
+ * verdict. Verify takes no fields; reject requires a reason shown to the person.
+ */
+function CredentialReviewCard({
+  item,
+  busy,
+  onView,
+  onVerify,
+  onReject,
+}: {
+  item: PendingCredential;
+  busy: boolean;
+  onView: () => void;
+  onVerify: () => void;
+  onReject: (note: string) => void;
+}) {
+  const [rejecting, setRejecting] = useState(false);
+  const [note, setNote] = useState("");
+
+  const field = "flex-1 px-3 py-2 rounded-md font-body text-[11.5px] outline-none";
+  const fieldStyle = { backgroundColor: PANEL, color: "#fff", border: `1px solid ${LINE}` };
+  const legacyDoc = item.docPath !== null && !isVerificationDocPath(item.docPath);
+  const details =
+    [item.profession, item.credentialType, item.credentialNumber, item.credentialJurisdiction]
+      .filter(Boolean)
+      .join(" · ") || "No details given";
+
+  return (
+    <Card>
+      <p className="font-body font-medium text-[12.5px]" style={{ color: "#fff" }}>
+        {item.displayName ?? item.email ?? "A professional"}
+      </p>
+      <p className="font-body font-light text-[11.5px] mt-1" style={{ color: MUTED }}>
+        {item.email ?? "unknown"}
+      </p>
+      <p className="font-body font-light text-[11.5px] mt-1" style={{ color: MUTED }}>
+        {details}
+      </p>
+
+      <div className="mt-3">
+        {!item.docPath ? (
+          <span className="font-body text-[11px]" style={{ color: CORAL }}>
+            No file uploaded
+          </span>
+        ) : legacyDoc ? (
+          <span className="font-body font-medium text-[11.5px]" style={{ color: CORAL }}>
+            Document unavailable
+          </span>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            <Doc label="Credential" onClick={onView} />
+          </div>
+        )}
+      </div>
+
+      {rejecting ? (
+        <div className="flex gap-2 mt-3">
+          <input
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="Why is it being turned down? (shown to them)"
+            aria-label="Rejection reason"
+            className={field}
+            style={fieldStyle}
+          />
+          <Action danger disabled={busy || note.trim().length < 15} onClick={() => onReject(note)}>
+            {busy ? "…" : "Confirm"}
+          </Action>
+          <Action disabled={busy} onClick={() => setRejecting(false)}>
+            Cancel
+          </Action>
+        </div>
+      ) : (
+        <div className="flex gap-2 mt-3">
+          <Action primary disabled={busy || legacyDoc || !item.docPath} onClick={onVerify}>
+            <Check size={12} /> Verify
+          </Action>
+          <Action disabled={busy} onClick={() => setRejecting(true)}>
+            <X size={12} /> Reject
+          </Action>
+        </div>
+      )}
+    </Card>
   );
 }
 

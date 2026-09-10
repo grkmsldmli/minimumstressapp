@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { Building2, ChevronRight, Mail, Sparkles, Users } from "lucide-react";
+import { useRef, useState } from "react";
+import { ArrowLeft, Building2, ChevronRight, Lock, Mail, Sparkles, Users } from "lucide-react";
 
 import { Ambient, BreathingLogo, Headline, Wordmark } from "@/components/brand";
 import { PrimaryButton } from "@/components/primitives";
 import { PROVIDER_LABELS, type Provider } from "@/lib/auth-providers";
+import { isReviewerEmail } from "@/lib/reviewer-login";
 
 const NAVY_WASH =
   "radial-gradient(120% 90% at 50% 0%, #1E4066 0%, #16304E 55%, #0E2138 100%)";
@@ -14,17 +15,45 @@ const NAVY_WASH =
 export function NavyScreen({
   children,
   className = "",
+  onBack,
 }: {
   children: React.ReactNode;
   className?: string;
+  /**
+   * When present, a back arrow floats at the top-left over the starfield. The
+   * onboarding screens sit above the shell's data guard, so this is the only
+   * way back off them — without it, a wrong email typed into the code screen
+   * had no way home but killing the app.
+   */
+  onBack?: () => void;
 }) {
   return (
     <div
-      className={`h-full flex flex-col screen-in relative overflow-hidden ${className}`}
+      className="h-full flex flex-col screen-in relative overflow-hidden"
       style={{ background: NAVY_WASH }}
     >
       <Ambient />
-      {children}
+      {onBack && (
+        <button
+          type="button"
+          onClick={onBack}
+          aria-label="Back"
+          className="absolute left-5 top-5 z-20 w-9 h-9 rounded-full flex items-center justify-center press"
+          style={{ backgroundColor: "rgba(255,255,255,0.14)" }}
+        >
+          <ArrowLeft size={16} color="#fff" />
+        </button>
+      )}
+      {/*
+        The content column. `min-h-full` fills a phone (so justify-between keeps
+        its familiar rhythm); on native tall screens (.navy-screen in
+        globals.css) the floor is released and the column is capped and centred,
+        so onboarding does not stretch down a 1024px+ iPad. Width is already
+        capped to ~600px by html.native .app-frame; mx-auto centres it.
+      */}
+      <div className={`navy-screen relative z-10 flex flex-col w-full mx-auto min-h-full ${className}`}>
+        {children}
+      </div>
     </div>
   );
 }
@@ -33,49 +62,43 @@ export function NavyScreen({
 /*  Splash — the 4-7-8 cycle, narrated                                 */
 /* ------------------------------------------------------------------ */
 
-const BREATH_PHASES = [
-  { label: "breathe in", ms: 4000 },
-  { label: "hold", ms: 7000 },
-  { label: "breathe out", ms: 8000 },
-] as const;
-
 export function Splash({ next }: { next: () => void }) {
-  const [phase, setPhase] = useState(0);
-
-  useEffect(() => {
-    const id = setTimeout(
-      () => setPhase((p) => (p + 1) % BREATH_PHASES.length),
-      BREATH_PHASES[phase].ms,
-    );
-    return () => clearTimeout(id);
-  }, [phase]);
-
   return (
     <NavyScreen className="items-center justify-between text-center px-8 pt-14 pb-9">
       <div className="flex flex-col items-center relative z-10">
         <Wordmark size={13} />
         <div className="mt-5">
-          <Headline pre="Space for your" accent="mind, body & spirit." size={28} light />
+          <Headline pre="A place for your" accent="practice." size={28} light />
         </div>
       </div>
 
       <div className="flex flex-col items-center gap-6 relative z-10">
         <BreathingLogo size={160} />
         <div>
-          <p
-            className="font-body font-normal text-[13.5px] text-white/60 tracking-[0.12em] uppercase"
-            aria-live="polite"
+          {/*
+            The caption cross-fades on the SAME 19s CSS clock as the logo
+            (globals.css: .breath-caption + bcIn/bcHold/bcOut), so word and scale
+            never drift and there is no JS timer to leak or re-render per phase.
+            Decorative for assistive tech; the static line below is what a screen
+            reader announces, and under reduced motion the CSS pins one word.
+          */}
+          <div
+            className="breath-caption font-body font-normal text-[13.5px] text-white/60 tracking-[0.12em] uppercase"
+            aria-hidden="true"
           >
-            {BREATH_PHASES[phase].label}
-          </p>
+            <span className="bc bc-in">breathe in</span>
+            <span className="bc bc-hold">hold</span>
+            <span className="bc bc-out">breathe out</span>
+          </div>
+          <p className="sr-only">Breathe with the logo — in for four, hold for seven, out for eight.</p>
           <p className="font-body text-[12px] text-white/35 tracking-[0.3em] mt-1">4 · 7 · 8</p>
         </div>
       </div>
 
       <div className="w-full relative z-10">
         <p className="font-body font-normal text-[14px] leading-relaxed text-white/65 mb-6">
-          Private rooms for every kind of practice — movement, coaching, meditation,
-          and healing.
+          Bring your clients. Find professional spaces that fit the way you work — without a lease or
+          long-term commitment.
         </p>
         <PrimaryButton onClick={next}>Begin</PrimaryButton>
       </div>
@@ -87,15 +110,15 @@ export function Splash({ next }: { next: () => void }) {
 /*  How it works                                                       */
 /* ------------------------------------------------------------------ */
 
-export function HowItWorks({ next }: { next: () => void }) {
+export function HowItWorks({ next, onBack }: { next: () => void; onBack?: () => void }) {
   return (
-    <NavyScreen className="items-center justify-between px-8 pt-14 pb-9">
+    <NavyScreen className="items-center justify-between px-8 pt-14 pb-9" onBack={onBack}>
       <div className="relative z-10 text-center">
         <p className="font-body font-semibold text-[12px] uppercase tracking-[0.2em] text-sky-soft">
           How it works
         </p>
         <div className="mt-2">
-          <Headline pre="One" accent="simple loop." size={26} light />
+          <Headline pre="Work with" accent="more freedom." size={26} light />
         </div>
       </div>
 
@@ -118,18 +141,16 @@ export function HowItWorks({ next }: { next: () => void }) {
         <DiagramNode x={223} y={188} label="Space" delay={220}>
           <Building2 size={20} color="#fff" />
         </DiagramNode>
-        <DiagramNode x={57} y={188} label="Payout" delay={340} coral>
+        <DiagramNode x={57} y={188} label="Session" delay={340} coral>
           <Sparkles size={20} color="#fff" />
         </DiagramNode>
       </div>
 
       <div className="relative z-10 w-full text-center">
         <p className="font-body font-normal text-[14px] leading-relaxed text-white/60 mb-6">
-          Practitioners book the hour. Studios fill the gap.
-          <br />
-          Payout follows every completed session.
+          Find a space for your practice, or make yours available when it works for you.
         </p>
-        <PrimaryButton onClick={next}>Find a space</PrimaryButton>
+        <PrimaryButton onClick={next}>Continue</PrimaryButton>
       </div>
     </NavyScreen>
   );
@@ -221,12 +242,21 @@ function GoogleGlyph({ size = 16 }: { size?: number }) {
 
 export function AuthEntry({
   onEmail,
+  onPassword,
   onProvider,
   providers,
   error,
   busy = false,
+  onBack,
 }: {
   onEmail: (email: string) => void;
+  /**
+   * The one address that signs in with a password instead of a code (see
+   * lib/reviewer-login.ts). The screen calls this in place of onEmail only when
+   * that address is typed; for everyone else the password box never appears and
+   * the emailed-code flow is untouched.
+   */
+  onPassword: (email: string, password: string) => void;
   onProvider: (provider: Provider) => void;
   /**
    * The ways in that actually work, read from the auth server rather than
@@ -237,14 +267,20 @@ export function AuthEntry({
   /** Why the code could not be sent. Shown here because there is no code screen to show it on. */
   error?: string | null;
   busy?: boolean;
+  onBack?: () => void;
 }) {
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   // A trailing-dot or spaceless check catches the common typo without
   // pretending to validate deliverability, which only the OTP can do.
   const looksLikeEmail = /^\S+@\S+\.\S+$/.test(email.trim());
+  // The single account that signs in with a password. When it is typed, the
+  // form asks for one and signs in directly; every other address sends a code.
+  const reviewer = isReviewerEmail(email);
+  const canSubmit = looksLikeEmail && !busy && (!reviewer || password.length > 0);
 
   return (
-    <NavyScreen className="justify-between px-8 pt-16 pb-9">
+    <NavyScreen className="justify-center gap-10 px-8 pt-16 pb-9" onBack={onBack}>
       <div className="relative z-10 text-center">
         <div className="flex justify-center">
           <Wordmark size={13} />
@@ -316,7 +352,9 @@ export function AuthEntry({
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            if (looksLikeEmail && !busy) onEmail(email.trim());
+            if (!canSubmit) return;
+            if (reviewer) onPassword(email.trim(), password);
+            else onEmail(email.trim());
           }}
         >
           <div
@@ -338,14 +376,46 @@ export function AuthEntry({
               className="font-body text-[15px] outline-none w-full bg-transparent text-white placeholder:text-white/40"
             />
           </div>
+          {/*
+            Appears only for the one address that has a password (reviewer),
+            and never for anyone else — so the code flow above is what every
+            ordinary sign-in still sees. No label naming who this is for: it
+            reads as a plain password field.
+          */}
+          {reviewer && (
+            <div
+              className="flex items-center gap-2.5 px-4 py-3.5 rounded-2xl mt-2.5"
+              style={{
+                backgroundColor: "rgba(255,255,255,0.1)",
+                border: "1px solid rgba(255,255,255,0.16)",
+              }}
+            >
+              <Lock size={15} color="#8FC6F5" />
+              <input
+                type="password"
+                autoComplete="current-password"
+                aria-label="Password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Password"
+                className="font-body text-[15px] outline-none w-full bg-transparent text-white placeholder:text-white/40"
+              />
+            </div>
+          )}
           {error && (
             <p className="font-body font-normal text-[14px] mt-2.5 leading-relaxed text-coral-soft">
               {error}
             </p>
           )}
           <div className="mt-3">
-            <PrimaryButton type="submit" disabled={!looksLikeEmail || busy}>
-              {busy ? "Sending…" : "Send code"}
+            <PrimaryButton type="submit" disabled={!canSubmit}>
+              {reviewer
+                ? busy
+                  ? "Signing in…"
+                  : "Sign In"
+                : busy
+                  ? "Sending…"
+                  : "Send code"}
             </PrimaryButton>
           </div>
         </form>
@@ -366,11 +436,13 @@ export function AuthVerify({
   next,
   error,
   busy = false,
+  onBack,
 }: {
   email: string;
   next: (code: string) => void;
   error?: string | null;
   busy?: boolean;
+  onBack?: () => void;
 }) {
   const [digits, setDigits] = useState<string[]>(Array(CODE_LENGTH).fill(""));
   const inputs = useRef<(HTMLInputElement | null)[]>([]);
@@ -413,7 +485,7 @@ export function AuthVerify({
       the screen empty with the input stranded at the bottom edge — which reads
       as a rendering failure rather than a layout.
     */
-    <NavyScreen className="justify-center px-8 py-16">
+    <NavyScreen className="justify-center px-8 py-16" onBack={onBack}>
       <div className="relative z-10 text-center">
         <div className="flex justify-center">
           <Wordmark size={13} />
@@ -592,7 +664,8 @@ export function RoleSelect({
           <Users color="#fff" size={20} />
           <p className="font-body font-medium text-[16.5px] text-white mt-3">I teach or practice</p>
           <p className="font-body font-normal text-[13.5px] text-white/80 mt-1">
-            Find a private room for the time you need — no membership, one all-in price.
+            Bring your own clients. Book professional space by the hour — no lease, one all-in
+            price.
           </p>
           <span className="inline-flex items-center gap-1 font-body text-[15px] font-medium text-white mt-3">
             Browse spaces <ChevronRight size={14} />

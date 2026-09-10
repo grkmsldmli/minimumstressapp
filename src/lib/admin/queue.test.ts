@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { standingFor, toCancellationEvents } from "../reliability";
 import {
   LIVE_LEAD_MS,
   LIVE_TRAIL_MS,
@@ -7,6 +8,7 @@ import {
   buildActivity,
   rollUp,
   sessionState,
+  standingByPerson,
 } from "./queue";
 
 /**
@@ -228,5 +230,143 @@ describe("the activity feed", () => {
 
   it("does not drop a completed session", () => {
     expect(feed([booking({ status: "completed" })])).toHaveLength(1);
+  });
+});
+
+/**
+ * The watchlist counts exactly what standing counts.
+ *
+ * standingByPerson is the operator screen's "who is at risk", and the point of
+ * these is that it applies the same three qualifications the booking gate and
+ * the profile card apply — captured, own side, and inside the 24-hour window —
+ * rather than a separate approximation. An early cancellation or an abandoned
+ * checkout must not put somebody on this list, because it does not pause them.
+ */
+describe("standingByPerson — the watchlist uses the real standing rule", () => {
+  const spaceHost = new Map([["room-1", "host-a"]]);
+  const NOW = new Date("2026-08-24T12:00:00Z");
+  const dAgo = (days: number) => new Date(NOW.getTime() - days * 86_400_000);
+
+  /** A cancelled-booking row as the admin query returns it. */
+  const cancel = (opts: {
+    role?: "practitioner" | "host";
+    days: number;
+    aheadHours?: number; // session start this many hours after the cancellation; <24 = late
+    captured?: boolean; // default true
+  }) => {
+    const cancelledAt = dAgo(opts.days);
+    return {
+      status: opts.role === "host" ? "cancelled_by_host" : "cancelled_by_practitioner",
+      space_id: "room-1",
+      practitioner_id: "pr-1",
+      captured_at: (opts.captured ?? true) ? cancelledAt.toISOString() : null,
+      cancelled_at: cancelledAt.toISOString(),
+      starts_at: new Date(cancelledAt.getTime() + (opts.aheadHours ?? 2) * 3_600_000).toISOString(),
+    };
+  };
+
+  it("A: two genuine late practitioner cancellations show a warning", () => {
+    const s = standingByPerson([cancel({ days: 5 }), cancel({ days: 10 })], spaceHost, NOW);
+    const pr = s.get("pr-1")!;
+    expect(pr.role).toBe("practitioner");
+    expect(pr.standing.lateCancellations).toBe(2);
+    expect(pr.standing.level).toBe("warned");
+    expect(pr.standing.blocksNewBookings).toBe(false);
+  });
+
+  it("B: two cancellations made in good time raise no warning", () => {
+    const s = standingByPerson(
+      [cancel({ days: 5, aheadHours: 48 }), cancel({ days: 10, aheadHours: 48 })],
+      spaceHost,
+      NOW,
+    );
+    expect(s.get("pr-1")!.standing.lateCancellations).toBe(0);
+    expect(s.get("pr-1")!.standing.level).toBe("clear");
+  });
+
+  it("C: one late plus one early counts as a single qualifying cancellation", () => {
+    const s = standingByPerson(
+      [cancel({ days: 5 }), cancel({ days: 10, aheadHours: 48 })],
+      spaceHost,
+      NOW,
+    );
+    expect(s.get("pr-1")!.standing.lateCancellations).toBe(1);
+    expect(s.get("pr-1")!.standing.level).toBe("clear"); // one is below the warn bar of two
+  });
+
+  it("D: two late plus one abandoned checkout stays at two, not three", () => {
+    const s = standingByPerson(
+      [cancel({ days: 5 }), cancel({ days: 10 }), cancel({ days: 15, captured: false })],
+      spaceHost,
+      NOW,
+    );
+    expect(s.get("pr-1")!.standing.lateCancellations).toBe(2);
+    expect(s.get("pr-1")!.standing.level).toBe("warned");
+    expect(s.get("pr-1")!.standing.blocksNewBookings).toBe(false);
+  });
+
+  it("E: a host cancellation counts against the host, never the practitioner", () => {
+    const s = standingByPerson([cancel({ role: "host", days: 5 })], spaceHost, NOW);
+    expect(s.get("pr-1")).toBeUndefined();
+    const host = s.get("host-a")!;
+    expect(host.role).toBe("host");
+    expect(host.standing.lateCancellations).toBe(1);
+  });
+
+  it("F: pauses a practitioner at three genuine late cancellations", () => {
+    const s = standingByPerson(
+      [cancel({ days: 5 }), cancel({ days: 10 }), cancel({ days: 15 })],
+      spaceHost,
+      NOW,
+    );
+    expect(s.get("pr-1")!.standing.lateCancellations).toBe(3);
+    expect(s.get("pr-1")!.standing.blocksNewBookings).toBe(true);
+  });
+
+  it("G: the same rows give card, gate, and admin the same count and state", () => {
+    // One fixture, read three ways. The client history and the server booking
+    // facts both map rows through toCancellationEvents then standingFor; the
+    // admin does the same inside standingByPerson. Same input, same standing —
+    // and the abandoned checkout drops out of all three alike.
+    const rows = [cancel({ days: 5 }), cancel({ days: 10 }), cancel({ days: 15, captured: false })];
+
+    // Exactly what SupabaseRepository.listCancellationHistory (the card) and
+    // gatherBookingFacts (the gate) build from these rows.
+    const events = toCancellationEvents(
+      rows.map((r) => ({
+        cancelledBy: r.status === "cancelled_by_host" ? "host" : "practitioner",
+        capturedAt: r.captured_at,
+        cancelledAt: r.cancelled_at,
+        sessionStart: r.starts_at,
+      })),
+    );
+    const cardAndGate = standingFor("practitioner", events, NOW);
+    const admin = standingByPerson(rows, spaceHost, NOW).get("pr-1")!.standing;
+
+    expect(admin.lateCancellations).toBe(cardAndGate.lateCancellations);
+    expect(admin.blocksNewBookings).toBe(cardAndGate.blocksNewBookings);
+    expect(admin.level).toBe(cardAndGate.level);
+    expect(cardAndGate.lateCancellations).toBe(2); // abandoned checkout excluded everywhere
+  });
+
+  it("keeps the host rule unchanged: warned at two, paused at three", () => {
+    const two = standingByPerson(
+      [cancel({ role: "host", days: 5 }), cancel({ role: "host", days: 10 })],
+      spaceHost,
+      NOW,
+    );
+    expect(two.get("host-a")!.standing.level).toBe("warned");
+    expect(two.get("host-a")!.standing.blocksNewBookings).toBe(false);
+
+    const three = standingByPerson(
+      [
+        cancel({ role: "host", days: 5 }),
+        cancel({ role: "host", days: 10 }),
+        cancel({ role: "host", days: 15 }),
+      ],
+      spaceHost,
+      NOW,
+    );
+    expect(three.get("host-a")!.standing.blocksNewBookings).toBe(true);
   });
 });

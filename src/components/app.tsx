@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type {
   Booking,
@@ -11,11 +11,28 @@ import type {
   PublicSpace,
   OpenDispute,
   PublicReview,
+  ReferralSummary,
   SpaceAccessDetails,
 } from "@/lib/domain";
+import { apiFetch } from "@/lib/api-fetch";
+import {
+  SPACE_DEEP_LINK_PARAM,
+  clearPendingSpace,
+  readPendingSpace,
+  readSpaceDeepLink,
+  resolveSpaceDeepLink,
+  writePendingSpace,
+} from "@/lib/space-deep-link";
 import { errorMessage } from "@/lib/error-message";
 import { delayFor, isTransient } from "@/lib/transient";
 import { hostFactsFrom, practitionerFactsFrom } from "@/lib/milestone-facts";
+import {
+  REFERRAL_PARAM,
+  clearPendingReferral,
+  readPendingReferral,
+  runAttribution,
+  writePendingReferral,
+} from "@/lib/referrals";
 import {
   celebrationDue,
   earnedByHost,
@@ -25,19 +42,33 @@ import {
   type MilestoneKey,
 } from "@/lib/milestones";
 import { MilestoneMoment } from "@/components/milestone-moment";
+import { PawLoader } from "@/components/paw-loader";
 import { type CancellationEvent, standingFor } from "@/lib/reliability";
 import type { LocationChoice } from "@/components/location-prompt";
 import { supabaseBackendEnabled } from "@/lib/repository-factory";
 import {
   ensureProfile,
+  exchangeOAuthCode,
   sendEmailCode,
+  signInWithPassword,
   signInWithProvider,
   verifyEmailCode,
 } from "@/lib/supabase/auth";
 
+import { describeAuthError } from "@/lib/auth-error";
 import { type Provider, enabledProviders } from "@/lib/auth-providers";
-import { isNativeApp } from "@/lib/native";
+import { NATIVE_AUTH_REDIRECT, capacitorPlugin, hasNativeOAuthSupport, isNativeApp } from "@/lib/native";
 import { BOOKING_HORIZON_DAYS } from "@/lib/money";
+import { SESSION_MS } from "@/lib/session";
+import { explainRejection } from "@/lib/booking-plan";
+import { resolveActiveBooking } from "@/lib/active-booking";
+import { proofFor } from "@/lib/professions";
+import {
+  checkInsuranceForBooking,
+  insuranceStatus,
+  type InsuranceFacts,
+  type InsuranceRejection,
+} from "@/lib/insurance";
 import type { NotificationEntry } from "@/lib/notify/history";
 import { ClaimForm } from "@/components/screens/claim-form";
 import { Disputes } from "@/components/screens/disputes";
@@ -61,13 +92,87 @@ import { Notifications } from "./screens/notifications";
 import { PaymentSheet } from "./screens/payment-sheet";
 import { ReviewScreen } from "./screens/review";
 import { Thread, type ThreadMessage } from "./screens/thread";
+import { bookingAcceptsMessages, messagingDisabledReason } from "@/lib/messaging";
 import {
+  CredentialUpload,
   InsuranceUpload,
   PractitionerProfile,
   ProScreen,
 } from "./screens/practitioner-extras";
 import { AuthEntry, AuthVerify, HowItWorks, RoleSelect, Splash } from "./screens/shared";
 import { SpaceDetail } from "./screens/space-detail";
+
+/**
+ * Whether this account can confirm a booking on these dates, decided on the
+ * client before any payment.
+ *
+ * The same rules planBooking enforces on the server, run early: the server is
+ * still the gate that cannot be bypassed, and this only spares a wasted round
+ * trip and lets the refusal carry a way to fix it rather than a dead end. Every
+ * occurrence of a run is checked, because cover that is good today need not
+ * reach the eighth week — and a run whose early weeks are covered but whose
+ * later ones are not is told about the schedule rather than a single date.
+ *
+ * Returns the message to show plus the reason behind it, or null when the
+ * booking may proceed. The reason lets the gate's CTA speak to the actual state
+ * — add cover that is missing, view cover under review, update cover that was
+ * turned down, lapsed, or short of the date.
+ */
+type BookingGate = {
+  message: string;
+  reason: InsuranceRejection | "professional_profile_required" | "identity_verification_required";
+};
+
+function bookingEligibilityMessage(
+  profile: Profile,
+  dates: readonly Date[],
+  now: Date,
+): BookingGate | null {
+  if (profile.accountType !== "practitioner") {
+    return {
+      message: explainRejection("professional_profile_required").message,
+      reason: "professional_profile_required",
+    };
+  }
+
+  // Identity before cover, matching the server gate order. A client-side mirror
+  // only — the server is still the gate that cannot be bypassed — so the refusal
+  // arrives with a way to fix it rather than as a dead-ended round trip.
+  if (profile.identityVerifiedAt === null) {
+    return {
+      message: explainRejection("identity_verification_required").message,
+      reason: "identity_verification_required",
+    };
+  }
+
+  const facts: InsuranceFacts = {
+    hasCertificate: profile.insuranceDocName !== null,
+    state: profile.insuranceReview.state,
+    effectiveDate: profile.insuranceEffectiveDate,
+    expiresAt: profile.insuranceExpiresAt,
+  };
+
+  let sawCovered = false;
+  for (const date of dates) {
+    // The whole session, matching the server: cover must hold from the start to
+    // the end, not merely on the day it begins.
+    const problem = checkInsuranceForBooking(facts, date, new Date(date.getTime() + SESSION_MS), now);
+    if (!problem) {
+      sawCovered = true;
+      continue;
+    }
+    if (problem === "insurance_not_valid_for_date" && sawCovered) {
+      return {
+        message:
+          "Your current coverage expires before the end of this recurring schedule. Extend it, or book a shorter run.",
+        reason: "insurance_not_valid_for_date",
+      };
+    }
+    return { message: explainRejection(problem).message, reason: problem };
+  }
+
+  return null;
+}
 
 /** Everything the shell reads, refetched whenever the repository changes. */
 interface Snapshot {
@@ -82,6 +187,16 @@ interface Snapshot {
   cancellations: CancellationEvent[];
   sessions: number;
   notifications: NotificationEntry[];
+  /** Founding Host spots still open, from the server's own count. */
+  foundingRemaining: number;
+  /** Founding Practitioner spots still open, from the server's own count. */
+  foundingPractitionerRemaining: number;
+  /** This host's shareable referral code, assigned by the server on first read. */
+  referralCode: string;
+  /** This host's referrals, as safe status summaries — no referred-host data. */
+  referrals: ReferralSummary[];
+  /** Unread incoming messages per booking id, from server truth. */
+  unreadCounts: Record<string, number>;
 }
 
 export function App() {
@@ -118,11 +233,72 @@ export function App() {
   const [authError, setAuthError] = useState<string | null>(null);
   const [roleError, setRoleError] = useState<string | null>(null);
   const [bookingError, setBookingError] = useState<string | null>(null);
+  /**
+   * Set when a booking is refused for eligibility — no professional profile, or
+   * cover that is missing, pending, expired or short of the date. Kept apart
+   * from bookingError because it is not "try again": it is answered by adding
+   * insurance, so the detail screen renders it with a way there rather than a
+   * bare red line.
+   */
+  const [insuranceGate, setInsuranceGate] = useState<BookingGate | null>(null);
   /** Milestones dismissed this session, whether or not the server took it. */
   const [dismissedMilestones, setDismissedMilestones] = useState<MilestoneKey[]>([]);
   /** What a term booking did, including the weeks it could not take. */
   const [bookingNotice, setBookingNotice] = useState<string | null>(null);
   const [seriesSkipped, setSeriesSkipped] = useState<{ startsAt: string; because: string }[]>([]);
+  /**
+   * The booking just created for checkout, held here so the payment and
+   * confirmation screens can render it.
+   *
+   * A fresh instant booking is an uncaptured hold, and listMyBookings hides
+   * holds by design — so the snapshot's `bookings` never contains the row we
+   * are about to pay for. Without this the payment screen looked the booking up
+   * in that list, found nothing, and dropped onto the not-found fallback. It is
+   * only a fallback: once the webhook captures the booking it reappears in the
+   * list, which takes precedence.
+   */
+  const [checkoutBooking, setCheckoutBooking] = useState<Booking | null>(null);
+
+  /**
+   * Pro checkout confirmation, kept honest.
+   *
+   * `confirmingPro` is the short wait after returning from Stripe with a real
+   * payment while the webhook flips is_pro; `justUpgraded` adds the one-time
+   * confetti once that flip is actually observed on the server. Neither ever
+   * grants Pro — the success screen is gated on the loaded profile's isPro — so
+   * a cancelled or abandoned checkout can never reach it.
+   */
+  const [confirmingPro, setConfirmingPro] = useState(false);
+  const [justUpgraded, setJustUpgraded] = useState(false);
+  // Set the moment checkout is opened, so a native return (which carries no URL
+  // marker, unlike the web redirect) knows to confirm on resume.
+  const checkoutStartedRef = useRef(false);
+  // The ?pro= redirect marker is acted on once per load, never replayed.
+  const proReturnHandledRef = useRef(false);
+
+  /**
+   * Identity verification, confirmed the same honest way Pro is.
+   *
+   * `confirmingIdentity` is the short "Checking your verification…" wait after
+   * returning from Stripe while the webhook writes identity_verified_at. It
+   * never marks anyone verified — the profile the poll re-reads from the server
+   * is the only thing that does — so a failed or abandoned check simply drops
+   * back to the unverified retry state. Bounded, so it cannot poll forever.
+   */
+  const [confirmingIdentity, setConfirmingIdentity] = useState(false);
+  const identityStartedRef = useRef(false);
+  const identityReturnHandledRef = useRef(false);
+
+  // A referral link's ?ref= code, captured before sign-in and applied once after.
+  const referralAttributedRef = useRef(false);
+
+  // A ?space= deep link's target listing, captured (and stripped) on arrival and
+  // opened once the authenticated catalogue has loaded. Held in a ref so it
+  // survives the sign-in flow without re-rendering, and never resolved
+  // anonymously: the id is only ever matched against listings this user already
+  // loaded, so a removed or inaccessible one simply falls through to Discover.
+  const pendingSpaceRef = useRef<string | null>(null);
+  const spaceDeepLinkConsumedRef = useRef(false);
 
   const [authBusy, setAuthBusy] = useState(false);
 
@@ -196,10 +372,11 @@ export function App() {
 
   useEffect(() => {
     if (!threadBookingId) return;
+    const bookingId = threadBookingId;
 
     let cancelled = false;
-    void (async () => {
-      const messages = await repo.listMessages(threadBookingId);
+    const load = async () => {
+      const messages = await repo.listMessages(bookingId);
       if (cancelled) return;
       setThread(
         messages.map((m) => ({
@@ -210,10 +387,30 @@ export function App() {
           redactedKinds: m.redactedKinds,
         })),
       );
-    })();
+      // Reading the thread marks its incoming messages read (server truth); clear
+      // this booking's badge locally so it does not linger until the next load.
+      const marked = await repo.markMessagesRead(bookingId).catch(() => 0);
+      if (!cancelled && marked > 0) {
+        setData((prev) =>
+          prev ? { ...prev, unreadCounts: { ...prev.unreadCounts, [bookingId]: 0 } } : prev,
+        );
+      }
+    };
+
+    void load();
+    /*
+     * A safe poll rather than Supabase Realtime. Realtime on the messages table
+     * broadcasts the whole changed row — original_body included — to subscribers,
+     * and column-level grants are not reliably applied to that payload, so a live
+     * subscription would reintroduce the very leak 0063 closes. Re-reading the
+     * redacted view every few seconds brings in incoming messages without ever
+     * putting original_body on the wire. Stops the moment the thread closes.
+     */
+    const poll = setInterval(() => void load(), 5000);
 
     return () => {
       cancelled = true;
+      clearInterval(poll);
     };
   }, [repo, threadBookingId, revision]);
 
@@ -261,7 +458,11 @@ export function App() {
    */
   const sortByLocation = useCallback(async (query: string) => {
     try {
-      const response = await fetch(`/api/spaces/nearby?${query}`);
+      // Distance ranking is inside the signed-in marketplace now, so this needs
+      // the session — apiFetch, which carries the cookie on the web and the
+      // native bearer token in the shell. The response is still only ids and
+      // coarse labels; the coordinates it sorts on never leave the server.
+      const response = await apiFetch(`/api/spaces/nearby?${query}`);
       const body = (await response.json()) as {
         spaces?: { id: string; distanceLabel: string }[];
         error?: string;
@@ -362,14 +563,19 @@ export function App() {
   useEffect(() => {
     if (!onSupabase) return;
 
-    // The native shell signs in by email code only. Third-party OAuth is a
-    // full-page redirect to the provider, and Google refuses that inside a
-    // WebView ("disallowed_useragent"); the email code has no redirect and
-    // works there. Offering only email also keeps the store build clear of
-    // Apple's Sign in with Apple requirement, which is triggered by third-party
-    // social login. So the app skips the provider lookup and the buttons stay
-    // hidden (the state already starts empty); the web keeps all of them.
-    if (isNativeApp()) return;
+    // Both web and native ask the auth server which providers are enabled and
+    // render only those (never a hardcoded button that would fail). Native OAuth
+    // opens the provider in the system browser and returns via a deep link — see
+    // signInWithProvider and the appUrlOpen handler below.
+    //
+    // SAFETY FOR THE LIVE BINARY: a native build only fetches providers when it
+    // can actually complete the flow — i.e. it ships the Capacitor Browser/App
+    // plugins (hasNativeOAuthSupport). The current App Store binary (1.0.0) does
+    // not, so it stays email-only and can never show a Google/Apple button that
+    // dead-ends; the 1.0.1 binary that ships those plugins lights the buttons up
+    // once the providers are also enabled server-side. So this whole OAuth path
+    // is dormant on today's live app regardless of Supabase configuration.
+    if (isNativeApp() && !hasNativeOAuthSupport()) return;
 
     const stop = new AbortController();
     void enabledProviders(
@@ -417,6 +623,11 @@ export function App() {
         cancellations,
         sessions,
         notifications,
+        foundingRemaining,
+        foundingPractitionerRemaining,
+        referralCode,
+        referrals,
+        unreadCounts,
       ] = await Promise.all([
           repo.getProfile(),
           repo.listPublicSpaces(),
@@ -427,6 +638,17 @@ export function App() {
           repo.listCancellationHistory(),
           repo.getSessionCount(),
           repo.listNotifications(),
+          repo.foundingHostsRemaining(),
+          // Falls back to 0 (badge simply hidden) so the whole account still
+          // loads if the code is ever deployed before migration 0068 adds the
+          // founding_practitioners_remaining() function.
+          repo.foundingPractitionersRemaining().catch(() => 0),
+          // The referral area is a small dashboard extra; a hiccup fetching it
+          // must never keep somebody out of their whole account.
+          repo.myReferralCode().catch(() => ""),
+          repo.listReferrals().catch(() => []),
+          // Unread message badges — a convenience; an empty map on failure.
+          repo.unreadMessageCounts().catch(() => ({})),
         ]);
 
       // Address details are per-space and authorization-gated, so they are
@@ -448,6 +670,11 @@ export function App() {
         cancellations,
         sessions,
         notifications,
+        foundingRemaining,
+        foundingPractitionerRemaining,
+        referralCode,
+        referrals,
+        unreadCounts,
       };
     };
 
@@ -506,13 +733,342 @@ export function App() {
     [refresh],
   );
 
+  /*
+   * Pull-to-refresh's callback. It re-fetches the current screen's data in place
+   * through the app's existing `refresh()` (a revision bump, not a page reload),
+   * and holds for a short beat so the paw loader reads as a deliberate refresh
+   * rather than a flicker. It always resolves, so the gesture can never stick.
+   */
+  const onPullRefresh = useCallback(async () => {
+    refresh();
+    await new Promise((resolve) => setTimeout(resolve, 650));
+  }, [refresh]);
+
+  /**
+   * Confirm a Pro checkout against the server, then celebrate — never before.
+   *
+   * Called when a checkout returns (the web ?pro=started redirect, or a native
+   * resume after one was opened). It re-reads the account, showing a brief
+   * "confirming" wait while the subscription webhook lands, and turns the screen
+   * Pro only when the server itself says so — applying that server profile
+   * rather than any client guess. A webhook that never confirms leaves the
+   * account Free and the screen back on the offer; nothing here fabricates Pro.
+   * Bounded, so it can never poll forever.
+   */
+  const confirmProSubscription = useCallback(async () => {
+    setConfirmingPro(true);
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const profile = await repo.getProfile().catch(() => null);
+      if (profile?.isPro) {
+        setData((prev) => (prev ? { ...prev, profile } : prev));
+        setJustUpgraded(true); // a real, server-confirmed upgrade — confetti once
+        setConfirmingPro(false);
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+    }
+    setConfirmingPro(false); // gave the webhook long enough; still Free
+  }, [repo]);
+
+  /**
+   * The confetti is a one-time thing, so it clears itself. Reopening the Pro
+   * screen later shows "You're Pro" without replaying the celebration.
+   */
+  useEffect(() => {
+    if (!justUpgraded) return;
+    const timer = setTimeout(() => setJustUpgraded(false), 6000);
+    return () => clearTimeout(timer);
+  }, [justUpgraded]);
+
+  /**
+   * Returning from Stripe on the web. The redirect lands on ?pro=started or
+   * ?pro=cancelled; the marker is stripped so a reload cannot replay it, and
+   * only a started checkout begins confirmation — a cancel stays Free with no
+   * confetti. Acted on once the account is loaded, and only once per load.
+   */
+  useEffect(() => {
+    if (proReturnHandledRef.current || !data || typeof window === "undefined") return;
+
+    const marker = new URLSearchParams(window.location.search).get("pro");
+    if (marker !== "started" && marker !== "cancelled") return;
+
+    proReturnHandledRef.current = true;
+    window.history.replaceState({}, "", window.location.pathname);
+    go("pro");
+    // Starting confirmation is the whole point of handling the redirect; it sets
+    // state, which is exactly what this one-time effect is for.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (marker === "started") void confirmProSubscription();
+  }, [data, go, confirmProSubscription]);
+
+  /**
+   * A cancelled or denied WEB OAuth returns to /?authError=<reason> (see
+   * auth/callback/route.ts) — the app boots on splash, so without this the
+   * message is dropped. Surface it once on the sign-in screen and strip the
+   * marker so a reload cannot replay it. Native reports its own errors below.
+   */
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    const reason = url.searchParams.get("authError");
+    if (!reason) return;
+    url.searchParams.delete("authError");
+    window.history.replaceState({}, "", url.pathname + url.search + url.hash);
+    const friendly = /denied|cancel/i.test(reason)
+      ? "Sign-in was cancelled."
+      : describeAuthError(new Error(reason));
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setAuthError(friendly);
+    go("auth-entry");
+  }, [go]);
+
+  /**
+   * Native OAuth returns through the custom-scheme deep link (see
+   * signInWithProvider): the system browser finished the provider flow, and here
+   * we exchange the code for a session in the localStorage client and land the
+   * user — or surface a cancellation/error. The native return does not re-run
+   * the mount bootstrap, so this routes to discover itself. Dormant on the web
+   * and until the native build ships the Capacitor App/Browser plugins.
+   */
+  useEffect(() => {
+    if (!isNativeApp()) return;
+    const capApp = capacitorPlugin<{
+      addListener: (
+        event: string,
+        cb: (data: { url?: string }) => void,
+      ) => Promise<{ remove: () => void }>;
+    }>("App");
+    if (!capApp) return;
+
+    const browser = capacitorPlugin<{ close?: () => Promise<void> }>("Browser");
+    const sub = capApp.addListener("appUrlOpen", (event) => {
+      const url = event?.url;
+      if (!url || !url.startsWith(NATIVE_AUTH_REDIRECT)) return;
+      void (async () => {
+        const params = new URL(url).searchParams;
+        const reason = params.get("error_description") ?? params.get("error");
+        const code = params.get("code");
+        try {
+          if (reason) throw new Error(reason);
+          if (!code) throw new Error("Sign-in was cancelled.");
+          await exchangeOAuthCode(code);
+          await ensureProfile();
+          refresh();
+          go("discover");
+        } catch (error) {
+          setAuthError(describeAuthError(error));
+          go("auth-entry");
+        } finally {
+          await browser?.close?.();
+        }
+      })();
+    });
+
+    return () => {
+      void sub.then((s) => s.remove());
+    };
+  }, [go, refresh]);
+
+  /**
+   * Returning from Stripe in the native shell. There is no URL marker — the
+   * checkout opened out of the WebView — so a resume after checkout was started,
+   * while still Free, is the signal to confirm. Guarded by the ref so ordinary
+   * backgrounding never triggers it.
+   */
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+
+    const onVisible = () => {
+      if (
+        document.visibilityState === "visible" &&
+        checkoutStartedRef.current &&
+        !data?.profile.isPro
+      ) {
+        checkoutStartedRef.current = false;
+        void confirmProSubscription();
+      }
+    };
+
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [data?.profile.isPro, confirmProSubscription]);
+
+  /**
+   * Confirm an identity check against the server, then show verified — never
+   * before. Re-reads the profile a few times while the Stripe Identity webhook
+   * writes identity_verified_at, showing "Checking your verification…" until it
+   * lands. If the webhook never confirms (a failed or abandoned check) the
+   * account stays unverified and the row falls back to a plain retry state.
+   * Bounded, so it can never poll forever, and it fabricates nothing.
+   */
+  const confirmIdentityVerification = useCallback(async () => {
+    setConfirmingIdentity(true);
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const profile = await repo.getProfile().catch(() => null);
+      if (profile?.identityVerifiedAt) {
+        setData((prev) => (prev ? { ...prev, profile } : prev));
+        setConfirmingIdentity(false);
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+    }
+    setConfirmingIdentity(false); // gave the webhook long enough; still unverified
+  }, [repo]);
+
+  /**
+   * Returning from Stripe Identity on the web. The redirect lands on
+   * ?identity=checking; the marker is stripped so a reload cannot replay it, the
+   * profile screen is shown so its identity row carries the state, and the
+   * bounded poll begins. Acted on once the account is loaded, once per load.
+   */
+  useEffect(() => {
+    if (identityReturnHandledRef.current || !data || typeof window === "undefined") return;
+
+    const marker = new URLSearchParams(window.location.search).get("identity");
+    if (marker !== "checking") return;
+
+    identityReturnHandledRef.current = true;
+    window.history.replaceState({}, "", window.location.pathname);
+    go("practitioner-profile");
+    // Starting confirmation is the whole point of handling the return; it sets
+    // state, which is exactly what this one-time effect is for.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void confirmIdentityVerification();
+  }, [data, go, confirmIdentityVerification]);
+
+  /**
+   * A referral link, remembered from before sign-in.
+   *
+   * The code arrives as ?ref= on the very first visit, long before there is an
+   * account to attribute it to — and it has to survive the whole auth redirect.
+   * So it is copied into localStorage and stripped from the URL on arrival, then
+   * applied once the account exists. Only the ref param is removed, so a link
+   * that also carries another marker keeps it.
+   */
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    const code = url.searchParams.get(REFERRAL_PARAM);
+    if (!code) return;
+    // Remembered unbound: the first account to attempt it will bind it to itself.
+    writePendingReferral({ code, boundTo: null });
+    url.searchParams.delete(REFERRAL_PARAM);
+    window.history.replaceState({}, "", url.pathname + url.search + url.hash);
+  }, []);
+
+  /**
+   * A ?space=<id> deep link, captured and stripped on arrival.
+   *
+   * Public listing pages redirect here (migration 0064). The id is remembered
+   * and the parameter removed immediately, so it never lingers in history or
+   * re-fires on a later navigation. It is also persisted with a short TTL,
+   * because a signed-out arrival that signs in with a provider leaves the app
+   * entirely (OAuth redirects to /auth/callback), and the in-mount ref alone
+   * would not survive that reload — on the way back there is no ?space in the
+   * URL, so the persisted intent is restored instead. The same-mount email-code
+   * flow keeps working straight from the ref. Only the space param is removed;
+   * ?ref, ?pro and ?identity on the same link are left untouched.
+   */
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    const fromUrl = readSpaceDeepLink(url.search);
+    if (fromUrl) {
+      pendingSpaceRef.current = fromUrl;
+      writePendingSpace(fromUrl);
+      url.searchParams.delete(SPACE_DEEP_LINK_PARAM);
+      window.history.replaceState({}, "", url.pathname + url.search + url.hash);
+      return;
+    }
+    // No parameter on this load — but an OAuth round trip strips it before the
+    // full redirect, so restore the intent persisted across that reload if it is
+    // still fresh.
+    const persisted = readPendingSpace();
+    if (persisted) pendingSpaceRef.current = persisted;
+  }, []);
+
+  /**
+   * Open the deep-linked listing once there is an account and a catalogue.
+   *
+   * Runs when the signed-in data lands — after sign-in for a signed-out arrival,
+   * or on resume for a returning one. The id is matched only against listings
+   * already loaded for this user: the public catalogue, or their own listings.
+   * A removed, unlisted or inaccessible one matches nothing, opens nothing, and
+   * leaves them on Discover — no anonymous lookup, no way to probe what exists,
+   * no crash. Fires at most once, and the role guard below still decides whether
+   * a host may see a practitioner's Detail at all.
+   */
+  useEffect(() => {
+    if (!data || spaceDeepLinkConsumedRef.current) return;
+    const id = pendingSpaceRef.current;
+    if (!id) return;
+
+    spaceDeepLinkConsumedRef.current = true;
+    pendingSpaceRef.current = null;
+    // Consumed once, however it resolves — so it never reopens on a later reload.
+    clearPendingSpace();
+
+    const open = resolveSpaceDeepLink(id, [data.spaces, data.mySpaces]);
+    if (!open) return;
+
+    setActiveSpaceId(open);
+    go("detail");
+  }, [data, go, setActiveSpaceId]);
+
+  /**
+   * Lock the attribution once there is an account to attribute.
+   *
+   * The code is kept until the server has actually processed it — an attribution
+   * or a safe no-op both clear it, but a transient failure keeps it so a later
+   * load retries, and it is bound to this account so a different person signing
+   * in on the same device can never inherit it. All the anti-abuse itself is the
+   * server's; this only has to deliver the code without losing or misplacing it.
+   */
+  useEffect(() => {
+    if (referralAttributedRef.current || !data || typeof window === "undefined") return;
+    referralAttributedRef.current = true;
+    void runAttribution({
+      read: readPendingReferral,
+      write: writePendingReferral,
+      clear: clearPendingReferral,
+      currentUserId: data.profile.id,
+      attribute: (code) => repo.attributeReferral(code),
+    }).then((outcome) => {
+      // Kept means a transient failure — let a later data load try once more.
+      if (outcome === "kept") referralAttributedRef.current = false;
+    });
+  }, [data, repo]);
+
+  /**
+   * Returning from Stripe Identity in the native shell — no URL marker, so a
+   * resume after a check was started, while still unverified, is the signal to
+   * confirm. Guarded by the ref so ordinary backgrounding never triggers it.
+   */
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+
+    const onVisible = () => {
+      if (
+        document.visibilityState === "visible" &&
+        identityStartedRef.current &&
+        !data?.profile.identityVerifiedAt
+      ) {
+        identityStartedRef.current = false;
+        void confirmIdentityVerification();
+      }
+    };
+
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [data?.profile.identityVerifiedAt, confirmIdentityVerification]);
+
   /**
    * Deletes, then resets. The order matters only in that the reset must not
    * happen first: a screen re-rendering against an account that still exists
    * would refetch it and look like nothing happened.
    */
   const deleteAccount = useCallback(async () => {
-    const response = await fetch("/api/account/delete", {
+    const response = await apiFetch("/api/account/delete", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ confirm: "DELETE" }),
@@ -541,6 +1097,7 @@ export function App() {
           providers={providers}
           error={authError}
           busy={authBusy}
+          onBack={back}
           onEmail={(value) => {
             setEmail(value);
             setAuthError(null);
@@ -561,6 +1118,36 @@ export function App() {
               try {
                 await sendEmailCode(value);
                 go("auth-verify");
+              } catch (error) {
+                setAuthError(describeAuthError(error));
+              } finally {
+                setAuthBusy(false);
+              }
+            })();
+          }}
+          onPassword={(value, password) => {
+            // Reached only for the reviewer address, and only the screen decides
+            // that (lib/reviewer-login.ts). Password sign-in resolves in one
+            // step — there is no code screen after it — so this both signs in
+            // and lands the account, the way verifyEmailCode does above.
+            setEmail(value);
+            setAuthError(null);
+
+            if (!onSupabase) {
+              // Mock mode has no auth server to check a password against; behave
+              // like the code flow and let the in-memory repository take over.
+              void mutate(() => repo.updateProfile({ email: value }));
+              go("role");
+              return;
+            }
+
+            setAuthBusy(true);
+            void (async () => {
+              try {
+                await signInWithPassword(value, password);
+                await ensureProfile();
+                refresh();
+                go("discover");
               } catch (error) {
                 setAuthError(describeAuthError(error));
               } finally {
@@ -599,6 +1186,7 @@ export function App() {
           email={email}
           error={authError}
           busy={authBusy}
+          onBack={back}
           next={(code) => {
             setAuthError(null);
 
@@ -682,7 +1270,7 @@ export function App() {
   // Rendered before the data guard, because these are exactly the screens that
   // exist to get someone to the point where there is data to load.
   if (screen === "splash") return <Splash next={() => go("how")} />;
-  if (screen === "how") return <HowItWorks next={() => go("auth-entry")} />;
+  if (screen === "how") return <HowItWorks next={() => go("auth-entry")} onBack={back} />;
   if (screen === "auth-entry") return renderAuthEntry();
   if (screen === "auth-verify") return renderAuthVerify();
 
@@ -690,7 +1278,9 @@ export function App() {
     return loadError ? (
       <LoadFailed message={loadError} onRetry={() => { setLoadError(null); refresh(); }} />
     ) : (
-      <div className="h-full bg-white" />
+      <div className="h-full bg-white flex items-center justify-center">
+        <PawLoader label="Getting things ready…" />
+      </div>
     );
   }
 
@@ -704,6 +1294,7 @@ export function App() {
     access,
     cancellations,
     sessions,
+    unreadCounts,
   } =
     data;
 
@@ -862,14 +1453,18 @@ export function App() {
         <Discover
           spaces={spaces}
           isPro={profile.isPro}
+          onRefresh={onPullRefresh}
           greetingName={profile.displayName}
           rebookable={rebookableRooms}
           onRebook={(entry) => {
+            // A gate belongs to the room it was raised on; a new one starts clean.
+            setInsuranceGate(null);
             setActiveSpaceId(entry.spaceId);
             setOpenAtSlot(entry.nextStart);
             go("detail");
           }}
           onOpenSpace={(spaceId) => {
+            setInsuranceGate(null);
             setOpenAtSlot(null);
             setActiveSpaceId(spaceId);
             go("detail");
@@ -902,6 +1497,7 @@ export function App() {
           onChooseLocation={(choice) => void chooseLocation(choice)}
           distanceLabels={distanceLabels}
           locationError={locationError}
+          onRequestSpace={(input) => repo.requestSpace(input)}
         />
   );
 
@@ -910,6 +1506,7 @@ export function App() {
           spaces={mySpaces}
           bookings={hostBookings}
           requests={bookingRequests}
+          onRefresh={onPullRefresh}
           /*
            * Refreshed rather than patched in place. Answering moves a booking
            * between two lists that come from two different queries — out of
@@ -930,6 +1527,7 @@ export function App() {
             go("edit-space");
           }}
           onPreviewSpace={(spaceId) => {
+            setInsuranceGate(null);
             setActiveSpaceId(spaceId);
             go("detail");
           }}
@@ -951,6 +1549,18 @@ export function App() {
           }}
           hostTermsVersion={profile.hostTermsVersion}
           hostTermsAcceptedAt={profile.hostTermsAcceptedAt}
+          /*
+           * Founding and achievements: the host's own number (null unless they
+           * are one of the fifty), the real count of spots still open, and their
+           * completed-session total — all from the server. sessionsHosted is
+           * already the completed-and-paid count hostFactsFrom made honest.
+           */
+          foundingNumber={profile.foundingNumber}
+          foundingRemaining={data.foundingRemaining}
+          completedSessions={hostFacts.sessionsHosted}
+          referralCode={data.referralCode}
+          referrals={data.referrals}
+          unreadFor={(id) => unreadCounts[id] ?? 0}
         />
   );
 
@@ -1009,7 +1619,9 @@ export function App() {
     spaces.find((s) => s.id === activeSpaceId) ??
     mySpaces.find((s) => s.id === activeSpaceId) ??
     null;
-  const activeBooking = bookings.find((b) => b.id === activeBookingId) ?? null;
+  // The list first; then the just-created checkout hold it deliberately hides,
+  // so payment and confirmation can render a booking that is not yet captured.
+  const activeBooking = resolveActiveBooking(bookings, checkoutBooking, activeBookingId);
   const editingSpace = mySpaces.find((s) => s.id === editingSpaceId) ?? mySpaces[0] ?? null;
 
   switch (screen) {
@@ -1020,10 +1632,44 @@ export function App() {
       return (
         <InsuranceUpload
           initialDocName={profile.insuranceDocName}
-          onContinue={(docName) =>
-            mutate(() => repo.updateProfile({ insuranceDocName: docName })).then(() =>
-              go("discover"),
-            )
+          status={insuranceStatus(
+            {
+              hasCertificate: profile.insuranceDocName !== null,
+              state: profile.insuranceReview.state,
+              effectiveDate: profile.insuranceEffectiveDate,
+              expiresAt: profile.insuranceExpiresAt,
+            },
+            new Date(),
+          )}
+          reviewNote={profile.insuranceReviewNote}
+          effectiveDate={profile.insuranceEffectiveDate}
+          expiresAt={profile.insuranceExpiresAt}
+          onBack={back}
+          onContinue={(file) =>
+            (file
+              ? mutate(() => repo.uploadInsuranceCertificate(file))
+              : Promise.resolve()
+            ).then(() => go("discover"))
+          }
+        />
+      );
+
+    case "credential":
+      return (
+        <CredentialUpload
+          proofLabel={proofFor(profile.profession).label}
+          initialDocName={profile.credentialDocName}
+          state={profile.credentialReview.state}
+          reviewNote={profile.credentialReviewNote}
+          initialType={profile.credentialType}
+          initialNumber={profile.credentialNumber}
+          initialJurisdiction={profile.credentialJurisdiction}
+          onBack={back}
+          onSubmit={(file, details) =>
+            (file
+              ? mutate(() => repo.uploadCredentialCertificate(file, details))
+              : Promise.resolve()
+            ).then(() => go("discover"))
           }
         />
       );
@@ -1045,7 +1691,47 @@ export function App() {
           error={bookingError}
           notice={bookingNotice}
           skipped={seriesSkipped}
+          insuranceGate={insuranceGate?.message ?? null}
+          insuranceGateReason={insuranceGate?.reason ?? null}
+          onAddInsurance={() => {
+            setInsuranceGate(null);
+            go("verify");
+          }}
+          onVerifyIdentity={() => {
+            setInsuranceGate(null);
+            // Marked so a native resume knows a check is in flight; the web
+            // return uses the ?identity=checking marker instead. Hands off to
+            // Stripe's hosted flow (or resolves instantly in the mock); the
+            // webhook writes the verified state, nothing here does.
+            identityStartedRef.current = true;
+            void mutate(() => repo.startIdentityVerification());
+          }}
           onBook={async (startsAt, weeks, declared) => {
+            /*
+             * Eligibility first, before a card is ever touched.
+             *
+             * The server enforces this too — planBooking refuses a booking
+             * without a professional profile and verified cover valid on the
+             * date, and it does so before any row or charge. Running the same
+             * check here spares a round trip and, more importantly, turns the
+             * refusal into something with a way out: a message beside an "Add
+             * insurance" button rather than a bare failure. Every week of a run
+             * is checked, since cover good today need not reach the last one.
+             */
+            setInsuranceGate(null);
+            const dates =
+              weeks > 1
+                ? Array.from(
+                    { length: weeks },
+                    (_, k) => new Date(startsAt.getTime() + k * 7 * 86_400_000),
+                  )
+                : [startsAt];
+            const gate = bookingEligibilityMessage(profile, dates, new Date());
+            if (gate) {
+              setInsuranceGate(gate);
+              return;
+            }
+
             /*
              * A term goes through its own route, which walks the weeks and
              * books each one under the ordinary rules. It reports what it
@@ -1054,7 +1740,7 @@ export function App() {
              */
             if (weeks > 1) {
               setBookingError(null);
-              const response = await fetch("/api/bookings/series", {
+              const response = await apiFetch("/api/bookings/series", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -1099,6 +1785,9 @@ export function App() {
                 declared,
               });
               setActiveBookingId(booking.id);
+              // Keep the created row: the next screen needs it, and the refresh
+              // below will not bring it back while it is still an unpaid hold.
+              setCheckoutBooking(booking);
               setClientSecret(clientSecret);
               refresh();
               // The booking row exists either way. A clientSecret means a card
@@ -1133,6 +1822,7 @@ export function App() {
            */
           onBack={() => {
             setClientSecret(null);
+            setCheckoutBooking(null);
             go("discover");
           }}
           onPaid={() => {
@@ -1187,7 +1877,7 @@ export function App() {
           booking={subject}
           onBack={back}
           onSubmit={async (input) => {
-            const response = await fetch(`/api/bookings/${subject.id}/refund`, {
+            const response = await apiFetch(`/api/bookings/${subject.id}/refund`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify(input),
@@ -1216,7 +1906,7 @@ export function App() {
           hourlyRateCents={room.hourlyRateCents}
           onBack={back}
           onSubmit={async (input) => {
-            const response = await fetch(`/api/bookings/${subject.id}/claim`, {
+            const response = await apiFetch(`/api/bookings/${subject.id}/claim`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify(input),
@@ -1240,7 +1930,7 @@ export function App() {
               dispute.kind === "refund" ? `/api/refunds/${dispute.id}` : `/api/claims/${dispute.id}`;
             const field = dispute.kind === "refund" ? { reply } : { reply };
 
-            const response = await fetch(url, {
+            const response = await apiFetch(url, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify(field),
@@ -1265,6 +1955,14 @@ export function App() {
 
       if (!subject) return <Fallback onBack={back} />;
 
+      // The same lifecycle rule the server enforces, from the fields this side
+      // holds: a practitioner's booking carries approvalState, a host's does not.
+      const messageEligibility = mine
+        ? { status: mine.status, approvalState: mine.approvalState }
+        : { status: (theirs as HostBooking).status };
+      const canSend = bookingAcceptsMessages(messageEligibility);
+      const disabledReason = messagingDisabledReason(messageEligibility);
+
       return (
         <Thread
           messages={thread}
@@ -1277,6 +1975,8 @@ export function App() {
               spaces.find((s) => s.id === theirs?.spaceId)?.timeZone ??
               FALLBACK_ZONE,
           )}
+          canSend={canSend}
+          disabledReason={disabledReason}
           onBack={() => {
             setThreadBookingId(null);
             back();
@@ -1285,6 +1985,12 @@ export function App() {
             const result = await repo.sendMessage(threadBookingId, body);
             refresh();
             return result;
+          }}
+          onReport={(reason) => repo.reportBooking(threadBookingId, reason)}
+          onBlock={async () => {
+            await repo.blockBookingParty(threadBookingId);
+            // The thread can no longer send after a block; reflect it.
+            refresh();
           }}
         />
       );
@@ -1299,7 +2005,10 @@ export function App() {
           // Only worth offering when it would actually have saved money.
           showProUpsell={!profile.isPro && activeBooking.instantFeeCents > 0}
           onGoPro={() => go("pro")}
-          onDone={() => go("discover")}
+          onDone={() => {
+            setCheckoutBooking(null);
+            go("discover");
+          }}
         />
       );
 
@@ -1307,12 +2016,14 @@ export function App() {
       return (
         <MyBookings
           bookings={bookings}
+          onRefresh={onPullRefresh}
           accessFor={(spaceId) => access[spaceId] ?? null}
-          // The street off the public catalogue rather than off `access`.
-          // `access` opens a day before the session; the address has been
-          // public since 0032, and somebody telling a client where to be next
-          // Tuesday should not have to wait until Monday to do it.
-          addressFor={(spaceId) => spaces.find((s) => s.id === spaceId)?.addressLine ?? null}
+          // The exact street comes off `access`, not the public catalogue: the
+          // catalogue no longer carries it (migration 0055), and `access` is
+          // the booking-gated flow that reveals it — loaded for every space the
+          // practitioner holds a booking on, so a confirmed session still shows
+          // the address for sharing with a client.
+          addressFor={(spaceId) => access[spaceId]?.addressLine ?? null}
           isPro={profile.isPro}
           onGoPro={() => go("pro")}
           standing={practitionerStanding}
@@ -1330,6 +2041,7 @@ export function App() {
             setThreadBookingId(id);
             go("thread");
           }}
+          unreadFor={(id) => unreadCounts[id] ?? 0}
         />
       );
 
@@ -1337,6 +2049,7 @@ export function App() {
       return (
         <PractitionerProfile
           profile={profile}
+          onRefresh={onPullRefresh}
           milestones={practitionerMilestones}
           milestoneTotal={practitionerTotal(practitionerFacts)}
           sessions={sessions}
@@ -1349,7 +2062,7 @@ export function App() {
           onGoLegal={() => go("legal")}
           onGoDisputes={() => go("disputes")}
           onRequestAccountChange={async (reason) => {
-            const response = await fetch("/api/account/change-request", {
+            const response = await apiFetch("/api/account/change-request", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
@@ -1361,7 +2074,14 @@ export function App() {
             if (!response.ok) throw new Error(body.error ?? "That did not send.");
           }}
           disputesWaiting={disputes.filter((d) => d.awaitingYou).length}
+          foundingRemaining={data.foundingPractitionerRemaining}
           onGoInsurance={() => go("verify")}
+          onGoCredential={() => go("credential")}
+          onVerifyIdentity={() => {
+            identityStartedRef.current = true;
+            return mutate(() => repo.startIdentityVerification());
+          }}
+          identityChecking={confirmingIdentity}
           onSignOut={signOut}
         />
       );
@@ -1370,8 +2090,22 @@ export function App() {
       return (
         <ProScreen
           isPro={profile.isPro}
-          onBack={back}
-          onSubscribe={() => mutate(() => repo.startProSubscription())}
+          celebrate={justUpgraded}
+          confirming={confirmingPro}
+          onBack={() => {
+            // Leaving clears the one-time celebration so a later visit does not
+            // replay it.
+            setJustUpgraded(false);
+            setConfirmingPro(false);
+            back();
+          }}
+          onSubscribe={() => {
+            // Flag the native return path before checkout opens; the web path
+            // uses the ?pro= redirect instead. This only opens checkout — the
+            // screen turns Pro only once the server confirms it.
+            checkoutStartedRef.current = true;
+            return mutate(() => repo.startProSubscription());
+          }}
         />
       );
 
@@ -1383,6 +2117,7 @@ export function App() {
         <HostSpaces
           spaces={mySpaces}
           bookings={hostBookings}
+          onRefresh={onPullRefresh}
           onBack={back}
           onAddSpace={() => go("addspace")}
           onOpenSpace={(spaceId) => {
@@ -1498,11 +2233,6 @@ export function App() {
  * The fallback covers a network failure, where there is no message at all and
  * the honest thing is to say the attempt did not reach us.
  */
-function describeAuthError(error: unknown): string {
-  const message = error instanceof Error ? error.message.trim() : "";
-  return message || "We couldn't reach the server. Check your connection and try again.";
-}
-
 /** Reached only if a screen is opened without the record it needs. */
 /**
  * Something did not load, said out loud.

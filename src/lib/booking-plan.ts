@@ -29,6 +29,14 @@ import {
   checkDeclaredUse,
   explainUseRejection,
 } from "./booking-use";
+import {
+  type InsuranceFacts,
+  type InsuranceRejection,
+  checkInsuranceForBooking,
+} from "./insurance";
+import { type CancellationEvent, standingFor } from "./reliability";
+import { requiresCredential } from "./professions";
+import { SESSION_MS } from "./session";
 
 export interface SpaceFacts {
   id: string;
@@ -63,12 +71,44 @@ export interface HostFacts {
 export interface PractitionerFacts {
   id: string;
   isPro: boolean;
+  /**
+   * The account's chosen side. Only a professional (practitioner) may book a
+   * space — a host offers space, and an account that never chose has no
+   * professional profile to book against. Read from the stored, immutable
+   * account_type, never from the request.
+   */
+  accountType: "practitioner" | "host" | null;
+  /**
+   * Whether the practitioner's identity has been verified.
+   *
+   * Read from the stored, server-written identity_verified_at (a Stripe Identity
+   * webhook is the only thing that sets it), never from the request — a client
+   * asserting its own identity is exactly what this gate refuses.
+   */
+  identityVerified: boolean;
+  /**
+   * The declared professional category, and whether a submitted credential has
+   * been verified. Both read from stored columns the client cannot forge — the
+   * verdict is staff-written (see migration 0058). Only a profession whose rule
+   * is "required" (a legally licensed one, e.g. massage) gates a booking on the
+   * credential; everything else ignores it. Optional in the type so tests that
+   * predate credentials still describe what they were written to.
+   */
+  profession?: string | null;
+  credentialVerified?: boolean;
+  /** The professional's liability cover, as reviewed and dated. */
+  insurance: InsuranceFacts;
 }
 
 export type PlanRejection =
   | UseRejection
+  | InsuranceRejection
   | "space_not_found"
   | "space_not_active"
+  | "professional_profile_required"
+  | "identity_verification_required"
+  | "credential_required"
+  | "standing_paused"
   | "host_cannot_be_paid"
   | "slot_in_past"
   | "beyond_booking_horizon"
@@ -111,6 +151,18 @@ export function planBooking(input: {
    * passes one, and a missing declaration is a rejection rather than a pass.
    */
   declared?: DeclaredUse | null;
+  /**
+   * This practitioner's own late cancellations, for the standing pause.
+   *
+   * Their history, not a stored flag: the pause is derived here the same way
+   * the profile card derives it, so the gate and the card can never disagree,
+   * and a cancellation ageing out of the window lifts the pause without anyone
+   * acting. Only their own count — the service reads cancelled_by = practitioner
+   * — so a host's cancellation of their booking never lands on them. Optional in
+   * the type so tests predating standing enforcement still describe what they
+   * were written to; the service always passes it, and none means clear.
+   */
+  practitionerCancellations?: readonly CancellationEvent[];
   startsAt: Date;
   now: Date;
 }): BookingPlan {
@@ -123,6 +175,7 @@ export function planBooking(input: {
     now,
     upcomingCount = 0,
     declared = null,
+    practitionerCancellations = [],
   } = input;
 
   if (!space) return { ok: false, reason: "space_not_found" };
@@ -133,6 +186,64 @@ export function planBooking(input: {
   // them, and a practitioner with a booking nobody can honour.
   if (!host?.stripeAccountId || !host.payable) {
     return { ok: false, reason: "host_cannot_be_paid" };
+  }
+
+  /*
+   * Who may book, checked before the slot. A space is booked by an independent
+   * professional for their work; a host offers space and an account that never
+   * chose the practitioner side has no professional profile to book against.
+   * Read from the stored account_type, so a crafted request cannot assert it.
+   */
+  if (practitioner.accountType !== "practitioner") {
+    return { ok: false, reason: "professional_profile_required" };
+  }
+
+  /*
+   * A verified identity, checked before the slot for the same reason as the
+   * account side: it is a fact about the person, not the hour. Set only by the
+   * Stripe Identity webhook, so a client cannot assert it, and enforced here —
+   * the one gate the sheet, the API route and the recurring expander all cross —
+   * so a pending or abandoned check can never slip a booking through.
+   */
+  if (!practitioner.identityVerified) {
+    return { ok: false, reason: "identity_verification_required" };
+  }
+
+  /*
+   * A temporary pause after repeated late cancellations, checked before the
+   * slot because it is a fact about the person, not the hour. It stops new
+   * bookings only — every session already on the calendar is honoured, and
+   * nothing here cancels one — and it lifts on its own once the window clears
+   * (see reliability.ts). Derived from their own history rather than a stored
+   * flag, and enforced here because planBooking is the one gate the sheet, the
+   * API route and the recurring expander all cross: a pause the client merely
+   * renders is one a direct call ignores.
+   */
+  if (standingFor("practitioner", practitionerCancellations, now).blocksNewBookings) {
+    return { ok: false, reason: "standing_paused" };
+  }
+
+  /*
+   * Active liability cover, verified and valid for the whole session.
+   * Browsing needs none of it; confirming a booking does. The interval matters
+   * — cover must be effective by the moment the session starts and still active
+   * when it ends, and cover live today need not reach a session months out —
+   * which is what makes every occurrence of a recurring run its own check.
+   */
+  const endsAt = new Date(startsAt.getTime() + SESSION_MS);
+  const insuranceProblem = checkInsuranceForBooking(practitioner.insurance, startsAt, endsAt, now);
+  if (insuranceProblem) return { ok: false, reason: insuranceProblem };
+
+  /*
+   * A verified credential, but only where the profession legally needs one.
+   * requiresCredential is true for the licensed professions alone (massage in
+   * this set); for everyone else a certificate is optional and its absence
+   * never blocks a booking. Read from the staff-written verdict, so a
+   * practitioner cannot pass this by asserting it — the same shape as identity
+   * and insurance above.
+   */
+  if (requiresCredential(practitioner.profession) && !practitioner.credentialVerified) {
+    return { ok: false, reason: "credential_required" };
   }
 
   if (startsAt.getTime() <= now.getTime()) return { ok: false, reason: "slot_in_past" };
@@ -189,7 +300,16 @@ export function planBooking(input: {
   if (useProblem) return { ok: false, reason: useProblem };
 
   const isInstant = isInstantSlot(startsAt, now);
-  const needsApproval = space.bookingMode === "request";
+  /*
+   * Massage work always goes through the host, whatever the space's booking
+   * mode. A massage professional (identity and insurance verified, CAMTC
+   * reviewed above) still has the host say yes before entry — the practitioner
+   * profession decides this, not the room's name, so booking a massage room for
+   * a movement session by a non-massage professional stays instant if the space
+   * allows it.
+   */
+  const needsApproval =
+    space.bookingMode === "request" || practitioner.profession === "massage";
 
   /*
    * A request nobody could answer in time is not worth taking.
@@ -218,6 +338,50 @@ export function planBooking(input: {
   };
 }
 
+export type SeriesPlan =
+  | {
+      ok: true;
+      occurrences: { startsAt: Date; plan: Extract<BookingPlan, { ok: true }> }[];
+    }
+  | { ok: false; startsAt: Date; reason: PlanRejection };
+
+/**
+ * The decision for a whole recurring run, before any of it is committed.
+ *
+ * A recurring booking is all-or-nothing from the person's side: the run is
+ * worth booking only if every week of it can be. So this plans every occurrence
+ * first and stops at the first that cannot — professional eligibility, cover for
+ * that week's interval, availability, allowed use, every rule planBooking runs.
+ * The caller creates none rather than booking the covered weeks and charging for
+ * a run that was never whole, and the failing occurrence is named so "your cover
+ * ends before that week" is answerable rather than a silently short series.
+ *
+ * Pure, and separate from the IO that gathers the facts, so the all-or-nothing
+ * rule is testable without a database — the same reason planBooking is pure. The
+ * earlier weeks of the run are added to what is taken as it goes, so two weeks
+ * of one series cannot both claim the same hour.
+ */
+export function planSeries(
+  input: Omit<Parameters<typeof planBooking>[0], "startsAt" | "takenStarts"> & {
+    takenStarts: readonly Date[];
+    /** The start time of each occurrence, in order. */
+    starts: readonly Date[];
+  },
+): SeriesPlan {
+  const { starts, takenStarts, ...shared } = input;
+  const taken = [...takenStarts];
+  const occurrences: { startsAt: Date; plan: Extract<BookingPlan, { ok: true }> }[] = [];
+
+  for (const startsAt of starts) {
+    const plan = planBooking({ ...shared, takenStarts: taken, startsAt });
+    if (!plan.ok) return { ok: false, startsAt, reason: plan.reason };
+    occurrences.push({ startsAt, plan });
+    taken.push(startsAt);
+  }
+
+  return { ok: true, occurrences };
+}
+
 /**
  * Human wording for each refusal, kept next to the reasons they explain.
  *
@@ -236,29 +400,77 @@ export function explainRejection(
     case "attendees_missing":
     case "too_many_attendees":
       return { message: explainUseRejection(reason, rules), status: 409 };
+    case "professional_profile_required":
+      return {
+        message: "Complete your professional profile to book a space.",
+        status: 403,
+      };
+    case "credential_required":
+      return {
+        message:
+          "Your profession needs a verified license to book. Add your license and we'll review it.",
+        status: 403,
+      };
+    case "identity_verification_required":
+      return {
+        message: "Verify your identity to book a space. It takes a couple of minutes and you only do it once.",
+        status: 403,
+      };
+    case "standing_paused":
+      return {
+        message:
+          "New bookings are paused for now after recent last-minute cancellations. Your existing bookings are unaffected — check your profile for when the pause lifts.",
+        status: 409,
+      };
+    case "insurance_required":
+      return {
+        message: "Liability insurance is required to book. Add your coverage to continue.",
+        status: 403,
+      };
+    case "insurance_pending":
+      return {
+        message: "Your insurance is under review. You'll be able to book once it's verified.",
+        status: 403,
+      };
+    case "insurance_rejected":
+      return {
+        message: "We couldn't verify your insurance. Add updated proof of coverage to continue.",
+        status: 403,
+      };
+    case "insurance_expired":
+      return {
+        message: "Your liability insurance has expired. Add current coverage to continue.",
+        status: 403,
+      };
+    case "insurance_not_valid_for_date":
+      return {
+        message:
+          "Your coverage doesn't extend to this date. Choose an earlier date, or update your insurance.",
+        status: 403,
+      };
     case "space_not_found":
-      return { message: "No such space", status: 404 };
+      return { message: "We couldn't find that space.", status: 404 };
     case "space_not_active":
-      return { message: "That space is not accepting bookings", status: 409 };
+      return { message: "This space isn't accepting bookings right now.", status: 409 };
     case "host_cannot_be_paid":
-      return { message: "This host has not finished setting up payouts", status: 409 };
+      return { message: "This space isn't available to book yet.", status: 409 };
     case "slot_in_past":
-      return { message: "That time has already passed", status: 409 };
+      return { message: "That time has already passed. Choose another time to continue.", status: 409 };
     case "beyond_booking_horizon":
-      return { message: "That is beyond your booking window", status: 409 };
+      return { message: "That date is beyond your current booking window.", status: 409 };
     case "slot_not_open":
-      return { message: "That hour is not open", status: 409 };
+      return { message: "That time isn't available.", status: 409 };
     case "slot_taken":
-      return { message: "Someone just took that hour", status: 409 };
+      return { message: "That time was just booked. Choose another time to continue.", status: 409 };
     case "too_many_upcoming":
       return {
-        message: `You have ${MAX_UPCOMING_BOOKINGS_FREE} sessions booked. Finish one, or go Pro to book as many at a time as you like.`,
+        message: `You've reached ${MAX_UPCOMING_BOOKINGS_FREE} upcoming sessions. Complete one, or go Pro to book more at once.`,
         status: 409,
       };
 
     case "too_soon_to_request":
       return {
-        message: `This host accepts bookings themselves, and that is too soon for them to answer. Pick a later time, or a room that books straight away.`,
+        message: `This host reviews each booking, and that's too soon for them to respond. Choose a later time, or a space that books instantly.`,
         status: 409,
       };
   }

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { ArrowLeft, Eye, EyeOff, Plus } from "lucide-react";
 
 import { Ambient, Headline } from "@/components/brand";
+import { PullToRefresh } from "@/components/pull-to-refresh";
 import type { HostBooking, HostSpace } from "@/lib/domain";
 import { errorMessage } from "@/lib/error-message";
 import { formatCents } from "@/lib/money";
@@ -24,6 +25,7 @@ import { formatCents } from "@/lib/money";
 export function HostSpaces({
   spaces,
   bookings,
+  onRefresh,
   onBack,
   onOpenSpace,
   onAddSpace,
@@ -31,6 +33,8 @@ export function HostSpaces({
 }: {
   spaces: HostSpace[];
   bookings: HostBooking[];
+  /** Pull-to-refresh: re-fetches the host's listings and bookings in place. */
+  onRefresh: () => Promise<unknown> | unknown;
   onBack: () => void;
   onOpenSpace: (spaceId: string) => void;
   onAddSpace: () => void;
@@ -60,7 +64,7 @@ export function HostSpaces({
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-6 pt-5 pb-8">
+      <PullToRefresh className="flex-1 px-6 pt-5 pb-8" onRefresh={onRefresh}>
         <div className="flex flex-col gap-2.5">
           {spaces.map((space) => (
             <SpaceRow
@@ -88,7 +92,7 @@ export function HostSpaces({
         >
           <Plus size={15} /> Add another space
         </button>
-      </div>
+      </PullToRefresh>
     </div>
   );
 }
@@ -162,7 +166,7 @@ function SpaceRow({
 
       {hidden && (
         <p className="font-body font-normal text-[13px] leading-relaxed mt-2.5 text-ink-soft">
-          Nobody can find or book this. Bookings already made are untouched.
+          Nobody can find or book this.
         </p>
       )}
 

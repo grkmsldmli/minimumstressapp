@@ -4,6 +4,7 @@ import { LIMITS, check, identify, tooManyRequests } from "@/lib/api/rate-limit";
 import { handled, jsonError, requireUser } from "@/lib/api/session";
 import { jsonObject, requiredString, uuid } from "@/lib/api/validate";
 import { explainRedaction, isEmptyAfterRedaction, redact } from "@/lib/message-redaction";
+import { notifyNewMessage } from "@/lib/notify/for-booking";
 import { supabaseAdmin } from "@/lib/supabase/server";
 
 /**
@@ -48,7 +49,7 @@ export async function POST(request: NextRequest): Promise<Response> {
      */
     const { data: booking, error } = await admin
       .from("bookings")
-      .select("id, practitioner_id, spaces(host_id)")
+      .select("id, practitioner_id, status, captured_at, spaces(host_id)")
       .eq("id", bookingId.value)
       .maybeSingle();
 
@@ -56,6 +57,8 @@ export async function POST(request: NextRequest): Promise<Response> {
 
     const row = booking as unknown as {
       practitioner_id: string;
+      status: string;
+      captured_at: string | null;
       spaces: { host_id: string } | null;
     } | null;
 
@@ -67,6 +70,23 @@ export async function POST(request: NextRequest): Promise<Response> {
     // not theirs confirms it exists.
     if (!isParticipant) return jsonError("We couldn't find that booking.", 404);
 
+    /**
+     * Messaging is for a live booking. The database refuses a message on a
+     * booking that is not captured or is cancelled (migration 0063); this checks
+     * the same rule first, to answer with a plain sentence instead of a 500. No
+     * payment terminology reaches the user.
+     */
+    const cancelled =
+      row!.status === "cancelled_by_practitioner" || row!.status === "cancelled_by_host";
+    if (row!.captured_at === null || cancelled) {
+      return jsonError(
+        cancelled
+          ? "This booking is closed, so it can no longer receive messages."
+          : "Messaging is available after your booking is confirmed.",
+        409,
+      );
+    }
+
     const redaction = redact(text.value);
 
     if (isEmptyAfterRedaction(redaction)) {
@@ -76,16 +96,28 @@ export async function POST(request: NextRequest): Promise<Response> {
       );
     }
 
-    const { error: insertError } = await admin.from("messages").insert({
-      booking_id: bookingId.value,
-      sender_id: auth.user.id,
-      body: redaction.text,
-      // Null when nothing was masked, so the ordinary case stores one copy.
-      original_body: redaction.found.length > 0 ? text.value : null,
-      redacted_kinds: redaction.found,
-    });
+    const { data: inserted, error: insertError } = await admin
+      .from("messages")
+      .insert({
+        booking_id: bookingId.value,
+        sender_id: auth.user.id,
+        body: redaction.text,
+        // Null when nothing was masked, so the ordinary case stores one copy.
+        original_body: redaction.found.length > 0 ? text.value : null,
+        redacted_kinds: redaction.found,
+      })
+      .select("id")
+      .single();
 
     if (insertError) throw insertError;
+
+    /*
+     * Tell the other side, best-effort. Deduped by the message id, so a retry
+     * never notifies twice; the notification names only the booking, never the
+     * text, address, or code. A failure here must not fail the send — the
+     * message is already stored and visible in the thread.
+     */
+    void notifyNewMessage(admin, bookingId.value, auth.user.id, inserted.id);
 
     return Response.json(
       {

@@ -84,6 +84,145 @@ body {
 }
 
 /* ------------------------------------------------------------------ */
+/*  The app's stage and frame                                          */
+/*                                                                     */
+/*  On a wide screen the app is presented inside a phone mockup — a     */
+/*  385×780 frame with a navy bezel and a drop shadow — which is how a  */
+/*  mobile app should look on a desktop. On a real phone, and inside    */
+/*  the native shell, that frame is a phone drawn around a device that  */
+/*  is already one: the "phone inside a phone" inset. So below 500px    */
+/*  the frame falls away and the app fills the viewport edge to edge;   */
+/*  the mockup returns at 500px and up. viewport-fit=cover (layout.tsx) */
+/*  lets the native shell draw to the very edges.                       */
+/* ------------------------------------------------------------------ */
+.app-stage {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+.app-frame {
+  position: relative;
+  overflow: hidden;
+  /* Navy, so the safe-area strip under the status bar matches the app's navy
+     headers instead of showing a white gap. */
+  background: #16304e;
+  width: 100%;
+  /* 100vh first as the floor: older Android WebViews (Appetize's included) do
+     not understand dvh, and an invalid height falls back to auto — which
+     collapses the frame to its content and leaves the white body showing below
+     ("half screen"). Browsers that do understand dvh take the second line. */
+  height: 100vh;
+  height: 100dvh;
+  /* Clear the status bar / notch on a real phone (0 in a browser, so desktop
+     is unaffected). Without it the app header ran under the clock and battery. */
+  padding-top: env(safe-area-inset-top);
+}
+
+@media (min-width: 500px) {
+  .app-stage {
+    align-items: center;
+    padding: 2rem 0;
+  }
+
+  .app-frame {
+    /* Desktop mockup keeps a white interior; there is no safe area here, so the
+       padding-top above resolves to 0. */
+    background: #ffffff;
+    width: 385px;
+    height: 780px;
+    border-radius: 44px;
+    border: 9px solid #16304e;
+    box-shadow: 0 40px 90px -30px rgba(22, 48, 78, 0.45);
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Mobile form controls — never below 16px                            */
+/*                                                                     */
+/*  iOS Safari zooms the whole page in when a focused input, textarea  */
+/*  or select has an effective font-size under 16px, and the zoom does */
+/*  not fully reverse on blur — the page is left scaled and pannable,  */
+/*  right-edge controls clipped. Every control here is designed        */
+/*  smaller than 16px, so on a real phone (below the 500px mockup      */
+/*  breakpoint, where the app is edge to edge) they are floored at     */
+/*  16px. This is a minimum only — pinch-to-zoom stays enabled, the    */
+/*  viewport is never locked, and the desktop mockup keeps its design  */
+/*  sizes. The `.app-frame` scope lifts specificity above the Tailwind */
+/*  text-[..] utilities so this actually takes effect.                 */
+/* ------------------------------------------------------------------ */
+@media (max-width: 499px) {
+  .app-frame input,
+  .app-frame textarea,
+  .app-frame select {
+    font-size: 16px;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Native (Capacitor) — never the desktop phone mockup                 */
+/*                                                                      */
+/*  `html.native` is stamped by AppStateProvider when                   */
+/*  window.Capacitor.isNativePlatform() is true — a robust, width-       */
+/*  independent signal, so a native iPad (which is wide enough to hit    */
+/*  the 500px mockup branch) does NOT render a fake phone. Both native   */
+/*  iPhone and iPad get full-viewport, edge-to-edge, safe-area-aware     */
+/*  layout. `html.native .app-frame` is (0,1,1) specificity, so it beats */
+/*  both the base rule and the min-width:500px rule at every width with  */
+/*  no !important. Ordinary desktop web (no `.native`) is untouched.     */
+/* ------------------------------------------------------------------ */
+html.native .app-stage {
+  /* The ground behind the capped column and behind the side insets on an
+     iPad is the app's navy — never a white strip. */
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: #16304e;
+}
+
+html.native .app-frame {
+  /* iPhone (< 600) fills the width edge-to-edge; iPad centres a ~600px
+     column on the navy ground — a real tablet layout, not a stretched form
+     and not a mockup. */
+  width: 100%;
+  max-width: 600px;
+  height: 100vh;
+  height: 100dvh;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: #16304e;
+  /* All four insets, so the notch, home indicator and landscape ears are
+     cleared; the navy ground shows through, never white. */
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+
+/* The iOS 16px input floor is scoped to < 500px above, which misses a native
+   iPad — re-assert it for native at any width so focusing a field never zooms. */
+html.native .app-frame input,
+html.native .app-frame textarea,
+html.native .app-frame select {
+  font-size: 16px;
+}
+
+/* Onboarding/auth (NavyScreen) on a tall native screen: cap the content column
+   so `justify-between` does not fling the headline and button to the extremes
+   of a 1024px+ iPad, and centre it. The content column is `min-h-full` so it
+   fills a phone normally; here we release that floor and cap + auto-margin it
+   (flexbox auto margins centre it in the column parent). */
+html.native .navy-screen {
+  min-height: 0;
+  max-height: 860px;
+  margin-top: auto;
+  margin-bottom: auto;
+}
+
+/* ------------------------------------------------------------------ */
 /*  Motion — the breathing motif and screen transitions                */
 /* ------------------------------------------------------------------ */
 
@@ -342,6 +481,11 @@ body {
   align-items: center;
   justify-content: center;
   animation: breathe 19s linear infinite;
+  /* Own compositor layer so WKWebView animates the slow scale on the GPU
+     rather than coalescing a tiny per-frame delta away on the main thread. */
+  will-change: transform;
+  transform: translateZ(0);
+  backface-visibility: hidden;
   box-shadow:
     0 0 55px 10px rgba(59, 155, 232, 0.35),
     0 10px 30px -10px rgba(0, 0, 0, 0.3);
@@ -352,6 +496,8 @@ body {
   border-radius: 9999px;
   border: 1px solid rgba(143, 198, 245, 0.45);
   animation: breatheRing 19s linear infinite;
+  will-change: transform, opacity;
+  transform: translateZ(0);
 }
 .logo-ring.r2 {
   inset: -13%;
@@ -359,35 +505,107 @@ body {
   animation-delay: 0.4s;
 }
 @keyframes breathe {
+  /* Wider delta than the old 0.86->1.06 so the growth is clearly perceptible,
+     and a faint drift through the 7s hold (1.16->1.13->1.16) so it never sits
+     exactly motionless. Boundaries stay at 21%/58% to keep 4-7-8 under linear
+     timing. */
   0% {
-    transform: scale(0.86);
+    transform: scale(0.8);
   }
   21% {
-    transform: scale(1.06);
+    transform: scale(1.16);
+  }
+  39% {
+    transform: scale(1.13);
   }
   58% {
-    transform: scale(1.06);
+    transform: scale(1.16);
   }
   100% {
-    transform: scale(0.86);
+    transform: scale(0.8);
   }
 }
 @keyframes breatheRing {
   0% {
-    transform: scale(0.92);
+    transform: scale(0.86);
     opacity: 0.9;
   }
   21% {
-    transform: scale(1.08);
+    transform: scale(1.12);
+    opacity: 0.35;
+  }
+  39% {
+    transform: scale(1.1);
     opacity: 0.4;
   }
   58% {
-    transform: scale(1.08);
-    opacity: 0.45;
+    transform: scale(1.12);
+    opacity: 0.4;
   }
   100% {
-    transform: scale(0.92);
+    transform: scale(0.86);
     opacity: 0.9;
+  }
+}
+
+/*
+ * The Splash breathing caption, driven by the SAME 19s clock as the logo so
+ * "breathe in / hold / breathe out" stays locked to the scale forever — no JS
+ * timer, no per-phase re-render, no drift. The three words are grid-stacked in
+ * one cell and cross-faded; only their opacity animates.
+ */
+.breath-caption {
+  display: grid;
+  justify-items: center;
+}
+.breath-caption > .bc {
+  grid-area: 1 / 1;
+  opacity: 0;
+}
+.bc-in {
+  animation: bcIn 19s linear infinite;
+}
+.bc-hold {
+  animation: bcHold 19s linear infinite;
+}
+.bc-out {
+  animation: bcOut 19s linear infinite;
+}
+@keyframes bcIn {
+  0%,
+  20.9% {
+    opacity: 1;
+  }
+  21%,
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes bcHold {
+  0%,
+  20.9% {
+    opacity: 0;
+  }
+  21%,
+  57.9% {
+    opacity: 1;
+  }
+  58%,
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes bcOut {
+  0%,
+  57.9% {
+    opacity: 0;
+  }
+  58%,
+  99.9% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
   }
 }
 
@@ -499,6 +717,7 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .logo-disc,
   .logo-ring,
+  .bc,
   .screen-in,
   .card-in,
   .sheen,
@@ -516,6 +735,15 @@ body {
   .video-pulse {
     animation: none !important;
     transition: none !important;
+  }
+
+  /* Static but intentional: the mark rests at full size and the caption holds
+     a single calm word, rather than a caption cycling over a frozen logo. */
+  .logo-disc {
+    transform: scale(1);
+  }
+  .breath-caption > .bc-in {
+    opacity: 1;
   }
 }
 
@@ -687,5 +915,66 @@ body {
   .jade-dot,
   .jade-nudge {
     animation: none !important;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Paw loader — two small navy paws gently "making biscuits".         */
+/*  The brand's quiet waiting sign. Timing ~1.35s, soft ease-in-out;   */
+/*  the two paws alternate via a half-cycle delay on the right one.    */
+/* ------------------------------------------------------------------ */
+.paw-knead {
+  transform-origin: 50% 100%;
+  animation: pawKnead 1.35s ease-in-out infinite;
+}
+.paw-knead--right {
+  animation-delay: -0.675s;
+}
+@keyframes pawKnead {
+  0% {
+    transform: translateY(0) scaleX(1) scaleY(1);
+    opacity: 0.65;
+  }
+  22% {
+    transform: translateY(2.5px) scaleX(1.05) scaleY(0.94);
+    opacity: 1;
+  }
+  44%,
+  100% {
+    transform: translateY(0) scaleX(1) scaleY(1);
+    opacity: 0.65;
+  }
+}
+.paw-knead-shadow {
+  transform-origin: 50% 50%;
+  animation: pawKneadShadow 1.35s ease-in-out infinite;
+}
+.paw-knead-shadow--right {
+  animation-delay: -0.675s;
+}
+@keyframes pawKneadShadow {
+  0%,
+  44%,
+  100% {
+    transform: scaleX(1);
+    opacity: 0.16;
+  }
+  22% {
+    transform: scaleX(1.4);
+    opacity: 0.24;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .paw-knead,
+  .paw-knead--right {
+    animation: none !important;
+    transform: none !important;
+    opacity: 0.8;
+  }
+  .paw-knead-shadow,
+  .paw-knead-shadow--right {
+    animation: none !important;
+    transform: none !important;
+    opacity: 0.14;
   }
 }

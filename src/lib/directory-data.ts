@@ -1,7 +1,6 @@
 import "server-only";
 
 import { type CityRow, type CityTypeRow, indexablePaths } from "./directory";
-import { idFromSlug, listingPath } from "./listing-url";
 import { isSupabaseConfigured } from "./supabase/env";
 import { supabasePublic } from "./supabase/server";
 
@@ -25,9 +24,11 @@ interface CityInventoryRow {
   state: string;
   city: string;
   space_count: number;
-  min_cents: number;
-  max_cents: number;
-  median_cents: number;
+  // NULL below three active rooms — the aggregate views withhold a small-group
+  // price so an individual listing's rate is never exposed (migration 0064).
+  min_cents: number | null;
+  max_cents: number | null;
+  median_cents: number | null;
 }
 
 interface CityTypeInventoryRow extends CityInventoryRow {
@@ -35,13 +36,16 @@ interface CityTypeInventoryRow extends CityInventoryRow {
 }
 
 function toCityRow(row: CityInventoryRow): CityRow {
+  // Null passes straight through — a small-group price the view withheld (0064)
+  // stays withheld rather than becoming a misleading $0.00.
+  const cents = (value: number | null): number | null => (value === null ? null : Number(value));
   return {
     state: row.state,
     city: row.city,
     spaceCount: Number(row.space_count),
-    minCents: Number(row.min_cents),
-    maxCents: Number(row.max_cents),
-    medianCents: Number(row.median_cents),
+    minCents: cents(row.min_cents),
+    maxCents: cents(row.max_cents),
+    medianCents: cents(row.median_cents),
   };
 }
 
@@ -53,6 +57,30 @@ export async function citiesWithSpaces(): Promise<CityRow[]> {
   const { data, error } = await supabasePublic()
     .from("city_inventory")
     .select("state, city, space_count, min_cents, max_cents, median_cents");
+
+  if (error || !data) return [];
+  return (data as CityInventoryRow[]).map(toCityRow);
+}
+
+/**
+ * The towns with live inventory in one category — what a "Explore by space"
+ * card resolves to.
+ *
+ * The marketing cards carry a space-type slug; the caller has already turned
+ * that into a category (a SpaceType knows its category). This reads the
+ * aggregate `city_category_inventory` view (0064) rather than the per-listing
+ * `spaces_public`, so the public directory never touches an individual listing:
+ * a room carries one category, so the count is exact. Anonymous callers can
+ * read this view; `spaces_public` is now closed to them. Returns empty on any
+ * failure, the same "no towns" every caller already handles.
+ */
+export async function citiesWithCategory(category: string): Promise<CityRow[]> {
+  if (!isSupabaseConfigured()) return [];
+
+  const { data, error } = await supabasePublic()
+    .from("city_category_inventory")
+    .select("state, city, space_count, min_cents, max_cents, median_cents")
+    .eq("category", category);
 
   if (error || !data) return [];
   return (data as CityInventoryRow[]).map(toCityRow);
@@ -73,64 +101,6 @@ export async function cityTypesWithSpaces(): Promise<CityTypeRow[]> {
 }
 
 /**
- * The rooms on a town's page.
- *
- * `spaces_public` only ever contains active listings, so there is no status to
- * filter — and the street address it carries is deliberate: every listing here
- * is a retail studio whose address is already on its own website. What stays
- * private is how to get in, which is not in this view at all.
- */
-export interface DirectorySpace {
-  id: string;
-  name: string;
-  category: string;
-  hourlyRateCents: number;
-  capacity: number;
-  city: string;
-  state: string;
-  area: string | null;
-  description: string;
-  suitableFor: string[];
-}
-
-export async function spacesIn(
-  state: string,
-  city: string,
-  spaceType?: string,
-): Promise<DirectorySpace[]> {
-  if (!isSupabaseConfigured()) return [];
-
-  let query = supabasePublic()
-    .from("spaces_public")
-    .select(
-      "id, name, category, hourly_rate_cents, capacity, city, state, area, description, suitable_for",
-    )
-    .eq("state", state)
-    .eq("city", city)
-    // Cheapest first. A page answering "what does a room here cost" should
-    // open on the answer somebody can afford, not on the most expensive room.
-    .order("hourly_rate_cents", { ascending: true });
-
-  if (spaceType) query = query.contains("suitable_for", [spaceType]);
-
-  const { data, error } = await query;
-  if (error || !data) return [];
-
-  return (data as Record<string, unknown>[]).map((row) => ({
-    id: String(row.id),
-    name: String(row.name ?? ""),
-    category: String(row.category ?? ""),
-    hourlyRateCents: Number(row.hourly_rate_cents ?? 0),
-    capacity: Number(row.capacity ?? 0),
-    city: String(row.city ?? ""),
-    state: String(row.state ?? ""),
-    area: (row.area as string | null) ?? null,
-    description: String(row.description ?? ""),
-    suitableFor: Array.isArray(row.suitable_for) ? (row.suitable_for as string[]) : [],
-  }));
-}
-
-/**
  * The generated addresses, which depend on what is actually listed.
  *
  * Kept apart from the fixed paths above because they are a different kind of
@@ -145,131 +115,13 @@ export async function spacesIn(
  * hidden in another.
  *
  * Today this is empty, and that is the engine working rather than failing.
+ *
+ * Individual listing URLs are no longer among them (0064). A room's own page is
+ * a redirect into the app now, not a public document, so advertising it to a
+ * crawler would be pointing search at a bounce. Only the aggregate town and
+ * town-and-use pages — which stay public — are offered here.
  */
 export async function generatedPaths(): Promise<string[]> {
-  const [cities, types, listings] = await Promise.all([
-    citiesWithSpaces(),
-    cityTypesWithSpaces(),
-    listingPaths(),
-  ]);
-  return [...indexablePaths(cities, types), ...listings];
-}
-
-
-/**
- * One room, with everything a public page may show.
- *
- * Read from spaces_public, which only ever contains active listings — so a
- * delisted room resolves to nothing here and its page 404s, without this
- * having to remember to ask about status.
- */
-export interface DirectoryListing extends DirectorySpace {
-  roomSetup: string;
-  amenities: string[];
-  requirements: string[];
-  houseRules: string;
-  addressLine: string | null;
-  floorAreaSqft: number | null;
-  bufferMinutes: number;
-  photos: string[];
-  reviewCount: number;
-  averageRating: number | null;
-}
-
-const LISTING_COLUMNS =
-  "id, name, category, hourly_rate_cents, capacity, city, state, area, description, " +
-  "suitable_for, room_setup, amenities, requirements, house_rules, address_line, " +
-  "floor_area_sqft, buffer_minutes";
-
-/**
- * The room behind a slug, found by the id on the end of it.
- *
- * Only the id is trusted. The words in front are the host's name for the room
- * at the time somebody made the link, and they are allowed to have changed —
- * that is the whole reason the id is there.
- */
-export async function listingBySlug(slug: string): Promise<DirectoryListing | null> {
-  if (!isSupabaseConfigured()) return null;
-
-  const short = idFromSlug(slug);
-  if (!short) return null;
-
-  const db = supabasePublic();
-
-  /*
-   * Matched on the id's opening characters rather than on the whole thing,
-   * because only eight of them are in the URL. `like` on a uuid uses the
-   * primary key index as a prefix scan, so this is not the table scan it
-   * looks like.
-   */
-  const { data, error } = await db
-    .from("spaces_public")
-    .select(LISTING_COLUMNS)
-    .like("id", `${short}%`)
-    .limit(2);
-
-  if (error || !data || data.length !== 1) return null;
-
-  const row = data[0] as unknown as Record<string, unknown>;
-  const id = String(row.id);
-
-  const [{ data: media }, { data: rating }] = await Promise.all([
-    db.from("space_media_public").select("storage_path, kind, position").eq("space_id", id).order("position"),
-    db.from("space_ratings").select("review_count, average_rating").eq("space_id", id).maybeSingle(),
-  ]);
-
-  return {
-    id,
-    name: String(row.name ?? ""),
-    category: String(row.category ?? ""),
-    hourlyRateCents: Number(row.hourly_rate_cents ?? 0),
-    capacity: Number(row.capacity ?? 0),
-    city: String(row.city ?? ""),
-    state: String(row.state ?? ""),
-    area: (row.area as string | null) ?? null,
-    description: String(row.description ?? ""),
-    suitableFor: Array.isArray(row.suitable_for) ? (row.suitable_for as string[]) : [],
-    roomSetup: String(row.room_setup ?? "private_room"),
-    amenities: Array.isArray(row.amenities) ? (row.amenities as string[]) : [],
-    requirements: Array.isArray(row.requirements) ? (row.requirements as string[]) : [],
-    houseRules: String(row.house_rules ?? ""),
-    addressLine: (row.address_line as string | null) ?? null,
-    floorAreaSqft: row.floor_area_sqft === null ? null : Number(row.floor_area_sqft),
-    bufferMinutes: Number(row.buffer_minutes ?? 0),
-    // Photographs only. A video needs a player and a poster frame, and a page
-    // that has to run JavaScript to show its first picture is a page a crawler
-    // reads as having none.
-    photos: ((media ?? []) as { storage_path: string; kind: string }[])
-      .filter((item) => item.kind === "image")
-      .map((item) => db.storage.from("space-media").getPublicUrl(item.storage_path).data.publicUrl),
-    reviewCount: Number((rating as { review_count?: number } | null)?.review_count ?? 0),
-    averageRating:
-      (rating as { average_rating?: number } | null)?.average_rating != null
-        ? Number((rating as { average_rating: number }).average_rating)
-        : null,
-  };
-}
-
-/**
- * Every listing that has a page, for the sitemap.
- *
- * Not gated on a threshold the way the town pages are. One room is a complete
- * answer to "what is this room" — the thin-page problem is a page that
- * promises a list and delivers nothing, and a listing promises one room.
- */
-export async function listingPaths(): Promise<string[]> {
-  if (!isSupabaseConfigured()) return [];
-
-  const { data, error } = await supabasePublic()
-    .from("spaces_public")
-    .select("id, name, city, state");
-
-  if (error || !data) return [];
-
-  return (data as { id: string; name: string; city: string | null; state: string | null }[])
-    .flatMap((row) => {
-      const path = listingPath(row);
-      return path ? [path] : [];
-    })
-    .sort();
+  const [cities, types] = await Promise.all([citiesWithSpaces(), cityTypesWithSpaces()]);
+  return indexablePaths(cities, types);
 }

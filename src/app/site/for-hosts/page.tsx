@@ -177,8 +177,8 @@ export default function ForHostsPage() {
                 Who is coming into my space?
               </dt>
               <dd className="mt-1">
-                Practitioners who have accepted the terms and confirmed their own insurance.
-                You can see who booked and message them before they arrive.
+                Practitioners who have accepted the terms and carry liability cover we verify
+                before they can book. You can see who booked and message them before they arrive.
               </dd>
             </div>
 
@@ -188,7 +188,9 @@ export default function ForHostsPage() {
               </dt>
               <dd className="mt-1">
                 You have 48 hours after a session to tell us, and we hold the payout while we
-                look into it. Their insurance covers the rest, which is why we require it.
+                look into it. Practitioners carry their own liability cover — which we verify
+                before they can book — but it does not replace your own property and business
+                insurance.
               </dd>
             </div>
 

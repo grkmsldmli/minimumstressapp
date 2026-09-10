@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Check, Key, MapPin, Repeat, Ruler, Sun, Users, Zap } from "lucide-react";
 
 import { AccessPanel } from "@/components/access-panel";
@@ -12,6 +12,7 @@ import { BookingCalendar } from "@/components/booking-calendar";
 import { SpaceGallery } from "@/components/space-gallery";
 import { PrimaryButton } from "@/components/primitives";
 import { DeclareUse } from "@/components/declare-use";
+import { HostBadges } from "@/components/host-badges";
 import {
   type DeclaredUse,
   checkDeclaredUse,
@@ -62,6 +63,26 @@ interface Slot {
   isInstant: boolean;
 }
 
+/**
+ * The gate's button, named for the state that raised it. Every path leads to the
+ * same insurance screen — only the label changes: add cover that is missing,
+ * view cover under review, or update cover that was turned down, has lapsed, or
+ * doesn't reach the date.
+ */
+function insuranceCtaLabel(reason: string | null | undefined): string {
+  switch (reason) {
+    case "insurance_pending":
+      return "View insurance";
+    case "insurance_rejected":
+    case "insurance_expired":
+    case "insurance_not_valid_for_date":
+      return "Update insurance";
+    default:
+      // insurance_required / not yet added, and any fallback.
+      return "Add insurance";
+  }
+}
+
 export function SpaceDetail({
   space,
   isPro,
@@ -74,6 +95,10 @@ export function SpaceDetail({
   skipped = [],
   startAt,
   reviews,
+  insuranceGate,
+  insuranceGateReason,
+  onAddInsurance,
+  onVerifyIdentity,
 }: {
   space: PublicSpace;
   isPro: boolean;
@@ -84,6 +109,18 @@ export function SpaceDetail({
   onBook: (startsAt: Date, weeks: number, declared: DeclaredUse) => void | Promise<void>;
   /** Why the booking was refused. Silence here was the bug. */
   error?: string | null;
+  /**
+   * A booking refused for eligibility rather than availability — no
+   * professional profile, or cover that is missing, pending, expired or short
+   * of the date. Shown apart from `error` because it is not "try again": it is
+   * answered by adding insurance, so it is rendered with a way there.
+   */
+  insuranceGate?: string | null;
+  /** Fired when the gate is an identity one and the practitioner taps to verify. */
+  onVerifyIdentity?: () => void;
+  /** Which eligibility reason raised the gate, so the CTA can name the right action. */
+  insuranceGateReason?: string | null;
+  onAddInsurance?: () => void;
   /** What a term booking managed, when it managed some of it. */
   notice?: string | null;
   /** The weeks it could not take, each with its own reason. */
@@ -126,6 +163,45 @@ export function SpaceDetail({
   const [selected, setSelected] = useState<Date | null>(startAt ?? null);
   /** 1 is a single session. More is a term, and Pro only. */
   const [weeks, setWeeks] = useState(1);
+
+  /*
+   * The hero collapses as the page scrolls, driven by the one scroll container's
+   * own position — not a second scroll area, and not a scroll-timeline, which
+   * iOS Safari does not run. A passive listener reads scrollTop once per frame
+   * and writes a single unitless custom property, `--hero-p` (0..1). Nothing
+   * layout-valued is written: the hero box stays a constant 320px and only a
+   * compositor clip-path (plus the title's translate) consume `--hero-p`, so the
+   * whole listing subtree and the gallery's swipe geometry never reflow. At the
+   * top the hero is its full self; a short scroll clips it to about two-thirds
+   * and it holds there; scrolling back up restores it. See the render below.
+   */
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const scroller = scrollRef.current;
+    const root = rootRef.current;
+    if (!scroller || !root) return;
+
+    // Distance, in px of scroll, over which the hero fully collapses.
+    const DISTANCE = 160;
+    let frame = 0;
+
+    const apply = () => {
+      frame = 0;
+      const p = Math.min(1, Math.max(0, scroller.scrollTop / DISTANCE));
+      root.style.setProperty("--hero-p", p.toFixed(4));
+    };
+    const onScroll = () => {
+      if (!frame) frame = requestAnimationFrame(apply);
+    };
+
+    apply();
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      scroller.removeEventListener("scroll", onScroll);
+      if (frame) cancelAnimationFrame(frame);
+    };
+  }, []);
 
   /*
    * The window is no longer computed here. The calendar owns which days are
@@ -228,41 +304,36 @@ export function SpaceDetail({
     // one gets through later.
     .flatMap((type) => (type && type.label !== roomType ? [type] : []));
 
+  /*
+   * The booking bar is anchored to the bottom and scrolls its own content, so a
+   * refusal added to the top of it (the insurance gate) can land above the fold.
+   * Bringing it into view is what turns "Book did nothing" back into an answer:
+   * the message sits at the top of the bar, and the finger that pressed Book was
+   * at the bottom of it.
+   */
   return (
-    <div className="h-full flex flex-col relative screen-in bg-white">
-      <SpaceGallery media={space.media} category={space.category} height={320}>
-        <button
-          type="button"
-          onClick={onBack}
-          aria-label="Back"
-          className="w-9 h-9 rounded-full flex items-center justify-center press"
-          style={{ backgroundColor: "rgba(255,255,255,0.22)", backdropFilter: "blur(8px)" }}
-        >
-          <ArrowLeft size={16} color="#fff" />
-        </button>
-        <div>
-          <span
-            className="px-2.5 py-1 rounded-full font-body text-[12px] text-white"
-            style={{ backgroundColor: "rgba(255,255,255,0.2)", backdropFilter: "blur(6px)" }}
-          >
-            {roomTypeFor(space.category)}
-          </span>
-          <h2
-            className="font-display italic font-semibold text-[28px] text-white leading-tight mt-2"
-            style={{ textShadow: "0 2px 12px rgba(0,0,0,0.25)" }}
-          >
-            {space.name}
-          </h2>
-          <p className="font-body font-normal text-[13.5px] text-white/80 mt-0.5">
-            {space.distanceLabel} · fits {space.capacity}
-          </p>
-        </div>
-      </SpaceGallery>
-
-      <div className="flex-1 overflow-y-auto px-6 pt-5 pb-36">
+    <div ref={rootRef} className="h-full relative overflow-hidden screen-in bg-white">
+      {/*
+        One full-height scroller with the hero as a fixed overlay on top of it
+        (added at the end of this root, z-10). The 320px spacer reserves the
+        hero's space at rest, so content scrolls up under the collapsing hero
+        without ever changing the hero's layout height. The booking bar stays a
+        sticky footer inside this same scroller.
+      */}
+      <div ref={scrollRef} className="absolute inset-0 overflow-y-auto px-6 pt-5">
+        <div aria-hidden style={{ height: 320 }} />
         <p className="font-body font-normal text-[15px] leading-relaxed text-ink-muted">
           {space.description}
         </p>
+
+        {/*
+          Host signals, factual and few: Founding Host, and the milestone this
+          host's rooms have passed. Renders nothing when the host has neither,
+          so an ordinary listing is not padded with an empty row.
+        */}
+        <div className="mt-3.5">
+          <HostBadges space={space} variant="detail" />
+        </div>
 
         {/*
           One row that slides, rather than a grid that grows.
@@ -429,16 +500,17 @@ export function SpaceDetail({
           <MapPin size={13} color="#3B9BE8" className="mt-0.5 shrink-0" />
           <div>
             {/*
-              The address, plainly. It was withheld until a day before the
-              session, which protected nothing — every listing here is a retail
-              studio whose address is on Google Maps and its own website — and
-              cost somebody the one fact they judge a room by.
+              The area only, before a booking. The exact address and the way in
+              are held back until a session is confirmed — see the access flow
+              (space_access_details) and migration 0055. Showing the street here
+              would hand every listing's address to anybody browsing.
             */}
             <p className="font-body font-medium text-[15px] text-navy">
-              {space.addressLine ?? space.area ?? "Address on request"}
+              {space.area ?? "Area shared on the listing"}
             </p>
             <p className="font-body font-normal text-[13.5px] leading-relaxed mt-0.5 text-ink-soft">
-              Entry instructions arrive a day before, your door code half an hour before.
+              Exact address is shared after your booking is confirmed. Entry instructions arrive a
+              day before, your door code half an hour before.
             </p>
           </div>
         </div>
@@ -506,6 +578,81 @@ export function SpaceDetail({
               );
             })}
           </div>
+        )}
+
+        {/*
+          What the booking is for and how it repeats, in the page's own scroll
+          rather than the pinned bar — so the bar below stays the compact action
+          area and this screen keeps a single vertical scroll. Asked only once an
+          hour is chosen: answering earlier is answering for a booking not yet
+          decided on.
+        */}
+        {!preview && selected && repeatable > 1 && (
+          <button
+            type="button"
+            onClick={() => (isPro ? setWeeks(weeks > 1 ? 1 : Math.min(4, repeatable)) : onGoPro())}
+            className="flex items-center justify-between w-full mt-6 px-3.5 py-2.5 rounded-xl press"
+            style={{
+              backgroundColor: weeks > 1 ? "#EDF6FE" : "#fff",
+              border: `1px solid ${weeks > 1 ? "#3B9BE8" : "#DCE7F2"}`,
+            }}
+          >
+            <span className="flex items-center gap-2 font-body text-[15px] text-navy">
+              <Repeat size={13} color={weeks > 1 ? "#3B9BE8" : "#8CA3BD"} />
+              {weeks > 1
+                ? `Every ${sessionWeekday(selected, space.timeZone)} for ${weeks} weeks`
+                : `Repeat weekly${isPro ? "" : " — Pro"}`}
+            </span>
+            <span className="font-body font-medium text-[15px] text-navy">
+              {weeks > 1 ? formatCents(priced.totalCents * weeks) : ""}
+            </span>
+          </button>
+        )}
+
+        {!preview && weeks > 1 && (
+          <div className="flex gap-1.5 mt-2.5">
+            {Array.from({ length: Math.min(4, repeatable) }, (_, i) => i + 1)
+              .filter((n) => n > 1)
+              .map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => setWeeks(n)}
+                  className="flex-1 py-2 rounded-lg font-body text-[13.5px] press"
+                  style={{
+                    backgroundColor: weeks === n ? "#16304E" : "#fff",
+                    color: weeks === n ? "#fff" : "#16304E",
+                    border: `1px solid ${weeks === n ? "#16304E" : "#DCE7F2"}`,
+                  }}
+                >
+                  {n} weeks
+                </button>
+              ))}
+          </div>
+        )}
+
+        {!preview && selected && (
+          <DeclareUse
+            allowedUses={space.allowedUses}
+            capacity={space.capacity}
+            value={declared}
+            onChange={setDeclared}
+          />
+        )}
+
+        {/*
+          Said before the card, not after it. A room the host has to accept looks
+          identical to one that books straight through until the confirmation
+          screen — the button verb and this line are the whole difference.
+        */}
+        {!preview && byRequest && selected && (
+          <p
+            className="rounded-xl px-3.5 py-3 font-body font-normal text-[13.5px] leading-relaxed mt-3"
+            style={{ backgroundColor: "#FFF8F1", border: "1px solid #F5DFC4", color: "#8B6C37" }}
+          >
+            This host accepts bookings themselves. Your card is held, not charged, until they say
+            yes — and released in full if they say no or do not answer within a day.
+          </p>
         )}
 
         {!isPro && (
@@ -621,10 +768,19 @@ export function SpaceDetail({
             You pay now. Cancel {LATE_CANCELLATION_HOURS} hours ahead for a refund.
           </p>
         </div>
-      </div>
 
+      {/*
+        The compact action area, kept inside the page's own scroll as a sticky
+        footer rather than an absolute overlay. It holds only the final action —
+        the Book button, and the insurance gate when a booking is refused for
+        cover. Being in flow, it reserves its own space and simply pins to the
+        bottom while there is more above to scroll, so it can never cover the
+        content and needs no measured padding to compensate: one scroll
+        container, friendly to a future pull-to-refresh. `-mx-6` lets its fade
+        reach the screen edges past the scroll's own horizontal padding.
+      */}
       <div
-        className="absolute bottom-0 inset-x-0 px-6 pt-4 pb-6"
+        className="sticky bottom-0 -mx-6 px-6 pt-4 pb-6"
         style={{ background: "linear-gradient(to top, #FFFFFF 75%, transparent)" }}
       >
         {/*
@@ -639,6 +795,43 @@ export function SpaceDetail({
             {error}
           </p>
         )}
+
+        {/*
+          Eligibility refused, not availability. This is answered by adding
+          cover rather than trying again, so it carries a way there instead of
+          sitting as a red line under a button that will keep refusing.
+        */}
+        {insuranceGate &&
+          (() => {
+            // The same in-flow gate serves two eligibility states. Identity is
+            // its own title and action; everything else is the cover gate as
+            // before.
+            const isIdentity = insuranceGateReason === "identity_verification_required";
+            const title = isIdentity ? "Identity" : "Liability insurance";
+            const action = isIdentity ? onVerifyIdentity : onAddInsurance;
+            const label = isIdentity ? "Verify identity" : insuranceCtaLabel(insuranceGateReason);
+            return (
+              <div
+                className="rounded-xl p-3.5 mb-2.5"
+                style={{ backgroundColor: "#FFF8F1", border: "1px solid #F5DFC4" }}
+              >
+                <p className="font-body font-semibold text-[14px] text-[#8B6C37]">{title}</p>
+                <p className="font-body font-normal text-[13.5px] leading-relaxed mt-1 text-[#8B6C37]">
+                  {insuranceGate}
+                </p>
+                {action && (
+                  <button
+                    type="button"
+                    onClick={action}
+                    className="mt-3 px-4 py-2 rounded-full font-body font-medium text-[13.5px] press"
+                    style={{ backgroundColor: "#2E5578", color: "#fff" }}
+                  >
+                    {label}
+                  </button>
+                )}
+              </div>
+            );
+          })()}
 
         {/*
           A term rarely lands whole. Naming the weeks that did not is the
@@ -662,59 +855,6 @@ export function SpaceDetail({
           </div>
         )}
 
-        {/*
-          Offered only once an hour is chosen, and only to Pro.
-          
-          A weekly class is the reason somebody comes back, and the app made
-          them walk the whole discovery flow for each one — a decision made in
-          September, re-entered every Tuesday. Free accounts see it and see
-          what it costs, because a cap nobody can see is not a reason to pay.
-        */}
-        {!preview && selected && repeatable > 1 && (
-          <button
-            type="button"
-            onClick={() => (isPro ? setWeeks(weeks > 1 ? 1 : Math.min(4, repeatable)) : onGoPro())}
-            className="flex items-center justify-between w-full mb-2.5 px-3.5 py-2.5 rounded-xl press"
-            style={{
-              backgroundColor: weeks > 1 ? "#EDF6FE" : "#fff",
-              border: `1px solid ${weeks > 1 ? "#3B9BE8" : "#DCE7F2"}`,
-            }}
-          >
-            <span className="flex items-center gap-2 font-body text-[15px] text-navy">
-              <Repeat size={13} color={weeks > 1 ? "#3B9BE8" : "#8CA3BD"} />
-              {weeks > 1
-                ? `Every ${sessionWeekday(selected, space.timeZone)} for ${weeks} weeks`
-                : `Repeat weekly${isPro ? "" : " — Pro"}`}
-            </span>
-            <span className="font-body font-medium text-[15px] text-navy">
-              {weeks > 1 ? formatCents(priced.totalCents * weeks) : ""}
-            </span>
-          </button>
-        )}
-
-        {/* How many weeks, once repeating is on. */}
-        {!preview && weeks > 1 && (
-          <div className="flex gap-1.5 mb-2.5">
-            {Array.from({ length: Math.min(4, repeatable) }, (_, i) => i + 1)
-              .filter((n) => n > 1)
-              .map((n) => (
-                <button
-                  key={n}
-                  type="button"
-                  onClick={() => setWeeks(n)}
-                  className="flex-1 py-2 rounded-lg font-body text-[13.5px] press"
-                  style={{
-                    backgroundColor: weeks === n ? "#16304E" : "#fff",
-                    color: weeks === n ? "#fff" : "#16304E",
-                    border: `1px solid ${weeks === n ? "#16304E" : "#DCE7F2"}`,
-                  }}
-                >
-                  {n} weeks
-                </button>
-              ))}
-          </div>
-        )}
-
         {preview ? (
           <PrimaryButton onClick={onBack}>Back to your studio</PrimaryButton>
         ) : (
@@ -723,37 +863,6 @@ export function SpaceDetail({
           choose looks like the app is broken. It says which it is now.
         */
         <>
-        {/*
-          Asked after the hour is chosen and before the money. Putting it
-          earlier makes somebody answer questions about a booking they have not
-          decided to make; putting it after payment makes it a formality.
-        */}
-        {selected && (
-          <DeclareUse
-            allowedUses={space.allowedUses}
-            capacity={space.capacity}
-            value={declared}
-            onChange={setDeclared}
-          />
-        )}
-
-        {/*
-          Said before the card, not after it.
-          A room the host has to accept looks identical to one that books
-          straight through, right up until the confirmation screen — so
-          somebody would pay expecting an hour and get a wait instead. The
-          button verb and this line are the whole difference.
-        */}
-        {byRequest && selected && (
-          <p
-            className="rounded-xl px-3.5 py-3 font-body font-normal text-[13.5px] leading-relaxed mb-3"
-            style={{ backgroundColor: "#FFF8F1", border: "1px solid #F5DFC4", color: "#8B6C37" }}
-          >
-            This host accepts bookings themselves. Your card is held, not charged, until they say
-            yes — and released in full if they say no or do not answer within a day.
-          </p>
-        )}
-
         <PrimaryButton
           disabled={!selected || !ready || booking}
           onClick={() => {
@@ -789,6 +898,55 @@ export function SpaceDetail({
         )}
         </>
         )}
+      </div>
+      </div>
+
+      {/*
+        The hero, painted over the scroller (z-10) and collapsed from the bottom
+        by the scroll progress. Only clip-path animates (compositor), so the
+        320px box, the horizontal gallery and its swipe geometry never change;
+        the title slides up with the clip so it stays visible and legible.
+      */}
+      <div
+        className="absolute inset-x-0 top-0 z-10"
+        style={{
+          clipPath: "inset(0 0 calc(var(--hero-p, 0) * 120px) 0)",
+          willChange: "clip-path",
+        }}
+      >
+        <SpaceGallery media={space.media} category={space.category} height={320}>
+          <button
+            type="button"
+            onClick={onBack}
+            aria-label="Back"
+            className="w-9 h-9 rounded-full flex items-center justify-center press"
+            style={{ backgroundColor: "rgba(255,255,255,0.22)", backdropFilter: "blur(8px)" }}
+          >
+            <ArrowLeft size={16} color="#fff" />
+          </button>
+          <div
+            style={{
+              transform: "translate3d(0, calc(var(--hero-p, 0) * -120px), 0)",
+              willChange: "transform",
+            }}
+          >
+            <span
+              className="px-2.5 py-1 rounded-full font-body text-[12px] text-white"
+              style={{ backgroundColor: "rgba(255,255,255,0.2)", backdropFilter: "blur(6px)" }}
+            >
+              {roomTypeFor(space.category)}
+            </span>
+            <h2
+              className="font-display italic font-semibold text-[28px] text-white leading-tight mt-2"
+              style={{ textShadow: "0 2px 12px rgba(0,0,0,0.25)" }}
+            >
+              {space.name}
+            </h2>
+            <p className="font-body font-normal text-[13.5px] text-white/80 mt-0.5">
+              {space.distanceLabel} · fits {space.capacity}
+            </p>
+          </div>
+        </SpaceGallery>
       </div>
     </div>
   );

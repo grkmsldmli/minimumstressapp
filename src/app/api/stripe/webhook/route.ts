@@ -216,6 +216,29 @@ async function handle(event: Stripe.Event): Promise<void> {
     }
 
     /**
+     * A practitioner finished the Stripe Identity check and passed.
+     *
+     * The only place `identity_verified_at` is written — the booking gate reads
+     * it, and a practitioner marking themselves is exactly what routing this
+     * through Stripe prevents. Matched by the `user_id` we put on the session's
+     * metadata, and guarded so a replayed event cannot rewrite a time already
+     * recorded. A `requires_input` or `canceled` session sends nothing we act
+     * on: unverified stays unverified, which is the safe default the gate needs.
+     */
+    case "identity.verification_session.verified": {
+      const session = event.data.object;
+      const userId = session.metadata?.user_id;
+      if (!userId) return;
+
+      await admin
+        .from("profiles")
+        .update({ identity_verified_at: new Date().toISOString() })
+        .eq("id", userId)
+        .is("identity_verified_at", null);
+      return;
+    }
+
+    /**
      * A payout to a host's bank was rejected — usually a closed account or
      * wrong details. Stripe pauses that account's payouts until it is fixed,
      * so the money is sitting still and the host does not necessarily know.

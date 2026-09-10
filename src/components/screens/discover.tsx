@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { AccountBadge } from "@/components/account-badge";
 import { LocationPrompt, type LocationChoice } from "@/components/location-prompt";
@@ -30,6 +30,8 @@ import {
 } from "@/components/brand";
 import { BookAgain } from "@/components/book-again";
 import { BrowseMap } from "@/components/browse-map";
+import { HostBadges } from "@/components/host-badges";
+import { PullToRefresh } from "@/components/pull-to-refresh";
 import { TiltCard } from "@/components/primitives";
 import type { PublicSpace } from "@/lib/domain";
 import { PRO_BOOKING_HORIZON_DAYS, formatCents, quote } from "@/lib/money";
@@ -57,6 +59,7 @@ function browsePriceCents(space: PublicSpace, isPro: boolean): number {
 export function Discover({
   spaces,
   isPro,
+  onRefresh,
   onOpenSpace,
   onGoPro,
   onGoBookings,
@@ -74,9 +77,12 @@ export function Discover({
   onChooseLocation,
   distanceLabels,
   locationError,
+  onRequestSpace,
 }: {
   spaces: PublicSpace[];
   isPro: boolean;
+  /** Pull-to-refresh: re-fetches discovery data in place. */
+  onRefresh: () => Promise<unknown> | unknown;
   onOpenSpace: (id: string) => void;
   onGoPro: () => void;
   onGoBookings: () => void;
@@ -100,6 +106,12 @@ export function Discover({
   /** Coarse label per space id — "0.8 mi". Never a coordinate. */
   distanceLabels: Record<string, string>;
   locationError: string | null;
+  /**
+   * Record where a practitioner was looking when nothing suitable came back, so
+   * the empty state is a demand signal rather than a dead end. Reuses the open
+   * space-request capture — only the town is required.
+   */
+  onRequestSpace: (input: { lookingIn: string; spaceType?: string | null }) => Promise<void>;
 }) {
   const [filter, setFilter] = useState<Filter>("all");
   const [query, setQuery] = useState("");
@@ -107,6 +119,12 @@ export function Discover({
   // mean remembering a "no" that was about one moment, not about the feature.
   const [askedAlready, setAskedAlready] = useState(false);
   const [view, setView] = useState<"list" | "map">("list");
+
+  // The featured rail scrolls horizontally, so it keeps its own position. When
+  // the set it shows changes — a category tapped, a search typed — that position
+  // is stale, and leaving it there is how the rail opens half-scrolled onto a
+  // card that is no longer the first match. Reset it to the start instead.
+  const railRef = useRef<HTMLDivElement>(null);
 
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
@@ -124,6 +142,12 @@ export function Discover({
   // effect, which would paint an empty screen first and then fix itself.
   const active: Filter =
     filter !== "all" && !offered.some((c) => c.key === filter) ? "all" : filter;
+
+  // Back to the first card whenever the filter or the search changes what the
+  // rail is showing. Cheap and layout-safe: one scroll assignment, no listener.
+  useEffect(() => {
+    railRef.current?.scrollTo({ left: 0 });
+  }, [active, query]);
 
   const byCategory = active === "all" ? spaces : spaces.filter((s) => s.category === active);
 
@@ -168,7 +192,7 @@ export function Discover({
         space.name,
         roomTypeFor(space.category),
         space.description,
-        space.addressLine ?? space.area ?? "",
+        space.area ?? "",
         ...specialtiesFor(space.category),
         ...space.amenities,
       ]
@@ -181,13 +205,137 @@ export function Discover({
     });
   }, [byCategory, nearbyOrder, query]);
 
+  // The whole navy hero is one continuous block — the app row, the headline, the
+  // orientation line, and the search field — that scrolls away together inside
+  // the one scroll container. It is handed to PullToRefresh as its `header`, so
+  // the paw reveals directly below the search field, not above the greeting, and
+  // the cards get most of the screen once the user scrolls.
+  const NAVY = "radial-gradient(130% 130% at 20% 0%, #1E4066 0%, #16304E 80%)";
+
+  const hero = (
+    <div
+      className="px-6 pt-8 pb-7 relative overflow-hidden shrink-0 rounded-b-[30px]"
+      style={{ background: NAVY }}
+    >
+      <Ambient />
+      <div className="flex items-center justify-between gap-2 relative z-10">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <button type="button" onClick={onGoProfile} className="press shrink-0" aria-label="Your profile">
+            <LogoBadge size={34} />
+          </button>
+          <div className="min-w-0">
+            <div className="flex items-center gap-1.5">
+              <GreetIcon size={11} color="#8FC6F5" className="shrink-0" />
+              <p className="font-body font-normal text-[13.5px] tracking-wide text-white/70 truncate">
+                {greetingName ? `${greeting}, ${greetingName}` : greeting}
+              </p>
+            </div>
+            {/* Which side they are on, on the screen they spend most time on. */}
+            <div className="mt-1">
+              <AccountBadge accountType="practitioner" tone="dark" />
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <RoundButton label="Your bookings" onClick={onGoBookings}>
+            <Calendar size={15} color="#fff" />
+          </RoundButton>
+          <RoundButton label="What we've sent you" onClick={onGoNotifications}>
+            <Bell size={15} color="#fff" />
+            {/*
+              A dot only when something failed to arrive. An unread badge
+              would nag about messages somebody has already had by email;
+              the one thing worth interrupting for is one they never got.
+            */}
+            {undeliveredCount > 0 && (
+              <span
+                className="absolute rounded-full"
+                style={{
+                  top: 1,
+                  right: 1,
+                  width: 8,
+                  height: 8,
+                  backgroundColor: "#F2695C",
+                  border: "1.5px solid #16304E",
+                }}
+              />
+            )}
+          </RoundButton>
+          <RoundButton
+            label={view === "list" ? "Show map" : "Show list"}
+            onClick={() => setView(view === "list" ? "map" : "list")}
+          >
+            {view === "list" ? <MapIcon size={15} color="#fff" /> : <List size={15} color="#fff" />}
+          </RoundButton>
+        </div>
+      </div>
+
+      <div className="pt-6 relative z-10">
+        <Headline pre="Find your" accent="space." size={24} light />
+        {/*
+          One calm orientation line, secondary to the inventory below: what the
+          app is for, for a practitioner arriving with clients of their own.
+        */}
+        <p className="font-body font-normal text-[13px] leading-relaxed text-white/55 mt-1.5">
+          Book professional space by the hour for your own clients — one all-in price, no lease.
+        </p>
+      </div>
+
+      <div
+        className="flex items-center gap-2.5 mt-5 px-4 py-3 rounded-full relative z-10"
+        style={{
+          backgroundColor: "rgba(255,255,255,0.1)",
+          border: "1px solid rgba(255,255,255,0.16)",
+        }}
+      >
+        <Search size={14} color="#8FC6F5" />
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search spaces"
+          aria-label="Search spaces"
+          className="font-body font-normal text-[14px] outline-none w-full min-w-0 bg-transparent text-white placeholder:text-white/50 placeholder:truncate"
+        />
+        {query && (
+          <button
+            type="button"
+            onClick={() => setQuery("")}
+            aria-label="Clear search"
+            className="press shrink-0"
+          >
+            <X size={13} color="#8FC6F5" />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+
+  const chips = (
+    <div className="flex gap-2 px-6 py-4 overflow-x-auto no-scrollbar shrink-0">
+      <FilterChip active={active === "all"} onClick={() => setFilter("all")}>
+        <AllCategoriesIcon size={12} />
+        All
+      </FilterChip>
+      {offered.map((category) => (
+        <FilterChip
+          key={category.key}
+          active={active === category.key}
+          onClick={() => setFilter(category.key)}
+        >
+          <CatIcon cat={category.key} size={12} />
+          {category.shortLabel}
+        </FilterChip>
+      ))}
+    </div>
+  );
+
   return (
     <div className="h-full flex flex-col screen-in bg-white">
       {!isPro && (
         <button
           type="button"
           onClick={onGoPro}
-          className="flex items-center justify-between px-6 py-2.5 press shrink-0"
+          className="flex items-center justify-between gap-3 px-6 py-2.5 press shrink-0"
           style={{ backgroundColor: "#16304E" }}
         >
           {/*
@@ -197,7 +345,7 @@ export function Discover({
             it was tried and taken back out. The benefit stayed on the banner
             after the code stopped delivering it.
           */}
-          <span className="font-body font-normal text-[13.5px] text-white/70">
+          <span className="font-body font-normal text-[13.5px] text-white/70 min-w-0 truncate">
             Unlimited sessions, {PRO_BOOKING_HORIZON_DAYS} days ahead
           </span>
           {/*
@@ -231,121 +379,37 @@ export function Discover({
         </button>
       )}
 
-      <div
-        className="px-6 pt-8 pb-7 rounded-b-[30px] relative overflow-hidden shrink-0"
-        style={{ background: "radial-gradient(130% 130% at 20% 0%, #1E4066 0%, #16304E 80%)" }}
-      >
-        <Ambient />
-        <div className="flex items-center justify-between relative z-10">
-          <div className="flex items-center gap-2.5">
-            <button type="button" onClick={onGoProfile} className="press" aria-label="Your profile">
-              <LogoBadge size={34} />
-            </button>
-            <div>
-              <div className="flex items-center gap-1.5">
-                <GreetIcon size={11} color="#8FC6F5" />
-                <p className="font-body font-normal text-[13.5px] tracking-wide text-white/70">
-                  {greetingName ? `${greeting}, ${greetingName}` : greeting}
-                </p>
-              </div>
-              {/* Which side they are on, on the screen they spend most time on. */}
-              <div className="mt-1">
-                <AccountBadge accountType="practitioner" tone="dark" />
-              </div>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <RoundButton label="Your bookings" onClick={onGoBookings}>
-              <Calendar size={15} color="#fff" />
-            </RoundButton>
-            <RoundButton label="What we've sent you" onClick={onGoNotifications}>
-              <Bell size={15} color="#fff" />
-              {/*
-                A dot only when something failed to arrive. An unread badge
-                would nag about messages somebody has already had by email;
-                the one thing worth interrupting for is one they never got.
-              */}
-              {undeliveredCount > 0 && (
-                <span
-                  className="absolute rounded-full"
-                  style={{
-                    top: 1,
-                    right: 1,
-                    width: 8,
-                    height: 8,
-                    backgroundColor: "#F2695C",
-                    border: "1.5px solid #16304E",
-                  }}
-                />
-              )}
-            </RoundButton>
-            <RoundButton
-              label={view === "list" ? "Show map" : "Show list"}
-              onClick={() => setView(view === "list" ? "map" : "list")}
-            >
-              {view === "list" ? <MapIcon size={15} color="#fff" /> : <List size={15} color="#fff" />}
-            </RoundButton>
-          </div>
-        </div>
-
-        <div className="mt-4 relative z-10">
-          <Headline pre="Where will you" accent="practice today?" size={24} light />
-        </div>
-
-        <div
-          className="flex items-center gap-2.5 mt-5 px-4 py-3 rounded-full relative z-10"
-          style={{
-            backgroundColor: "rgba(255,255,255,0.1)",
-            border: "1px solid rgba(255,255,255,0.16)",
-          }}
-        >
-          <Search size={14} color="#8FC6F5" />
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search by name, room type or what's in it"
-            aria-label="Search spaces"
-            className="font-body font-normal text-[14px] outline-none w-full bg-transparent text-white placeholder:text-white/50"
-          />
-          {query && (
-            <button
-              type="button"
-              onClick={() => setQuery("")}
-              aria-label="Clear search"
-              className="press shrink-0"
-            >
-              <X size={13} color="#8FC6F5" />
-            </button>
-          )}
-        </div>
-      </div>
-
-      <div className="flex gap-2 px-6 py-4 overflow-x-auto no-scrollbar shrink-0">
-        <FilterChip active={active === "all"} onClick={() => setFilter("all")}>
-          <AllCategoriesIcon size={12} />
-          All
-        </FilterChip>
-        {offered.map((category) => (
-          <FilterChip
-            key={category.key}
-            active={active === category.key}
-            onClick={() => setFilter(category.key)}
-          >
-            <CatIcon cat={category.key} size={12} />
-            {category.shortLabel}
-          </FilterChip>
-        ))}
-      </div>
-
       {view === "map" ? (
-        <MapView spaces={visible} isPro={isPro} onOpen={onOpenSpace} you={you} />
+        <>
+          {hero}
+          {chips}
+          <MapView spaces={visible} isPro={isPro} onOpen={onOpenSpace} you={you} />
+        </>
       ) : (
-        <div className="flex-1 overflow-y-auto pb-8">
+        <PullToRefresh header={hero} className="flex-1 pb-8" onRefresh={onRefresh}>
+          {/*
+            Chips are the only thing that stays: they stick just below the Pro
+            banner once the whole hero has scrolled away, so filters stay
+            reachable while browsing.
+          */}
+          <div className="sticky top-0 z-20 bg-white">{chips}</div>
           {active === "all" && visible.length > 0 && (
             <>
               <SectionLabel className="px-6">Open right now</SectionLabel>
+              {/*
+                One card at a time, with the next just peeking. Snap holds a card
+                flush at the left rather than resting between two, and scroll-pl
+                matches the px-6 gutter so the snapped card sits inside the
+                padding rather than clipped against the edge. Card width is a
+                share of this rail's own width (see FeaturedCard), so the peek is
+                the same on a 320px phone as on a 430px one without any vw maths.
+              */}
               <div
-                className="flex gap-3.5 px-6 pb-6 overflow-x-auto no-scrollbar"
+                ref={railRef}
+                // Proximity, not mandatory: the finger drags freely and the rail
+                // only settles toward a card when it comes to rest near one, so a
+                // flick never feels caught. Snap is kept, just gentler.
+                className="flex gap-3.5 px-6 pb-6 overflow-x-auto no-scrollbar snap-x snap-proximity scroll-pl-6"
                 style={{ perspective: 800 }}
               >
                 {visible.slice(0, 4).map((space, i) => (
@@ -425,7 +489,7 @@ export function Discover({
               <p className="font-body font-normal text-[15px] text-ink-soft">
                 {query.trim()
                   ? `Nothing matches “${query.trim()}”.`
-                  : "No spaces listed yet."}
+                  : "No space near you yet? Tell us where you practice."}
               </p>
               {query.trim() && (
                 <button
@@ -436,6 +500,12 @@ export function Discover({
                   Clear search
                 </button>
               )}
+              {/*
+                The empty state is a demand signal, not a dead end — and only
+                here, so it never competes with real inventory. Reuses the open
+                space-request capture (/api/spaces/request).
+              */}
+              <RequestSpaceCard onRequestSpace={onRequestSpace} defaultTown={savedPostcode ?? ""} />
             </div>
           ) : (
             <div className="px-6 flex flex-col gap-2.5">
@@ -459,7 +529,7 @@ export function Discover({
           >
             Terms &amp; Privacy
           </button>
-        </div>
+        </PullToRefresh>
       )}
     </div>
   );
@@ -548,7 +618,11 @@ function FeaturedCard({
   return (
     <TiltCard
       onClick={onClick}
-      className="shrink-0 w-[230px] rounded-[24px] overflow-hidden text-left press card-in"
+      // Width is a share of the rail, not a fixed 230px: one card fills the
+      // viewport with a small peek of the next at every phone width, and the cap
+      // keeps it from ballooning on a wide screen. snap-start pairs with the
+      // rail's scroll-snap so it comes to rest flush, never half-shown.
+      className="snap-start shrink-0 basis-[85%] max-w-[320px] rounded-[24px] overflow-hidden text-left press card-in"
       style={{
         animationDelay: `${index * 90}ms`,
         boxShadow: "0 16px 34px -16px rgba(22,48,78,0.35)",
@@ -563,8 +637,18 @@ function FeaturedCard({
       */}
       <div className="h-[145px] relative">
         {cover ? (
+          // The card thumbnail variant (0066), not the full detail image; the
+          // first featured card is above the fold so it loads eagerly and at
+          // high priority, the rest defer.
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={cover.url} alt="" className="absolute inset-0 w-full h-full object-cover" />
+          <img
+            src={cover.cardUrl}
+            alt=""
+            className="absolute inset-0 w-full h-full object-cover"
+            loading={index === 0 ? "eager" : "lazy"}
+            decoding="async"
+            fetchPriority={index === 0 ? "high" : "auto"}
+          />
         ) : (
           <div
             className="absolute inset-0 flex items-center justify-center"
@@ -596,9 +680,11 @@ function FeaturedCard({
         )}
       </div>
       <div className="p-4 bg-white">
-        <div className="flex items-baseline justify-between">
-          <p className="font-display italic font-semibold text-[17px] text-navy">{space.name}</p>
-          <p className="font-body text-[13.5px] text-navy">
+        <div className="flex items-baseline justify-between gap-2">
+          <p className="font-display italic font-semibold text-[17px] text-navy min-w-0 truncate">
+            {space.name}
+          </p>
+          <p className="font-body text-[13.5px] text-navy shrink-0">
             <span className="font-semibold">{formatCents(price)}</span>
             <span className="text-ink-faint">/hr</span>
           </p>
@@ -609,6 +695,10 @@ function FeaturedCard({
         <p className="font-body font-normal text-[13.5px] mt-0.5 text-ink-soft">
           {roomTypeFor(space.category)} · {space.distanceLabel}
         </p>
+        {/* At most two restrained host signals, below the room, never over it. */}
+        <div className="mt-1.5">
+          <HostBadges space={space} variant="compact" />
+        </div>
       </div>
     </TiltCard>
   );
@@ -644,11 +734,15 @@ function SpaceRow({
       }}
     >
       {cover ? (
+        // The card thumbnail variant (0066), never the full detail image, and
+        // lazy — list rows are below the fold as they stream in.
         // eslint-disable-next-line @next/next/no-img-element
         <img
-          src={cover.url}
+          src={cover.cardUrl}
           alt=""
           className="w-14 h-14 rounded-xl shrink-0 object-cover"
+          loading="lazy"
+          decoding="async"
         />
       ) : (
         <div
@@ -711,11 +805,12 @@ function MapView({
       */}
       <BrowseMap
         pins={spaces
-          .filter((space) => space.lat !== null && space.lng !== null)
+          .filter((space) => space.approxLat !== null && space.approxLng !== null)
           .map((space) => ({
             id: space.id,
             name: space.name,
-            point: { lat: space.lat!, lng: space.lng! },
+            // The coarse point, not the building — see approxLat/approxLng.
+            point: { lat: space.approxLat!, lng: space.approxLng! },
             category: space.category,
             active: selected === space.id,
           }))}
@@ -759,6 +854,116 @@ function MapView({
             </button>
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The empty state's one useful action: record where a practitioner is looking.
+ *
+ * Not a dead end and not a promise. It reuses the open space-request capture
+ * (/api/spaces/request via onRequestSpace) and asks for the one thing that
+ * endpoint needs — a town — so an empty search becomes a demand signal. Shown
+ * only when nothing matched, so it never competes with real inventory.
+ */
+function RequestSpaceCard({
+  onRequestSpace,
+  defaultTown,
+}: {
+  onRequestSpace: (input: { lookingIn: string; spaceType?: string | null }) => Promise<void>;
+  defaultTown: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [town, setTown] = useState(defaultTown);
+  const [status, setStatus] = useState<"idle" | "sending" | "done" | "error">("idle");
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = async () => {
+    const value = town.trim();
+    if (!value || status === "sending") return;
+    setStatus("sending");
+    setError(null);
+    try {
+      await onRequestSpace({ lookingIn: value });
+      setStatus("done");
+    } catch (failure) {
+      setError(
+        failure instanceof Error && failure.message
+          ? failure.message
+          : "That didn’t send. Try again.",
+      );
+      setStatus("error");
+    }
+  };
+
+  if (status === "done") {
+    return (
+      <div
+        className="mt-4 rounded-2xl p-4"
+        style={{ backgroundColor: "#F4F8FC", border: "1px solid #E7EEF6" }}
+      >
+        <p className="font-body font-normal text-[14.5px] leading-relaxed text-navy">
+          Got it. We’ll use your request to help bring spaces to your area.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="mt-4 rounded-2xl p-4"
+      style={{ backgroundColor: "#F4F8FC", border: "1px solid #E7EEF6" }}
+    >
+      {!open ? (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="w-full py-2.5 rounded-xl font-body font-medium text-[15px] press text-white"
+          style={{ backgroundColor: "#3B9BE8" }}
+        >
+          Request a space
+        </button>
+      ) : (
+        <>
+          <p className="font-body font-normal text-[13.5px] leading-relaxed text-ink-soft mb-2.5">
+            Which town or area do you practice in?
+          </p>
+          <div className="flex gap-2 items-center">
+            <input
+              value={town}
+              onChange={(e) => setTown(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  void submit();
+                }
+              }}
+              maxLength={80}
+              placeholder="Town or area"
+              aria-label="Town or area you practice in"
+              className="flex-1 font-body text-[14.5px] px-3.5 py-2.5 rounded-xl outline-none text-navy min-w-0"
+              style={{ border: "1px solid #DCE7F2" }}
+            />
+            <button
+              type="button"
+              onClick={() => void submit()}
+              disabled={!town.trim() || status === "sending"}
+              className="px-4 py-2.5 rounded-xl font-body font-medium text-[15px] press text-white shrink-0"
+              style={{ backgroundColor: town.trim() && status !== "sending" ? "#3B9BE8" : "#DCE7F2" }}
+            >
+              {status === "sending" ? "Sending…" : "Send"}
+            </button>
+          </div>
+          {status === "error" && (
+            <p className="font-body font-normal text-[13.5px] leading-relaxed text-coral-deep mt-2">
+              {error}{" "}
+              <button type="button" onClick={() => void submit()} className="press text-sky-text">
+                Try again
+              </button>
+            </p>
+          )}
+        </>
       )}
     </div>
   );

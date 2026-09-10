@@ -55,7 +55,10 @@ describe("where Stripe sends people back to", () => {
   });
 
   it.each(paths)("%s answers a GET", (path) => {
-    const segments = path.split("/").filter(Boolean);
+    // A return URL may carry a query or hash (e.g. /?identity=checking); those
+    // are read by the page, not part of the route that has to answer the GET.
+    const routePath = path.split(/[?#]/)[0];
+    const segments = routePath.split("/").filter(Boolean);
 
     // A page is a GET by definition; only route handlers can be method-bound.
     const asRoute = join(APP, ...segments, "route.ts");

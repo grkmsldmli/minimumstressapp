@@ -22,6 +22,7 @@ import type {
   Profile,
   PublicReview,
   PublicSpace,
+  ReferralSummary,
   SpaceAccessDetails,
   SpaceEdit,
 } from "./domain";
@@ -43,9 +44,42 @@ export interface Repository {
    */
   uploadAvatar(file: File): Promise<Profile>;
 
+  /**
+   * The practitioner's liability certificate, actually uploaded.
+   *
+   * Bytes, not a field. The file goes into the private verification-docs bucket
+   * at practitioner/{userId}/…, the stored path points at it, and the review
+   * returns to pending so staff re-check a new certificate. The old flow saved
+   * only the filename, leaving the admin a name and no file to open.
+   */
+  uploadInsuranceCertificate(file: File): Promise<Profile>;
+
+  /**
+   * A professional credential (license or certificate), uploaded to the private
+   * bucket with what the practitioner typed about it. Review returns to pending;
+   * only staff can verify it. Required to book only for a profession whose rule
+   * is "required" (see lib/professions).
+   */
+  uploadCredentialCertificate(
+    file: File,
+    details: {
+      credentialType: string | null;
+      credentialNumber: string | null;
+      credentialJurisdiction: string | null;
+    },
+  ): Promise<Profile>;
+
   /** Active listings only — mirrors the spaces_public view. */
   listPublicSpaces(): Promise<PublicSpace[]>;
   getPublicSpace(id: string): Promise<PublicSpace | null>;
+
+  /**
+   * Record what a practitioner was looking for when nothing suitable came back,
+   * so an empty search is a demand signal rather than a dead end. Reuses the
+   * open space-request capture — the town is required, the space type optional;
+   * no new data model, no reward, no promise beyond "we'll write when one opens".
+   */
+  requestSpace(input: { lookingIn: string; spaceType?: string | null }): Promise<void>;
 
   /**
    * Null unless the caller holds a booking on this space. Separate from
@@ -88,9 +122,80 @@ export interface Repository {
    */
   sendMessage(bookingId: string, body: string): Promise<{ notice: string | null }>;
 
+  /**
+   * Mark the caller's incoming messages on a booking as read. Server-authoritative
+   * (only read_at changes, only on messages addressed to the caller); returns how
+   * many were newly marked, so a no-op is a plain 0.
+   */
+  markMessagesRead(bookingId: string): Promise<number>;
+
+  /**
+   * Unread incoming messages per booking, keyed by booking id — server truth
+   * (the caller's own messages never count). Bookings with none are absent.
+   */
+  unreadMessageCounts(): Promise<Record<string, number>>;
+
+  /**
+   * Report the other party in a booking (App Store Guideline 1.2). The server
+   * derives who the other party is from the booking and records who, which
+   * booking, and why for staff review — never an address, code, or message.
+   */
+  reportBooking(bookingId: string, reason: string): Promise<void>;
+
+  /**
+   * Block the other party in a booking so neither can message the other. The
+   * booking, its records and its access details are untouched — only the chat
+   * closes. A repeat block is a no-op.
+   */
+  blockBookingParty(bookingId: string): Promise<void>;
+
   /* ---------------- standing ---------------- */
 
   getSessionCount(): Promise<number>;
+
+  /**
+   * How many Founding Host spots are still open, derived from real rows.
+   *
+   * Straight from `founding_hosts_remaining()` — a count of hosts who hold a
+   * founding number, subtracted from fifty, never a stored or seeded figure.
+   * Shown to a host who has not earned the status while spots remain.
+   */
+  foundingHostsRemaining(): Promise<number>;
+
+  /**
+   * How many Founding Practitioner spots are still open, derived from real rows.
+   *
+   * Straight from `founding_practitioners_remaining()` — a count of practitioners
+   * who have earned a founding number, subtracted from fifty, never stored or
+   * seeded. Shown to a practitioner who has not earned the status while spots
+   * remain.
+   */
+  foundingPractitionersRemaining(): Promise<number>;
+
+  /* ---------------- referrals ---------------- */
+
+  /**
+   * The caller's own shareable referral code, assigned on first read.
+   *
+   * Server-generated, stable once set, and opaque — it is not the user's id.
+   * The share link is built from it; see lib/referrals.
+   */
+  myReferralCode(): Promise<string>;
+
+  /**
+   * The caller's referrals, as safe status summaries — no referred-host id or
+   * private data. Empty for anyone who has referred nobody.
+   */
+  listReferrals(): Promise<ReferralSummary[]>;
+
+  /**
+   * Lock this account's attribution to the referrer behind `code`.
+   *
+   * Server-authoritative and idempotent: a self-referral, an unknown code, an
+   * already-attributed account, or an account that has already begun hosting is
+   * silently a no-op. Safe to call more than once. No reward is created.
+   */
+  attributeReferral(code: string): Promise<void>;
 
   /**
    * Every cancellation involving this user, either side.
@@ -185,6 +290,15 @@ export interface Repository {
   approveSpace(spaceId: string): Promise<HostSpace>;
 
   startProSubscription(): Promise<Profile>;
+
+  /**
+   * Begin the one-time identity check. Against Stripe this opens a hosted
+   * Identity session — a government ID and a selfie, which we never see — and
+   * hands the practitioner to it. The verified state is written only by the
+   * webhook, so this never marks anyone verified; it just opens the form. When
+   * the practitioner is already verified it resolves without leaving the app.
+   */
+  startIdentityVerification(): Promise<Profile>;
 
   /**
    * Begins payout onboarding. Against Stripe this creates an Express account

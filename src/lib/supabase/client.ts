@@ -42,6 +42,11 @@ export function supabaseBrowser(): SupabaseClient {
           persistSession: true,
           autoRefreshToken: true,
           detectSessionInUrl: false,
+          // PKCE, not the supabase-js default 'implicit'. Native OAuth returns a
+          // `code` via the deep link, which exchangeCodeForSession trades for a
+          // session using the verifier this stores in localStorage. The web uses
+          // @supabase/ssr, which is PKCE already, so only native needs saying.
+          flowType: "pkce",
         },
       })
     : createBrowserClient(supabaseUrl(), supabasePublishableKey());

@@ -52,6 +52,14 @@ const BROWSE_ZOOM = ADDRESS_ZOOM - 3;
 const MIN_ZOOM = 9;
 const MAX_ZOOM = ADDRESS_ZOOM;
 
+/**
+ * Where the map opens when there is nothing to anchor it to — no listings yet
+ * and no shared location. The middle of the service area (San Mateo, on the
+ * peninsula), so a first-time or empty view shows the region the app covers
+ * rather than a blank square.
+ */
+const FALLBACK_CENTRE: LatLng = { lat: 37.563, lng: -122.3255 };
+
 /** Past this, a press was a drag and must not also count as a tap on a pin. */
 const DRAG_SLOP = 6;
 
@@ -113,7 +121,9 @@ export function BrowseMap({
   /** Where the map opens: the practitioner when known, otherwise the listings. */
   const home = useMemo<LatLng | null>(() => {
     if (you) return you;
-    if (pins.length === 0) return null;
+    // No listings and no shared location: fall back to the service area so the
+    // map shows the region rather than an empty square.
+    if (pins.length === 0) return FALLBACK_CENTRE;
 
     return {
       lat: pins.reduce((sum, p) => sum + p.point.lat, 0) / pins.length,

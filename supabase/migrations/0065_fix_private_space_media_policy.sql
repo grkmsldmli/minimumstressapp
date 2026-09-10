@@ -1,0 +1,26 @@
+-- Remove the broken 0064 space-media read policy; do not replace it.
+--
+-- 0064 made the bucket private and added a storage.objects read policy that
+-- authorised by listing. That approach cannot work: to know whether a path's
+-- listing is active or owned, the policy has to subquery `spaces`, and a
+-- subquery inside a storage policy is subject to `spaces`' own RLS — which is
+-- host-owner-only. 0017 already documented that querying `spaces` from a storage
+-- policy was observed to fail; 0064 hit the same wall (and its check compared a
+-- space id to the host path segment, so it matched nothing at all).
+--
+-- So listing media is no longer read straight from storage by the client.
+-- Reads go through an authenticated server route (/api/spaces/media/sign) which,
+-- with the service role, checks database truth — the media row exists and its
+-- space is active, or owned by the caller — and returns short-lived signed URLs
+-- only for the paths the caller may see. The service role bypasses RLS, so no
+-- storage.objects SELECT policy is needed for the app to read media at all.
+--
+-- This migration therefore only drops the broken policy. No owner read policy is
+-- added: the host's own media is read through the same server route (it checks
+-- ownership), so an owner storage policy would be dead — every app read is
+-- server-signed. The bucket stays private, anon keeps no read policy, and the
+-- host insert/update/delete policies from 0017 are untouched.
+--
+-- Idempotent: dropping an absent policy is a no-op.
+
+drop policy if exists "space-media: read active listings or own" on storage.objects;

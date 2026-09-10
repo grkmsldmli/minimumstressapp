@@ -3,7 +3,10 @@
 import { useState } from "react";
 import {
   ArrowLeft,
+  Award,
   Bell,
+  Check,
+  Copy,
   MessageCircle,
   Building2,
   ChevronRight,
@@ -13,6 +16,7 @@ import {
   ShieldAlert,
   ShieldCheck,
   User,
+  Users,
   Wallet,
 } from "lucide-react";
 
@@ -20,21 +24,35 @@ import { AccountBadge } from "@/components/account-badge";
 import { DeleteAccount } from "@/components/delete-account";
 import { DocumentStatus } from "@/components/document-status";
 import { EmergencyContactCard } from "@/components/emergency-contact";
-import { BadgeCard } from "@/components/badge-card";
-import { MilestoneCard } from "@/components/milestone-card";
+import { PullToRefresh } from "@/components/pull-to-refresh";
 import { Ambient, Headline, LogoBadge } from "@/components/brand";
+import { PractitionerTrustSummary } from "@/components/practitioner-trust";
 import { PrimaryButton } from "@/components/primitives";
 import { RequestQueue } from "@/components/request-queue";
 import { StandingNotice } from "@/components/standing-notice";
 import { WeekSchedule } from "@/components/week-schedule";
 import type { AvailabilityBlock } from "@/lib/availability";
-import type { BookingRequest, HostBooking, HostSpace, Profile } from "@/lib/domain";
+import type {
+  BookingRequest,
+  HostBooking,
+  HostSpace,
+  Profile,
+  ReferralSummary,
+} from "@/lib/domain";
 import { errorMessage } from "@/lib/error-message";
 import { formatCents } from "@/lib/money";
 import { PAYOUT_DELAY_DAYS, describeSpeed } from "@/lib/payouts";
 import type { Standing } from "@/lib/reliability";
 import type { MilestoneKey } from "@/lib/milestones";
 import { claimWindowEndsAt } from "@/lib/claims";
+import { FOUNDING_HOST_LABEL, foundingSpotsRemainingLabel } from "@/lib/founding";
+import { hostAchievementProgress } from "@/lib/host-achievements";
+import {
+  REFERRAL_STATUS_LABEL,
+  referralLink,
+  rewardLabel,
+  rewardsSummaryLabel,
+} from "@/lib/referrals";
 import { HOST_TERMS_VERSION, hasAcceptedHostTerms } from "@/lib/host-terms";
 import { listingGaps } from "@/lib/listing-quality";
 import { FALLBACK_ZONE, zoneAbbreviation } from "@/lib/timezone";
@@ -57,6 +75,264 @@ function spacesSummary(spaces: HostSpace[]): string {
 }
 
 /* ------------------------------------------------------------------ */
+/*  Recognition — Founding 50 and session milestones                   */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Founding status and session milestones, on the host's own dashboard.
+ *
+ * Everything here is read from server-derived numbers passed in — the host's
+ * founding place, the real spots remaining, their completed-and-paid session
+ * count. Nothing is set from the client, and there is no manufactured urgency:
+ * the Founding line appears only for a host who has earned it or while real
+ * spots remain, and the milestone line reads as calm progress from the very
+ * first session. Recognition, not a scoreboard.
+ */
+function HostRecognition({
+  foundingNumber,
+  foundingRemaining,
+  completedSessions,
+}: {
+  foundingNumber: number | null;
+  foundingRemaining: number;
+  completedSessions: number;
+}) {
+  // Earned Founding Host is shown inline in the studio hero now, not here, so
+  // this section only carries the invitation — and only to a host who has not
+  // earned it while real spots remain.
+  const showFoundingPrompt = foundingNumber === null && foundingRemaining > 0;
+  const progress = hostAchievementProgress(completedSessions);
+
+  // The bar fills from the last milestone to the next, so it reads as distance
+  // covered rather than a raw count. Before the first milestone it fills toward
+  // First Booking; once the top is earned it is simply full.
+  const floor = progress.earned?.at ?? 0;
+  const ceiling = progress.next?.at ?? progress.earned?.at ?? 1;
+  const span = Math.max(1, ceiling - floor);
+  const filled = Math.min(1, Math.max(0, (completedSessions - floor) / span));
+
+  return (
+    <div className="mb-5 flex flex-col gap-2.5">
+      {showFoundingPrompt && (
+        <div
+          className="rounded-2xl p-4"
+          style={{ backgroundColor: "#F4F8FC", border: "1px solid #E7EEF6" }}
+        >
+          <p
+            className="font-body font-semibold text-[11px] uppercase tracking-[0.22em]"
+            style={{ color: "#5B7A9C" }}
+          >
+            Founding 50 · Bay Area
+          </p>
+          <p className="font-display italic font-semibold text-[19px] text-navy mt-1.5">
+            {foundingSpotsRemainingLabel(foundingRemaining)}
+          </p>
+          <p className="font-body font-normal text-[13.5px] leading-relaxed text-ink-soft mt-1">
+            Bring your first listing live to claim one of the fifty — a
+            permanent place, not a discount.
+          </p>
+        </div>
+      )}
+
+      <div
+        className="rounded-2xl p-4"
+        style={{ backgroundColor: "#fff", border: "1px solid #E7EEF6" }}
+      >
+        <div className="flex items-center justify-between">
+          <p className="font-body font-semibold text-[11px] uppercase tracking-[0.22em] text-sky-text">
+            Achievements
+          </p>
+          {progress.earned && (
+            <span className="flex items-center gap-1.5">
+              <Award size={13} color="#2E7CC4" />
+              <span className="font-body font-medium text-[13px] text-navy">
+                {progress.earned.label}
+              </span>
+            </span>
+          )}
+        </div>
+
+        <p className="font-body font-normal text-[14.5px] text-navy mt-2.5">
+          {completedSessions === 0 ? (
+            "No completed sessions yet — your first earns First Booking."
+          ) : (
+            <>
+              <span className="font-semibold">
+                {completedSessions.toLocaleString()}
+              </span>{" "}
+              completed {completedSessions === 1 ? "session" : "sessions"}
+            </>
+          )}
+        </p>
+
+        {progress.next && progress.toNext !== null && (
+          <>
+            <div
+              className="h-1.5 rounded-full mt-3 overflow-hidden"
+              style={{ backgroundColor: "#EDF3F9" }}
+            >
+              <div
+                className="h-full rounded-full"
+                style={{
+                  width: `${Math.round(filled * 100)}%`,
+                  backgroundColor: "#3B9BE8",
+                }}
+              />
+            </div>
+            <p className="font-body font-normal text-[13px] text-ink-soft mt-2">
+              {progress.toNext} {progress.toNext === 1 ? "session" : "sessions"} to{" "}
+              {progress.next.label}
+            </p>
+          </>
+        )}
+        {!progress.next && progress.earned && (
+          <p className="font-body font-normal text-[13px] text-ink-soft mt-2">
+            You have reached every milestone — a room a great many people count on.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Referrals                                                          */
+/* ------------------------------------------------------------------ */
+
+/**
+ * A host's referral area — share a link, watch factual progress.
+ *
+ * Deliberately quiet: a link to copy, a count, and one line per referred host
+ * showing only how far they have got. There is no money here — no "earned", no
+ * amount, no balance — because the economics are a later, unapproved package.
+ * The referred host is never named; each row is a neutral "Referred host", so a
+ * referrer learns progress and nothing private. All of it is server-derived.
+ */
+function HostReferrals({
+  referralCode,
+  referrals,
+}: {
+  referralCode: string;
+  referrals: ReferralSummary[];
+}) {
+  const [copied, setCopied] = useState(false);
+
+  // Nothing to share yet (a code has not been assigned) — say nothing rather
+  // than render an empty control.
+  if (!referralCode) return null;
+
+  const link = referralLink(referralCode);
+  const qualified = referrals.filter((r) => r.status === "qualified").length;
+  // Real ledger total, or null when nothing has been earned. Never a stored
+  // balance, and never says "paid" — no payout has run.
+  const rewardsSummary = rewardsSummaryLabel(referrals);
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch {
+      // Clipboard blocked (older webview, denied permission) — the code is on
+      // screen to copy by hand, so this is a convenience, not a dependency.
+    }
+  };
+
+  return (
+    <div
+      className="mb-5 rounded-2xl p-4"
+      style={{ backgroundColor: "#fff", border: "1px solid #E7EEF6" }}
+    >
+      <div className="flex items-center justify-between">
+        <p className="font-body font-semibold text-[11px] uppercase tracking-[0.22em] text-sky-text">
+          Refer a host
+        </p>
+        <span className="flex items-center gap-1.5 text-ink-soft">
+          <Users size={13} />
+          <span className="font-body font-medium text-[13px]">
+            {referrals.length} referred
+          </span>
+        </span>
+      </div>
+
+      {/*
+        The real earned total, shown only when there is one. Factual and calm —
+        no balance, no "paid", because no payout has been sent.
+      */}
+      {rewardsSummary && (
+        <p className="font-display italic font-semibold text-[19px] text-navy mt-2">
+          {rewardsSummary}
+        </p>
+      )}
+
+      <p className="font-body font-normal text-[13.5px] leading-relaxed text-ink-soft mt-2">
+        Share your link with someone who has a space. It follows them from sign-up
+        to their first completed session. A qualified referral earns you $25.
+      </p>
+
+      <div
+        className="flex items-center gap-2 mt-3 rounded-xl px-3 py-2.5"
+        style={{ backgroundColor: "#F4F8FC", border: "1px solid #E7EEF6" }}
+      >
+        <span className="font-mono text-[13px] text-navy truncate flex-1" title={link}>
+          {referralCode}
+        </span>
+        <button
+          type="button"
+          onClick={() => void copy()}
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg font-body font-medium text-[13px] press shrink-0"
+          style={{ backgroundColor: copied ? "#E3F0E6" : "#E3F0FB", color: copied ? "#2E7D46" : "#2E7CC4" }}
+        >
+          {copied ? <Check size={13} /> : <Copy size={13} />}
+          {copied ? "Copied" : "Copy link"}
+        </button>
+      </div>
+
+      {referrals.length > 0 && (
+        <ul className="flex flex-col mt-3.5">
+          {referrals.map((r, i) => (
+            <li
+              key={r.id}
+              className="flex items-center justify-between py-2.5"
+              style={{ borderTop: i === 0 ? "none" : "1px solid #EEF3F8" }}
+            >
+              <span className="font-body font-normal text-[14px] text-navy">Referred host</span>
+              <span className="flex items-center gap-2">
+                {/*
+                  The reward, only once the referral has qualified. "paid" is
+                  shown only if the server marks it paid — otherwise it is earned.
+                */}
+                {r.rewardCents > 0 && (
+                  <span className="font-body font-medium text-[12.5px] text-navy">
+                    {rewardLabel(r.rewardCents)}
+                    {r.rewardState === "paid" ? " · paid" : ""}
+                  </span>
+                )}
+                <span
+                  className="font-body font-medium text-[12.5px] px-2.5 py-1 rounded-full"
+                  style={
+                    r.status === "qualified"
+                      ? { backgroundColor: "#EEF4FA", color: "#2E7CC4" }
+                      : { backgroundColor: "#F1F4F8", color: "#5B7A9C" }
+                  }
+                >
+                  {REFERRAL_STATUS_LABEL[r.status]}
+                </span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {qualified > 0 && (
+        <p className="font-body font-normal text-[12.5px] text-ink-faint mt-2">
+          {qualified} qualified — {qualified === 1 ? "a referred host has" : "referred hosts have"} completed a first paid session.
+        </p>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /*  Host dashboard                                                     */
 /* ------------------------------------------------------------------ */
 
@@ -64,6 +340,7 @@ export function HostDashboard({
   spaces,
   bookings,
   requests,
+  onRefresh,
   onAnswerRequest,
   onAddSpace,
   onEditHours,
@@ -78,11 +355,19 @@ export function HostDashboard({
   onMessageBooking,
   hostTermsVersion,
   hostTermsAcceptedAt,
+  foundingNumber,
+  foundingRemaining,
+  completedSessions,
+  referralCode,
+  referrals,
+  unreadFor,
 }: {
   spaces: HostSpace[];
   bookings: HostBooking[];
   /** Waiting on the host. Empty on every listing that books instantly. */
   requests: BookingRequest[];
+  /** Pull-to-refresh: re-fetches host bookings, requests, and listings in place. */
+  onRefresh: () => Promise<unknown> | unknown;
   /**
    * The Host Terms this host has accepted, and when — from their profile. Null
    * on an account that has never accepted (an existing host from before the
@@ -111,6 +396,23 @@ export function HostDashboard({
   onReportProblem?: (bookingId: string) => void;
   /** Opens the thread for a booking. */
   onMessageBooking?: (bookingId: string) => void;
+  /**
+   * Founding Host status and progress, all server-derived.
+   *
+   * `foundingNumber` is this host's place in the fifty, or null if they are not
+   * one — read from their profile, which the client can never write.
+   * `foundingRemaining` is the real count of spots still open.
+   * `completedSessions` is their completed-and-paid session total, the number
+   * the achievement ladder is read from.
+   */
+  foundingNumber: number | null;
+  foundingRemaining: number;
+  completedSessions: number;
+  /** This host's shareable referral code, and their referrals as safe summaries. */
+  referralCode: string;
+  referrals: ReferralSummary[];
+  /** Unread incoming messages for a booking, for the message badge. */
+  unreadFor?: (bookingId: string) => number;
 }) {
   /*
    * A host's bookings are for their own rooms, so the hour belongs on the
@@ -131,6 +433,9 @@ export function HostDashboard({
 
   const pending = active.status === "pending";
   const hidden = active.status === "delisted";
+  // Server-derived, same source the recognition section reads. Shown inline in
+  // the hero rather than as its own card — see the note where it renders.
+  const isFoundingHost = foundingNumber !== null;
   const spaceBookings = bookings.filter((b) => b.spaceId === active.id);
 
   /**
@@ -167,70 +472,77 @@ export function HostDashboard({
     .reduce((sum, b) => sum + b.netCents, 0);
   const hoursFilled = spaceBookings.filter((b) => b.status === "completed").length;
 
-  return (
-    <div className="h-full flex flex-col screen-in bg-white">
-      <div
-        className="px-6 pt-8 pb-16 relative rounded-b-[30px] overflow-hidden shrink-0"
-        style={{ background: "radial-gradient(140% 120% at 15% 0%, #1E4066 0%, #16304E 85%)" }}
-      >
-        <Ambient />
-        {/*
-          No back button. This is the host's root screen and there is nothing
-          behind it — the browse screen belongs to the other side of the
-          marketplace, so the guard bounced straight back here and the button
-          did nothing every time it was pressed.
-        */}
-        <div className="flex items-center justify-between mb-4 relative z-10">
-          <LogoBadge size={30} />
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={onAddSpace}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-full font-body font-medium text-[15px] press text-white"
-              style={{ backgroundColor: "rgba(255,255,255,0.14)" }}
-            >
-              <Plus size={13} /> Add space
-            </button>
-            <button
-              type="button"
-              onClick={onGoNotifications}
-              aria-label="What we've sent you"
-              className="w-9 h-9 rounded-full flex items-center justify-center press relative"
-              style={{ backgroundColor: "rgba(255,255,255,0.14)" }}
-            >
-              <Bell size={15} color="#fff" />
-              {/*
-                A dot only for a message that never arrived. A host who missed
-                the alert about a booking is the whole reason this exists.
-              */}
-              {undeliveredCount > 0 && (
-                <span
-                  className="absolute rounded-full"
-                  style={{
-                    top: 1,
-                    right: 1,
-                    width: 8,
-                    height: 8,
-                    backgroundColor: "#F2695C",
-                    border: "1.5px solid #16304E",
-                  }}
-                />
-              )}
-            </button>
-            <button
-              type="button"
-              onClick={onOpenProfile}
-              aria-label="Host profile"
-              className="w-9 h-9 rounded-full flex items-center justify-center press"
-              style={{ backgroundColor: "rgba(255,255,255,0.14)" }}
-            >
-              <User size={15} color="#fff" />
-            </button>
-          </div>
+  // The whole navy hero is one continuous block — the app row plus the studio
+  // context (space tabs, name, rate, address) — that scrolls away together
+  // inside the one scroll container so the calendar gets most of the screen. It
+  // is handed to PullToRefresh as its `header`, so the paw reveals directly
+  // below the studio context, not above the app row. `-mx-6` makes it full-bleed
+  // inside the px-6 scroll containers below.
+  const NAVY_HOST = "radial-gradient(140% 120% at 15% 0%, #1E4066 0%, #16304E 85%)";
+  const hero = (
+    <div
+      className="-mx-6 px-6 pt-8 pb-7 rounded-b-[30px] relative overflow-hidden shrink-0"
+      style={{ background: NAVY_HOST }}
+    >
+      <Ambient />
+      {/*
+        No back button. This is the host's root screen and there is nothing
+        behind it — the browse screen belongs to the other side of the
+        marketplace, so the guard bounced straight back here and the button
+        did nothing every time it was pressed.
+      */}
+      <div className="flex items-center justify-between relative z-10">
+        <LogoBadge size={30} />
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onAddSpace}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-full font-body font-medium text-[15px] press text-white"
+            style={{ backgroundColor: "rgba(255,255,255,0.14)" }}
+          >
+            <Plus size={13} /> Add space
+          </button>
+          <button
+            type="button"
+            onClick={onGoNotifications}
+            aria-label="What we've sent you"
+            className="w-9 h-9 rounded-full flex items-center justify-center press relative"
+            style={{ backgroundColor: "rgba(255,255,255,0.14)" }}
+          >
+            <Bell size={15} color="#fff" />
+            {/*
+              A dot only for a message that never arrived. A host who missed
+              the alert about a booking is the whole reason this exists.
+            */}
+            {undeliveredCount > 0 && (
+              <span
+                className="absolute rounded-full"
+                style={{
+                  top: 1,
+                  right: 1,
+                  width: 8,
+                  height: 8,
+                  backgroundColor: "#F2695C",
+                  border: "1.5px solid #16304E",
+                }}
+              />
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={onOpenProfile}
+            aria-label="Host profile"
+            className="w-9 h-9 rounded-full flex items-center justify-center press"
+            style={{ backgroundColor: "rgba(255,255,255,0.14)" }}
+          >
+            <User size={15} color="#fff" />
+          </button>
         </div>
+      </div>
 
+      <div className="mt-6 relative z-10">
         {spaces.length > 1 && (
-          <div className="flex gap-2 mb-3 overflow-x-auto no-scrollbar relative z-10">
+          <div className="flex gap-2 mb-3 overflow-x-auto no-scrollbar">
             {spaces.map((space) => (
               <button
                 key={space.id}
@@ -244,46 +556,61 @@ export function HostDashboard({
               >
                 {space.name}
                 {space.status === "pending" && (
-                  <span
-                    className="w-1.5 h-1.5 rounded-full"
-                    style={{ backgroundColor: "#F2A79E" }}
-                  />
+                  <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: "#F2A79E" }} />
                 )}
               </button>
             ))}
           </div>
         )}
 
-        <div className="flex items-center gap-2 relative z-10">
+        <div className="flex items-center gap-2">
           <p className="font-body font-semibold text-[12px] uppercase tracking-[0.2em] text-sky-soft">
             Host studio
           </p>
           <AccountBadge accountType="host" tone="dark" />
         </div>
-        <div className="mt-1 relative z-10">
+        {/*
+          Founding Host reads here, in the metadata above the studio name, as a
+          quiet one-line status rather than the large card it used to be — the
+          award mark and two words, no container. It stays secondary to the
+          title below it, and appears nowhere else on the screen.
+        */}
+        {isFoundingHost && (
+          <div className="flex items-center gap-1.5 mt-2">
+            <Award size={13} color="#EBD9A8" />
+            <span className="font-body font-medium text-[12.5px] text-white/80">
+              {FOUNDING_HOST_LABEL}
+            </span>
+          </div>
+        )}
+        <div className="mt-1">
           <Headline pre={`${active.name} —`} accent={roomTypeFor(active.category)} size={23} light />
         </div>
-        <p className="font-body font-normal text-[14px] text-white/65 mt-1 relative z-10">
+        <p className="font-body font-normal text-[14px] text-white/65 mt-1">
           {pending
             ? "Under review — usually same day"
             : `${formatCents(active.hourlyRateCents)} an hour, yours in full`}
         </p>
         {/*
-          The address, on the host's own screen. It is withheld from
-          practitioners until they have booked, but this is the owner looking
-          at their own listing, and a host with several rooms needs to see
-          which one they are reading.
+          The address, on the host's own screen. It is withheld from practitioners
+          until they have booked, but this is the owner looking at their own
+          listing, and a host with several rooms needs to see which one they read.
         */}
         {active.addressLine && (
-          <p className="font-body font-normal text-[13.5px] text-white/45 mt-1 relative z-10">
+          <p className="font-body font-normal text-[13.5px] text-white/45 mt-1">
             {active.addressLine}
           </p>
         )}
       </div>
+    </div>
+  );
 
+  return (
+    <div className="h-full flex flex-col screen-in bg-white">
       {pending ? (
-        <div className="flex-1 overflow-y-auto px-6 pt-8 pb-8">
-          <div className="flex flex-col items-center text-center">
+        <div className="flex-1 overflow-y-auto px-6 pb-8">
+          {hero}
+          <div className="flex flex-col items-center text-center mt-6">
             <div
               className="w-14 h-14 rounded-full flex items-center justify-center mb-4"
               style={{ backgroundColor: "#FEF2F0" }}
@@ -325,64 +652,41 @@ export function HostDashboard({
           </button>
         </div>
       ) : (
-        <>
+        <PullToRefresh header={hero} className="flex-1 px-6 pb-8" onRefresh={onRefresh}>
           {/*
-          Said on the dashboard, not only in the list.
-
-          A host whose space is hidden used to come back to a screen that
-          looked entirely normal — no bookings, and nothing anywhere to explain
-          why. The switch that caused it was three taps inside Edit, so it was
-          also the last place anybody would look.
-        */}
-        {hidden && (
-          <div
-            className="rounded-xl p-4 mb-3"
-            style={{ backgroundColor: "#F1F3F6", border: "1px solid #DDE3EA" }}
-          >
-            <p className="font-body font-medium text-[14.5px] text-navy">This space is hidden</p>
-            <p className="font-body font-normal text-[14px] leading-relaxed mt-1 text-ink-soft">
-              Nobody can find or book it. Bookings already made are untouched — you can put it
-              back from Your spaces.
-            </p>
-          </div>
-        )}
-
-        <div className="px-6 -mt-9 shrink-0">
-            <button
-              type="button"
-              onClick={onOpenEarnings}
-              className="w-full text-left rounded-[22px] p-5 grid grid-cols-2 gap-5 bg-white press"
-              style={{
-                boxShadow: "0 18px 40px -18px rgba(22,48,78,0.3)",
-                border: "1px solid #E7EEF6",
-              }}
+            Said on the dashboard, not only in the list. A host whose space is
+            hidden used to come back to a screen that looked entirely normal —
+            no bookings, and nothing to explain why.
+          */}
+          {hidden && (
+            <div
+              className="rounded-xl p-4 mt-3 mb-3"
+              style={{ backgroundColor: "#F1F3F6", border: "1px solid #DDE3EA" }}
             >
-              <div>
-                <p className="font-body text-[12px] uppercase tracking-wide text-ink-faint">
-                  This month
-                </p>
-                <p className="font-display italic font-semibold text-[26px] mt-1 text-navy">
-                  {formatCents(monthCents)}
-                </p>
-                <p className="font-body text-[13.5px] mt-0.5 flex items-center gap-1 text-sky-text">
-                  View earnings <ChevronRight size={11} />
-                </p>
-              </div>
-              <div>
-                <p className="font-body text-[12px] uppercase tracking-wide text-ink-faint">
-                  Hours booked
-                </p>
-                <p className="font-display italic font-semibold text-[26px] mt-1 text-navy">
-                  {hoursFilled}
-                </p>
-                <p className="font-body font-normal text-[13.5px] mt-0.5 text-ink-faint">
-                  {hoursFilled === 0 ? "Nothing booked yet" : "So far this month"}
-                </p>
-              </div>
-            </button>
-          </div>
+              <p className="font-body font-medium text-[14.5px] text-navy">This space is hidden</p>
+              <p className="font-body font-normal text-[14px] leading-relaxed mt-1 text-ink-soft">
+                Nobody can find or book it — you can put it back from Your spaces.
+              </p>
+            </div>
+          )}
+            {/*
+              Recognition first, right under the studio hero. Founding status and
+              milestones are the host's own standing — part of who they are here,
+              not something read past a large earnings card. The monthly summary
+              now sits at the foot of the screen instead.
+            */}
+            <HostRecognition
+              foundingNumber={foundingNumber}
+              foundingRemaining={foundingRemaining}
+              completedSessions={completedSessions}
+            />
 
-          <div className="flex-1 overflow-y-auto px-6 pt-6 pb-8">
+            {/*
+              Referrals sit with the host's other standing — a quiet share area,
+              not a task. Shown once regardless of the active space tab.
+            */}
+            <HostReferrals referralCode={referralCode} referrals={referrals} />
+
             <Unfinished space={active} onEdit={() => onEditSpace(active.id)} />
 
             {/*
@@ -457,6 +761,7 @@ export function HostDashboard({
                     timeZone={zoneOf(booking.spaceId)}
                     index={i}
                     onMessage={onMessageBooking ? () => onMessageBooking(booking.id) : undefined}
+                    unread={unreadFor?.(booking.id) ?? 0}
                   />
                 ))}
               </div>
@@ -487,9 +792,47 @@ export function HostDashboard({
               </>
             )}
 
+            {/*
+              Earnings, at the foot and compact. Same two figures and the same
+              "View earnings" tap as before — just no longer the first, largest
+              thing under the hero. Reduced padding, smaller numbers, and a short
+              empty state so it never takes more room than it earns.
+            */}
+            <button
+              type="button"
+              onClick={onOpenEarnings}
+              className="w-full text-left rounded-2xl p-3.5 grid grid-cols-2 gap-4 bg-white press mt-7"
+              style={{
+                boxShadow: "0 10px 26px -18px rgba(22,48,78,0.28)",
+                border: "1px solid #E7EEF6",
+              }}
+            >
+              <div>
+                <p className="font-body text-[11px] uppercase tracking-wide text-ink-faint">
+                  This month
+                </p>
+                <p className="font-display italic font-semibold text-[21px] mt-0.5 text-navy">
+                  {formatCents(monthCents)}
+                </p>
+                <p className="font-body text-[13px] mt-0.5 flex items-center gap-1 text-sky-text">
+                  View earnings <ChevronRight size={11} />
+                </p>
+              </div>
+              <div>
+                <p className="font-body text-[11px] uppercase tracking-wide text-ink-faint">
+                  Hours booked
+                </p>
+                <p className="font-display italic font-semibold text-[21px] mt-0.5 text-navy">
+                  {hoursFilled}
+                </p>
+                <p className="font-body font-normal text-[13px] mt-0.5 text-ink-faint">
+                  {hoursFilled === 0 ? "None yet" : "So far this month"}
+                </p>
+              </div>
+            </button>
+
             <HostLegalCard version={hostTermsVersion} acceptedAt={hostTermsAcceptedAt} />
-          </div>
-        </>
+          </PullToRefresh>
       )}
     </div>
   );
@@ -733,14 +1076,6 @@ export function EditAvailability({
 /*  Earnings                                                           */
 /* ------------------------------------------------------------------ */
 
-/**
- * The federal 1099-K threshold: over $20,000 *and* more than 200 transactions
- * in a calendar year. Both must be true, which is why a host well past the
- * dollar figure on a handful of long bookings still gets no form.
- */
-const FORM_1099K_DOLLARS = 20_000;
-const FORM_1099K_TRANSACTIONS = 200;
-
 export function Earnings({
   spaces,
   bookings,
@@ -761,9 +1096,6 @@ export function Earnings({
   // total by three and called it year-to-date, which invented money on the
   // screen a host uses for their tax records.
   const yearCents = thisYear.reduce((sum, b) => sum + b.netCents, 0);
-
-  const meets1099K =
-    yearCents >= FORM_1099K_DOLLARS * 100 && thisYear.length >= FORM_1099K_TRANSACTIONS;
 
   const nameFor = (spaceId: string) => spaces.find((s) => s.id === spaceId)?.name ?? "Space";
   /*
@@ -833,7 +1165,15 @@ export function Earnings({
           Transaction history
         </p>
         {thisYear.length === 0 ? (
-          <p className="font-body font-normal text-[14px] text-ink-faint">Nothing paid out yet.</p>
+          <div
+            className="rounded-2xl p-4"
+            style={{ backgroundColor: "#F4F8FC", border: "1px solid #E7EEF6" }}
+          >
+            <p className="font-body font-medium text-[14.5px] text-navy">No payouts yet</p>
+            <p className="font-body font-normal text-[13.5px] leading-relaxed mt-1 text-ink-faint">
+              Your payout history will appear here.
+            </p>
+          </div>
         ) : (
           <div className="flex flex-col gap-2">
             {thisYear.map((booking) => (
@@ -866,24 +1206,37 @@ export function Earnings({
           className="rounded-2xl p-4"
           style={{ backgroundColor: "#F4F8FC", border: "1px solid #E7EEF6" }}
         >
-          <p className="font-body font-normal text-[14px] leading-relaxed text-ink-muted">
-            {meets1099K
-              ? `You've passed $${FORM_1099K_DOLLARS.toLocaleString()} across ${FORM_1099K_TRANSACTIONS}+ bookings this year, so a 1099-K will be issued automatically at year-end.`
-              : `A 1099-K is issued only above $${FORM_1099K_DOLLARS.toLocaleString()} and ${FORM_1099K_TRANSACTIONS} bookings in a year — both, not either. You're at ${formatCents(yearCents)} across ${thisYear.length}, so no form is due. Your state may set a lower threshold.`}
+          {/*
+            Only whether a document is available, not the eligibility maths. The
+            screen a host reads for their money should not become a tax form: if
+            a document is ever issued for them, it appears here. State thresholds
+            can differ, which is worth a calm line without a calculation.
+          */}
+          <p className="font-body font-medium text-[14.5px] text-navy">No tax forms available yet</p>
+          <p className="font-body font-normal text-[13.5px] leading-relaxed mt-1 text-ink-faint">
+            If a tax document is issued for your earnings, you&rsquo;ll find it here.
           </p>
-          <button
-            type="button"
-            onClick={exportCsv}
-            disabled={thisYear.length === 0}
-            className="w-full mt-3 py-3 rounded-xl font-body font-medium text-[15px] press"
-            style={{
-              backgroundColor: thisYear.length === 0 ? "#E9F0F7" : "#3B9BE8",
-              color: thisYear.length === 0 ? "#8CA3BD" : "#fff",
-            }}
-          >
-            Download year-to-date CSV
-          </button>
+          <p className="font-body font-normal text-[12.5px] leading-relaxed mt-2 text-ink-faint">
+            Tax reporting requirements may vary by state.
+          </p>
         </div>
+        {/*
+          The CSV is an earnings export, not a tax form, so it sits on its own
+          below the document status rather than inside it — same generation, same
+          disabled-when-empty behaviour as before.
+        */}
+        <button
+          type="button"
+          onClick={exportCsv}
+          disabled={thisYear.length === 0}
+          className="w-full mt-3 py-3 rounded-xl font-body font-medium text-[15px] press"
+          style={{
+            backgroundColor: thisYear.length === 0 ? "#E9F0F7" : "#3B9BE8",
+            color: thisYear.length === 0 ? "#8CA3BD" : "#fff",
+          }}
+        >
+          Download year-to-date CSV
+        </button>
       </div>
     </div>
   );
@@ -911,9 +1264,6 @@ export function HostProfile({
   standing,
   onBack,
   onUpdate,
-  sessions,
-  milestones,
-  milestoneTotal,
   onDeleteAccount,
   onPickAvatar,
   onGoLegal,
@@ -992,31 +1342,23 @@ export function HostProfile({
       />
 
       <div className="flex-1 overflow-y-auto px-6 pt-5 pb-8">
-        {/* Always visible, so it is never a surprise on the day it costs something. */}
-        <div className="mb-6">
-          <StandingNotice party="host" standing={standing} />
-        </div>
-
-        <GroupLabel>Notifications</GroupLabel>
+        <GroupLabel>Hosting</GroupLabel>
         <div className="flex flex-col gap-2.5">
-          <SettingToggle
-            label="New booking alerts"
-            sub="The moment someone books"
-            on={profile.notifyBookings}
-            onToggle={() => onUpdate({ notifyBookings: !profile.notifyBookings })}
-          />
           {/*
-            "Payout alerts — when money lands in your account" once stood here
-            and switched nothing off: SILENCEABLE maps it to `host_payout_sent`,
-            a kind nobody sends. There is no arriving-money email to silence.
-            The only payout mail a host gets is payout_failed — money stuck at
-            their bank — which is never optional, so there is no toggle for it.
-            The switch above is the real one, and gates host_new_booking.
+            The switch that decides whether a space exists for anybody else —
+            hosting, not account admin, so it leads the page. Hiding a space used
+            to live three taps inside Edit.
           */}
+          <ProfileRow
+            icon={Building2}
+            label="Your spaces"
+            value={spacesSummary(spaces)}
+            onClick={onGoSpaces}
+          />
         </div>
 
         <div className="mt-6">
-          <GroupLabel>Payouts</GroupLabel>
+          <GroupLabel>Bookings &amp; payouts</GroupLabel>
         </div>
         <div className="flex flex-col gap-2.5">
           {profile.payoutSetup === "ready" ? (
@@ -1180,44 +1522,39 @@ export function HostProfile({
         </div>
 
         <div className="mt-6">
-          <GroupLabel>Account</GroupLabel>
+          <GroupLabel>Safety &amp; notifications</GroupLabel>
         </div>
         <div className="flex flex-col gap-2.5">
-          {/*
-            Above the legal rows because it is the one somebody comes here for.
-            Hiding a space used to live three taps inside Edit, which is the
-            wrong place: it is not an edit, it is the switch that decides
-            whether the space exists for anybody else.
-          */}
-          <ProfileRow
-            icon={Building2}
-            label="Your spaces"
-            value={spacesSummary(spaces)}
-            onClick={onGoSpaces}
+          <SettingToggle
+            label="New booking alerts"
+            sub="The moment someone books"
+            on={profile.notifyBookings}
+            onToggle={() => onUpdate({ notifyBookings: !profile.notifyBookings })}
           />
-          <ProfileRow icon={ScrollText} label="Terms & privacy" onClick={onGoLegal} />
-          <ProfileRow icon={LogOut} label="Log out" onClick={onSignOut} danger />
-        </div>
-
-        <div className="mt-6 flex flex-col gap-2.5">
           {/*
-            Above the badges, because these are the ones somebody can actually
-            reach this year. badge-card holds itself back until twenty-five
-            sessions and starts counting at a hundred.
+            Asked of both sides. Somebody alone in a stranger's building and
+            somebody letting a stranger into theirs are in the same position.
           */}
-          <MilestoneCard party="host" earned={milestones} total={milestoneTotal} />
-          <BadgeCard party="host" sessions={sessions} />
-        </div>
-
-        {/*
-          Asked of both sides. Somebody alone in a stranger's building and
-          somebody letting a stranger into theirs are in the same position.
-        */}
-        <div className="mt-6">
           <EmergencyContactCard
             contact={profile.emergencyContact}
             onSave={(emergencyContact) => onUpdate({ emergencyContact })}
           />
+        </div>
+
+        {/* Always visible, so it is never a surprise on the day it costs something. */}
+        <div className="mt-6">
+          <GroupLabel>Account standing</GroupLabel>
+        </div>
+        <div className="flex flex-col gap-2.5">
+          <StandingNotice party="host" standing={standing} />
+        </div>
+
+        <div className="mt-6">
+          <GroupLabel>Account &amp; legal</GroupLabel>
+        </div>
+        <div className="flex flex-col gap-2.5">
+          <ProfileRow icon={ScrollText} label="Terms & privacy" onClick={onGoLegal} />
+          <ProfileRow icon={LogOut} label="Log out" onClick={onSignOut} danger />
         </div>
 
         {/* Last, and on its own. Nothing here is undoable except this. */}
@@ -1311,6 +1648,7 @@ function HostBookingRow({
   onReview,
   onReportProblem,
   onMessage,
+  unread = 0,
 }: {
   booking: HostBooking;
   /** The room's zone — the clock this session's hour is written on. */
@@ -1320,6 +1658,8 @@ function HostBookingRow({
   onReview?: () => void;
   onReportProblem?: () => void;
   onMessage?: () => void;
+  /** Unread incoming messages on this booking, for the badge. */
+  unread?: number;
 }) {
   const cancelled = booking.status.startsWith("cancelled");
 
@@ -1348,10 +1688,14 @@ function HostBookingRow({
               {booking.practitionerName}
             </p>
             <p className="font-body font-normal text-[13.5px] text-ink-soft truncate">
-              {booking.practitionerCraft} ·{" "}
+              {booking.practitionerCraft ? `${booking.practitionerCraft} · ` : ""}
               {sessionDate(booking.startsAt, timeZone)}{" "}
               {sessionTime(booking.startsAt, timeZone)}
             </p>
+            {/* The same trust signals, kept to one quiet line here. */}
+            <div className="mt-0.5">
+              <PractitionerTrustSummary trust={booking} compact />
+            </div>
           </div>
         </div>
 
@@ -1381,6 +1725,15 @@ function HostBookingRow({
           style={{ border: "1px solid #DCE7F2", color: "#16304E" }}
         >
           <MessageCircle size={13} /> Message
+          {unread > 0 && (
+            <span
+              className="ml-1 min-w-[18px] h-[18px] px-1 rounded-full flex items-center justify-center font-body font-semibold text-[11px] text-white"
+              style={{ backgroundColor: "#F2695C" }}
+              aria-label={`${unread} unread`}
+            >
+              {unread}
+            </span>
+          )}
         </button>
       )}
 

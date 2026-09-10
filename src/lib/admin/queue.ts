@@ -2,7 +2,7 @@ import { type ClaimKind, claimType, overstayCents } from "../claims";
 import { type RefundReason, questionFor } from "../refunds";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { type Party, THRESHOLDS } from "@/lib/reliability";
+import { type Party, type Standing, standingFor, toCancellationEvents } from "@/lib/reliability";
 
 /**
  * Everything a person needs to run this, in one read.
@@ -39,6 +39,44 @@ export interface OpenEscalation {
   safetyConcern: boolean;
   role: string;
   spaceName: string | null;
+}
+
+/**
+ * A professional's liability certificate waiting to be read.
+ *
+ * The queue that stands between an uploaded file and a bookable professional:
+ * until staff read the window off the certificate and verify it, the booking
+ * gate refuses. Ranked oldest-first, because the person at the top has been
+ * unable to book the longest.
+ */
+export interface PendingInsurance {
+  id: string;
+  email: string | null;
+  displayName: string | null;
+  docPath: string | null;
+  effectiveDate: string | null;
+  expiresAt: string | null;
+  insurer: string | null;
+  policyNumber: string | null;
+  since: string;
+}
+
+/**
+ * A practitioner's professional credential awaiting review. Staff open the
+ * document and verify or reject it by hand. The number and jurisdiction are what
+ * the practitioner typed; the profession is shown so staff know what a valid
+ * credential looks like. Oldest-first, like insurance.
+ */
+export interface PendingCredential {
+  id: string;
+  email: string | null;
+  displayName: string | null;
+  profession: string | null;
+  docPath: string | null;
+  credentialType: string | null;
+  credentialNumber: string | null;
+  credentialJurisdiction: string | null;
+  since: string;
 }
 
 export interface AccountChangeRequest {
@@ -92,6 +130,86 @@ export interface AtRiskAccount {
   suspended: boolean;
 }
 
+/**
+ * A cancelled-booking row, in exactly the columns standing needs.
+ *
+ * The typed boundary between the admin's broad `bookings` read and the
+ * reliability input: the caller maps its rows into this shape once, so nothing
+ * inside `standingByPerson` reaches for a field by an untyped key, and the tests
+ * describe standing in the same shape the production code feeds it.
+ */
+export interface AdminCancellationRow {
+  status: string | null;
+  space_id: string | null;
+  practitioner_id: string | null;
+  captured_at: string | null;
+  cancelled_at: string | null;
+  starts_at: string | null;
+}
+
+/**
+ * Where each person stands, computed the one way the app computes standing.
+ *
+ * The watchlist must count exactly what the profile card and the booking gate
+ * count — not an approximation of it — so this gathers each person's
+ * cancellations and runs them through the shared `toCancellationEvents` (which
+ * drops abandoned checkouts, unpaid holds and other automatic releases, since
+ * they carry no `captured_at`) and `standingFor` (which keeps only the person's
+ * own side and applies the 24-hour "late" line, the 90-day window, and the
+ * per-party thresholds and pause length). A cancellation made in good time is a
+ * real cancellation but not a standing one, and so never lands somebody here.
+ *
+ * The party is not a parameter but a fact of each row: a host cancellation is
+ * charged to the host who owns the space, a practitioner's to the practitioner
+ * who booked, and the right party is handed to `standingFor` per person — which
+ * is what makes one pass serve a watchlist that holds both sides to their own
+ * bar. Pure and separate from the IO so it can be exercised directly.
+ */
+export function standingByPerson(
+  rows: readonly AdminCancellationRow[],
+  spaceHost: Map<string, string>,
+  now: Date,
+): Map<string, { role: Party; standing: Standing }> {
+  const byPerson = new Map<
+    string,
+    {
+      role: Party;
+      rows: {
+        cancelledBy: Party;
+        capturedAt: string | null;
+        cancelledAt: string;
+        sessionStart: string;
+      }[];
+    }
+  >();
+
+  for (const booking of rows) {
+    if (!booking.status?.startsWith("cancelled")) continue;
+    // A real cancellation carries both; without them there is nothing to date
+    // or to judge, so it cannot be a standing event.
+    if (!booking.cancelled_at || !booking.starts_at) continue;
+
+    const role: Party = booking.status === "cancelled_by_host" ? "host" : "practitioner";
+    const who = role === "host" ? spaceHost.get(booking.space_id ?? "") : booking.practitioner_id;
+    if (!who) continue;
+
+    const entry = byPerson.get(who) ?? { role, rows: [] };
+    entry.rows.push({
+      cancelledBy: role,
+      capturedAt: booking.captured_at,
+      cancelledAt: booking.cancelled_at,
+      sessionStart: booking.starts_at,
+    });
+    byPerson.set(who, entry);
+  }
+
+  const standings = new Map<string, { role: Party; standing: Standing }>();
+  for (const [who, { role, rows: personRows }] of byPerson) {
+    standings.set(who, { role, standing: standingFor(role, toCancellationEvents(personRows), now) });
+  }
+  return standings;
+}
+
 /** Anything that happened, whatever kind of thing it was. */
 export interface ActivityEntry {
   id: string;
@@ -142,6 +260,8 @@ export interface ListingRow {
   sessions: number;
   earnedCents: number;
   createdAt: string | null;
+  /** When the listing was closed for good. Null means it is live or merely held. */
+  archivedAt: string | null;
 }
 
 /**
@@ -312,6 +432,9 @@ export interface AdminQueue {
   openDisputes: StaffDispute[];
   escalations: OpenEscalation[];
   pendingListings: PendingListing[];
+  /** Professionals whose liability certificate is waiting to be verified. */
+  pendingInsurance: PendingInsurance[];
+  pendingCredentials: PendingCredential[];
   accountChangeRequests: AccountChangeRequest[];
   unpayableHosts: UnpayableHost[];
 
@@ -404,13 +527,13 @@ export async function loadQueue(admin: SupabaseClient): Promise<AdminQueue> {
     admin
       .from("profiles")
       .select(
-        "id, account_type, display_name, stripe_connect_charges_enabled, created_at, terms_version, emergency_contact_name, emergency_contact_phone, emergency_contact_relationship",
+        "id, account_type, display_name, stripe_connect_charges_enabled, created_at, terms_version, emergency_contact_name, emergency_contact_phone, emergency_contact_relationship, insurance_doc_path, insurance_doc_state, insurance_effective_date, insurance_expires_at, insurance_insurer, insurance_policy_number, insurance_review_note, profession, credential_doc_path, credential_doc_state, credential_type, credential_number, credential_jurisdiction",
       ),
 
     admin
       .from("spaces")
       .select(
-        "id, host_id, name, status, created_at, category, hourly_rate_cents, address_line, description, entrance_access, restroom_access, sublease_doc_state, insurance_doc_state, doc_review_note, review_reason, previous_address_line, updated_at",
+        "id, host_id, name, status, created_at, archived_at, category, hourly_rate_cents, address_line, description, entrance_access, restroom_access, sublease_doc_state, insurance_doc_state, doc_review_note, review_reason, previous_address_line, updated_at",
       ),
 
     /**
@@ -518,34 +641,32 @@ export async function loadQueue(admin: SupabaseClient): Promise<AdminQueue> {
   }
 
   /**
-   * Late cancellations per person, over the window the reliability rules use.
+   * Standing per person, computed the one way the app computes it.
    *
    * Surfaced before somebody is suspended rather than after: a studio two
    * cancellations from losing new bookings is somebody worth a phone call, and
-   * the first anybody hears of it otherwise is the complaint.
+   * the first anybody hears of it otherwise is the complaint. The count is the
+   * shared one — see standingByPerson — so this list, the profile card and the
+   * booking gate never disagree about who is at risk.
    */
-  const lateWindow = new Date(now.getTime() - 90 * DAY_MS);
-  const lateCounts = new Map<string, { count: number; role: string }>();
-
-  for (const booking of rows) {
-    if (!String(booking.status).startsWith("cancelled")) continue;
-    // Same line the practitioner's own standing card uses: a checkout somebody
-    // abandoned is released as a cancellation, and counting those would put
-    // people on this list for closing a tab.
-    if (!booking.captured_at) continue;
-    if (new Date(booking.starts_at as string) < lateWindow) continue;
-
-    const byHost = booking.status === "cancelled_by_host";
-    const who = byHost
-      ? spaceHost.get(booking.space_id as string)
-      : (booking.practitioner_id as string | null);
-    if (!who) continue;
-
-    const entry = lateCounts.get(who) ?? { count: 0, role: byHost ? "host" : "practitioner" };
-    entry.count += 1;
-    lateCounts.set(who, entry);
-    userIds.add(who);
-  }
+  const standings = standingByPerson(
+    // The one place the broad, untyped bookings read is narrowed to the columns
+    // standing needs — a typed adapter rather than reaching into rows by key
+    // inside the helper.
+    rows.map(
+      (r: Record<string, unknown>): AdminCancellationRow => ({
+        status: (r.status as string | null) ?? null,
+        space_id: (r.space_id as string | null) ?? null,
+        practitioner_id: (r.practitioner_id as string | null) ?? null,
+        captured_at: (r.captured_at as string | null) ?? null,
+        cancelled_at: (r.cancelled_at as string | null) ?? null,
+        starts_at: (r.starts_at as string | null) ?? null,
+      }),
+    ),
+    spaceHost,
+    now,
+  );
+  for (const id of standings.keys()) userIds.add(id);
 
   /**
    * Everyone, not only the ids that turned up in a queue.
@@ -558,21 +679,22 @@ export async function loadQueue(admin: SupabaseClient): Promise<AdminQueue> {
   const emails = await emailsFor(admin, [...userIds]);
 
   /**
-   * The published thresholds, not a second copy of them.
+   * The published rule, not a second copy of it.
    *
-   * The two sides are held to different bars on purpose — a host cancellation
-   * is the one nothing makes right, a practitioner's is already paid for — and
-   * a dashboard that invented its own numbers would warn about people the
-   * policy considers fine, and stay silent about people it has suspended.
+   * standingFor applies the two sides' different bars and the 24-hour and 90-day
+   * lines, so a warning here means exactly what a warning means on the person's
+   * own profile and to the booking gate — never a number the dashboard invented.
+   * "warned" is at or past the warning bar, "suspended" is a live pause, and
+   * "clear" is below the bar and stays off the list.
    */
-  const atRisk: AtRiskAccount[] = [...lateCounts.entries()]
-    .filter(([, entry]) => entry.count >= THRESHOLDS[entry.role as Party].warnAt)
-    .map(([id, entry]) => ({
+  const atRisk: AtRiskAccount[] = [...standings.entries()]
+    .filter(([, { standing }]) => standing.level !== "clear")
+    .map(([id, { role, standing }]) => ({
       id,
       email: emails.get(id) ?? null,
-      role: entry.role,
-      lateCancellations: entry.count,
-      suspended: entry.count >= THRESHOLDS[entry.role as Party].suspendAt,
+      role,
+      lateCancellations: standing.lateCancellations,
+      suspended: standing.blocksNewBookings,
     }))
     .sort((a, b) => b.lateCancellations - a.lateCancellations);
 
@@ -846,23 +968,25 @@ export async function loadQueue(admin: SupabaseClient): Promise<AdminQueue> {
     const day = new Date(chartStart.getTime() + i * DAY_MS);
     byDay.set(day.toISOString().slice(0, 10), 0);
   }
-  /*
-   * Money on the same fourteen days as the booking count, so the two charts
-   * line up and a busy day with no revenue — all cancelled, or none captured —
-   * is visible as a gap between them rather than invisible.
-   */
   const moneyDay = new Map<string, { platformCents: number; grossCents: number }>();
   for (const [day] of byDay) moneyDay.set(day, { platformCents: 0, grossCents: 0 });
 
-  for (const booking of rows) {
+  /*
+   * A paid booking is a booking. An abandoned checkout leaves an uncaptured
+   * row — somebody reached the payment sheet and closed the tab — and counting
+   * those drew bars on days nobody actually booked, a chart of tabs opened
+   * rather than sessions sold. So the count comes from the captured rows, the
+   * same ones the money does, and the two charts line up: a day with bookings
+   * but no revenue can only be a day of refunds, not of abandoned checkouts.
+   */
+  for (const booking of paid) {
     const key = new Date(booking.starts_at as string).toISOString().slice(0, 10);
-    if (byDay.has(key)) byDay.set(key, (byDay.get(key) ?? 0) + 1);
+    if (!byDay.has(key)) continue;
+    byDay.set(key, (byDay.get(key) ?? 0) + 1);
 
-    if (booking.captured_at !== null && moneyDay.has(key)) {
-      const bucket = moneyDay.get(key)!;
-      bucket.platformCents += (booking.platform_cents as number) ?? 0;
-      bucket.grossCents += (booking.total_cents as number) ?? 0;
-    }
+    const bucket = moneyDay.get(key)!;
+    bucket.platformCents += (booking.platform_cents as number) ?? 0;
+    bucket.grossCents += (booking.total_cents as number) ?? 0;
   }
 
   return {
@@ -896,6 +1020,52 @@ export async function loadQueue(admin: SupabaseClient): Promise<AdminQueue> {
       createdAt: row.created_at as string,
     })),
 
+    // A professional carries their own certificate, so this reads the profile
+    // rather than the space. Only those with a file uploaded and still awaiting
+    // a decision — a verified or rejected one has already had its moment here.
+    pendingInsurance: (profiles.data ?? [])
+      .filter(
+        (p) =>
+          p.account_type === "practitioner" &&
+          p.insurance_doc_path != null &&
+          ((p.insurance_doc_state as string) ?? "pending") === "pending",
+      )
+      .map((p) => ({
+        id: p.id as string,
+        email: emails.get(p.id as string) ?? null,
+        displayName: (p.display_name as string) ?? null,
+        docPath: (p.insurance_doc_path as string) ?? null,
+        effectiveDate: (p.insurance_effective_date as string) ?? null,
+        expiresAt: (p.insurance_expires_at as string) ?? null,
+        insurer: (p.insurance_insurer as string) ?? null,
+        policyNumber: (p.insurance_policy_number as string) ?? null,
+        since: (p.created_at as string) ?? "",
+      }))
+      .sort((a, b) => a.since.localeCompare(b.since)),
+
+    // The credential parallel to insurance: a practitioner with a document
+    // uploaded and its review still pending. Never the document itself here —
+    // staff open it through a signed link, the same as insurance.
+    pendingCredentials: (profiles.data ?? [])
+      .filter(
+        (p) =>
+          p.account_type === "practitioner" &&
+          p.credential_doc_path != null &&
+          ((p.credential_doc_state as string | null) ?? null) === "pending",
+      )
+      .map((p) => ({
+        id: p.id as string,
+        email: emails.get(p.id as string) ?? null,
+        displayName: (p.display_name as string) ?? null,
+        profession: (p.profession as string) ?? null,
+        docPath: (p.credential_doc_path as string) ?? null,
+        credentialType: (p.credential_type as string) ?? null,
+        credentialNumber: (p.credential_number as string) ?? null,
+        credentialJurisdiction: (p.credential_jurisdiction as string) ?? null,
+        since: (p.created_at as string) ?? "",
+      }))
+      .sort((a, b) => a.since.localeCompare(b.since)),
+
     accountChangeRequests: (changes.data ?? []).map((row) => ({
       id: row.id as string,
       email: emails.get(row.user_id as string) ?? null,
@@ -923,7 +1093,10 @@ export async function loadQueue(admin: SupabaseClient): Promise<AdminQueue> {
       hosts: (profiles.data ?? []).filter((p) => p.account_type === "host").length,
       sessionsThisMonth: thisMonth.length,
       upcomingSessions: rows.filter(
-        (b) => b.status === "upcoming" && new Date(b.starts_at as string) > now,
+        (b) =>
+          b.captured_at !== null &&
+          b.status === "upcoming" &&
+          new Date(b.starts_at as string) > now,
       ).length,
       /*
        * The same question the payout sweep asks, and for the same reason it
@@ -977,7 +1150,7 @@ export async function loadQueue(admin: SupabaseClient): Promise<AdminQueue> {
           joinedAt: (row.created_at as string) ?? null,
           listings: listingCounts.get(id) ?? 0,
           sessions: totals.sessions,
-          lateCancellations: lateCounts.get(id)?.count ?? 0,
+          lateCancellations: standings.get(id)?.standing.lateCancellations ?? 0,
           // Null rather than false for a practitioner, who has nothing to be
           // paid into — an unpaid host is a problem, a practitioner without a
           // payout account is simply how it works.
@@ -1013,6 +1186,7 @@ export async function loadQueue(admin: SupabaseClient): Promise<AdminQueue> {
           sessions: totals.sessions,
           earnedCents: totals.earned,
           createdAt: (row.created_at as string) ?? null,
+          archivedAt: (row.archived_at as string) ?? null,
         };
       })
       .sort((a, b) => b.sessions - a.sessions || (b.createdAt ?? "").localeCompare(a.createdAt ?? "")),
@@ -1027,7 +1201,9 @@ export async function loadQueue(admin: SupabaseClient): Promise<AdminQueue> {
       emails,
     }),
 
-    recent: rows.slice(0, 8).map((row) => ({
+    // Paid, for the same reason the chart is: the recent feed is real bookings,
+    // not checkouts somebody abandoned. `paid` keeps the newest-first order.
+    recent: paid.slice(0, 8).map((row) => ({
       id: row.id as string,
       spaceName: spaceName.get(row.space_id as string) ?? "a space",
       startsAt: row.starts_at as string,

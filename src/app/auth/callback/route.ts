@@ -32,11 +32,23 @@ export async function GET(request: NextRequest): Promise<Response> {
   // supabaseServer sets cookies through the request's own store, which a
   // Route Handler is allowed to write to — unlike a Server Component.
   const supabase = await supabaseServer();
-  const { error } = await supabase.auth.exchangeCodeForSession(code);
+  const { data, error } = await supabase.auth.exchangeCodeForSession(code);
 
   if (error) {
     console.error("OAuth code exchange failed:", error.message);
     return NextResponse.redirect(failureUrl(url.origin, error.message));
+  }
+
+  // A first-ever OAuth sign-in has an auth user but no profiles row yet; the
+  // OTP/password paths upsert one client-side (ensureProfile) but OAuth never
+  // touches the client, so do it here. Upsert is idempotent, so a returning
+  // user is unaffected. A failure here must not strand a signed-in user, so it
+  // is logged and swallowed — their first write would create the row anyway.
+  if (data.user) {
+    const { error: profileError } = await supabase
+      .from("profiles")
+      .upsert({ id: data.user.id }, { onConflict: "id" });
+    if (profileError) console.error("Profile upsert after OAuth failed:", profileError.message);
   }
 
   /**

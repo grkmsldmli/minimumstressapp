@@ -186,7 +186,11 @@ export function proxy(request: NextRequest): NextResponse {
 
   const response =
     onSite && !isSharedPath(pathname)
-      ? NextResponse.rewrite(new URL(`/site${pathname}`, request.url), {
+      ? // The search string is carried across the rewrite, not dropped: a `/site`
+        // page that reads it server-side — the directory filtering on `?type=`,
+        // for one — would otherwise be handed an empty query and silently ignore
+        // the filter, since the rewrite target is an absolute path.
+        NextResponse.rewrite(new URL(`/site${pathname}${request.nextUrl.search}`, request.url), {
           request: { headers },
         })
       : NextResponse.next({ request: { headers } });

@@ -5,6 +5,7 @@ import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-
 import { ArrowLeft, Check, Lock } from "lucide-react";
 
 import { Ambient, Headline } from "@/components/brand";
+import { PawLoader } from "@/components/paw-loader";
 import { PrimaryButton } from "@/components/primitives";
 import type { BookingMoneyRecord } from "@/lib/domain";
 import { cancellationCostCents, earlyCancellationRefundCents, formatCents } from "@/lib/money";
@@ -190,7 +191,15 @@ function SheetBody({
           </div>
         </div>
 
-        <PaymentElement options={{ layout: "tabs" }} />
+        {/*
+          Card is the only method on the intent (see payment-methods.ts), so
+          this keeps the two wallets that ride on it in hand: Apple Pay stays,
+          Google Pay is turned off, leaving Card + Apple Pay. Link is not a
+          wallet here and is governed by the Stripe account, not this option.
+        */}
+        <PaymentElement
+          options={{ layout: "tabs", wallets: { applePay: "auto", googlePay: "never" } }}
+        />
 
         {error && (
           <p
@@ -204,8 +213,18 @@ function SheetBody({
       </div>
 
       <div className="px-6 pt-3 pb-6 shrink-0" style={{ borderTop: "1px solid #F0ECE0" }}>
+        {/*
+          The confirm is a real network wait. The button keeps its exact size and
+          position and stays disabled — only its inner label swaps for the brand's
+          inline paw loader, so nothing shifts when processing begins. Same
+          submit, timing, and success/error paths.
+        */}
         <PrimaryButton disabled={!stripe || busy} onClick={submit}>
-          {busy ? "Paying…" : `Pay ${formatCents(money.totalCents)}`}
+          {busy ? (
+            <PawLoader size={13} inline label="Processing your booking…" />
+          ) : (
+            `Pay ${formatCents(money.totalCents)}`
+          )}
         </PrimaryButton>
         <p className="text-center font-body font-normal text-[12px] mt-2.5 text-ink-faint">
           Card details go straight to Stripe. They never touch our servers.

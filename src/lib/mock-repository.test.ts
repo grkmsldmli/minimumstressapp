@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { MockRepository } from "./mock-repository";
+import { insuranceStatus } from "./insurance";
 import { INSTANT_FEE_CENTS } from "./money";
 
 let repo: MockRepository;
@@ -42,7 +43,7 @@ describe("pricing flows through the money module", () => {
   it("charges the all-in price and pays the host their rate exactly", async () => {
     const spaceId = await firstSpaceId();
     const space = await repo.getPublicSpace(spaceId);
-    const { booking: booking } = await repo.createBooking({ spaceId, startsAt: daysFromNow(3), declared: { purpose: "personal_practice", attendees: 1 } });
+    const { booking: booking } = await repo.createBooking({ spaceId, startsAt: daysFromNow(3), declared: { purpose: "movement_session", attendees: 1 } });
 
     expect(space!.hourlyRateCents).toBe(4500);
     expect(booking.hostRateCents).toBe(4500);
@@ -55,11 +56,11 @@ describe("pricing flows through the money module", () => {
     const spaceId = await firstSpaceId();
 
     const soon = new Date(Date.now() + 30 * 60 * 1000);
-    const { booking: instant } = await repo.createBooking({ spaceId, startsAt: soon, declared: { purpose: "personal_practice", attendees: 1 } });
+    const { booking: instant } = await repo.createBooking({ spaceId, startsAt: soon, declared: { purpose: "movement_session", attendees: 1 } });
     expect(instant.isInstant).toBe(true);
     expect(instant.instantFeeCents).toBe(INSTANT_FEE_CENTS);
 
-    const { booking: later } = await repo.createBooking({ spaceId, startsAt: daysFromNow(2), declared: { purpose: "personal_practice", attendees: 1 } });
+    const { booking: later } = await repo.createBooking({ spaceId, startsAt: daysFromNow(2), declared: { purpose: "movement_session", attendees: 1 } });
     expect(later.isInstant).toBe(false);
     expect(later.instantFeeCents).toBe(0);
   });
@@ -69,13 +70,13 @@ describe("pricing flows through the money module", () => {
     const spaceId = await firstSpaceId();
     const startsAt = new Date(Date.now() + 30 * 60 * 1000);
 
-    const before = await repo.createBooking({ spaceId, startsAt, declared: { purpose: "personal_practice", attendees: 1 } });
+    const before = await repo.createBooking({ spaceId, startsAt, declared: { purpose: "movement_session", attendees: 1 } });
     await repo.cancelBooking(before.booking.id, "practitioner");
 
     await repo.startProSubscription();
     const { booking } = await repo.createBooking({
       spaceId,
-      startsAt: new Date(Date.now() + 90 * 60 * 1000), declared: { purpose: "personal_practice", attendees: 1 } });
+      startsAt: new Date(Date.now() + 90 * 60 * 1000), declared: { purpose: "movement_session", attendees: 1 } });
 
     expect(booking.wasPro).toBe(true);
     expect(booking.proDiscountCents).toBe(0);
@@ -85,7 +86,7 @@ describe("pricing flows through the money module", () => {
 
   it("freezes the price so a later rate change cannot rewrite it", async () => {
     const spaceId = await firstSpaceId();
-    const { booking: booking } = await repo.createBooking({ spaceId, startsAt: daysFromNow(3), declared: { purpose: "personal_practice", attendees: 1 } });
+    const { booking: booking } = await repo.createBooking({ spaceId, startsAt: daysFromNow(3), declared: { purpose: "movement_session", attendees: 1 } });
     const originalTotal = booking.totalCents;
 
     // Whatever happens to the listing afterwards, the booking keeps its quote.
@@ -98,7 +99,7 @@ describe("pricing flows through the money module", () => {
 describe("cancellation", () => {
   it("charges nothing when the practitioner cancels well ahead", async () => {
     const spaceId = await firstSpaceId();
-    const { booking: booking } = await repo.createBooking({ spaceId, startsAt: daysFromNow(3), declared: { purpose: "personal_practice", attendees: 1 } });
+    const { booking: booking } = await repo.createBooking({ spaceId, startsAt: daysFromNow(3), declared: { purpose: "movement_session", attendees: 1 } });
 
     const cancelled = await repo.cancelBooking(booking.id, "practitioner");
 
@@ -109,11 +110,11 @@ describe("cancellation", () => {
 
   it("keeps spent credit when the practitioner cancels late", async () => {
     const spaceId = await firstSpaceId();
-    const { booking: first } = await repo.createBooking({ spaceId, startsAt: daysFromNow(3), declared: { purpose: "personal_practice", attendees: 1 } });
+    const { booking: first } = await repo.createBooking({ spaceId, startsAt: daysFromNow(3), declared: { purpose: "movement_session", attendees: 1 } });
     await repo.cancelBooking(first.id, "host");
 
     const soon = new Date(Date.now() + 45 * 60 * 1000);
-    const { booking: second } = await repo.createBooking({ spaceId, startsAt: soon, declared: { purpose: "personal_practice", attendees: 1 } });
+    const { booking: second } = await repo.createBooking({ spaceId, startsAt: soon, declared: { purpose: "movement_session", attendees: 1 } });
 
     await repo.cancelBooking(second.id, "practitioner");
 
@@ -128,7 +129,7 @@ describe("the address is withheld until there is a booking", () => {
 
   it("releases it once a booking exists", async () => {
     const spaceId = await firstSpaceId();
-    await repo.createBooking({ spaceId, startsAt: daysFromNow(3), declared: { purpose: "personal_practice", attendees: 1 } });
+    await repo.createBooking({ spaceId, startsAt: daysFromNow(3), declared: { purpose: "movement_session", attendees: 1 } });
 
     const details = await repo.getSpaceAccessDetails(spaceId);
 
@@ -140,7 +141,7 @@ describe("the address is withheld until there is a booking", () => {
 describe("the access code is withheld until its reveal time", () => {
   it("hides it on a booking days away", async () => {
     const spaceId = await firstSpaceId();
-    const { booking: booking } = await repo.createBooking({ spaceId, startsAt: daysFromNow(3), declared: { purpose: "personal_practice", attendees: 1 } });
+    const { booking: booking } = await repo.createBooking({ spaceId, startsAt: daysFromNow(3), declared: { purpose: "movement_session", attendees: 1 } });
 
     expect(booking.revealedAccessCode).toBeNull();
     expect(booking.accessCodeRevealedAt.getTime()).toBeLessThan(booking.startsAt.getTime());
@@ -150,7 +151,7 @@ describe("the access code is withheld until its reveal time", () => {
     const spaceId = await firstSpaceId();
     const { booking: booking } = await repo.createBooking({
       spaceId,
-      startsAt: new Date(Date.now() + 10 * 60 * 1000), declared: { purpose: "personal_practice", attendees: 1 } });
+      startsAt: new Date(Date.now() + 10 * 60 * 1000), declared: { purpose: "movement_session", attendees: 1 } });
 
     expect(booking.revealedAccessCode).toMatch(/^\d{4}$/);
   });
@@ -513,5 +514,44 @@ describe("keeping a listing's town and its uses", () => {
       lng: -122.28,
     });
     expect(edited.city).toBe("Belmont");
+  });
+});
+
+describe("uploading a liability certificate", () => {
+  const statusOf = (p: Awaited<ReturnType<MockRepository["getProfile"]>>) =>
+    insuranceStatus(
+      {
+        hasCertificate: p.insuranceDocName !== null,
+        state: p.insuranceReview.state,
+        effectiveDate: p.insuranceEffectiveDate,
+        expiresAt: p.insuranceExpiresAt,
+      },
+      new Date(),
+    );
+
+  it("stores the uploaded file and puts the review into pending", async () => {
+    const profile = await repo.uploadInsuranceCertificate(testFile("cert.pdf", "application/pdf"));
+    expect(profile.insuranceDocName).toBe("cert.pdf");
+    expect(profile.insuranceReview.state).toBe("pending");
+    expect(statusOf(profile)).toBe("pending_review");
+  });
+
+  it("accepts a photo of a certificate, not only a PDF", async () => {
+    const profile = await repo.uploadInsuranceCertificate(testFile("cert.jpg", "image/jpeg"));
+    expect(profile.insuranceDocName).toBe("cert.jpg");
+    expect(statusOf(profile)).toBe("pending_review");
+  });
+
+  it("replaces the file and returns to pending on a re-upload", async () => {
+    await repo.uploadInsuranceCertificate(testFile("first.pdf", "application/pdf"));
+    const profile = await repo.uploadInsuranceCertificate(testFile("second.pdf", "application/pdf"));
+    expect(profile.insuranceDocName).toBe("second.pdf");
+    expect(profile.insuranceReview.state).toBe("pending");
+  });
+
+  it("rejects a file that is neither a PDF nor a photo", async () => {
+    await expect(
+      repo.uploadInsuranceCertificate(testFile("notes.txt", "text/plain")),
+    ).rejects.toThrow();
   });
 });

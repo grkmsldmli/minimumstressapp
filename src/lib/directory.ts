@@ -30,13 +30,28 @@ import { SPACE_TYPES, spaceTypeBySlug } from "./space-types";
  */
 export const MIN_LISTINGS_TO_INDEX = 3;
 
+/**
+ * How many live rooms a town needs before a *person* is shown it. One.
+ *
+ * The other end of the same scale MIN_LISTINGS_TO_INDEX sits on, and the two
+ * are deliberately different numbers because they answer to different
+ * audiences. A single real room is inventory somebody can book right now;
+ * hiding it from the person who came looking, because a search engine would not
+ * yet index a page with one room on it, is confusing the two. Discovery starts
+ * at the first live room; indexing keeps its higher, separate bar below.
+ */
+export const MIN_LISTINGS_TO_SHOW = 1;
+
 export interface CityRow {
   state: string;
   city: string;
   spaceCount: number;
-  minCents: number;
-  maxCents: number;
-  medianCents: number;
+  // Null below three active rooms: an aggregate over one or two listings would
+  // expose an individual host's price, so the view withholds it (migration
+  // 0064) and this reflects that it can be absent.
+  minCents: number | null;
+  maxCents: number | null;
+  medianCents: number | null;
 }
 
 export interface CityTypeRow extends CityRow {
@@ -72,6 +87,63 @@ export function indexableCity(row: Pick<CityRow, "spaceCount">): boolean {
 }
 
 /**
+ * Group listing rows into towns, the way the `city_inventory` view does.
+ *
+ * The view aggregates every active listing by town, but it has no category
+ * column, so a type-filtered directory ("Movement Studios") cannot come from
+ * it. Rather than add a view — a schema change — the filtered case reads the
+ * already category-filtered rows from `spaces_public` and groups them here.
+ * The set is small (one category's rooms), so this is not the "fetch every
+ * listing and group in JavaScript" the view exists to avoid; it is one narrow
+ * query the view cannot express. Rows without a town are dropped, exactly as
+ * the view's `city is not null and state is not null` does.
+ */
+export function groupCities(
+  rows: { state: string | null; city: string | null; hourly_rate_cents?: number | null }[],
+): CityRow[] {
+  const byTown = new Map<string, { state: string; city: string; rates: number[]; count: number }>();
+
+  for (const row of rows) {
+    if (!row.state || !row.city) continue;
+    const key = `${row.state}/${row.city}`;
+    const town = byTown.get(key) ?? { state: row.state, city: row.city, rates: [], count: 0 };
+    town.count += 1;
+    if (typeof row.hourly_rate_cents === "number") town.rates.push(row.hourly_rate_cents);
+    byTown.set(key, town);
+  }
+
+  return [...byTown.values()].map(({ state, city, rates, count }) => {
+    const sorted = [...rates].sort((a, b) => a - b);
+    // Lower-of-two median, matching how a small set reads; price is not shown on
+    // the index anyway, so this only has to be sane, not the view's percentile.
+    const median = sorted.length ? sorted[Math.floor((sorted.length - 1) / 2)] : 0;
+    return {
+      state,
+      city,
+      spaceCount: count,
+      minCents: sorted[0] ?? 0,
+      maxCents: sorted[sorted.length - 1] ?? 0,
+      medianCents: median,
+    };
+  });
+}
+
+/**
+ * True when a town has any live room worth showing a person.
+ *
+ * The visibility rule for the human-facing directory, kept apart from
+ * `indexableCity` on purpose: a town below the indexing bar still has real
+ * inventory, and a searcher should be able to find and book it. Every town in
+ * `city_inventory` already has at least one live listing, so in practice this
+ * lets all of them through — it is written as a predicate anyway so the rule is
+ * named where it is read, and cannot silently become the indexing threshold
+ * again.
+ */
+export function discoverableCity(row: Pick<CityRow, "spaceCount">): boolean {
+  return row.spaceCount >= MIN_LISTINGS_TO_SHOW;
+}
+
+/**
  * The same threshold, plus the one rule that only applies to a use page.
  *
  * A use page has to be a different page from the town page above it. In a town
@@ -96,6 +168,34 @@ export function indexableCityType(row: CityTypeRow, cityCount: number): boolean 
 export function canonicalForCityType(row: CityTypeRow, cityCount: number): string {
   const town = `/spaces/${stateSlug(row.state)}/${citySlug(row.city)}`;
   return indexableCityType(row, cityCount) ? `${town}/${row.spaceType}` : town;
+}
+
+/**
+ * The one room a listing URL means, chosen from the id-prefix matches by the
+ * town in the address.
+ *
+ * The URL carries only eight characters of the id, which is not guaranteed
+ * unique, so a prefix lookup can return more than one room. This does not pick
+ * between them by guessing — it keeps the ones whose town is the town the URL
+ * names, and returns a room only when exactly one survives. A prefix collision
+ * between two rooms in different towns resolves to the right one; a collision
+ * between two in the same town is a genuine tie and returns null, because
+ * serving the wrong listing is worse than a 404. A town mismatch — the id
+ * belongs to a room in another town than the address claims — also returns
+ * null, so an address cannot be made to point at a room it is not at.
+ */
+export function pickRouteListing<T extends { state: string | null; city: string | null }>(
+  candidates: T[],
+  route: { state: string; city: string },
+): T | null {
+  const inTown = candidates.filter(
+    (row) =>
+      row.state !== null &&
+      row.city !== null &&
+      stateSlug(row.state) === route.state &&
+      citySlug(row.city) === route.city,
+  );
+  return inTown.length === 1 ? inTown[0] : null;
 }
 
 export function cityPath(state: string, city: string): string {
@@ -148,5 +248,9 @@ export function usesInCity(types: CityTypeRow[]): CityTypeRow[] {
  */
 export function priceRange(row: CityRow): { from: number; to: number; median: number } | null {
   if (row.spaceCount < MIN_LISTINGS_TO_INDEX) return null;
+  // The view already NULLs these below the threshold (0064); this is the same
+  // rule read from the other side, so a range is printed only when all three
+  // statistics are actually present.
+  if (row.minCents === null || row.maxCents === null || row.medianCents === null) return null;
   return { from: row.minCents, to: row.maxCents, median: row.medianCents };
 }

@@ -91,7 +91,9 @@ describe("migrations apply cleanly", () => {
         `select table_name from information_schema.tables
          where table_schema = 'public' and table_type = 'BASE TABLE'`,
       );
-      expect(tables.rows).toHaveLength(14);
+      // +2 in 0067: blocked_users and message_reports. +1 in 0068:
+      // founding_practitioners.
+      expect(tables.rows).toHaveLength(21);
     } finally {
       await fresh.close();
     }
@@ -149,11 +151,27 @@ describe("migrations apply cleanly", () => {
     expect(found.map((r) => r.table_name)).toEqual([
       "account_type_change_requests",
       "availability",
+      // A user severs the message channel with another (App Store 1.2, 0067).
+      "blocked_users",
       "bookings",
       "credit_ledger",
+      // The durable Founding 50 ledger — server-only, so a spot once earned is
+      // never re-opened by a deletion (migration 0060).
+      "founding_hosts",
+      // Its practitioner-side twin — the first fifty to complete a real, paid
+      // session, server-only and equally permanent (migration 0068).
+      "founding_practitioners",
+      // Booking-chat abuse reports for staff review (App Store 1.2, 0067).
+      "message_reports",
       "messages",
       "notifications",
       "profiles",
+      // The append-only reward ledger — $25 per qualified referral (0062).
+      "referral_rewards",
+      "referrals",
+      // The server-only referrer ledger — code authority and durable eligibility
+      // (migration 0061).
+      "referrer_codes",
       "refund_requests",
       "review_escalations",
       "reviews",
@@ -281,12 +299,41 @@ describe("private columns stay out of the public views", () => {
   /**
    * The line moved, and it moved on purpose.
    *
-   * The address used to be here, on the grounds that a room should not be
-   * findable before it is booked. Every listing is a retail studio whose
-   * address is on Google Maps already, so that withheld nothing and cost the
-   * practitioner the fact they decide on. What is still private is the way in.
+   * The exact location and the way in are both private until a booking is
+   * confirmed. A browser gets the coarse point and the area; the street, the
+   * precise lat/lng and the entry details come back through
+   * space_access_details() once a booking is held (migration 0055).
    */
-  it("omits the way in from spaces_public", async () => {
+  it("records the rules acknowledgment and the credential on their rows", async () => {
+    // The acknowledgment lives on the booking (migration 0058), stamped at
+    // creation, so a dispute can point to it beside the declared purpose.
+    const bookingCols = await rows<{ column_name: string }>(
+      `select column_name from information_schema.columns
+       where table_schema = 'public' and table_name = 'bookings'`,
+    );
+    expect(bookingCols.map((c) => c.column_name)).toContain("rules_ack_at");
+
+    // The credential fields live on the profile, beside insurance.
+    const profileCols = (
+      await rows<{ column_name: string }>(
+        `select column_name from information_schema.columns
+         where table_schema = 'public' and table_name = 'profiles'`,
+      )
+    ).map((c) => c.column_name);
+    for (const col of [
+      "credential_doc_path",
+      "credential_doc_state",
+      "credential_doc_reviewed_at",
+      "credential_type",
+      "credential_number",
+      "credential_jurisdiction",
+      "credential_review_note",
+    ]) {
+      expect(profileCols, col).toContain(col);
+    }
+  });
+
+  it("omits the exact location and the way in from spaces_public", async () => {
     const columns = await rows<{ column_name: string }>(
       `select column_name from information_schema.columns
        where table_schema = 'public' and table_name = 'spaces_public'`,
@@ -297,10 +344,13 @@ describe("private columns stay out of the public views", () => {
     expect(names).not.toContain("sublease_doc_path");
     expect(names).not.toContain("insurance_doc_path");
 
-    // Published now, and the reason is in the migration rather than here.
-    expect(names).toContain("address_line");
-    expect(names).toContain("lat");
-    expect(names).toContain("lng");
+    // Only the coarse point and area are published, so a room can be placed but
+    // not found. The address_line/lat/lng column names survive as NULL for a
+    // safe rollout (migration 0055 header); that they carry no data is asserted
+    // by value below.
+    expect(names).toContain("approx_lat");
+    expect(names).toContain("approx_lng");
+    expect(names).toContain("area");
 
     // Still has to be useful for Discover.
     expect(names).toContain("hourly_rate_cents");
@@ -327,10 +377,16 @@ describe("private columns stay out of the public views", () => {
        where table_schema = 'public' and table_name = 'public_host_profiles'`,
     );
 
+    // Only the name, the avatar, and the two safe host signals: whether the
+    // host is Founding (a boolean), and their highest session milestone (a
+    // bucket, never the raw count). No Stripe id, no document path, no email,
+    // no verdict — see migration 0060.
     expect(columns.map((c) => c.column_name).sort()).toEqual([
       "avatar_path",
       "display_name",
+      "founding_host",
       "id",
+      "session_milestone",
     ]);
   });
 
@@ -339,6 +395,12 @@ describe("private columns stay out of the public views", () => {
     // RLS and hands every practitioner's balance to whoever asks. A public
     // subset view *with* it errors instead, because anon holds no grant on
     // the base table — safety there comes from the column list, not from RLS.
+    //
+    // "Public" here means definer, not anonymously readable. Migration 0064
+    // closed the per-listing definer views (spaces_public, public_host_profiles,
+    // availability_public, space_media_public, public_reviews, space_ratings) to
+    // anon while leaving the aggregate ones open; who may read each is asserted
+    // by role in rls.test.ts. This test is only about definer vs invoker.
     const PER_USER = [
       "credit_balances",
       "bookings_with_access_code",
@@ -374,6 +436,10 @@ describe("private columns stay out of the public views", () => {
        */
       "city_inventory",
       "city_type_inventory",
+      // The category-level aggregate (0064), so the public directory's category
+      // filter never has to read a per-listing view. A room has one category, so
+      // the count is exact and still reveals nothing about an individual room.
+      "city_category_inventory",
       /*
        * The demand counts. Public because a host is shown them, and safe to
        * be public because it is counts: no email, no id, no row. The table
@@ -433,6 +499,158 @@ describe("private columns stay out of the public views", () => {
     // A definer function without a pinned search_path is a privilege
     // escalation waiting to happen.
     expect(fn.proconfig ?? []).toContain("search_path=public");
+  });
+});
+
+/**
+ * Listing photographs are not world-readable (migration 0064).
+ *
+ * Closing the views is only half the boundary: while the bucket was public, an
+ * object was fetchable by anyone who had, or guessed, its path — no view needed.
+ * So the bucket is private and the blanket public-read policy is replaced with
+ * one only a signed-in caller matches. A structural check, because the storage
+ * fetch path is not exercised in PGlite; the functional contract is that the
+ * app signs its own URLs (supabase-repository) and anon holds no read policy.
+ */
+describe("space media is not world-readable", () => {
+  it("makes the space-media bucket private", async () => {
+    const [bucket] = await rows<{ public: boolean }>(
+      `select public from storage.buckets where id = 'space-media'`,
+    );
+    expect(bucket.public).toBe(false);
+  });
+
+  it("leaves no client read policy on space-media", async () => {
+    // 0064's world-readable policy is gone and its broken replacement was
+    // dropped in 0065 with nothing to take its place. Listing media is read only
+    // through the server signing route, which uses the service role — so no
+    // storage.objects SELECT policy is needed, and none exists. Anon, and every
+    // client, can therefore read no listing media directly.
+    const selects = await rows<{ policyname: string }>(
+      `select policyname from pg_policies
+       where schemaname = 'storage' and tablename = 'objects'
+         and policyname like 'space-media:%' and cmd = 'SELECT'`,
+    );
+    expect(selects).toEqual([]);
+  });
+
+  it("keeps the host write, update and delete policies untouched", async () => {
+    const cmds = (
+      await rows<{ cmd: string }>(
+        `select cmd from pg_policies
+         where schemaname = 'storage' and tablename = 'objects'
+           and policyname like 'space-media:%'`,
+      )
+    )
+      .map((p) => p.cmd)
+      .sort();
+    // The three from 0017, and no SELECT among them.
+    expect(cmds).toEqual(["DELETE", "INSERT", "UPDATE"]);
+  });
+
+  it("has no storage read policy that subqueries spaces", async () => {
+    // The architecture rule: authorising media by listing lives in the server
+    // route, never in a storage policy subquery against spaces/spaces_public —
+    // which is subject to spaces' owner-only RLS and cannot clear a practitioner
+    // (0017's note, confirmed by 0064). No storage SELECT policy may reference
+    // either.
+    const selects = await rows<{ qual: string | null }>(
+      `select qual from pg_policies
+       where schemaname = 'storage' and tablename = 'objects' and cmd = 'SELECT'`,
+    );
+    for (const policy of selects) {
+      expect(policy.qual ?? "").not.toMatch(/\bspaces\b|spaces_public/);
+    }
+  });
+});
+
+/**
+ * 0066 (the card variant) is an expand-only migration, so it is safe to apply
+ * before the new code deploys — the currently deployed code keeps working
+ * against a database that has the extra column. This pins the two properties
+ * that make that true, so a later change cannot quietly turn the migration into
+ * a breaking one.
+ */
+describe("the card_path migration is backward-compatible", () => {
+  it("adds card_path as a nullable column, so old inserts that omit it still work", async () => {
+    const [column] = await rows<{ is_nullable: string; column_default: string | null }>(
+      `select is_nullable, column_default from information_schema.columns
+       where table_name = 'space_media' and column_name = 'card_path'`,
+    );
+    expect(column.is_nullable).toBe("YES");
+    expect(column.column_default).toBeNull();
+  });
+
+  it("widens space_media_public to a superset the old client still reads via select(*)", async () => {
+    const columns = (
+      await rows<{ column_name: string }>(
+        `select column_name from information_schema.columns where table_name = 'space_media_public'`,
+      )
+    )
+      .map((c) => c.column_name)
+      .sort();
+    // The original 0002 columns, plus card_path — nothing removed or renamed, so
+    // old code selecting * gets everything it did and one column it ignores.
+    expect(columns).toEqual(["card_path", "id", "kind", "position", "space_id", "storage_path"]);
+  });
+});
+
+/**
+ * Before a booking, spaces_public carries only a coarse point and the area —
+ * never the exact address or the precise coordinates. The exact location coming
+ * back once a booking is held is proven end to end against space_access_details
+ * in rls.test.ts (a signed-in stranger is refused; the booker gets the street);
+ * this asserts the public view is coarse in the first place (migration 0055).
+ */
+describe("location is coarse in spaces_public", () => {
+  const host = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+  const spaceId = "dddddddd-dddd-dddd-dddd-dddddddddddd";
+  const exactLat = 37.5629;
+  const exactLng = -122.3255;
+
+  beforeAll(async () => {
+    await db.exec(`
+      insert into auth.users (id, email) values ('${host}', 'coarse-host@example.com');
+      insert into profiles (id, display_name) values ('${host}', 'Coarse Host');
+      insert into spaces (
+        id, host_id, name, category, hourly_rate_cents, capacity, access_type,
+        entry_instructions, address_line, lat, lng, sublease_doc_path, legal_ack_at,
+        status, sublease_doc_state, sublease_doc_reviewed_at
+      ) values (
+        '${spaceId}', '${host}', 'Cedar', 'physical', 4500, 3, 'keypad',
+        'Code 4417, then the blue door', '742 Evergreen Terrace, San Mateo, CA 94402',
+        ${exactLat}, ${exactLng}, 'space/x/lease.pdf', now(),
+        'active', 'verified', now()
+      );
+    `);
+  });
+
+  it("publishes only an offset point and an area, never the exact location", async () => {
+    const [row] = await rows<{
+      approx_lat: number;
+      approx_lng: number;
+      area: string | null;
+      address_line: string | null;
+      lat: number | null;
+      lng: number | null;
+    }>(
+      `select approx_lat, approx_lng, area, address_line, lat, lng
+       from spaces_public where id = '${spaceId}'`,
+    );
+    expect(row.approx_lat).not.toBeNull();
+    expect(row.approx_lng).not.toBeNull();
+    // Moved off the building: the offset is 250-450m, so the published point is
+    // never the real one, but still in the same neighbourhood.
+    expect(row.approx_lat !== exactLat || row.approx_lng !== exactLng).toBe(true);
+    expect(Math.abs(row.approx_lat - exactLat)).toBeLessThan(0.01);
+    expect(Math.abs(row.approx_lng - exactLng)).toBeLessThan(0.01);
+    // The area is the town, not the street number.
+    expect(row.area ?? "").not.toContain("742");
+    // The deprecated columns exist for rollout safety but carry no exact data,
+    // even though the base row has all three.
+    expect(row.address_line).toBeNull();
+    expect(row.lat).toBeNull();
+    expect(row.lng).toBeNull();
   });
 });
 
@@ -673,7 +891,12 @@ describe("0043 — where a space is and what it suits", () => {
         'verified', now()
       )`;
 
+    // Three active rooms, which is also the floor at which a price is published
+    // at all (0064 withholds a min/median/max below three, so it can never be an
+    // individual host's rate). The point here is that pending and delisted rooms
+    // count towards neither the number nor the statistics.
     await db.exec(add("active", 3000));
+    await db.exec(add("active", 4000));
     await db.exec(add("active", 5000));
     // Neither of these can be booked, so neither belongs on a page.
     await db.exec(add("pending", 9900));
@@ -688,7 +911,7 @@ describe("0043 — where a space is and what it suits", () => {
        where city = 'Belmont' and state = 'CA'`,
     );
 
-    expect(belmont.space_count).toBe(2);
+    expect(belmont.space_count).toBe(3);
     // The pending room is the expensive one. A page quoting it would be
     // quoting a price nobody can pay.
     expect(belmont.max_cents).toBe(5000);

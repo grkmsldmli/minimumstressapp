@@ -5031,3 +5031,2139 @@ create policy "spaces: only hosts may list"
 -- because the gate is on INSERT; an existing host accepts before their next
 -- new listing.
 -- ------------------------------------------------------------------
+
+
+-- ===================================================================
+-- 0053_archive_a_listing.sql
+-- ===================================================================
+
+-- Archiving a listing: a permanent close that keeps the record.
+--
+-- Holding a listing (status 'delisted') is reversible — staff or the host can
+-- put the room back on the site. Closing one for good is a different intent:
+-- it comes off search and takes no more bookings, exactly like a hold, but it
+-- is meant to stay that way, and everything behind it — the bookings, the
+-- earnings, the reviews — is kept rather than erased.
+--
+-- This marks that intent without a new status value rippling through every
+-- place that already reads 'delisted'. A listing is archived when archived_at
+-- is set and held when it is null; the status stays 'delisted' either way, so
+-- the search exclusion and the new-booking gate (both of which already refuse a
+-- non-active space) need no change, and nothing here touches the bookings that
+-- give a hard delete its ON DELETE RESTRICT.
+--
+-- Additive and backward compatible: the column is null on every existing row,
+-- which is exactly right — nothing was archived before this existed.
+alter table spaces
+  add column if not exists archived_at timestamptz;
+
+
+-- ===================================================================
+-- 0054_professional_liability_insurance.sql
+-- ===================================================================
+
+-- Liability insurance for the professionals who book.
+--
+-- profiles.insurance_doc_path already held a practitioner's uploaded
+-- certificate, but nothing more: no review state, no validity dates. A file on
+-- disk is not proof of active cover, and booking a space for professional use
+-- now turns on that proof. This adds the record of *reviewing* it and of *when
+-- it is valid*, mirroring the space-document review 0018 gave hosts.
+--
+-- Additive and backward compatible. Every existing profile keeps its path and
+-- gets state 'pending' — an uploaded certificate is awaiting review, never
+-- auto-verified, because auto-approving cover nobody checked is the one thing
+-- this record exists to prevent. Nothing is deleted and no booking is touched.
+
+alter table profiles
+  add column if not exists insurance_doc_state doc_review_state not null default 'pending',
+  add column if not exists insurance_doc_reviewed_at timestamptz,
+  -- The policy window. Both are required once a certificate is verified; a
+  -- verified certificate with no dates cannot answer "is it valid on the
+  -- booking date?", which is the whole question the booking gate asks.
+  add column if not exists insurance_effective_date date,
+  add column if not exists insurance_expires_at date,
+  -- What staff read off the certificate. Deliberately minimal — enough to
+  -- identify the policy, not to build a profile of the person.
+  add column if not exists insurance_insurer text,
+  add column if not exists insurance_policy_number text,
+  -- Shown to the professional verbatim when a certificate is turned down, the
+  -- same way a listing's doc_review_note reaches a host. Cleared on the next
+  -- verification. (Mirrors spaces.doc_review_note from 0018.)
+  add column if not exists insurance_review_note text;
+
+-- A review moment exists exactly when the state is no longer the default.
+-- (The same shape as spaces_insurance_review_consistent in 0018.)
+alter table profiles
+  drop constraint if exists profiles_insurance_review_consistent;
+alter table profiles
+  add constraint profiles_insurance_review_consistent check (
+    (insurance_doc_state = 'pending') = (insurance_doc_reviewed_at is null)
+  );
+
+-- Verified means the window is known. A verified certificate must carry both
+-- dates, and the expiry cannot precede the start. This is what lets the booking
+-- gate trust a 'verified' state without re-checking that the dates make sense.
+alter table profiles
+  drop constraint if exists profiles_insurance_dates_when_verified;
+alter table profiles
+  add constraint profiles_insurance_dates_when_verified check (
+    insurance_doc_state <> 'verified'
+    or (
+      insurance_effective_date is not null
+      and insurance_expires_at is not null
+      and insurance_expires_at >= insurance_effective_date
+    )
+  );
+
+
+-- ===================================================================
+-- 0055_location_stays_private_until_booked.sql
+-- ===================================================================
+
+-- Location goes back behind the booking.
+--
+-- 0032 published the exact street address, and 0049 kept the precise lat/lng in
+-- spaces_public too, on the reasoning that these are retail studios already on
+-- their own websites. That is no longer the rule: before a booking is
+-- confirmed, a public or merely signed-in user should learn only roughly where
+-- a room is — the city, the area, and a point offset a few hundred metres. The
+-- exact address, the precise coordinates and the entry instructions come back
+-- only through space_access_details(), which already checks the caller holds a
+-- booking and is unchanged here.
+--
+-- The coarse point (approx_lat/approx_lng, 0023) and the coarse area
+-- (public_area, 0022) already exist; this reverts the view to them and stops
+-- exposing the real values.
+--
+-- Transition safety. The client shipped before this migration selects
+-- address_line by name from spaces_public and reads it via select(*), so
+-- dropping the columns outright would 500 its listing pages in the window
+-- between this migration and the new deploy. Instead the three sensitive
+-- columns are kept in the shape old code expects but forced to NULL — the exact
+-- data is gone now, and nothing breaks whichever side rolls out first. Once the
+-- old client is no longer served a later migration can drop the names.
+--
+-- Dropped rather than replaced: create-or-replace cannot change a view's column
+-- set. Nothing in the database reads spaces_public (the inventory views read
+-- the base table), so the drop has no dependents.
+
+drop view if exists spaces_public;
+
+create view spaces_public as
+  select
+    id, host_id, name, category, hourly_rate_cents, capacity, access_type,
+    accessible, restroom, buffer_minutes, timezone, status, created_at,
+    description, amenities, requirements, house_rules,
+    map_x, map_y,
+    entrance_access, floor_access, doorway_inches, restroom_access,
+    parking, parking_limit_minutes,
+    floor_area_sqft,
+    public_area(address_line) as area,
+    approx_lat(id, lat) as approx_lat,
+    approx_lng(id, lat, lng) as approx_lng,
+    -- Deprecated, kept NULL for a safe rollout (see header). The exact street
+    -- and precise point are no longer exposed; the names remain only so the
+    -- previously deployed client's explicit select does not error mid-rollout.
+    null::text as address_line,
+    null::double precision as lat,
+    null::double precision as lng,
+    city, state, postal_code, suitable_for, room_setup,
+    allowed_uses, booking_mode
+  from spaces
+  where status = 'active';
+
+grant select on spaces_public to anon, authenticated;
+grant select on spaces_public to service_role;
+
+
+-- ===================================================================
+-- 0056_host_terms_v2.sql
+-- ===================================================================
+
+-- Host Terms v2 — the allowed-use examples drop their consumer framing.
+--
+-- The example uses in the Host Terms named "personal practice" and "dance and
+-- movement rehearsal", from when a room could be booked for those. The
+-- marketplace offers professional work now and the booking menu no longer lists
+-- them, so the examples were stale. Only the illustrative list changes; the
+-- substance of the agreement does not.
+--
+-- Because the wording changed, the required version rises to 2. The app constant
+-- HOST_TERMS_VERSION matches it (a schema test asserts the two agree). Existing
+-- acceptances stand and existing listings keep running; a host is asked to
+-- accept again the next time they list, which is exactly what the versioning in
+-- 0052 was built to do.
+
+create or replace function required_host_terms_version()
+returns integer
+language sql
+immutable
+as $$ select 2 $$;
+
+
+-- ===================================================================
+-- 0057_practitioner_trust.sql
+-- ===================================================================
+
+-- Practitioner trust, part one: identity, profession, and what a host may see.
+--
+-- Three things arrive together because they answer one question — "who is
+-- booking my room, and can I trust them" — and share a home on `profiles`.
+--
+--   identity_verified_at   set only by the Stripe Identity webhook (service
+--                          role). Null means not verified; the booking gate
+--                          refuses. A client can never write it — see the
+--                          trigger below.
+--   identity_session_id    the Stripe VerificationSession, so a return can be
+--                          matched and a session reused. Minimum reference, no
+--                          documents; those never leave Stripe.
+--   profession             one of a small controlled set (see lib/professions),
+--                          display only for now. Constrained so a client cannot
+--                          store a value a later credential rule can't read.
+--
+-- Nothing is backfilled. Existing practitioners have identity_verified_at null,
+-- which is exactly right: they verify once, next time they book. Bookings
+-- already on the calendar are untouched — the gate only guards *new* bookings.
+
+alter table profiles
+  add column if not exists identity_verified_at timestamptz,
+  add column if not exists identity_session_id text,
+  add column if not exists profession text;
+
+-- The controlled set, mirrored from lib/professions PROFESSION_KEYS. A client
+-- write outside it is refused rather than stored and shown as a broken label.
+alter table profiles
+  drop constraint if exists profiles_profession_known;
+alter table profiles
+  add constraint profiles_profession_known check (
+    profession is null or profession in (
+      'pilates', 'yoga', 'movement', 'massage', 'holistic',
+      'meditation', 'coaching', 'other'
+    )
+  );
+
+-- ------------------------------------------------------------------
+-- Identity state is the server's to set, never the practitioner's.
+--
+-- RLS lets an account update its own profile row (display name, profession,
+-- notification prefs). Identity must sit outside that: a practitioner marking
+-- themselves verified is the one thing this whole feature exists to prevent. So
+-- any change to the two identity columns by a signed-in caller (auth.uid() is
+-- their id) is refused; the service role — the Identity webhook and the session
+-- route — has no auth.uid() and passes. This mirrors how host payability is
+-- only ever flipped by Stripe's webhook, never by the client.
+-- ------------------------------------------------------------------
+create or replace function enforce_identity_server_only()
+returns trigger
+language plpgsql
+as $$
+begin
+  if auth.uid() is not null
+     and (
+       new.identity_verified_at is distinct from old.identity_verified_at
+       or new.identity_session_id is distinct from old.identity_session_id
+     ) then
+    raise exception 'identity verification is set by the server, not the client'
+      using errcode = 'check_violation';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists profiles_identity_server_only on profiles;
+create trigger profiles_identity_server_only
+  before update on profiles
+  for each row
+  execute function enforce_identity_server_only();
+
+-- ------------------------------------------------------------------
+-- The trust summary a host reads before approving — and on their history.
+--
+-- Added to the two functions the host already calls, so no new round trip and
+-- no cross-user read from the client: both are security definer, so they can
+-- join the practitioner's profile and count their sessions while returning only
+-- a coarse summary. Never a document, a policy number, a date of birth, contact
+-- detail, or another host's booking — just five plain signals.
+--
+-- `good_standing` is the SQL of standingFor()'s "clear" level: fewer than
+-- THRESHOLDS.practitioner.warnAt (2) qualifying late cancellations in
+-- STANDING_WINDOW_DAYS (90). "Qualifying" and "late" are reliability.ts's own
+-- rule — a captured booking the practitioner cancelled inside the
+-- 24-hour window (FREE_CANCEL_WINDOW). A suspended practitioner never reaches a
+-- host (the booking gate stops them); this line lets a host see the ordinary
+-- good case plainly and stays silent about a borderline one by simply being
+-- false.
+--
+-- This is the one place the Standing rule is expressed in SQL rather than by
+-- calling standingFor(), which Postgres cannot. standing-sql-sync.test.ts pins
+-- the three numbers below to reliability.ts so the two copies cannot drift
+-- silently; full centralisation waits for a rework of the host data flow.
+-- ------------------------------------------------------------------
+
+drop function if exists host_requests();
+
+create function host_requests()
+returns table (
+  booking_id uuid,
+  space_id uuid,
+  space_name text,
+  starts_at timestamptz,
+  ends_at timestamptz,
+  requested_at timestamptz,
+  net_cents integer,
+  practitioner_name text,
+  practitioner_avatar_path text,
+  purpose text,
+  purpose_note text,
+  attendee_count integer,
+  practitioner_profession text,
+  practitioner_identity_verified boolean,
+  practitioner_insurance_verified boolean,
+  practitioner_completed_sessions integer,
+  practitioner_good_standing boolean
+)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select
+    b.id,
+    b.space_id,
+    s.name,
+    b.starts_at,
+    b.ends_at,
+    b.created_at,
+    b.host_rate_cents,
+    p.display_name,
+    p.avatar_path,
+    b.purpose,
+    b.purpose_note,
+    b.attendee_count,
+    p.profession,
+    p.identity_verified_at is not null,
+    p.insurance_doc_state = 'verified',
+    (
+      select count(*)::integer
+      from bookings cb
+      where cb.practitioner_id = b.practitioner_id
+        and cb.status = 'completed'
+        and cb.captured_at is not null
+    ),
+    (
+      select count(*)
+      from bookings lc
+      where lc.practitioner_id = b.practitioner_id
+        and lc.cancelled_by = 'practitioner'
+        and lc.captured_at is not null
+        and lc.cancelled_at > now() - interval '90 days'
+        and lc.starts_at - lc.cancelled_at < interval '24 hours'
+    ) < 2
+  from bookings b
+  join spaces s on s.id = b.space_id
+  join profiles p on p.id = b.practitioner_id
+  where s.host_id = auth.uid()
+    and b.approval_state = 'pending'
+    and b.status = 'upcoming'
+    and b.authorized_at is not null
+  order by b.starts_at;
+$$;
+
+revoke all on function host_requests() from public;
+grant execute on function host_requests() to authenticated;
+
+drop function if exists host_bookings();
+
+create function host_bookings()
+returns table (
+  booking_id uuid,
+  space_id uuid,
+  starts_at timestamptz,
+  ends_at timestamptz,
+  status booking_status,
+  net_cents integer,
+  practitioner_name text,
+  practitioner_avatar_path text,
+  host_paid_at timestamptz,
+  practitioner_profession text,
+  practitioner_identity_verified boolean,
+  practitioner_insurance_verified boolean,
+  practitioner_completed_sessions integer,
+  practitioner_good_standing boolean
+)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select
+    b.id,
+    b.space_id,
+    b.starts_at,
+    b.ends_at,
+    b.status,
+    b.host_rate_cents,
+    p.display_name,
+    p.avatar_path,
+    b.host_paid_at,
+    p.profession,
+    p.identity_verified_at is not null,
+    p.insurance_doc_state = 'verified',
+    (
+      select count(*)::integer
+      from bookings cb
+      where cb.practitioner_id = b.practitioner_id
+        and cb.status = 'completed'
+        and cb.captured_at is not null
+    ),
+    (
+      select count(*)
+      from bookings lc
+      where lc.practitioner_id = b.practitioner_id
+        and lc.cancelled_by = 'practitioner'
+        and lc.captured_at is not null
+        and lc.cancelled_at > now() - interval '90 days'
+        and lc.starts_at - lc.cancelled_at < interval '24 hours'
+    ) < 2
+  from bookings b
+  join spaces s on s.id = b.space_id
+  join profiles p on p.id = b.practitioner_id
+  where s.host_id = auth.uid()
+    and b.captured_at is not null
+  order by b.starts_at;
+$$;
+
+revoke all on function host_bookings() from public;
+grant execute on function host_bookings() to authenticated;
+
+
+-- ===================================================================
+-- 0058_practitioner_credentials.sql
+-- ===================================================================
+
+-- Practitioner trust, part two: professional credentials, a booking
+-- acknowledgment, and a credential signal for the host.
+--
+-- A credential is category-dependent (see lib/professions): a license is a
+-- legal condition of booking for a regulated profession — massage therapy in
+-- this set — and a booking is refused until staff verify one. For everyone
+-- else a certificate is optional: it may be submitted and shown once reviewed,
+-- and never blocks a booking. The columns hold one credential per practitioner,
+-- mirroring how insurance already lives on `profiles`.
+--
+--   credential_type        what they say it is (e.g. "LMT", "RYT-200"). Text.
+--   credential_jurisdiction the issuing state/authority, where one applies.
+--   credential_number      the license/certificate number, where one applies.
+--   credential_doc_path     the uploaded proof, in the same private bucket as
+--                           insurance. The document never leaves that bucket and
+--                           is never returned to a host.
+--   credential_doc_state    null = none submitted; otherwise pending / verified
+--                           / rejected. Set by staff, never the practitioner.
+--   credential_doc_reviewed_at / credential_review_note   the staff verdict.
+
+alter table profiles
+  add column if not exists credential_type text,
+  add column if not exists credential_jurisdiction text,
+  add column if not exists credential_number text,
+  add column if not exists credential_doc_path text,
+  add column if not exists credential_doc_state doc_review_state,
+  add column if not exists credential_doc_reviewed_at timestamptz,
+  add column if not exists credential_review_note text;
+
+-- A reviewed credential carries a time; an unreviewed or absent one does not.
+alter table profiles
+  drop constraint if exists profiles_credential_review_consistent;
+alter table profiles
+  add constraint profiles_credential_review_consistent check (
+    (credential_doc_state in ('verified', 'rejected')) = (credential_doc_reviewed_at is not null)
+  );
+
+-- ------------------------------------------------------------------
+-- Every verification verdict is the server's to set, never the account's.
+--
+-- RLS lets an account create and update its own profile row, so a practitioner
+-- marking themselves identity-verified, insurance-verified, or credential-
+-- reviewed has to be refused at the row — and on INSERT as much as UPDATE. The
+-- profile row is created by the client (ensureProfile, and the role choice that
+-- sets account_type), so a crafted first INSERT could otherwise set every
+-- verdict at once and walk straight through the booking gate. This one guard
+-- fires before insert and before update and covers all three domains.
+--
+-- 0057's identity trigger (update-only) is superseded by this and dropped below;
+-- this migration is what closes the identity/insurance INSERT gap that shipped
+-- before it. The insurance columns predate any trigger — this is their first.
+--
+-- What an account MAY still do: create its row, upload or replace its own
+-- document (which restarts review), and enter allowed profession/credential
+-- metadata. What it may never do is write a verdict. The service role — the
+-- Stripe Identity webhook, the identity session route, the admin review route —
+-- has no auth.uid() and is unaffected. `ins` reads OLD as NULL on INSERT via the
+-- same case-guard the terms trigger (0020) uses, so the row's proposed values
+-- are compared against an empty prior state.
+-- ------------------------------------------------------------------
+create or replace function enforce_profile_verdicts_server_only()
+returns trigger
+language plpgsql
+as $$
+declare
+  ins boolean := tg_op = 'INSERT';
+begin
+  -- Service role (webhook, identity session route, admin review) sets the
+  -- verdicts, and has no auth.uid(). Everything below guards the client alone.
+  if auth.uid() is null then
+    return new;
+  end if;
+
+  -- IDENTITY: the verified time and the session reference are server-only,
+  -- always. There is no client-writable path here at all.
+  if new.identity_verified_at is distinct from (case when ins then null else old.identity_verified_at end)
+     or new.identity_session_id is distinct from (case when ins then null else old.identity_session_id end) then
+    raise exception 'identity verification is set by the server, not the client'
+      using errcode = 'check_violation';
+  end if;
+
+  -- INSURANCE: uploading or replacing the certificate restarts review and wipes
+  -- any prior verdict; with no new certificate the verdict fields are staff-only.
+  -- The default state is 'pending', so a fresh row that never set it is fine.
+  if new.insurance_doc_path is distinct from (case when ins then null else old.insurance_doc_path end) then
+    new.insurance_doc_state := 'pending';
+    new.insurance_doc_reviewed_at := null;
+    new.insurance_effective_date := null;
+    new.insurance_expires_at := null;
+    new.insurance_insurer := null;
+    new.insurance_policy_number := null;
+    new.insurance_review_note := null;
+  elsif new.insurance_doc_state
+          is distinct from coalesce(case when ins then null else old.insurance_doc_state end, 'pending')
+     or new.insurance_doc_reviewed_at is distinct from (case when ins then null else old.insurance_doc_reviewed_at end)
+     or new.insurance_effective_date is distinct from (case when ins then null else old.insurance_effective_date end)
+     or new.insurance_expires_at is distinct from (case when ins then null else old.insurance_expires_at end)
+     or new.insurance_insurer is distinct from (case when ins then null else old.insurance_insurer end)
+     or new.insurance_policy_number is distinct from (case when ins then null else old.insurance_policy_number end)
+     or new.insurance_review_note is distinct from (case when ins then null else old.insurance_review_note end) then
+    raise exception 'insurance review is set by staff, not the practitioner'
+      using errcode = 'check_violation';
+  end if;
+
+  -- CREDENTIAL: same shape as insurance. State is nullable (null = none), so a
+  -- fresh row with no credential is fine; a new document restarts review.
+  if new.credential_doc_path is distinct from (case when ins then null else old.credential_doc_path end) then
+    new.credential_doc_state :=
+      case when new.credential_doc_path is null then null else 'pending' end;
+    new.credential_doc_reviewed_at := null;
+    new.credential_review_note := null;
+  elsif new.credential_doc_state is distinct from (case when ins then null else old.credential_doc_state end)
+     or new.credential_doc_reviewed_at is distinct from (case when ins then null else old.credential_doc_reviewed_at end)
+     or new.credential_review_note is distinct from (case when ins then null else old.credential_review_note end) then
+    raise exception 'credential review is set by staff, not the practitioner'
+      using errcode = 'check_violation';
+  end if;
+
+  return new;
+end;
+$$;
+
+-- The identity-only trigger from 0057 is subsumed by the guard above.
+drop trigger if exists profiles_identity_server_only on profiles;
+drop trigger if exists profiles_credential_review_server_only on profiles;
+drop trigger if exists profiles_verdicts_server_only on profiles;
+create trigger profiles_verdicts_server_only
+  before insert or update on profiles
+  for each row
+  execute function enforce_profile_verdicts_server_only();
+
+-- ------------------------------------------------------------------
+-- The booking carries the acknowledgment it was made under.
+--
+-- The declaration screen states, at the point of booking, that the space will
+-- be used only for the declared purpose and under the space and platform rules.
+-- Booking is the agreement; this records the moment it was given, so a later
+-- dispute can point to it alongside the purpose already stored on the row.
+-- Stamped by the server at creation, never by the client.
+-- ------------------------------------------------------------------
+alter table bookings
+  add column if not exists rules_ack_at timestamptz;
+
+-- ------------------------------------------------------------------
+-- The host's trust summary gains one signal: a reviewed credential.
+--
+-- Both functions are redefined to add practitioner_credential_reviewed — true
+-- only when a credential has actually been verified. Never the document, the
+-- number, the jurisdiction, or the review note; only the plain fact that one
+-- was reviewed. The rest is exactly 0057.
+-- ------------------------------------------------------------------
+drop function if exists host_requests();
+
+create function host_requests()
+returns table (
+  booking_id uuid,
+  space_id uuid,
+  space_name text,
+  starts_at timestamptz,
+  ends_at timestamptz,
+  requested_at timestamptz,
+  net_cents integer,
+  practitioner_name text,
+  practitioner_avatar_path text,
+  purpose text,
+  purpose_note text,
+  attendee_count integer,
+  practitioner_profession text,
+  practitioner_identity_verified boolean,
+  practitioner_insurance_verified boolean,
+  practitioner_credential_reviewed boolean,
+  practitioner_completed_sessions integer,
+  practitioner_good_standing boolean
+)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select
+    b.id,
+    b.space_id,
+    s.name,
+    b.starts_at,
+    b.ends_at,
+    b.created_at,
+    b.host_rate_cents,
+    p.display_name,
+    p.avatar_path,
+    b.purpose,
+    b.purpose_note,
+    b.attendee_count,
+    p.profession,
+    p.identity_verified_at is not null,
+    p.insurance_doc_state = 'verified',
+    p.credential_doc_state = 'verified',
+    (
+      select count(*)::integer
+      from bookings cb
+      where cb.practitioner_id = b.practitioner_id
+        and cb.status = 'completed'
+        and cb.captured_at is not null
+    ),
+    (
+      select count(*)
+      from bookings lc
+      where lc.practitioner_id = b.practitioner_id
+        and lc.cancelled_by = 'practitioner'
+        and lc.captured_at is not null
+        and lc.cancelled_at > now() - interval '90 days'
+        and lc.starts_at - lc.cancelled_at < interval '24 hours'
+    ) < 2
+  from bookings b
+  join spaces s on s.id = b.space_id
+  join profiles p on p.id = b.practitioner_id
+  where s.host_id = auth.uid()
+    and b.approval_state = 'pending'
+    and b.status = 'upcoming'
+    and b.authorized_at is not null
+  order by b.starts_at;
+$$;
+
+revoke all on function host_requests() from public;
+grant execute on function host_requests() to authenticated;
+
+drop function if exists host_bookings();
+
+create function host_bookings()
+returns table (
+  booking_id uuid,
+  space_id uuid,
+  starts_at timestamptz,
+  ends_at timestamptz,
+  status booking_status,
+  net_cents integer,
+  practitioner_name text,
+  practitioner_avatar_path text,
+  host_paid_at timestamptz,
+  practitioner_profession text,
+  practitioner_identity_verified boolean,
+  practitioner_insurance_verified boolean,
+  practitioner_credential_reviewed boolean,
+  practitioner_completed_sessions integer,
+  practitioner_good_standing boolean
+)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select
+    b.id,
+    b.space_id,
+    b.starts_at,
+    b.ends_at,
+    b.status,
+    b.host_rate_cents,
+    p.display_name,
+    p.avatar_path,
+    b.host_paid_at,
+    p.profession,
+    p.identity_verified_at is not null,
+    p.insurance_doc_state = 'verified',
+    p.credential_doc_state = 'verified',
+    (
+      select count(*)::integer
+      from bookings cb
+      where cb.practitioner_id = b.practitioner_id
+        and cb.status = 'completed'
+        and cb.captured_at is not null
+    ),
+    (
+      select count(*)
+      from bookings lc
+      where lc.practitioner_id = b.practitioner_id
+        and lc.cancelled_by = 'practitioner'
+        and lc.captured_at is not null
+        and lc.cancelled_at > now() - interval '90 days'
+        and lc.starts_at - lc.cancelled_at < interval '24 hours'
+    ) < 2
+  from bookings b
+  join spaces s on s.id = b.space_id
+  join profiles p on p.id = b.practitioner_id
+  where s.host_id = auth.uid()
+    and b.captured_at is not null
+  order by b.starts_at;
+$$;
+
+revoke all on function host_bookings() from public;
+grant execute on function host_bookings() to authenticated;
+
+
+-- ===================================================================
+-- 0059_host_terms_v3.sql
+-- ===================================================================
+
+-- Host Terms v3 — the prohibited-use list gains three entries.
+--
+-- Overnight/residential use, transferring or subletting a booking, and
+-- intentional or reckless misuse of the space, furniture or equipment are now
+-- named in the agreement, matching the platform's enforced list
+-- (PROHIBITED_USES). New obligations on a host's guests, so the required version
+-- rises to 3 and hosts re-accept on their next listing — exactly what the
+-- versioning in 0052 was built to do. The app constant HOST_TERMS_VERSION
+-- matches this (a schema test asserts the two agree).
+
+create or replace function required_host_terms_version()
+returns integer
+language sql
+immutable
+as $$ select 3 $$;
+
+
+-- ===================================================================
+-- 0060_founding_host.sql
+-- ===================================================================
+
+-- Founding 50, host achievements, and the host signals a practitioner may see.
+--
+-- FOUNDING HOST is a permanent legacy status for the first 50 unique hosts to
+-- bring a listing live. One host is one spot however many rooms they list, it is
+-- earned the moment their first listing is approved, and it is never taken away
+-- — deleting a listing later does not touch it. It carries no price or benefit;
+-- it is recognition only.
+--
+-- The allocation authority is the founding_hosts ledger below, not the profile:
+-- a profile can be scrubbed and, for a host with no bookings, cascade-deleted, so
+-- counting live profile rows would let a departed host's spot re-open and be
+-- handed to somebody else. The ledger never loses a row, so a spot once consumed
+-- is one of the fifty forever. profiles.founding_number/founding_host_at are a
+-- projection of the ledger for the read paths, written in the same transaction:
+--
+--   founding_host_at   when the status was earned (server-written, permanent).
+--   founding_number    1..50, the order earned — a UNIQUE, capped column so the
+--                      database itself cannot hold a 51st Founding Host.
+--
+-- Host achievements are read live from completed, captured bookings; a guard at
+-- the foot of this file makes that count monotonic so a milestone cannot un-earn.
+
+alter table profiles
+  add column if not exists founding_host_at timestamptz,
+  add column if not exists founding_number integer;
+
+-- The hard cap lives in the schema, not only in the function: a unique number
+-- between 1 and 50, present exactly when the timestamp is.
+alter table profiles
+  drop constraint if exists profiles_founding_number_range;
+alter table profiles
+  add constraint profiles_founding_number_range check (
+    founding_number is null or (founding_number between 1 and 50)
+  );
+alter table profiles
+  drop constraint if exists profiles_founding_consistent;
+alter table profiles
+  add constraint profiles_founding_consistent check (
+    (founding_host_at is null) = (founding_number is null)
+  );
+drop index if exists profiles_founding_number_key;
+create unique index profiles_founding_number_key
+  on profiles (founding_number)
+  where founding_number is not null;
+
+-- ------------------------------------------------------------------
+-- Founding status is the server's to grant, never the account's.
+--
+-- Same principle as the verification verdicts (0058): a signed-in caller can
+-- never write founding_host_at or founding_number, on insert or update. Only the
+-- allocation function below (service role, no auth.uid()) sets them.
+-- ------------------------------------------------------------------
+create or replace function enforce_founding_server_only()
+returns trigger
+language plpgsql
+as $$
+declare
+  ins boolean := tg_op = 'INSERT';
+begin
+  if auth.uid() is not null
+     and (
+       new.founding_host_at is distinct from (case when ins then null else old.founding_host_at end)
+       or new.founding_number is distinct from (case when ins then null else old.founding_number end)
+     ) then
+    raise exception 'founding host status is set by the server, not the client'
+      using errcode = 'check_violation';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists profiles_founding_server_only on profiles;
+create trigger profiles_founding_server_only
+  before insert or update on profiles
+  for each row
+  execute function enforce_founding_server_only();
+
+-- ------------------------------------------------------------------
+-- The durable record of who the fifty are — the allocation authority.
+--
+-- A spot lives here, not only on the profile, because a profile does not last
+-- forever: account deletion scrubs it and, for a host with no bookings yet, can
+-- cascade it away. If allocation counted live profile rows, a departed Founding
+-- Host would re-open their spot and the next host would be handed a number that
+-- once belonged to somebody. This ledger never loses a row, so a consumed spot
+-- stays consumed and numbers only ever climb.
+--
+-- Server-only: no end user reads or writes it. RLS is on with no policy, and the
+-- grants are revoked, so only the definer functions below (running as owner)
+-- ever touch it.
+-- ------------------------------------------------------------------
+create table if not exists founding_hosts (
+  founding_number integer primary key check (founding_number between 1 and 50),
+  -- The host who earned it, kept even after their account is gone. Deliberately
+  -- no foreign key: the record must outlive the profile it names. One per host.
+  host_id uuid not null unique,
+  earned_at timestamptz not null default now()
+);
+
+alter table founding_hosts enable row level security;
+revoke all on founding_hosts from anon, authenticated;
+
+-- ------------------------------------------------------------------
+-- Allocate a Founding Host spot, atomically.
+--
+-- A transaction-scoped advisory lock serialises every award, so the count read
+-- and the number assigned cannot interleave — two hosts going live at the same
+-- instant can never both take the last spot. The ledger's own primary key, its
+-- unique host_id, and the 1..50 check are the backstop if that lock is ever
+-- bypassed. Idempotent: a host already in the ledger keeps their original number
+-- and moment, and the profile projection is refreshed in case it was lost.
+-- ------------------------------------------------------------------
+create or replace function award_founding_host(p_host_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  taken integer;
+  next_num integer;
+  existing_num integer;
+  existing_at timestamptz;
+begin
+  perform pg_advisory_xact_lock(hashtext('founding_host_allocation'));
+
+  -- Already one of the fifty? Keep it, and make sure the profile reflects it
+  -- (covers a profile re-created after deletion). Never re-number, never re-open.
+  select founding_number, earned_at into existing_num, existing_at
+    from founding_hosts where host_id = p_host_id;
+  if existing_num is not null then
+    update profiles
+      set founding_number = existing_num, founding_host_at = existing_at
+      where id = p_host_id
+        and (founding_number is distinct from existing_num
+             or founding_host_at is distinct from existing_at);
+    return;
+  end if;
+
+  select count(*) into taken from founding_hosts;
+  if taken >= 50 then
+    return;
+  end if;
+
+  -- The ledger never loses a row, so its highest number only grows: the next
+  -- number cannot collide with one already consumed, even after a deletion.
+  select coalesce(max(founding_number), 0) + 1 into next_num from founding_hosts;
+
+  insert into founding_hosts (founding_number, host_id) values (next_num, p_host_id);
+
+  -- Project onto the profile for the read paths, in this same transaction.
+  update profiles
+    set founding_number = next_num,
+        founding_host_at = (select earned_at from founding_hosts where host_id = p_host_id)
+    where id = p_host_id;
+end;
+$$;
+
+revoke all on function award_founding_host(uuid) from public;
+grant execute on function award_founding_host(uuid) to service_role;
+
+-- How many Founding Host spots are left, counted from the durable ledger — never
+-- a stored countdown, and never re-opened by a deletion. SECURITY DEFINER so the
+-- same real, global count reaches every caller: profiles' RLS only lets a signed
+-- in user see their own row, which would otherwise make an invoker count return
+-- a private, wrong number. It exposes only the integer — no ledger row, no
+-- profile data leaves this function.
+create or replace function founding_hosts_remaining()
+returns integer
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select greatest(0, 50 - (select count(*) from founding_hosts))::integer;
+$$;
+
+revoke all on function founding_hosts_remaining() from public;
+grant execute on function founding_hosts_remaining() to anon, authenticated, service_role;
+
+-- ------------------------------------------------------------------
+-- The one qualifying moment, allocated in the same transaction.
+--
+-- Founding Host is earned when a host's first listing goes live — the moment a
+-- space moves from pending to active. Rather than the approval route awarding
+-- the spot in a second, best-effort call that could fail after the listing was
+-- already live, the transition itself allocates the spot: an after-update
+-- trigger on that exact change, calling the atomic function above inside the
+-- approval's own transaction.
+--
+-- So the two cannot come apart. If allocation genuinely fails, the approval
+-- rolls back with it and can be retried — a qualifying host is never left live
+-- but skipped. If all fifty spots are gone, the function returns without a
+-- number and the approval commits normally: not being in the first fifty is an
+-- ordinary outcome, not an error. Relisting (delisted -> active) is not this
+-- transition and does not fire, so earned status is never altered later. The
+-- function is definer-run here so the allocation does not depend on which role
+-- performed the approval.
+-- ------------------------------------------------------------------
+create or replace function allocate_founding_on_go_live()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  perform award_founding_host(new.host_id);
+  return null;
+end;
+$$;
+
+drop trigger if exists spaces_allocate_founding on spaces;
+create trigger spaces_allocate_founding
+  after update on spaces
+  for each row
+  when (old.status = 'pending' and new.status = 'active')
+  execute function allocate_founding_on_go_live();
+
+-- ------------------------------------------------------------------
+-- One-time backfill for hosts already live when this ships.
+--
+-- The trigger above only fires on future approvals, so without this every host
+-- already live would be passed over. This grants them their place, deterministic
+-- and derived entirely from real rows — it invents no host and no number.
+--
+-- Qualification is a genuinely live listing (status 'active', which 0018 already
+-- means a verified lease). Hosts are ordered by when their first such listing
+-- went live: sublease_doc_reviewed_at is that moment exactly — the approval
+-- route stamps it in the same write that sets status to active, and relisting
+-- never rewrites it — with created_at as the safe factual fallback for any
+-- pre-0018 listing that predates the review timestamp. One host takes one spot
+-- however many rooms they hold (grouped by host), numbers run 1..50 and stop,
+-- and a host who somehow already holds a valid assignment is left untouched.
+-- Idempotent: run again and every qualifying host is already numbered, the
+-- remaining candidates find no spots under fifty, and nothing changes.
+-- ------------------------------------------------------------------
+with qualified as (
+  select s.host_id,
+         min(coalesce(s.sublease_doc_reviewed_at, s.created_at)) as went_live
+  from spaces s
+  where s.status = 'active'
+  group by s.host_id
+),
+candidates as (
+  select q.host_id, q.went_live
+  from qualified q
+  where not exists (
+    select 1 from founding_hosts fh where fh.host_id = q.host_id
+  )
+),
+taken as (
+  select count(*)::int as n from founding_hosts
+),
+ranked as (
+  select c.host_id,
+         c.went_live,
+         row_number() over (order by c.went_live asc, c.host_id asc) as rn
+  from candidates c
+)
+insert into founding_hosts (founding_number, host_id, earned_at)
+select (select n from taken) + r.rn, r.host_id, r.went_live
+from ranked r
+where (select n from taken) + r.rn <= 50;
+
+-- Project the ledger onto profiles for the read paths, without disturbing a host
+-- who already carries a number.
+update profiles p
+set founding_number = fh.founding_number,
+    founding_host_at = fh.earned_at
+from founding_hosts fh
+where fh.host_id = p.id
+  and p.founding_number is null;
+
+-- ------------------------------------------------------------------
+-- A held session is a permanent fact — a milestone cannot un-earn.
+--
+-- Host achievements are read live from completed, captured bookings, and the
+-- product rule is that a milestone once earned stays earned. Removal is already
+-- impossible: bookings.space_id and bookings.practitioner_id are on delete
+-- restrict, so a completed booking is never cascaded away and account deletion
+-- is refused while one exists. This closes the other two doors — once a booking
+-- is completed and its money captured, its status cannot leave 'completed' and
+-- its capture cannot be cleared, and the row cannot be deleted directly either.
+-- Every normal flow is untouched: the sweep only moves upcoming -> completed,
+-- the webhook only sets captured_at, refunds and claims write neither, and the
+-- booking roll-back paths only ever remove fresh, uncaptured holds. So this
+-- refuses exactly the regressions that would silently lower a host's session
+-- count, and nothing a live flow actually does.
+-- ------------------------------------------------------------------
+create or replace function keep_held_session_permanent()
+returns trigger
+language plpgsql
+as $$
+begin
+  if tg_op = 'DELETE' then
+    if old.status = 'completed' and old.captured_at is not null then
+      raise exception 'a completed, captured booking is a permanent record and cannot be deleted'
+        using errcode = 'check_violation';
+    end if;
+    return old;
+  end if;
+
+  if old.status = 'completed' and old.captured_at is not null then
+    if new.status is distinct from old.status then
+      raise exception 'a completed booking cannot leave completed'
+        using errcode = 'check_violation';
+    end if;
+    if new.captured_at is null then
+      raise exception 'a captured booking cannot lose its capture'
+        using errcode = 'check_violation';
+    end if;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists bookings_held_session_permanent on bookings;
+create trigger bookings_held_session_permanent
+  before update or delete on bookings
+  for each row
+  execute function keep_held_session_permanent();
+
+-- ------------------------------------------------------------------
+-- The host signals a practitioner may see, and only those.
+--
+-- Extends the narrowed view from 0004 — still only hosts with a live listing,
+-- so a practitioner has no public presence and a host drops out the moment they
+-- have no active space — with two signals: founding status, and the highest
+-- session milestone reached. The milestone is a bucket
+-- (0/1/10/50/100/250/500/1000), never the exact session count, so a browser
+-- learns "100 Sessions" but not a host's precise volume. A session counts only
+-- when completed and paid (status 'completed', captured_at set) — the same
+-- truth host_bookings() and hostFactsFrom read. The buckets are pinned to
+-- lib/host-achievements by host-achievements-sql-sync.test.ts.
+-- ------------------------------------------------------------------
+drop view if exists public_host_profiles;
+create view public_host_profiles as
+  select
+    p.id,
+    p.display_name,
+    p.avatar_path,
+    p.founding_host_at is not null as founding_host,
+    (
+      with sessions as (
+        select count(*) as n
+        from bookings b
+        join spaces s on s.id = b.space_id
+        where s.host_id = p.id
+          and b.status = 'completed'
+          and b.captured_at is not null
+      )
+      select case
+        when n >= 1000 then 1000
+        when n >= 500 then 500
+        when n >= 250 then 250
+        when n >= 100 then 100
+        when n >= 50 then 50
+        when n >= 10 then 10
+        when n >= 1 then 1
+        else 0
+      end
+      from sessions
+    ) as session_milestone
+  from profiles p
+  where exists (
+    select 1
+    from spaces s
+    where s.host_id = p.id
+      and s.status = 'active'
+  );
+
+grant select on public_host_profiles to anon, authenticated;
+
+
+-- ===================================================================
+-- 0061_host_referrals.sql
+-- ===================================================================
+
+-- Host referrals — attribution, progress, and qualification. No reward yet.
+--
+-- The foundation for a host referral program: who brought whom, how far the
+-- brought host has got, and the one moment the referral is genuinely qualified.
+-- Attribution and anti-abuse only — there is no money here, no balance, no
+-- amount, and none of those decisions are made.
+--
+-- Everything a client must not forge lives in server-only tables the definer
+-- functions alone touch:
+--   * referrer_codes — who is an eligible referrer, and their opaque code. The
+--     code is here, not on the broadly client-writable profiles table, so a host
+--     can never plant or change it. Eligibility is earned once, at a genuine
+--     first approval, and never lost — the durable answer to "has had a listing
+--     approved at some point".
+--   * referrals — one row per brought host with server-written milestone
+--     timestamps; the stable id a later reward attaches to.
+--
+-- A later rewards package attaches to referrals.id without rewriting any history.
+
+-- ------------------------------------------------------------------
+-- Close the space-approval insert gap first.
+--
+-- authenticated holds table-level INSERT on spaces (0002), and column grants
+-- narrow only UPDATE (0019) — so a crafted insert could arrive already
+-- status='active', sublease_doc_state='verified', review timestamps set, and
+-- satisfy the active-listing constraints without a real staff approval (which
+-- would also forge referrer eligibility below). This normalises every
+-- client-created listing to a factual unreviewed, not-live state; staff (the
+-- service role, no auth.uid()) are untouched, and normal Add Space is unaffected
+-- because it never sets these fields. Going live and every review verdict remain
+-- the server's, on insert as much as on update.
+-- ------------------------------------------------------------------
+create or replace function enforce_space_review_server_only()
+returns trigger
+language plpgsql
+as $$
+begin
+  if auth.uid() is not null then
+    new.status := 'pending';
+    new.sublease_doc_state := 'pending';
+    new.sublease_doc_reviewed_at := null;
+    new.insurance_doc_state := 'pending';
+    new.insurance_doc_reviewed_at := null;
+    new.doc_review_note := null;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists spaces_review_server_only on spaces;
+create trigger spaces_review_server_only
+  before insert on spaces
+  for each row
+  execute function enforce_space_review_server_only();
+
+-- ------------------------------------------------------------------
+-- The referrer ledger — eligibility and the shareable code, server-only.
+--
+-- A row exists exactly for an established host: someone who has had a listing
+-- genuinely approved. It is created at that first pending -> active approval and
+-- never removed — not by delisting, not by an edit sending the listing back to
+-- pending, not by a later rejection — so eligibility, once earned, is permanent.
+-- The code lives here rather than on profiles, so a client can neither read the
+-- ledger nor write, plant, or clear a code. RLS on with no policy and grants
+-- revoked: only the definer functions below reach it.
+-- ------------------------------------------------------------------
+create table if not exists referrer_codes (
+  -- Tied to the account. Deleting the Minimum Stress account cascades the profile
+  -- away (auth.users -> profiles) and this row with it, so a departed host's code
+  -- can no longer attribute anyone. Delisting or editing a space touches no
+  -- profile, so eligibility survives that — exactly the intended lifecycle.
+  host_id uuid primary key references profiles (id) on delete cascade,
+  code text not null unique,
+  eligible_since timestamptz not null default now()
+);
+
+alter table referrer_codes enable row level security;
+revoke all on referrer_codes from anon, authenticated;
+
+-- Grant a host their referrer row, idempotently, with a unique opaque code.
+-- The code is eight characters from gen_random_uuid — not derived from the user
+-- id — retried on the vanishingly rare collision. `p_since` lets the backfill
+-- record the real historical approval time; live approvals use now().
+create or replace function ensure_referrer(p_host_id uuid, p_since timestamptz default now())
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_code text;
+begin
+  if exists (select 1 from referrer_codes where host_id = p_host_id) then
+    return;
+  end if;
+  loop
+    v_code := upper(substr(replace(gen_random_uuid()::text, '-', ''), 1, 8));
+    begin
+      insert into referrer_codes (host_id, code, eligible_since)
+        values (p_host_id, v_code, p_since);
+      return;
+    exception when unique_violation then
+      -- Either another path just created this host's row, or the code collided.
+      if exists (select 1 from referrer_codes where host_id = p_host_id) then
+        return;
+      end if;
+      -- otherwise loop and pick another code
+    end;
+  end loop;
+end;
+$$;
+
+-- Internal only. A SECURITY DEFINER function keeps its default PUBLIC execute
+-- unless revoked, which would let any signed-in account mint itself referrer
+-- eligibility and a code by calling this directly. It is reached only by the
+-- go-live trigger and the backfill below — both run as the owner, so neither
+-- needs a grant — and by nobody else.
+revoke all on function ensure_referrer(uuid, timestamptz) from public;
+
+-- The caller's own code, or null if they are not an eligible referrer. A pure
+-- read: eligibility is earned by approval (the trigger below) or the backfill,
+-- never by asking for the code. Exposes only the code, nothing else.
+create or replace function my_referral_code()
+returns text
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select code from referrer_codes where host_id = auth.uid();
+$$;
+
+revoke all on function my_referral_code() from public;
+grant execute on function my_referral_code() to authenticated;
+
+-- ------------------------------------------------------------------
+-- The referral ledger — one row per brought host, with the milestones it passes.
+--
+-- referred_host_id is UNIQUE, so a host is attributed to exactly one referrer,
+-- once and for good. The three timestamps are the progression a later reward
+-- reads: attributed, first listing live, first completed-and-paid booking. Like
+-- founding_hosts, the ids carry no foreign key on purpose: the record must
+-- outlive an account so a qualified referral survives the brought host deleting
+-- theirs, and its id stays a stable anchor. Server-only: RLS on, no policy, no
+-- grant, so referred_host_id (a raw user id) never leaves the database.
+-- ------------------------------------------------------------------
+create table if not exists referrals (
+  id uuid primary key default gen_random_uuid(),
+  referrer_id uuid not null,
+  referred_host_id uuid not null unique,
+  attributed_at timestamptz not null default now(),
+  listing_live_at timestamptz,
+  qualified_at timestamptz,
+  first_qualifying_booking_id uuid,
+  constraint referrals_no_self check (referrer_id <> referred_host_id)
+);
+
+create index if not exists referrals_referrer_idx on referrals (referrer_id);
+
+alter table referrals enable row level security;
+revoke all on referrals from anon, authenticated;
+
+-- ------------------------------------------------------------------
+-- Lock attribution: the brought host, to the referrer whose code they used.
+--
+-- Called by the newly signed-in host with the code from their link. Definer, so
+-- it resolves the referrer behind the code without exposing it. Every anti-abuse
+-- rule lives here and in the UNIQUE column: an unknown code is a no-op; the
+-- referrer must be an established host (a referrer_codes row); a host cannot
+-- refer themselves; a host already attributed is never re-attributed (first
+-- wins, locked); only a genuinely new host — one who has not started hosting —
+-- is attributed at all; and a direct reciprocal loop is refused. The insert's
+-- ON CONFLICT makes two racing calls settle on one row.
+-- ------------------------------------------------------------------
+create or replace function attribute_referral(p_code text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_referred uuid := auth.uid();
+  v_referrer uuid;
+begin
+  if v_referred is null then
+    return;
+  end if;
+  if p_code is null or length(trim(p_code)) = 0 then
+    return;
+  end if;
+
+  -- The code resolves only to an established, eligible referrer — a
+  -- referrer_codes row is proof of a genuine approval at some point. A code
+  -- supplied for any other account simply does not resolve here.
+  select host_id into v_referrer from referrer_codes where code = upper(trim(p_code));
+  if v_referrer is null then
+    return;
+  end if;
+  if v_referrer = v_referred then
+    return; -- no self-referral
+  end if;
+
+  -- Already attributed to someone: attribution is locked to the first referrer.
+  if exists (select 1 from referrals where referred_host_id = v_referred) then
+    return;
+  end if;
+
+  -- Only a genuinely new host — nobody who has already begun hosting. Any space
+  -- at all (draft/pending/rejected/active/delisted) counts as having begun.
+  if exists (select 1 from spaces where host_id = v_referred) then
+    return;
+  end if;
+
+  -- No direct reciprocal loop: the referrer is not already referred by this host.
+  if exists (
+    select 1 from referrals
+    where referrer_id = v_referred and referred_host_id = v_referrer
+  ) then
+    return;
+  end if;
+
+  insert into referrals (referrer_id, referred_host_id)
+    values (v_referrer, v_referred)
+    on conflict (referred_host_id) do nothing;
+end;
+$$;
+
+revoke all on function attribute_referral(text) from public;
+grant execute on function attribute_referral(text) to authenticated;
+
+-- ------------------------------------------------------------------
+-- A listing goes live: the host earns referrer eligibility, and referral
+-- progress advances.
+--
+-- The one qualifying transition — pending to active — which after the insert
+-- guard above only the service role's approval can cause. It does two things,
+-- both permanent: it grants the host a referrer row (eligible for good), and, if
+-- the host was themselves referred, records their first listing going live.
+-- Relisting (delisted -> active) is not this transition and does not fire.
+-- ------------------------------------------------------------------
+create or replace function on_listing_first_live()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  perform ensure_referrer(new.host_id);
+  update referrals
+    set listing_live_at = now()
+    where referred_host_id = new.host_id and listing_live_at is null;
+  return null;
+end;
+$$;
+
+-- Internal trigger helper, definer-run: revoke the default PUBLIC execute so it
+-- can never be called directly, only fired by the trigger below.
+revoke all on function on_listing_first_live() from public;
+
+drop trigger if exists spaces_referral_on_live on spaces;
+create trigger spaces_referral_on_live
+  after update on spaces
+  for each row
+  when (old.status = 'pending' and new.status = 'active')
+  execute function on_listing_first_live();
+
+-- ------------------------------------------------------------------
+-- Qualification: the brought host's first completed, captured hosted booking.
+--
+-- Fires the instant a booking on the brought host's space enters the same state
+-- Host Achievements counts — status 'completed' AND captured_at set — regardless
+-- of which of the two lands last. Marks the referral qualified exactly once
+-- (qualified_at is null guards it) and records which booking did it. A later
+-- booking finds qualified_at set and changes nothing, so qualification never
+-- duplicates. Nothing here trusts a client: the state comes from the booking
+-- lifecycle, and 0060's guard keeps a completed, captured booking from being
+-- unwound.
+-- ------------------------------------------------------------------
+create or replace function mark_referral_qualified()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_host uuid;
+begin
+  select host_id into v_host from spaces where id = new.space_id;
+  if v_host is null then
+    return null;
+  end if;
+
+  update referrals
+    set qualified_at = now(), first_qualifying_booking_id = new.id
+    where referred_host_id = v_host and qualified_at is null;
+  return null;
+end;
+$$;
+
+-- Internal trigger helper, definer-run: revoke the default PUBLIC execute.
+revoke all on function mark_referral_qualified() from public;
+
+drop trigger if exists bookings_referral_qualify on bookings;
+create trigger bookings_referral_qualify
+  after update on bookings
+  for each row
+  when (
+    (new.status = 'completed' and new.captured_at is not null)
+    and not (old.status = 'completed' and old.captured_at is not null)
+  )
+  execute function mark_referral_qualified();
+
+-- ------------------------------------------------------------------
+-- What a referrer may see about their own referrals — and only this.
+--
+-- A safe projection: the referral's own id, its factual status, and when the
+-- host joined. No referred_host_id, no name, no email, no listing, no booking,
+-- no revenue — the raw user id never leaves the database. Definer, scoped to the
+-- caller's own referrer_id.
+--   joined       attributed, nothing more yet
+--   space_live   their first listing is live
+--   qualified    first completed, captured booking — the referral is qualified
+-- ------------------------------------------------------------------
+create or replace function my_referrals()
+returns table (id uuid, status text, joined_at timestamptz)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select
+    r.id,
+    case
+      when r.qualified_at is not null then 'qualified'
+      when r.listing_live_at is not null then 'space_live'
+      else 'joined'
+    end as status,
+    r.attributed_at as joined_at
+  from referrals r
+  where r.referrer_id = auth.uid()
+  order by r.attributed_at desc;
+$$;
+
+revoke all on function my_referrals() from public;
+grant execute on function my_referrals() to authenticated;
+
+-- ------------------------------------------------------------------
+-- One-time backfill of referrer eligibility for hosts already established.
+--
+-- The trigger above only fires on future approvals, so existing hosts need their
+-- eligibility granted from the strongest durable evidence the schema actually
+-- holds: a currently-verified listing (a real approval, kept through delisting),
+-- and founding_hosts (durable proof a host went live, even if their listing has
+-- since been edited back to pending). eligible_since takes the earliest such
+-- moment. Nothing is invented: a host with neither a verified listing nor a
+-- founding record has no evidence of a past approval and is not granted a code —
+-- they earn it on their next genuine approval. Idempotent via ensure_referrer.
+-- ------------------------------------------------------------------
+do $$
+declare
+  r record;
+begin
+  for r in
+    select ev.host_id, min(ev.since) as since
+    from (
+      select host_id, coalesce(sublease_doc_reviewed_at, created_at) as since
+        from spaces
+        where sublease_doc_state = 'verified'
+      union all
+      select host_id, earned_at as since
+        from founding_hosts
+    ) ev
+    -- Only accounts that still exist: a founding_hosts row can outlive a deleted
+    -- account, and referrer_codes now requires a live profile.
+    join profiles p on p.id = ev.host_id
+    group by ev.host_id
+  loop
+    perform ensure_referrer(r.host_id, r.since);
+  end loop;
+end;
+$$;
+
+
+-- ===================================================================
+-- 0062_referral_rewards.sql
+-- ===================================================================
+
+-- Referral rewards — a durable, append-only ledger. $25 to the referrer only.
+--
+-- A reward exists only once a referral has reached its authoritative qualified
+-- state (referrals.qualified_at, set on the referred host's first completed and
+-- captured hosted booking — migration 0061). Never at click, signup,
+-- attribution, listing creation, or listing approval.
+--
+-- The shape follows credit_ledger, the platform's other money ledger: append
+-- only, one row per event, amount frozen at creation, `on delete restrict` so a
+-- financial record cannot be cascaded away, and totals read by summing the rows
+-- rather than any stored balance that could drift. No money moves here — see the
+-- report for why a $25 reward cannot reuse the booking payout path (which is
+-- charge-funded via source_transaction) and what a separate payout integration
+-- would need. Until then a reward is 'earned', never 'paid'.
+
+create table if not exists referral_rewards (
+  id uuid primary key default gen_random_uuid(),
+  -- Exactly one reward per referral, anchored to its stable id. Restrict, not
+  -- cascade: a referral is a durable record and a reward pins it further.
+  referral_id uuid not null unique references referrals (id) on delete restrict,
+  -- The owed party, frozen at creation. Restrict mirrors bookings and
+  -- credit_ledger: a financial record keeps an account from vanishing under it.
+  referrer_id uuid not null references profiles (id) on delete restrict,
+  -- Frozen at creation. No code path updates it, so the amount a referral earned
+  -- is whatever it earned the day it qualified.
+  amount_cents integer not null default 2500 check (amount_cents >= 0),
+  created_at timestamptz not null default now(),
+  -- No money has moved at launch, so every reward is 'earned'. A later payout
+  -- package flips it to 'paid' with the transfer evidence beside it. 'paid' and
+  -- paid_at move together, so the state can never claim a payment it cannot show.
+  payout_state text not null default 'earned' check (payout_state in ('earned', 'paid')),
+  paid_at timestamptz,
+  stripe_transfer_id text,
+  constraint referral_rewards_paid_consistent check ((payout_state = 'paid') = (paid_at is not null))
+);
+
+create index if not exists referral_rewards_referrer_idx on referral_rewards (referrer_id);
+
+-- Server-only, like the referral ledgers it reads from. RLS on with no policy
+-- and grants revoked: a client can neither read the ledger nor forge, alter, or
+-- delete a reward. Only the definer trigger and backfill below write it.
+alter table referral_rewards enable row level security;
+revoke all on referral_rewards from anon, authenticated;
+
+-- ------------------------------------------------------------------
+-- Create the reward the moment a referral qualifies — exactly once.
+--
+-- Fires only on the qualified_at transition null -> not null, which
+-- mark_referral_qualified (0061) performs exactly once, guarded by qualified_at
+-- being null. The UNIQUE(referral_id) and ON CONFLICT make it idempotent
+-- besides, so a retried webhook, a second booking, or a re-run backfill can
+-- never mint a second reward. A referrer whose account is already gone earns
+-- nothing — and, just as important, qualification must not fail on a dangling
+-- reference, so the reward is skipped rather than raised.
+--
+-- Account existence is auth.users, not profiles: account deletion
+-- (lib/account-deletion) deletes the auth user but deliberately RETAINS the
+-- scrubbed profile row as a foreign-key target for financial history, so a
+-- profiles check would wrongly count a deleted referrer as present and reward
+-- them. Definer-run, so it may read auth.users; it exposes nothing — only the
+-- existence answer is used, internally.
+-- ------------------------------------------------------------------
+create or replace function create_referral_reward()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not exists (select 1 from auth.users where id = new.referrer_id) then
+    return null;
+  end if;
+
+  insert into referral_rewards (referral_id, referrer_id, amount_cents)
+    values (new.id, new.referrer_id, 2500)
+    on conflict (referral_id) do nothing;
+  return null;
+end;
+$$;
+
+revoke all on function create_referral_reward() from public;
+
+drop trigger if exists referrals_reward_on_qualify on referrals;
+create trigger referrals_reward_on_qualify
+  after update on referrals
+  for each row
+  when (old.qualified_at is null and new.qualified_at is not null)
+  execute function create_referral_reward();
+
+-- ------------------------------------------------------------------
+-- One-time backfill for referrals already qualified when this ships.
+--
+-- Every referral that has genuinely reached qualified_at earns its one reward,
+-- dated to when it qualified — nothing is fabricated for a referral that never
+-- did. The join to auth.users skips a referrer whose account has been deleted
+-- (the same rule as the trigger: a deleted account keeps a scrubbed profile but
+-- loses its auth user), and ON CONFLICT makes a re-run change nothing.
+-- Deterministic and idempotent.
+-- ------------------------------------------------------------------
+insert into referral_rewards (referral_id, referrer_id, amount_cents, created_at)
+select r.id, r.referrer_id, 2500, r.qualified_at
+from referrals r
+join auth.users u on u.id = r.referrer_id
+where r.qualified_at is not null
+on conflict (referral_id) do nothing;
+
+-- ------------------------------------------------------------------
+-- The caller's own rewards, keyed by the referral they belong to.
+--
+-- A separate reader rather than a change to my_referrals (0061), so the shipped
+-- function keeps its signature and the migration sequence stays re-runnable. The
+-- app joins these onto its referral list by id. Each row is one reward: its
+-- amount, and its payout state — 'earned' until a later payout package pays it,
+-- then 'paid'. Scoped to the caller's own rewards; no referred-host id or other
+-- private data leaves the database, and totals are summed from these real rows.
+-- ------------------------------------------------------------------
+create or replace function my_referral_rewards()
+returns table (
+  referral_id uuid,
+  amount_cents integer,
+  payout_state text
+)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select rw.referral_id, rw.amount_cents, rw.payout_state
+  from referral_rewards rw
+  where rw.referrer_id = auth.uid();
+$$;
+
+revoke all on function my_referral_rewards() from public;
+grant execute on function my_referral_rewards() to authenticated;
+
+
+-- ===================================================================
+-- 0063_messaging_hardening.sql
+-- ===================================================================
+
+-- Messaging hardening — close the original_body leak and the broad update.
+--
+-- Two boundary defects from 0015, fixed at the database:
+--
+--   1. authenticated held table-level SELECT on messages, so a participant could
+--      read original_body directly and bypass messages_visible — defeating the
+--      masking the whole feature exists for. The grant is narrowed to the safe
+--      columns; messages_visible (security_invoker) still works because it reads
+--      exactly those, and `select original_body` is now refused.
+--
+--   2. authenticated held UPDATE on messages, and the 0015 policy only checked
+--      "participant, not the sender" — not WHICH columns changed — so a
+--      participant could rewrite the other side's body, original_body, sender_id,
+--      or booking_id. The grant and policy are removed; the one legitimate write,
+--      marking a message read, moves to a narrow definer RPC.
+--
+-- Reading is unchanged: the SELECT policy from 0015 still scopes rows to booking
+-- participants, and messages_visible is still the only client read surface.
+
+-- 1. original_body is no longer client-readable.
+revoke select, update on messages from authenticated;
+grant select (id, booking_id, sender_id, body, redacted_kinds, created_at, read_at)
+  on messages to authenticated;
+
+-- 2. No broad client UPDATE. Read state is the RPC below.
+drop policy if exists "messages: participants mark others' as read" on messages;
+
+-- ------------------------------------------------------------------
+-- mark_messages_read — the only write a client may make to a message.
+--
+-- Marks the messages in one thread that are addressed to the caller as read, and
+-- nothing else: it validates the caller is on the booking, touches only read_at,
+-- only on messages the caller did not send, and only ones still unread. A sender
+-- can never mark their own outgoing message read on the recipient's behalf, and
+-- body, original_body, sender_id, booking_id, created_at and redacted_kinds are
+-- unreachable. Idempotent — a second call marks nothing and returns 0. Definer,
+-- so it may write read_at even though authenticated now holds no UPDATE grant.
+-- ------------------------------------------------------------------
+create or replace function mark_messages_read(p_booking_id uuid)
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_count integer;
+begin
+  if auth.uid() is null then
+    return 0;
+  end if;
+  if not is_booking_participant(p_booking_id) then
+    return 0;
+  end if;
+
+  update messages
+    set read_at = now()
+    where booking_id = p_booking_id
+      and sender_id <> auth.uid()
+      and read_at is null;
+
+  get diagnostics v_count = row_count;
+  return v_count;
+end;
+$$;
+
+revoke all on function mark_messages_read(uuid) from public;
+grant execute on function mark_messages_read(uuid) to authenticated;
+
+-- ------------------------------------------------------------------
+-- unread_message_counts — server truth for the unread badge.
+--
+-- One row per thread with an unread incoming message, for the caller. Invoker,
+-- so messages_visible's row policy applies and the count covers only threads the
+-- caller is on; a message the caller sent never counts toward their own unread.
+-- ------------------------------------------------------------------
+create or replace function unread_message_counts()
+returns table (booking_id uuid, unread integer)
+language sql
+stable
+security invoker
+set search_path = public
+as $$
+  select booking_id, count(*)::integer as unread
+  from messages_visible
+  where sender_id <> auth.uid()
+    and read_at is null
+  group by booking_id;
+$$;
+
+revoke all on function unread_message_counts() from public;
+grant execute on function unread_message_counts() to authenticated;
+
+-- ------------------------------------------------------------------
+-- New messages only on a live booking — enforced at the boundary.
+--
+-- Reading a thread stays open whatever became of the booking, so historical
+-- messages remain readable after a cancellation. But a NEW message may be sent
+-- only on a booking that is genuinely confirmed: captured (which a pending,
+-- declined, or expired request never is) and not cancelled. This trigger is the
+-- server-authoritative rule, applied to every insert path including the service
+-- role's, so it holds even if a future caller forgets it; the send route checks
+-- the same thing first to return a friendly message rather than an exception.
+-- Completed and no-show sessions stay open — no new closure window is invented
+-- here.
+-- ------------------------------------------------------------------
+create or replace function enforce_message_sendable()
+returns trigger
+language plpgsql
+as $$
+declare
+  b record;
+begin
+  select captured_at, status into b from bookings where id = new.booking_id;
+  if b is null
+     or b.captured_at is null
+     or b.status in ('cancelled_by_practitioner', 'cancelled_by_host') then
+    raise exception 'messaging is available only on a confirmed booking'
+      using errcode = 'check_violation';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists messages_sendable on messages;
+create trigger messages_sendable
+  before insert on messages
+  for each row
+  execute function enforce_message_sendable();
+
+
+-- ===================================================================
+-- 0064_public_inventory_is_private.sql
+-- ===================================================================
+
+-- Individual inventory moves inside the signed-in marketplace.
+--
+-- The public marketing site historically served a full listing to a stranger:
+-- name, description, photographs, price, capacity, amenities, house rules and
+-- reviews, one page per room, all of it read straight from views granted to
+-- `anon` and photographs served from a public storage bucket. That was the SEO
+-- engine's whole design, and it is no longer the product we want: a host's
+-- studio is not public classifieds. Where the marketplace operates — the city,
+-- the category, how many rooms, a safe price band — stays public and helps
+-- people discover Minimum Stress. Which room, run by whom, at what address, for
+-- how much, belongs to people signed in to the app.
+--
+-- The boundary this migration draws:
+--
+--   anon           may read ONLY the aggregate inventory views —
+--                  city_inventory, city_type_inventory, and the new
+--                  city_category_inventory — plus space_demand, and may still
+--                  INSERT a space_request. It can no longer read any per-listing
+--                  view or fetch any listing photograph.
+--
+--   authenticated  is unchanged. The app reads spaces_public,
+--                  availability_public, space_media_public, space_ratings,
+--                  public_reviews and public_host_profiles exactly as before,
+--                  and signs its own media URLs against the private bucket.
+--
+--   booked users   are untouched. The exact address, precise coordinates and
+--                  entry instructions still come only through
+--                  space_access_details(), whose booking check this migration
+--                  does not go near.
+--
+-- Nothing about pricing, the service fee, RLS on the base tables, or the
+-- booking/access timing changes here. This is purely who may read the public
+-- projections of inventory, and whether media is world-readable.
+--
+-- Idempotent: every REVOKE is a no-op if the grant is already gone, the policy
+-- is dropped-if-exists before it is recreated, the bucket update is
+-- unconditional, and the aggregate view is create-or-replace.
+
+-- ------------------------------------------------------------------
+-- 1. Close the per-listing views to anonymous visitors.
+--
+-- These stay granted to `authenticated` (and service_role) from their original
+-- migrations; only `anon`'s read is withdrawn. PostgREST refuses a select the
+-- role has no grant for before RLS is even consulted, so this alone stops an
+-- anonymous request to any of them.
+-- ------------------------------------------------------------------
+
+revoke select on spaces_public from anon;
+revoke select on space_media_public from anon;
+revoke select on availability_public from anon;
+revoke select on space_ratings from anon;
+revoke select on public_reviews from anon;
+revoke select on public_host_profiles from anon;
+
+-- ------------------------------------------------------------------
+-- 2. Aggregate inventory, with a small-group price floor.
+--
+-- The town / use / category counts stay public — where the marketplace
+-- operates and how deep it is. But a min/median/max over one or two rooms is
+-- not a market rate: it is an individual host's price wearing a market's
+-- clothes, and publishing it hands a specific listing's price to anyone who
+-- reads the aggregate directly (PostgREST, not just the page). So below three
+-- active rooms the three price columns come back NULL — at the view, not merely
+-- hidden in React — while the count stays. Three is the same bar the pages
+-- already used to decide whether to *print* a range (priceRange /
+-- MIN_LISTINGS_TO_INDEX); this moves the guarantee into the database so it holds
+-- for every reader, not only the rendered page.
+--
+-- city_inventory and city_type_inventory are redefined here (create-or-replace
+-- keeps their column set from 0043, only wrapping the price aggregates); the new
+-- city_category_inventory closes the last gap — the /spaces category filter,
+-- which used to group rows read from spaces_public. A room carries exactly one
+-- category, so counting by (state, city, category) is exact.
+-- ------------------------------------------------------------------
+
+create or replace view city_inventory as
+  select
+    state,
+    city,
+    count(*)::int as space_count,
+    case when count(*) >= 3 then min(hourly_rate_cents)::int end as min_cents,
+    case when count(*) >= 3 then max(hourly_rate_cents)::int end as max_cents,
+    case
+      when count(*) >= 3
+      then (percentile_cont(0.5) within group (order by hourly_rate_cents))::int
+    end as median_cents,
+    max(updated_at) as updated_at
+  from spaces
+  where status = 'active' and city is not null and state is not null
+  group by state, city;
+
+grant select on city_inventory to anon, authenticated;
+grant select on city_inventory to service_role;
+
+create or replace view city_type_inventory as
+  select
+    s.state,
+    s.city,
+    t.slug as space_type,
+    count(*)::int as space_count,
+    case when count(*) >= 3 then min(s.hourly_rate_cents)::int end as min_cents,
+    case when count(*) >= 3 then max(s.hourly_rate_cents)::int end as max_cents,
+    case
+      when count(*) >= 3
+      then (percentile_cont(0.5) within group (order by s.hourly_rate_cents))::int
+    end as median_cents,
+    max(s.updated_at) as updated_at
+  from spaces s
+  cross join lateral unnest(s.suitable_for) as t(slug)
+  where s.status = 'active' and s.city is not null and s.state is not null
+  group by s.state, s.city, t.slug;
+
+grant select on city_type_inventory to anon, authenticated;
+grant select on city_type_inventory to service_role;
+
+create or replace view city_category_inventory as
+  select
+    state,
+    category,
+    city,
+    count(*)::int as space_count,
+    case when count(*) >= 3 then min(hourly_rate_cents)::int end as min_cents,
+    case when count(*) >= 3 then max(hourly_rate_cents)::int end as max_cents,
+    case
+      when count(*) >= 3
+      then (percentile_cont(0.5) within group (order by hourly_rate_cents))::int
+    end as median_cents,
+    max(updated_at) as updated_at
+  from spaces
+  where status = 'active' and city is not null and state is not null
+  group by state, category, city;
+
+grant select on city_category_inventory to anon, authenticated;
+grant select on city_category_inventory to service_role;
+
+-- ------------------------------------------------------------------
+-- 3. Media stops being world-readable.
+--
+-- Hiding the URLs in React is not enough while the bucket is public: the object
+-- is fetchable by anyone who has, or guesses, its path. So the bucket goes
+-- private and the blanket public-read policy is replaced with one scoped to
+-- signed-in users, and to listings that are actually live (a host still reads
+-- their own space's media at any status, for the listing manager). The app
+-- reads media by minting short-lived signed URLs with the caller's own session;
+-- anonymous callers, having no session and no policy, get nothing. Host upload
+-- and delete policies (0003/0017) are untouched, so listing management is
+-- unaffected.
+-- ------------------------------------------------------------------
+
+update storage.buckets set public = false where id = 'space-media';
+
+drop policy if exists "space-media: public read" on storage.objects;
+drop policy if exists "space-media: read active listings or own" on storage.objects;
+
+create policy "space-media: read active listings or own"
+  on storage.objects for select
+  to authenticated
+  using (
+    bucket_id = 'space-media'
+    and exists (
+      select 1 from spaces s
+      where s.id::text = (storage.foldername(name))[1]
+        and (s.status = 'active' or s.host_id = auth.uid())
+    )
+  );
+
+
+-- ===================================================================
+-- 0065_fix_private_space_media_policy.sql
+-- ===================================================================
+
+-- Remove the broken 0064 space-media read policy; do not replace it.
+--
+-- 0064 made the bucket private and added a storage.objects read policy that
+-- authorised by listing. That approach cannot work: to know whether a path's
+-- listing is active or owned, the policy has to subquery `spaces`, and a
+-- subquery inside a storage policy is subject to `spaces`' own RLS — which is
+-- host-owner-only. 0017 already documented that querying `spaces` from a storage
+-- policy was observed to fail; 0064 hit the same wall (and its check compared a
+-- space id to the host path segment, so it matched nothing at all).
+--
+-- So listing media is no longer read straight from storage by the client.
+-- Reads go through an authenticated server route (/api/spaces/media/sign) which,
+-- with the service role, checks database truth — the media row exists and its
+-- space is active, or owned by the caller — and returns short-lived signed URLs
+-- only for the paths the caller may see. The service role bypasses RLS, so no
+-- storage.objects SELECT policy is needed for the app to read media at all.
+--
+-- This migration therefore only drops the broken policy. No owner read policy is
+-- added: the host's own media is read through the same server route (it checks
+-- ownership), so an owner storage policy would be dead — every app read is
+-- server-signed. The bucket stays private, anon keeps no read policy, and the
+-- host insert/update/delete policies from 0017 are untouched.
+--
+-- Idempotent: dropping an absent policy is a no-op.
+
+drop policy if exists "space-media: read active listings or own" on storage.objects;
+
+
+-- ===================================================================
+-- 0066_space_media_card_variant.sql
+-- ===================================================================
+
+-- Optimized image variants for listing media.
+--
+-- A host's phone photo is stored and served at full size — up to 12 MB — even
+-- into a 145px Discover card. New image uploads now carry two resized WebP
+-- variants: storage_path holds the detail-size image (long edge 1600) and a new
+-- card_path holds the card thumbnail (long edge 600). No huge original is kept;
+-- nothing in the product serves one.
+--
+-- card_path is nullable so existing rows — which have only their original in
+-- storage_path — keep working unchanged: the app falls back to storage_path
+-- wherever a card variant is absent. Video rows never carry a card_path.
+--
+-- The private/signed-URL architecture is untouched: both paths live under the
+-- same {host_id}/{space_id}/ prefix in the private bucket and are handed out
+-- only through the authenticated /api/spaces/media/sign route, which authorises
+-- either column against its own media row. Anonymous access stays closed — the
+-- view is recreated (a new column needs a fresh view) and re-granted to
+-- authenticated and service_role only, never anon (0064).
+--
+-- ROLLOUT ORDER: apply this migration BEFORE deploying the code, because the new
+-- signing route selects space_media.card_path and would error against a database
+-- that has no such column. This is an expand-only migration, so applying it
+-- while the CURRENTLY DEPLOYED (old) code is still running is safe:
+--   * card_path is nullable with no default — old inserts that omit it still
+--     succeed (card_path stays NULL);
+--   * space_media_public is widened, not narrowed — the old client reads it with
+--     select(*) and simply ignores the extra column; no old code references it;
+--   * the old signing route only queries storage_path, which is unchanged.
+-- So the safe sequence is: apply 0066 → deploy the new code. Backward
+-- compatibility is asserted in supabase/schema.test.ts.
+
+alter table space_media add column if not exists card_path text;
+
+drop view if exists space_media_public;
+
+create view space_media_public as
+  select m.id, m.space_id, m.storage_path, m.card_path, m.kind, m.position
+  from space_media m
+  join spaces s on s.id = m.space_id
+  where s.status = 'active';
+
+-- Authenticated marketplace users and the service role only. Anon is deliberately
+-- omitted: individual listing media is private (0064), reached through signed URLs.
+grant select on space_media_public to authenticated;
+grant select on space_media_public to service_role;
+
+
+-- ===================================================================
+-- 0067_message_safety_controls.sql
+-- ===================================================================
+
+-- User-safety controls for booking messaging (App Store Guideline 1.2).
+--
+-- The app has one user-to-user surface — the per-booking message thread — so the
+-- store requires a way to report the other party and to block an abusive one.
+-- Both are kept narrowly booking-related; this is not a social network.
+--
+-- Nothing here touches a booking's records or its access details. The address
+-- and door code come from space_access_details(), not from messaging, so a block
+-- severs the chat without ever stranding someone at a locked door, and a report
+-- stores who / which booking / why — never an address, a code, or a message.
+
+-- ------------------------------------------------------------------
+-- 1. Blocks. A user severs the message channel with another. Their own row(s)
+--    only — a client can never read or write someone else's blocks.
+-- ------------------------------------------------------------------
+create table if not exists blocked_users (
+  blocker_id uuid not null references profiles(id) on delete cascade,
+  blocked_id uuid not null references profiles(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (blocker_id, blocked_id),
+  check (blocker_id <> blocked_id)
+);
+
+alter table blocked_users enable row level security;
+revoke all on blocked_users from anon, authenticated;
+grant select, insert, delete on blocked_users to authenticated;
+
+create policy "blocked_users: manage own blocks"
+  on blocked_users for all
+  to authenticated
+  using (blocker_id = auth.uid())
+  with check (blocker_id = auth.uid());
+
+-- ------------------------------------------------------------------
+-- 2. Reports. A booking participant reports the other party. Staff review open
+--    reports with the service role; a client only ever writes its own, and reads
+--    none — so one user's report is never visible to another.
+-- ------------------------------------------------------------------
+create table if not exists message_reports (
+  id uuid primary key default gen_random_uuid(),
+  booking_id uuid not null references bookings(id) on delete cascade,
+  reporter_id uuid not null references profiles(id) on delete cascade,
+  reported_user_id uuid not null references profiles(id) on delete cascade,
+  reason text not null,
+  status text not null default 'open',
+  created_at timestamptz not null default now(),
+  check (char_length(reason) between 1 and 2000),
+  check (status in ('open', 'reviewing', 'closed'))
+);
+
+create index if not exists message_reports_open_idx
+  on message_reports (created_at)
+  where status = 'open';
+
+alter table message_reports enable row level security;
+revoke all on message_reports from anon, authenticated;
+grant insert on message_reports to authenticated;
+
+-- Only a participant of the booking, filing as themselves, may write a report.
+-- No select policy: staff read through the service role, never the client.
+create policy "message_reports: participant files own"
+  on message_reports for insert
+  to authenticated
+  with check (
+    reporter_id = auth.uid()
+    and exists (
+      select 1 from bookings b
+      join spaces s on s.id = b.space_id
+      where b.id = booking_id
+        and (b.practitioner_id = auth.uid() or s.host_id = auth.uid())
+    )
+  );
+
+-- ------------------------------------------------------------------
+-- 3. A block severs the channel. The send guard already gates on a confirmed,
+--    uncancelled booking (0063); extend it so neither party can post once either
+--    has blocked the other. The booking, its records and its access details are
+--    untouched — only the chat closes.
+-- ------------------------------------------------------------------
+create or replace function enforce_message_sendable()
+returns trigger
+language plpgsql
+as $$
+declare
+  b record;
+  practitioner uuid;
+  host uuid;
+begin
+  select captured_at, status into b from bookings where id = new.booking_id;
+  if b is null
+     or b.captured_at is null
+     or b.status in ('cancelled_by_practitioner', 'cancelled_by_host') then
+    raise exception 'messaging is available only on a confirmed booking'
+      using errcode = 'check_violation';
+  end if;
+
+  select bk.practitioner_id, sp.host_id into practitioner, host
+  from bookings bk join spaces sp on sp.id = bk.space_id
+  where bk.id = new.booking_id;
+
+  if exists (
+    select 1 from blocked_users
+    where (blocker_id = practitioner and blocked_id = host)
+       or (blocker_id = host and blocked_id = practitioner)
+  ) then
+    raise exception 'messaging is unavailable for this booking'
+      using errcode = 'check_violation';
+  end if;
+
+  return new;
+end;
+$$;
+
+-- The trigger from 0063 already calls enforce_message_sendable(); replacing the
+-- function is enough.

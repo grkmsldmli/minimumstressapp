@@ -1,15 +1,21 @@
 "use client";
 
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, type ReactNode, useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
+  Award,
+  Bell,
+  Briefcase,
   Check,
+  CheckCircle2,
   ChevronRight,
   CreditCard,
+  FileCheck,
   FileUp,
   LogOut,
   Scale,
   ScrollText,
+  ShieldCheck,
   X,
 } from "lucide-react";
 
@@ -17,14 +23,22 @@ import { AccountBadge } from "@/components/account-badge";
 import { AccountChange } from "@/components/account-change";
 import { DeleteAccount } from "@/components/delete-account";
 import { EmergencyContactCard } from "@/components/emergency-contact";
-import { BadgeCard } from "@/components/badge-card";
-import { MilestoneCard } from "@/components/milestone-card";
+import { PullToRefresh } from "@/components/pull-to-refresh";
 import { Ambient, BreathingLogo, Headline } from "@/components/brand";
 import { ConfettiBurst, PrimaryButton, Toggle } from "@/components/primitives";
 import { SavedCard } from "@/components/saved-card";
-import { StandingNotice } from "@/components/standing-notice";
+import { StandingSummary } from "@/components/standing-notice";
+import { shortName } from "@/components/document-status";
 import { AvatarUpload, DocumentUpload } from "@/components/uploads";
+import { SUPPORT_EMAIL } from "@/lib/company";
+import {
+  FOUNDING_PRACTITIONER_LABEL,
+  foundingPractitionerSpotsRemainingLabel,
+} from "@/lib/founding";
 import type { AccountType, Profile } from "@/lib/domain";
+import { PRACTITIONER_PROFESSIONS } from "@/lib/professions";
+import { type InsuranceStatus, insuranceStatus } from "@/lib/insurance";
+import { formatCoverageDate } from "@/lib/format-date";
 import { errorMessage } from "@/lib/error-message";
 import type { Standing } from "@/lib/reliability";
 import type { MilestoneKey } from "@/lib/milestones";
@@ -38,22 +52,74 @@ import {
 
 import { NavyScreen } from "./shared";
 
+/** The five-word status turned into the line shown on the profile row. */
+const INSURANCE_LABEL: Record<InsuranceStatus, string> = {
+  not_added: "Not added",
+  pending_review: "In review",
+  verified: "Verified",
+  rejected: "Rejected — re-upload",
+  expired: "Expired — renew",
+};
+
+/**
+ * The insurance line on the settings row.
+ *
+ * Verified is the one state worth a mark of its own — it is the whole point of
+ * the step, the thing that opens booking — so it carries the same green check a
+ * verified document wears elsewhere in the app. Every other state stays a plain
+ * grey word: "in review" or "expired" is a status, not something to dress up.
+ */
+function InsuranceRowValue({ status }: { status: InsuranceStatus }) {
+  if (status === "verified") {
+    return (
+      <span className="inline-flex items-center gap-1" style={{ color: "#557255" }}>
+        <CheckCircle2 size={13} />
+        Verified
+      </span>
+    );
+  }
+  return <>{INSURANCE_LABEL[status]}</>;
+}
+
 /* ------------------------------------------------------------------ */
-/*  Insurance upload — optional, never blocks a booking                */
+/*  Insurance upload — optional at onboarding, required before booking  */
 /* ------------------------------------------------------------------ */
 
 export function InsuranceUpload({
   onContinue,
   onBack,
   initialDocName,
+  status = "not_added",
+  reviewNote,
+  effectiveDate,
+  expiresAt,
 }: {
-  /** Rejects when the record does not save, so this screen does not move on. */
-  onContinue: (docName: string | null) => Promise<unknown>;
+  /**
+   * Given the picked file, uploads it and moves on; given null, moves on
+   * without a change (Skip, or Continue with nothing new to upload). Rejects
+   * when the upload does not land, so this screen does not move on.
+   */
+  onContinue: (file: File | null) => Promise<unknown>;
   onBack?: () => void;
   initialDocName: string | null;
+  /** Where the cover stands, so the screen can say more than "on file". */
+  status?: InsuranceStatus;
+  /** Staff's reason when a certificate was turned down, shown verbatim. */
+  reviewNote?: string | null;
+  /** The verified cover window, shown back once it is on record. */
+  effectiveDate?: Date | null;
+  expiresAt?: Date | null;
 }) {
   const [file, setFile] = useState<File | null>(null);
-  const existingName = file?.name ?? initialDocName;
+  /*
+   * What the file card shows. A freshly-picked file still has the name the
+   * person chose it by, and showing it confirms they picked the right one. A
+   * file already on record has only its storage path — a generated name behind
+   * two ids — so it shows its type instead, the way host documents do (see
+   * shortName). The raw path is never put on screen: it is nothing the
+   * practitioner would recognise and half of it is somebody's account id.
+   */
+  const existingName = file ? file.name : initialDocName ? shortName(initialDocName) : null;
   const [saving, setSaving] = useState(false);
   /*
    * This screen used to record the policy and move on in the same breath. A
@@ -62,6 +128,273 @@ export function InsuranceUpload({
    * to produce if anything ever went wrong in a room.
    */
   const [saveError, setSaveError] = useState<string | null>(null);
+
+  /*
+   * Two states, not one screen that says everything at once. Before a file is
+   * on record this is the optional upload step; once one is — and while it is
+   * being reviewed — it is a short status, not a fresh pitch to add what is
+   * already there. The upload, replacement, review and status logic is
+   * unchanged; only what the screen says about them.
+   */
+  const hasCertOnFile = Boolean(initialDocName);
+
+  // The on-file state's words, driven by where the cover actually stands, so a
+  // pending certificate does not read the same as a verified or rejected one.
+  const reviewCopy: Record<InsuranceStatus, { pre: string; accent: string; body: string }> = {
+    not_added: {
+      pre: "Your insurance is",
+      accent: "under review.",
+      body: "We'll let you know when it's verified. You can keep exploring spaces in the meantime.",
+    },
+    pending_review: {
+      pre: "Your insurance is",
+      accent: "under review.",
+      body: "We'll let you know when it's verified. You can keep exploring spaces in the meantime.",
+    },
+    verified: {
+      pre: "Your insurance is",
+      accent: "verified.",
+      body: "You're covered and can book a space.",
+    },
+    expired: {
+      pre: "Your insurance has",
+      accent: "expired.",
+      body: "Upload a current certificate to book again.",
+    },
+    rejected: {
+      pre: "Your insurance needs",
+      accent: "another look.",
+      body: reviewNote?.trim() || "Add a valid certificate and we'll review it again.",
+    },
+  };
+  const onFileCopy = reviewCopy[status];
+
+  const submit = (fileToSubmit: File | null) => {
+    setSaveError(null);
+    setSaving(true);
+    void onContinue(fileToSubmit)
+      .catch((cause) => setSaveError(errorMessage(cause, "That did not save. Try again.")))
+      .finally(() => setSaving(false));
+  };
+
+  return (
+    <NavyScreen>
+      <div className="flex-1 flex flex-col justify-center px-8 relative z-10">
+        {onBack && (
+          <button
+            type="button"
+            onClick={onBack}
+            aria-label="Back"
+            className="w-9 h-9 rounded-full flex items-center justify-center press absolute left-8 top-8 z-20"
+            style={{ backgroundColor: "rgba(255,255,255,0.14)" }}
+          >
+            <ArrowLeft size={16} color="#fff" />
+          </button>
+        )}
+
+        {hasCertOnFile ? (
+          <>
+            <p className="font-body font-semibold text-[12px] uppercase tracking-[0.2em] text-sky-soft">
+              Insurance
+            </p>
+            <div className="mt-2">
+              <Headline pre={onFileCopy.pre} accent={onFileCopy.accent} size={27} light />
+            </div>
+            <p className="font-body font-normal text-[14px] leading-relaxed text-white/65 mt-3">
+              {onFileCopy.body}
+            </p>
+
+            {/*
+              The file already on record, with the way to swap it in place. Same
+              picker the upload state uses — a replacement is a newly-picked
+              File, submitted by Continue exactly as a first upload is.
+            */}
+            <div className="mt-6 rounded-2xl p-4 bg-white">
+              <p className="font-body text-[13.5px] text-ink-soft mb-1.5">Certificate of insurance</p>
+              <div
+                className="flex items-center gap-2.5 px-4 py-3 rounded-xl"
+                style={{ border: "1px solid #D4E8FA", backgroundColor: "#EDF6FE" }}
+              >
+                <FileCheck size={16} color="#3B9BE8" className="shrink-0" />
+                <span className="font-body text-[13.5px] flex-1 truncate text-navy">{existingName}</span>
+                <label className="font-body text-[13px] font-medium text-sky-text press cursor-pointer shrink-0">
+                  Replace file
+                  <input
+                    type="file"
+                    accept="application/pdf,image/*"
+                    className="sr-only"
+                    onChange={(e) => {
+                      const picked = e.target.files?.[0];
+                      if (picked) setFile(picked);
+                      e.target.value = "";
+                    }}
+                  />
+                </label>
+              </div>
+            </div>
+
+            {/*
+              The window a person can act on, once it is verified: when the
+              cover runs from and — the date that matters — when it lapses and
+              pauses their bookings again. Only shown when both are on record.
+            */}
+            {status === "verified" && effectiveDate && expiresAt && (
+              <dl
+                className="mt-3 rounded-2xl px-4 py-3.5 space-y-2"
+                style={{ backgroundColor: "rgba(255,255,255,0.06)" }}
+              >
+                <div className="flex items-center justify-between gap-4">
+                  <dt className="font-body text-[13px] text-white/55">Effective</dt>
+                  <dd className="font-body text-[13.5px] text-white/85">
+                    {formatCoverageDate(effectiveDate)}
+                  </dd>
+                </div>
+                <div className="flex items-center justify-between gap-4">
+                  <dt className="font-body text-[13px] text-white/55">Expires</dt>
+                  <dd className="font-body text-[13.5px] text-white/85">
+                    {formatCoverageDate(expiresAt)}
+                  </dd>
+                </div>
+              </dl>
+            )}
+          </>
+        ) : (
+          <>
+            <p className="font-body font-semibold text-[12px] uppercase tracking-[0.2em] text-sky-soft">
+              Optional for now
+            </p>
+            <div className="mt-2">
+              <Headline pre="Add your" accent="insurance" size={27} light />
+            </div>
+            <p className="font-body font-normal text-[14px] leading-relaxed text-white/65 mt-3">
+              You&rsquo;ll need verified liability insurance before you can book a space.
+            </p>
+
+            <div className="mt-6 rounded-2xl p-4 bg-white">
+              <DocumentUpload
+                label="Certificate of insurance"
+                hint="PDF or photo"
+                file={file}
+                onPick={setFile}
+                onRemove={() => setFile(null)}
+              />
+            </div>
+          </>
+        )}
+
+      </div>
+
+      <div className="relative z-10 px-8 pb-9">
+        {saveError && (
+          <p
+            className="font-body font-normal text-[14px] leading-relaxed mb-3 rounded-xl p-3"
+            style={{ backgroundColor: "rgba(242,105,92,0.14)", color: "#F2A79E" }}
+            role="alert"
+          >
+            {saveError}
+          </p>
+        )}
+
+        <PrimaryButton
+          disabled={saving || (!hasCertOnFile && !file)}
+          onClick={() => submit(file)}
+        >
+          {saving ? "One moment…" : "Continue"}
+        </PrimaryButton>
+        {!hasCertOnFile && (
+          <button
+            type="button"
+            onClick={() => submit(null)}
+            disabled={saving}
+            className="w-full mt-3 py-2 font-body font-medium text-[14px] press text-white/70"
+          >
+            Skip for now
+          </button>
+        )}
+      </div>
+    </NavyScreen>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Professional credential — every profession provides proof to book   */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Submitting professional proof. Every practitioner provides some — the kind is
+ * profession-specific (see proofLabel), and the booking gate refuses until it is
+ * reviewed. The verdict is staff's; this screen only submits, and shows where
+ * review stands with the factual labels (under review / reviewed / needs
+ * attention). Never a quality or approval claim.
+ */
+export function CredentialUpload({
+  proofLabel,
+  initialDocName,
+  state,
+  reviewNote,
+  initialType,
+  initialNumber,
+  initialJurisdiction,
+  onSubmit,
+  onBack,
+}: {
+  /** What this profession is asked for, e.g. "CAMTC certification". */
+  proofLabel: string;
+  initialDocName: string | null;
+  state: "pending" | "verified" | "rejected" | null;
+  reviewNote?: string | null;
+  initialType?: string | null;
+  initialNumber?: string | null;
+  initialJurisdiction?: string | null;
+  onSubmit: (
+    file: File | null,
+    details: {
+      credentialType: string | null;
+      credentialNumber: string | null;
+      credentialJurisdiction: string | null;
+    },
+  ) => Promise<unknown>;
+  onBack?: () => void;
+}) {
+  const [file, setFile] = useState<File | null>(null);
+  const [type, setType] = useState(initialType ?? "");
+  const [number, setNumber] = useState(initialNumber ?? "");
+  const [jurisdiction, setJurisdiction] = useState(initialJurisdiction ?? "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const existingName = file ? file.name : initialDocName ? shortName(initialDocName) : null;
+
+  // The approved factual status labels: "Credential under review / reviewed /
+  // needs attention" — never a quality or approval claim.
+  const statusLine: Record<"pending" | "verified" | "rejected", { accent: string; body: string }> = {
+    pending: { accent: "under review.", body: "We'll let you know when it's checked." },
+    verified: {
+      accent: "reviewed.",
+      body: "It's on file, and hosts see it as reviewed.",
+    },
+    rejected: {
+      accent: "needs attention.",
+      body: reviewNote?.trim() || "Add a valid document and we'll review it again.",
+    },
+  };
+  const shown = state ? statusLine[state] : null;
+
+  const inputStyle = {
+    border: "1px solid #DCE7F2",
+  } as const;
+
+  const submit = () => {
+    setError(null);
+    setSaving(true);
+    void onSubmit(file, {
+      credentialType: type.trim() || null,
+      credentialNumber: number.trim() || null,
+      credentialJurisdiction: jurisdiction.trim() || null,
+    })
+      .catch((cause) => setError(errorMessage(cause, "That did not save. Try again.")))
+      .finally(() => setSaving(false));
+  };
 
   return (
     <NavyScreen>
@@ -79,90 +412,72 @@ export function InsuranceUpload({
         )}
 
         <p className="font-body font-semibold text-[12px] uppercase tracking-[0.2em] text-sky-soft">
-          Optional, takes 10 seconds
+          Credential
         </p>
         <div className="mt-2">
-          <Headline pre="Add your" accent="insurance?" size={27} light />
+          <Headline
+            pre={shown ? "Credential" : "Add your"}
+            accent={shown ? shown.accent : "credential."}
+            size={27}
+            light
+          />
         </div>
-        {/*
-          The old line said "hosts approve you faster when a certificate is
-          already on file". There is no host approval of practitioners — a
-          booking is direct — and a host never sees this document. It described
-          a mechanism that does not exist.
-        */}
         <p className="font-body font-normal text-[14px] leading-relaxed text-white/65 mt-3">
-          Many venues require practitioners to carry their own cover. Keeping a certificate here
-          means you have it to hand. You can add it later from your profile, and it never blocks a
-          booking.
+          {shown
+            ? shown.body
+            : `We ask for ${proofLabel} before you can book. Add it and we'll review it.`}
         </p>
 
-        <div className="mt-6 rounded-2xl p-4 bg-white">
+        <div className="mt-6 rounded-2xl p-4 bg-white space-y-3">
           <DocumentUpload
-            label="Certificate of insurance"
-            hint="PDF or photo"
+            label={proofLabel}
+            hint="PDF or an image"
+            required={!initialDocName}
             file={file}
             onPick={setFile}
             onRemove={() => setFile(null)}
           />
-          {!file && initialDocName && (
-            <p className="font-body font-normal text-[13.5px] mt-2 text-ink-faint">
-              On file: {initialDocName}
-            </p>
+          {existingName && !file && (
+            <p className="font-body text-[13px] text-ink-soft">On file: {existingName}</p>
           )}
+          <input
+            value={type}
+            onChange={(e) => setType(e.target.value.slice(0, 80))}
+            placeholder="Credential type (e.g. LMT)"
+            className="w-full px-4 py-3 rounded-xl font-body text-[15px] text-navy outline-none"
+            style={inputStyle}
+          />
+          <input
+            value={number}
+            onChange={(e) => setNumber(e.target.value.slice(0, 80))}
+            placeholder="License or certificate number (if any)"
+            className="w-full px-4 py-3 rounded-xl font-body text-[15px] text-navy outline-none"
+            style={inputStyle}
+          />
+          <input
+            value={jurisdiction}
+            onChange={(e) => setJurisdiction(e.target.value.slice(0, 80))}
+            placeholder="Issuing state (if any)"
+            className="w-full px-4 py-3 rounded-xl font-body text-[15px] text-navy outline-none"
+            style={inputStyle}
+          />
         </div>
 
-        {/*
-          Deliberately not an affiliate link, and this is the decision rather
-          than an unfinished task.
-          Earning a commission on the policy would give us a financial interest
-          in which insurer somebody picks, on the same screen where we ask them
-          to trust us about safety — and if a claim were ever refused, "you
-          recommended them and were paid for it" is the exact position the rest
-          of this app is built to stay out of. It would also have to be
-          disclosed, which weakens the recommendation at the moment it is made.
-          The arithmetic does not argue otherwise: at five hundred practitioners
-          an affiliate programme is a few hundred dollars once, against tens of
-          thousands a year from the sessions those same people book.
-          The link stays because somebody without cover genuinely needs
-          somewhere to go. If this is ever worth revisiting it is as a
-          negotiated group rate — better for them and more defensible than a
-          referral code.
-        */}
-        <a
-          href="https://www.thimble.com"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="font-body text-[14px] mt-3 text-sky-soft"
-        >
-          Don&apos;t have coverage yet? Get a quote →
-        </a>
-      </div>
-
-      <div className="relative z-10 px-8 pb-9">
-        {saveError && (
+        {error && (
           <p
-            className="font-body font-normal text-[14px] leading-relaxed mb-3 rounded-xl p-3"
-            style={{ backgroundColor: "rgba(242,105,92,0.14)", color: "#F2A79E" }}
+            className="font-body font-normal text-[14px] leading-relaxed mt-3 rounded-xl p-3"
+            style={{ backgroundColor: "#FEF2F0", border: "1px solid #F5C4BC", color: "#7A4A42" }}
             role="alert"
           >
-            {saveError}
+            {error}
           </p>
         )}
 
-        <PrimaryButton
-          disabled={saving}
-          onClick={() => {
-            setSaveError(null);
-            setSaving(true);
-            void onContinue(existingName)
-              .catch((cause) =>
-                setSaveError(errorMessage(cause, "That did not save. Try again.")),
-              )
-              .finally(() => setSaving(false));
-          }}
-        >
-          {saving ? "One moment…" : existingName ? "Continue" : "Skip for now"}
-        </PrimaryButton>
+        <div className="mt-6">
+          <PrimaryButton disabled={saving || (!file && !initialDocName)} onClick={submit}>
+            {saving ? "Saving…" : "Submit for review"}
+          </PrimaryButton>
+        </div>
       </div>
     </NavyScreen>
   );
@@ -245,31 +560,55 @@ const COMPARISON: { label: string; free: string | false; pro: string | true }[] 
   },
 ];
 
+/**
+ * Which face the Pro screen shows, from server truth alone.
+ *
+ * The one rule that matters, and the bug this encodes against: "You're Pro" is
+ * shown only when the server says so — `isPro`, set by the subscription webhook
+ * — never because a checkout was opened, a redirect happened, or the app came
+ * back to the foreground. `celebrate` is a fresh, server-confirmed upgrade and
+ * only adds the confetti; `confirming` is the short wait while the webhook
+ * catches up after a real payment. Free with nothing in flight is the offer.
+ * There is no client flag that can grant Pro.
+ */
+export type ProView = "offer" | "confirming" | "active" | "celebrate";
+
+export function proView(input: {
+  isPro: boolean;
+  confirming?: boolean;
+  celebrate?: boolean;
+}): ProView {
+  if (input.isPro) return input.celebrate ? "celebrate" : "active";
+  if (input.confirming) return "confirming";
+  return "offer";
+}
+
 export function ProScreen({
   isPro,
   onBack,
   onSubscribe,
+  celebrate = false,
+  confirming = false,
 }: {
   isPro: boolean;
   onBack: () => void;
-  /** Rejects when the subscription does not go through, so this screen can say so. */
+  /** Opens checkout. Rejects only when the checkout could not be opened — it is
+   *  never proof of payment, so it never shows the success screen. */
   onSubscribe: () => Promise<unknown>;
+  /** A fresh, server-confirmed upgrade. Adds the confetti, shown once. */
+  celebrate?: boolean;
+  /** Returned from checkout, waiting on the webhook to confirm the payment. */
+  confirming?: boolean;
 }) {
-  const [justSubscribed, setJustSubscribed] = useState(false);
   const [busy, setBusy] = useState(false);
-  /*
-   * The button used to fire the subscription and show the success screen in
-   * the same breath, without waiting for either answer. So a card that was
-   * declined, or a network that dropped, still produced "You're Pro." —
-   * somebody was told they had bought something they had not, on the one
-   * screen in the app where that is a payment.
-   */
   const [failed, setFailed] = useState<string | null>(null);
 
-  if (justSubscribed || isPro) {
+  const view = proView({ isPro, confirming, celebrate });
+
+  if (view === "active" || view === "celebrate") {
     return (
       <NavyScreen className="items-center justify-center text-center px-9">
-        <ConfettiBurst />
+        {view === "celebrate" && <ConfettiBurst />}
         <div className="relative z-10 flex flex-col items-center">
           <BreathingLogo size={120} />
           <div className="mt-6">
@@ -286,6 +625,35 @@ export function ProScreen({
             style={{ backgroundColor: "#2578C2" }}
           >
             Done
+          </button>
+        </div>
+      </NavyScreen>
+    );
+  }
+
+  /*
+   * Returned from Stripe and the payment is real, but the webhook that flips
+   * is_pro has not landed yet. A brief, honest wait — never a fabricated
+   * "You're Pro" — that resolves to the success screen once the server
+   * confirms, or falls back to the offer if it never does.
+   */
+  if (view === "confirming") {
+    return (
+      <NavyScreen className="items-center justify-center text-center px-9">
+        <div className="relative z-10 flex flex-col items-center">
+          <BreathingLogo size={120} />
+          <p className="font-body font-normal text-[15px] text-white/80 leading-relaxed mt-6">
+            Confirming your subscription…
+          </p>
+          <p className="font-body font-normal text-[13.5px] text-white/55 leading-relaxed mt-2">
+            This only takes a moment.
+          </p>
+          <button
+            type="button"
+            onClick={onBack}
+            className="mt-7 font-body font-medium text-[14px] text-white/70 press"
+          >
+            Back
           </button>
         </div>
       </NavyScreen>
@@ -399,10 +767,12 @@ export function ProScreen({
         <PrimaryButton
           disabled={busy}
           onClick={() => {
+            // Only opens checkout. Success is never declared here — that would
+            // be treating "checkout opened" as "paid". The screen turns Pro only
+            // when the server confirms it (isPro), driven by the webhook.
             setFailed(null);
             setBusy(true);
             void onSubscribe()
-              .then(() => setJustSubscribed(true))
               .catch((cause) =>
                 setFailed(errorMessage(cause, "That did not go through. Nothing was charged.")),
               )
@@ -423,15 +793,64 @@ export function ProScreen({
 /*  Practitioner profile                                               */
 /* ------------------------------------------------------------------ */
 
+/**
+ * "What you'll need to book" — the three requirements, and only what each one
+ * factually confirms.
+ *
+ * Every line describes what the requirement is for, never a claim that Minimum
+ * Stress certifies or approves the practitioner. It sets expectations before the
+ * booking gate and says plainly that browsing needs none of it — the current
+ * state of each requirement is shown in the rows beneath, so this does not
+ * repeat it.
+ */
+function BookingRequirements() {
+  const items = [
+    { icon: ShieldCheck, label: "Identity", why: "Confirms the account belongs to you." },
+    {
+      icon: FileUp,
+      label: "Liability insurance",
+      why: "Helps protect you and the host if something goes wrong.",
+    },
+    {
+      icon: FileCheck,
+      label: "Professional proof",
+      why: "Shows that your listed profession is supported by relevant documentation.",
+    },
+  ];
+
+  return (
+    <div
+      className="rounded-2xl p-4 mb-2.5"
+      style={{ backgroundColor: "#F4F8FC", border: "1px solid #E7EEF6" }}
+    >
+      <p className="font-body font-semibold text-[13.5px] text-navy mb-3">What you&rsquo;ll need to book</p>
+      <ul className="flex flex-col gap-3">
+        {items.map(({ icon: Icon, label, why }) => (
+          <li key={label} className="flex items-start gap-2.5">
+            <Icon size={15} color="#3B9BE8" className="mt-0.5 shrink-0" />
+            <div>
+              <p className="font-body font-medium text-[14px] leading-snug text-navy">{label}</p>
+              <p className="font-body font-normal text-[13px] leading-relaxed text-ink-soft mt-0.5">
+                {why}
+              </p>
+            </div>
+          </li>
+        ))}
+      </ul>
+      <p className="font-body font-normal text-[13px] leading-relaxed text-ink-faint mt-3.5">
+        You can browse spaces now. Complete these before your first booking.
+      </p>
+    </div>
+  );
+}
+
 export function PractitionerProfile({
   profile,
-  milestones,
-  milestoneTotal,
+  onRefresh,
   bookingsCount,
   standing,
   onBack,
   onUpdate,
-  sessions,
   onDeleteAccount,
   onPickAvatar,
   onGoLegal,
@@ -439,9 +858,15 @@ export function PractitionerProfile({
   disputesWaiting,
   onRequestAccountChange,
   onGoInsurance,
+  onGoCredential,
+  onVerifyIdentity,
+  identityChecking = false,
   onSignOut,
+  foundingRemaining,
 }: {
   profile: Profile;
+  /** Pull-to-refresh: re-fetches profile/account state in place. */
+  onRefresh: () => Promise<unknown> | unknown;
   /** The moments reached so far, counted in app.tsx from bookings. */
   milestones: MilestoneKey[];
   /** What they have held, never what they spent. See milestones.ts. */
@@ -463,7 +888,16 @@ export function PractitionerProfile({
   /** How many refund requests or claims are waiting on this account. */
   disputesWaiting: number;
   onGoInsurance: () => void;
+  /** Opens the credential upload screen. */
+  onGoCredential: () => void;
+  /** Opens the one-time identity check (hosted by Stripe). */
+  onVerifyIdentity: () => void;
+  /** True during the short wait after returning from Stripe, while the webhook lands. */
+  identityChecking?: boolean;
   onSignOut: () => void;
+  /** Founding Practitioner spots still open, server-derived. Only shown, as one
+   *  quiet line, to a practitioner who has not earned the status. */
+  foundingRemaining: number;
 }) {
   return (
     <div className="h-full flex flex-col screen-in bg-white">
@@ -477,47 +911,151 @@ export function PractitionerProfile({
         sub={`${bookingsCount} booking${bookingsCount === 1 ? "" : "s"} so far${profile.email ? ` · ${profile.email}` : ""}`}
       />
 
-      <div className="flex-1 overflow-y-auto px-6 pt-5 pb-8">
+      <PullToRefresh className="flex-1 px-6 pt-5 pb-8" onRefresh={onRefresh}>
         {/*
-          Shown always, not only when something is wrong. A rule nobody can see
-          until it costs them is a trap; this way "where do I stand" is a tap
-          away on a good day too.
+          Founding Practitioner — a small, permanent recognition, server-derived
+          (profile.foundingPractitionerNumber, migration 0068). Earned shows a
+          quiet award mark, not a card; unearned shows a single factual line
+          while real spots remain. Never client-assigned, never manufactured.
         */}
-        <div className="mb-6">
-          <StandingNotice party="practitioner" standing={standing} />
-        </div>
+        {profile.foundingPractitionerNumber !== null ? (
+          <div className="flex items-center gap-2 mb-5">
+            <span
+              className="w-7 h-7 rounded-full flex items-center justify-center shrink-0"
+              style={{ backgroundColor: "#F1F7FD" }}
+            >
+              <Award size={15} color="#2E7CC4" />
+            </span>
+            <span className="font-body font-medium text-[14px] text-navy">
+              {FOUNDING_PRACTITIONER_LABEL}
+            </span>
+          </div>
+        ) : (
+          foundingRemaining > 0 && (
+            <p className="font-body font-normal text-[13px] leading-relaxed text-ink-soft mb-5">
+              {foundingPractitionerSpotsRemainingLabel(foundingRemaining)} — earned on your first
+              completed session.
+            </p>
+          )
+        )}
 
-        <GroupLabel>Notifications</GroupLabel>
+        {/* Professional — first, because it gates booking eligibility. */}
+        <GroupLabel>Professional</GroupLabel>
+
         {/*
-          Two switches stood here and neither did what it said.
-          "Booking reminders" wrote `notify_bookings`, which is the host
-          preference — the one that silences "somebody booked your space". A
-          practitioner turning it off changed nothing about their own mail, and
-          somebody who is both would have silenced their studio alerts from the
-          wrong screen without being told. Its own subtitle promised control
-          over the entry code, which is never withheld: see SILENCEABLE, where
-          the line is drawn at anything carrying a door code or a change to
-          somebody's day.
-          "Offers" wrote a column nothing reads. There is no offers message and
-          no send that consults it — the same fault this file's own comment
-          records as a bug, left in place for one more switch.
-          Nothing a practitioner receives is optional, because all of it is
-          about a session they paid for. So the section says that instead of
-          offering a choice that does not exist. When there is marketing to
-          send, the switch comes back with a sender that honours it.
+          What booking will ask for, said once and up front, so the gate at the
+          end is a reminder rather than a surprise. Factual only: each line is
+          what the requirement confirms, never a claim that the platform vouches
+          for the practitioner. The "why" lives here so the rows below can stay
+          the plain current state without repeating it.
         */}
-        <div
-          className="rounded-2xl p-4"
-          style={{ backgroundColor: "#F4F8FC", border: "1px solid #E7EEF6" }}
-        >
-          <p className="font-body font-normal text-[15px] leading-relaxed text-ink-muted">
-            We email you about your own sessions — confirmations, your entry code, and anything
-            that changes. Nothing else, and no marketing.
+        <BookingRequirements />
+
+        <div className="flex flex-col gap-2.5">
+          <ProfileRow
+            icon={FileUp}
+            label="Liability insurance"
+            // The status, not the filename: what a professional needs to know
+            // here is whether they can book, and a file on record that is still
+            // in review or has lapsed cannot. Derived from the stored review
+            // state and the clock — see lib/insurance.ts.
+            value={
+              <InsuranceRowValue
+                status={insuranceStatus(
+                  {
+                    hasCertificate: profile.insuranceDocName !== null,
+                    state: profile.insuranceReview.state,
+                    effectiveDate: profile.insuranceEffectiveDate,
+                    expiresAt: profile.insuranceExpiresAt,
+                  },
+                  new Date(),
+                )}
+              />
+            }
+            onClick={onGoInsurance}
+          />
+          <ProfileRow
+            icon={ShieldCheck}
+            label="Identity"
+            // Verified once, by Stripe; a fact, not a claim about their work.
+            // "Checking…" is the neutral wait while the webhook lands on return —
+            // never a client-side claim of success. Tappable only from a
+            // settled, unverified state; nothing to do while verified or mid-check.
+            value={
+              identityChecking
+                ? "Checking your verification…"
+                : profile.identityVerifiedAt
+                  ? "Verified"
+                  : "Not verified"
+            }
+            onClick={
+              profile.identityVerifiedAt || identityChecking ? undefined : onVerifyIdentity
+            }
+          />
+          {/*
+            Identity-verification helper copy. Short, factual, and honest about
+            who holds what — see the Privacy note it mirrors. No ID image or
+            document is ever shown in the app.
+          */}
+          <p className="font-body font-normal text-[12.5px] leading-relaxed px-1 text-ink-faint">
+            We verify identity through Stripe, which collects and checks your ID and a
+            selfie. We keep only whether you passed and a reference — never the images. To have
+            your verification data deleted, email{" "}
+            <a href={`mailto:${SUPPORT_EMAIL}`} className="underline">
+              {SUPPORT_EMAIL}
+            </a>
+            .
           </p>
+          {/*
+            What they do, from the controlled list. Display only for now, and the
+            label a host reads on a request. A plain select rather than a screen —
+            it is one choice, changed rarely.
+          */}
+          <div
+            className="flex items-center gap-3 p-3.5 rounded-xl bg-white"
+            style={{ border: "1px solid #E7EEF6" }}
+          >
+            <Briefcase size={15} color="#3B9BE8" className="shrink-0" />
+            <label htmlFor="profession" className="flex-1 font-body font-medium text-[14.5px] text-navy">
+              What you do
+            </label>
+            <select
+              id="profession"
+              value={profile.profession ?? ""}
+              onChange={(event) => onUpdate({ profession: event.target.value || null })}
+              className="font-body text-[13.5px] text-ink-soft bg-white"
+            >
+              <option value="">Choose…</option>
+              {PRACTITIONER_PROFESSIONS.map((profession) => (
+                <option key={profession.key} value={profession.key}>
+                  {profession.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          {/*
+            Every profession provides proof, so this always shows. The value is
+            the factual review state, or a prompt to add proof when none is on
+            file yet.
+          */}
+          <ProfileRow
+            icon={FileCheck}
+            label="Professional credential"
+            value={
+              profile.credentialReview.state === "verified"
+                ? "Reviewed"
+                : profile.credentialReview.state === "pending"
+                  ? "Under review"
+                  : profile.credentialReview.state === "rejected"
+                    ? "Needs attention"
+                    : "Required"
+            }
+            onClick={onGoCredential}
+          />
         </div>
 
         <div className="mt-6">
-          <GroupLabel>Account</GroupLabel>
+          <GroupLabel>Bookings &amp; payments</GroupLabel>
         </div>
         <div className="flex flex-col gap-2.5">
           {/*
@@ -526,55 +1064,74 @@ export function PractitionerProfile({
             silent about the part that matters: what can reach it later.
           */}
           <SavedCard isPro={profile.isPro} />
-          <ProfileRow
-            icon={FileUp}
-            label="Insurance certificate"
-            value={profile.insuranceDocName ?? "Not added"}
-            onClick={onGoInsurance}
-          />
           {/*
             Shown with a count when something is waiting, because being asked
             to answer an accusation is not a thing to find by browsing.
           */}
           <ProfileRow
             icon={Scale}
-            label="Sorted out"
-            value={
-              disputesWaiting > 0
-                ? `${disputesWaiting} waiting on you`
-                : undefined
-            }
+            label="Refunds & claims"
+            value={disputesWaiting > 0 ? `${disputesWaiting} waiting on you` : undefined}
             onClick={onGoDisputes}
           />
-          <ProfileRow icon={ScrollText} label="Terms & privacy" onClick={onGoLegal} />
-          <ProfileRow icon={LogOut} label="Log out" onClick={onSignOut} danger />
-
-          {profile.accountType && (
-            <AccountChange accountType={profile.accountType} onRequest={onRequestAccountChange} />
-          )}
         </div>
 
         <div className="mt-6">
-          <MilestoneCard party="practitioner" earned={milestones} total={milestoneTotal} />
-          <BadgeCard party="practitioner" sessions={sessions} />
+          <GroupLabel>Safety &amp; notifications</GroupLabel>
         </div>
-
-        {/*
-          Asked of both sides. Somebody alone in a stranger's building and
-          somebody letting a stranger into theirs are in the same position.
-        */}
-        <div className="mt-6">
+        <div className="flex flex-col gap-2.5">
+          {/*
+            Not a toggle: everything a practitioner is emailed is about a session
+            they paid for, so none of it is optional — stated in one line rather
+            than offered as a switch that would not switch anything.
+          */}
+          <div
+            className="flex items-start gap-3 px-3.5 py-2.5 rounded-xl bg-white"
+            style={{ border: "1px solid #E7EEF6" }}
+          >
+            <Bell size={15} color="#3B9BE8" className="mt-0.5 shrink-0" />
+            <div>
+              <p className="font-body font-medium text-[14.5px] text-navy">Booking updates</p>
+              <p className="font-body font-normal text-[13px] mt-0.5 text-ink-faint">
+                Confirmations, access details and important changes.
+              </p>
+            </div>
+          </div>
           <EmergencyContactCard
+            collapsible
             contact={profile.emergencyContact}
             onSave={(emergencyContact) => onUpdate({ emergencyContact })}
           />
+        </div>
+
+        {/*
+          Shown always, not only when something is wrong. A rule nobody can see
+          until it costs them is a trap; this way "where do I stand" is a tap
+          away on a good day too.
+        */}
+        <div className="mt-6">
+          <GroupLabel>Account standing</GroupLabel>
+        </div>
+        <div className="flex flex-col gap-2.5">
+          <StandingSummary party="practitioner" standing={standing} />
+        </div>
+
+        <div className="mt-6">
+          <GroupLabel>Account &amp; legal</GroupLabel>
+        </div>
+        <div className="flex flex-col gap-2.5">
+          <ProfileRow icon={ScrollText} label="Terms & privacy" onClick={onGoLegal} />
+          {profile.accountType && (
+            <AccountChange accountType={profile.accountType} onRequest={onRequestAccountChange} />
+          )}
+          <ProfileRow icon={LogOut} label="Log out" onClick={onSignOut} danger />
         </div>
 
         {/* Last, and on its own. Nothing here is undoable except this. */}
         <div className="mt-8">
           <DeleteAccount onDelete={onDeleteAccount} />
         </div>
-      </div>
+      </PullToRefresh>
     </div>
   );
 }
@@ -724,7 +1281,7 @@ export function ProfileRow({
 }: {
   icon: typeof CreditCard;
   label: string;
-  value?: string;
+  value?: ReactNode;
   onClick?: () => void;
   danger?: boolean;
 }) {

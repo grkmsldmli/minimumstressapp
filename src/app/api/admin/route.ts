@@ -3,9 +3,11 @@ import type { NextRequest } from "next/server";
 import { isStaff } from "@/lib/admin/access";
 import { loadQueue } from "@/lib/admin/queue";
 import { handled, jsonError, requireUser } from "@/lib/api/session";
-import { integer, jsonObject, oneOf, optionalString, uuid } from "@/lib/api/validate";
+import { dateOnly, integer, jsonObject, oneOf, optionalString, uuid } from "@/lib/api/validate";
 import { ClaimError, decideClaim } from "@/lib/claim-service";
 import { CLAIM_CAP_CENTS } from "@/lib/claims";
+import { formatCoverageDate } from "@/lib/format-date";
+import { notifyInsuranceReviewed } from "@/lib/notify/for-insurance";
 import { RefundError, decideRefund } from "@/lib/refund-service";
 import { supabaseAdmin } from "@/lib/supabase/server";
 
@@ -67,6 +69,14 @@ export async function POST(request: NextRequest): Promise<Response> {
       "approve_account_change",
       "decide_refund",
       "decide_claim",
+      "delist_listing",
+      "relist_listing",
+      "archive_listing",
+      "delete_listing",
+      "verify_insurance",
+      "reject_insurance",
+      "verify_credential",
+      "reject_credential",
     ] as const);
     if (!action.ok) return jsonError(action.reason, 400);
 
@@ -116,6 +126,16 @@ export async function POST(request: NextRequest): Promise<Response> {
             400,
           );
         }
+
+        /*
+         * Founding Host is not awarded here. This one write — a listing going
+         * from pending to active — is the qualifying moment, and a database
+         * trigger (migration 0060) allocates the spot inside the very same
+         * transaction. So a qualifying host can never end up live but skipped:
+         * if allocation genuinely fails, this UPDATE rolls back with it and the
+         * approval can be retried; if all fifty spots are already taken, that is
+         * a normal outcome, not an error, and the listing goes live regardless.
+         */
         return Response.json({ ok: true });
       }
 
@@ -257,6 +277,239 @@ export async function POST(request: NextRequest): Promise<Response> {
           }
           throw failure;
         }
+      }
+
+      /**
+       * Taking a listing off the marketplace, from the directory rather than
+       * the review queue. `reject_listing` above is the review decision, which
+       * also stamps the paperwork; this is the plain operator action for a
+       * listing that should not be live — spam, a test, a room a host asked us
+       * to remove — and leaves the documents alone.
+       */
+      case "delist_listing": {
+        const { error } = await admin
+          .from("spaces")
+          .update({ status: "delisted" })
+          .eq("id", id.value);
+        if (error) throw error;
+        return Response.json({ ok: true });
+      }
+
+      /**
+       * Putting one back. The 0018 constraint refuses an active listing whose
+       * sublease is not verified, so a listing that was never approved cannot be
+       * forced live here — that has to go back through the review queue, and the
+       * error says so rather than failing quietly.
+       */
+      case "relist_listing": {
+        // Back on the site, and no longer archived — putting a room back is the
+        // one thing that undoes a close, so archived_at is cleared with it.
+        const { error } = await admin
+          .from("spaces")
+          .update({ status: "active", archived_at: null })
+          .eq("id", id.value);
+        if (error) {
+          return jsonError(
+            /sublease|verified/i.test(error.message)
+              ? "This listing was never verified, so it cannot be forced live. Approve it from the review queue instead."
+              : error.message,
+            400,
+          );
+        }
+        return Response.json({ ok: true });
+      }
+
+      /**
+       * Closing one for good, keeping the record. It comes off the site and
+       * takes no more bookings — the same delisted status a hold uses, so the
+       * search exclusion and the new-booking gate need nothing new — but
+       * archived_at marks it as a permanent close rather than a pause, and
+       * nothing here touches the bookings, earnings or reviews behind it.
+       */
+      case "archive_listing": {
+        const { error } = await admin
+          .from("spaces")
+          .update({ status: "delisted", archived_at: new Date().toISOString() })
+          .eq("id", id.value);
+        if (error) throw error;
+        return Response.json({ ok: true });
+      }
+
+      /**
+       * Erasing one for good. space_media and availability cascade with it;
+       * bookings are ON DELETE RESTRICT, so a listing that anyone has ever
+       * booked cannot be deleted — that record is two people's money and is not
+       * this button's to destroy. The foreign-key refusal is turned into the
+       * plain answer: delist it instead.
+       */
+      case "delete_listing": {
+        const { error } = await admin.from("spaces").delete().eq("id", id.value);
+        if (error) {
+          return jsonError(
+            /foreign key|violates|constraint/i.test(error.message)
+              ? "This listing has bookings, so it cannot be deleted. Delist it instead."
+              : error.message,
+            400,
+          );
+        }
+        return Response.json({ ok: true });
+      }
+
+      /**
+       * Verifying a professional's liability certificate, and the only place a
+       * booking's insurance gate is ever satisfied.
+       *
+       * The two dates are the whole point of the decision: an uploaded file
+       * proves nothing until a person has read the window off it, and the
+       * booking gate refuses a verified row that carries none. Written together
+       * with the state in one update, because 0054 refuses a 'verified' row
+       * without both dates and with an expiry before the start — so a slip is a
+       * 400 here rather than a certificate that reads valid and covers nothing.
+       *
+       * Scoped to a practitioner: only the professional side carries this cover,
+       * and a stray id for a host should change nothing rather than stamp a
+       * column that means nothing on their account.
+       */
+      case "verify_insurance": {
+        const effective = dateOnly(body.value, "effectiveDate");
+        if (!effective.ok) return jsonError(effective.reason, 400);
+
+        const expires = dateOnly(body.value, "expiresAt");
+        if (!expires.ok) return jsonError(expires.reason, 400);
+
+        if (expires.value < effective.value) {
+          return jsonError("The expiry cannot come before the effective date", 400);
+        }
+
+        const insurer = optionalString(body.value, "insurer", { max: 200 });
+        if (!insurer.ok) return jsonError(insurer.reason, 400);
+
+        const policyNumber = optionalString(body.value, "policyNumber", { max: 200 });
+        if (!policyNumber.ok) return jsonError(policyNumber.reason, 400);
+
+        const { data, error } = await admin
+          .from("profiles")
+          .update({
+            insurance_doc_state: "verified",
+            insurance_doc_reviewed_at: new Date().toISOString(),
+            insurance_effective_date: effective.value,
+            insurance_expires_at: expires.value,
+            insurance_insurer: insurer.value || null,
+            insurance_policy_number: policyNumber.value || null,
+            // A clean slate: whatever a previous rejection said no longer holds.
+            insurance_review_note: null,
+          })
+          .eq("id", id.value)
+          .eq("account_type", "practitioner")
+          .select("insurance_doc_path");
+
+        if (error) {
+          return jsonError(
+            /insurance_dates|check constraint/i.test(error.message)
+              ? "Those dates do not make a valid window — check the certificate."
+              : error.message,
+            400,
+          );
+        }
+
+        // Tell them, but only for a row that actually changed — a stray id that
+        // matched no practitioner is a no-op, not a verification. The email
+        // comes after the write and cannot fail it: see notifyInsuranceReviewed.
+        const verified = data?.[0];
+        if (verified?.insurance_doc_path) {
+          await notifyInsuranceReviewed(admin, id.value, {
+            outcome: "verified",
+            certificate: verified.insurance_doc_path,
+            expiresLabel: formatCoverageDate(expires.value),
+          });
+        }
+
+        return Response.json({ ok: true });
+      }
+
+      /**
+       * Turning a certificate down. The reason is required and shown to the
+       * professional verbatim, so "the second page is cut off" reaches them
+       * rather than a bare "rejected" they can only guess at. The window is
+       * cleared with it — a rejected certificate has no valid dates, and leaving
+       * stale ones behind is exactly the kind of row the booking gate must never
+       * read as cover.
+       */
+      case "reject_insurance": {
+        if (!note.value || note.value.trim().length < 15) {
+          return jsonError("Say why — it is shown to them", 400);
+        }
+
+        const { data, error } = await admin
+          .from("profiles")
+          .update({
+            insurance_doc_state: "rejected",
+            insurance_doc_reviewed_at: new Date().toISOString(),
+            insurance_effective_date: null,
+            insurance_expires_at: null,
+            insurance_review_note: note.value,
+          })
+          .eq("id", id.value)
+          .eq("account_type", "practitioner")
+          .select("insurance_doc_path");
+        if (error) throw error;
+
+        // Same shape as verify: notify only a row that changed, after the
+        // write, in a call that cannot fail the decision it follows.
+        const rejected = data?.[0];
+        if (rejected?.insurance_doc_path) {
+          await notifyInsuranceReviewed(admin, id.value, {
+            outcome: "rejected",
+            certificate: rejected.insurance_doc_path,
+            note: note.value,
+          });
+        }
+
+        return Response.json({ ok: true });
+      }
+
+      /**
+       * A professional credential, reviewed by hand. No dates — a license is
+       * valid-or-not rather than windowed like insurance — so this only records
+       * the verdict. Setting the state on a row whose document is unchanged
+       * passes the credential trigger because the service role has no auth.uid();
+       * a stray id that matches no practitioner changes nothing.
+       */
+      case "verify_credential": {
+        const { error } = await admin
+          .from("profiles")
+          .update({
+            credential_doc_state: "verified",
+            credential_doc_reviewed_at: new Date().toISOString(),
+            credential_review_note: null,
+          })
+          .eq("id", id.value)
+          .eq("account_type", "practitioner")
+          .not("credential_doc_path", "is", null);
+        if (error) throw error;
+        return Response.json({ ok: true });
+      }
+
+      /**
+       * Turning a credential down. The reason is required and shown to the
+       * practitioner verbatim, the same as a rejected certificate.
+       */
+      case "reject_credential": {
+        if (!note.value || note.value.trim().length < 15) {
+          return jsonError("Say why — it is shown to them", 400);
+        }
+        const { error } = await admin
+          .from("profiles")
+          .update({
+            credential_doc_state: "rejected",
+            credential_doc_reviewed_at: new Date().toISOString(),
+            credential_review_note: note.value,
+          })
+          .eq("id", id.value)
+          .eq("account_type", "practitioner")
+          .not("credential_doc_path", "is", null);
+        if (error) throw error;
+        return Response.json({ ok: true });
       }
 
       default:

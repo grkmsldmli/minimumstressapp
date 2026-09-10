@@ -2,7 +2,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { PGlite } from "@electric-sql/pglite";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 /**
  * Exercises the RLS policies as real users rather than asserting they exist.
@@ -168,26 +168,34 @@ describe("the harness itself", () => {
   });
 });
 
-describe("the address is public, the door is not", () => {
+describe("the exact address is private until booked", () => {
   /**
-   * This block asserted the opposite, and the opposite was wrong.
-   *
-   * Every listing here is a retail studio whose address is already on Google
-   * Maps and its own website, so withholding the street number protected
-   * nothing and cost a practitioner the fact they judge a room by. What is
-   * still worth withholding is the way inside, which belongs to whoever paid
-   * for the hour.
+   * Before a booking, a browser learns only roughly where a room is — the area
+   * and a point offset a few hundred metres (migration 0055). The exact street,
+   * the precise coordinates and the way inside belong to whoever paid for the
+   * hour, and come back through space_access_details().
    */
-  it("shows the address to an anonymous browser", async () => {
-    const [space] = await asAnon<{ address_line: string }>(
-      `select address_line from spaces_public where id = '${SPACE}'`,
-    );
+  it("gives a signed-in browser no exact location", async () => {
+    // spaces_public is closed to anon since 0064, so the marketplace user is who
+    // reads it — and even they get only the coarse projection.
+    const [space] = await asUser<{
+      address_line: string | null;
+      lat: number | null;
+      lng: number | null;
+      entry_instructions?: string;
+    }>(STRANGER, `select * from spaces_public where id = '${SPACE}'`);
 
-    expect(space.address_line).toBe("12 Alder Lane");
+    // The exact street and precise point are NULL shims, kept only so the
+    // previously deployed client's select does not error mid rollout (migration
+    // 0055); entry instructions are not in the view at all.
+    expect(space.address_line).toBeNull();
+    expect(space.lat).toBeNull();
+    expect(space.lng).toBeNull();
+    expect(space.entry_instructions).toBeUndefined();
   });
 
   it("never publishes the entry instructions", async () => {
-    const columns = await asAnon(`select * from spaces_public where id = '${SPACE}'`);
+    const columns = await asUser(STRANGER, `select * from spaces_public where id = '${SPACE}'`);
 
     expect(columns).toHaveLength(1);
     expect(Object.keys(columns[0])).not.toContain("entry_instructions");
@@ -236,7 +244,7 @@ describe("the address is public, the door is not", () => {
 
 describe("listings that are not live stay hidden", () => {
   it("keeps a pending space out of the public view", async () => {
-    const found = await asAnon(`select id from spaces_public where id = '${PENDING_SPACE}'`);
+    const found = await asUser(STRANGER, `select id from spaces_public where id = '${PENDING_SPACE}'`);
     expect(found).toEqual([]);
   });
 
@@ -244,6 +252,51 @@ describe("listings that are not live stay hidden", () => {
     const found = await asUser(HOST, `select id from spaces where id = '${PENDING_SPACE}'`);
     expect(found).toHaveLength(1);
   });
+});
+
+/**
+ * Individual inventory is inside the signed-in marketplace (migration 0064).
+ *
+ * The marketing site is anonymous; the app is signed in. So `anon` may read
+ * only the aggregate inventory — where the marketplace operates and roughly
+ * what it costs — and no per-listing projection or host profile. A signed-in
+ * marketplace user still reads all of it, which is what keeps Discover working.
+ * This is the boundary the whole privacy change turns on, asserted as the two
+ * roles rather than trusted to a grant nobody exercises.
+ */
+describe("the public inventory views are closed to anonymous visitors", () => {
+  const PER_LISTING = [
+    "spaces_public",
+    "space_media_public",
+    "availability_public",
+    "space_ratings",
+    "public_reviews",
+    "public_host_profiles",
+  ];
+
+  for (const view of PER_LISTING) {
+    it(`refuses anonymous select on ${view}`, async () => {
+      await expect(asAnon(`select * from ${view} limit 1`)).rejects.toThrow(/permission denied/i);
+    });
+
+    it(`still lets a signed-in marketplace user read ${view}`, async () => {
+      // Not throwing is the assertion; the row set may legitimately be empty.
+      await expect(asUser(STRANGER, `select * from ${view} limit 1`)).resolves.toBeDefined();
+    });
+  }
+
+  const AGGREGATE = [
+    "city_inventory",
+    "city_type_inventory",
+    "city_category_inventory",
+    "space_demand",
+  ];
+
+  for (const view of AGGREGATE) {
+    it(`still lets an anonymous visitor read the aggregate ${view}`, async () => {
+      await expect(asAnon(`select * from ${view} limit 1`)).resolves.toBeDefined();
+    });
+  }
 });
 
 describe("bookings are visible only to the two parties", () => {
@@ -436,15 +489,27 @@ describe("profiles keep their payment identifiers to themselves", () => {
     expect(found).toEqual([]);
   });
 
-  it("exposes only name and avatar through the public host view", async () => {
-    const [host] = await asAnon(`select * from public_host_profiles where id = '${HOST}'`);
-    expect(Object.keys(host).sort()).toEqual(["avatar_path", "display_name", "id"]);
+  it("exposes only name, avatar and the two safe host signals", async () => {
+    // public_host_profiles is closed to anon since 0064; a signed-in browser is
+    // who reads it, and still sees only the safe columns.
+    const [host] = await asUser(STRANGER, `select * from public_host_profiles where id = '${HOST}'`);
+    // Name, avatar, whether they are Founding (a boolean), and their highest
+    // session milestone (a bucket, not the raw count). Nothing private —
+    // migration 0060.
+    expect(Object.keys(host).sort()).toEqual([
+      "avatar_path",
+      "display_name",
+      "founding_host",
+      "id",
+      "session_milestone",
+    ]);
   });
 
   it("gives a practitioner no public presence at all", async () => {
     // The view is named for hosts but originally returned every profile, so a
-    // practitioner's name and photo were readable by any anonymous caller.
-    const found = await asAnon(
+    // practitioner's name and photo were readable by any signed-in caller.
+    const found = await asUser(
+      STRANGER,
       `select id from public_host_profiles where id = '${PRACTITIONER}'`,
     );
     expect(found).toEqual([]);
@@ -522,7 +587,9 @@ describe("profiles keep their payment identifiers to themselves", () => {
      * The list is exact rather than a check for absent names, so adding any
      * column to this function has to come past this test. `host_paid_at` did:
      * it says when a transfer landed, which is the host's own money and their
-     * own question, and carries no amount at all.
+     * own question, and carries no amount at all. The trust columns (0057) did
+     * too — a profession, three booleans and a plain session count, none of
+     * them a fee, an amount, a document, or contact detail.
      */
     const [row] = await asUser<Record<string, unknown>>(HOST, `select * from host_bookings()`);
 
@@ -536,6 +603,12 @@ describe("profiles keep their payment identifiers to themselves", () => {
       "practitioner_name",
       "practitioner_avatar_path",
       "host_paid_at",
+      "practitioner_profession",
+      "practitioner_identity_verified",
+      "practitioner_insurance_verified",
+      "practitioner_credential_reviewed",
+      "practitioner_completed_sessions",
+      "practitioner_good_standing",
     ]);
   });
 
@@ -554,7 +627,8 @@ describe("profiles keep their payment identifiers to themselves", () => {
 
   it("drops a host from public view once they have no live listing", async () => {
     await db.exec(`update spaces set status = 'delisted' where host_id = '${HOST}'`);
-    const afterDelisting = await asAnon(
+    const afterDelisting = await asUser(
+      STRANGER,
       `select id from public_host_profiles where id = '${HOST}'`,
     );
     await db.exec(`update spaces set status = 'active' where id = '${SPACE}'`);
@@ -616,7 +690,8 @@ describe("hosts can only manage their own listings", () => {
        values ('${SPACE}', 1, 540, 1020)`,
     );
 
-    const found = await asAnon(`select id from availability_public where space_id = '${SPACE}'`);
+    // availability_public is closed to anon since 0064; the signed-in browser sees it.
+    const found = await asUser(STRANGER, `select id from availability_public where space_id = '${SPACE}'`);
     expect(found).toHaveLength(1);
   });
 
@@ -627,7 +702,8 @@ describe("hosts can only manage their own listings", () => {
        values ('${PENDING_SPACE}', 2, 540, 1020)`,
     );
 
-    const found = await asAnon(
+    const found = await asUser(
+      STRANGER,
       `select id from availability_public where space_id = '${PENDING_SPACE}'`,
     );
     expect(found).toEqual([]);
@@ -759,6 +835,65 @@ describe("messages stay inside their booking", () => {
          values ('${id}', '${PRACTITIONER}', 'call me on 415 555 0134')`,
       ),
     ).rejects.toThrow();
+  });
+});
+
+/**
+ * Reporting and blocking (0067), the App Store Guideline 1.2 controls. The
+ * routes act with the service role after a participant check; these assert the
+ * database defences behind them — who may write a report, who may block, and
+ * that a block actually closes the channel.
+ */
+describe("reporting and blocking a booking party", () => {
+  const bookingId = async () => {
+    const [row] = await asUser<{ id: string }>(PRACTITIONER, `select id::text from bookings limit 1`);
+    return row.id;
+  };
+
+  afterEach(async () => {
+    // A leftover block would sever the shared message fixture for later tests.
+    await db.exec(`delete from blocked_users`);
+    await db.exec(`delete from messages where body = 'still open'`);
+  });
+
+  it("does not let a client write a report directly — it is route-only", async () => {
+    const id = await bookingId();
+    for (const who of [PRACTITIONER, STRANGER]) {
+      await expect(
+        asUser(
+          who,
+          `insert into message_reports (booking_id, reporter_id, reported_user_id, reason)
+           values ('${id}', '${who}', '${HOST}', 'x')`,
+        ),
+      ).rejects.toThrow();
+    }
+  });
+
+  it("gives clients no read of reports at all", async () => {
+    await expect(asUser(PRACTITIONER, `select id from message_reports`)).rejects.toThrow();
+    await expect(asAnon(`select id from message_reports`)).rejects.toThrow();
+  });
+
+  it("does not let a client read or write blocks directly — route-only", async () => {
+    await expect(
+      asUser(PRACTITIONER, `insert into blocked_users (blocker_id, blocked_id) values ('${PRACTITIONER}', '${HOST}')`),
+    ).rejects.toThrow();
+    await expect(asUser(PRACTITIONER, `select blocker_id from blocked_users`)).rejects.toThrow();
+    await expect(asAnon(`select blocker_id from blocked_users`)).rejects.toThrow();
+  });
+
+  it("severs the message channel once either party blocks the other", async () => {
+    const id = await bookingId();
+    // With no block, a send (the route writes as the service role) is allowed.
+    await expect(
+      db.exec(`insert into messages (booking_id, sender_id, body) values ('${id}', '${PRACTITIONER}', 'still open')`),
+    ).resolves.toBeDefined();
+    // The host blocks the practitioner…
+    await db.exec(`insert into blocked_users (blocker_id, blocked_id) values ('${HOST}', '${PRACTITIONER}')`);
+    // …and now even a service-role insert is refused by the send guard.
+    await expect(
+      db.exec(`insert into messages (booking_id, sender_id, body) values ('${id}', '${PRACTITIONER}', 'blocked')`),
+    ).rejects.toThrow(/messaging is unavailable/i);
   });
 });
 
@@ -1102,11 +1237,11 @@ describe("the public area", () => {
 });
 
 /**
- * The map draws the room where the room is.
+ * The map draws roughly where the room is, not exactly.
  *
- * This published a point offset a few hundred metres, so a real map could be
- * drawn without naming a room we would not name. With the address published
- * that only produced a worse map, and the offset went with it.
+ * spaces_public publishes a point offset a few hundred metres (approx_lat /
+ * approx_lng), so a real map can be drawn without naming a room we would not
+ * name. The exact point never leaves the base table before a booking.
  */
 describe("the map point", () => {
   // Its own listing, because earlier tests push SPACE back to pending and a
@@ -1129,21 +1264,27 @@ describe("the map point", () => {
     `);
   });
 
-  it("is the studio's own position, not a point near it", async () => {
-    const [shown] = await asAnon<{ lat: number; lng: number }>(
-      `select lat, lng from spaces_public where id = '${MAP_SPACE}'`,
+  it("is a point near the studio, not its own position", async () => {
+    const [shown] = await asUser<{ approx_lat: number; approx_lng: number }>(
+      STRANGER,
+      `select approx_lat, approx_lng from spaces_public where id = '${MAP_SPACE}'`,
     );
 
-    expect(Number(shown.lat)).toBeCloseTo(LAT, 6);
-    expect(Number(shown.lng)).toBeCloseTo(LNG, 6);
+    // Offset off the building (250-450m), but still the same neighbourhood.
+    expect(Number(shown.approx_lat) !== LAT || Number(shown.approx_lng) !== LNG).toBe(true);
+    expect(Math.abs(Number(shown.approx_lat) - LAT)).toBeLessThan(0.01);
+    expect(Math.abs(Number(shown.approx_lng) - LNG)).toBeLessThan(0.01);
   });
 
-  it("comes with the street it belongs to", async () => {
-    const [shown] = await asAnon<{ address_line: string }>(
-      `select address_line from spaces_public where id = '${MAP_SPACE}'`,
+  it("carries the approximate point, not the street", async () => {
+    const [shown] = await asUser<{ address_line: string | null; approx_lat: number | null }>(
+      STRANGER,
+      `select address_line, approx_lat from spaces_public where id = '${MAP_SPACE}'`,
     );
 
-    expect(shown.address_line).toBe("2 Bay Street");
+    // The offset point is published; the street is a NULL shim (migration 0055).
+    expect(shown.approx_lat).not.toBeNull();
+    expect(shown.address_line).toBeNull();
   });
 });
 
@@ -1424,7 +1565,10 @@ describe("two studios on the same platform", () => {
    * behaviour and would make an assertion about it a test of test order.
    */
   it("shows a second host's live room to somebody browsing", async () => {
-    const rooms = await asAnon<{ name: string }>(`select name from spaces_public order by name`);
+    const rooms = await asUser<{ name: string }>(
+      STRANGER,
+      `select name from spaces_public order by name`,
+    );
     expect(rooms.map((r) => r.name)).toContain("Cedar Room");
   });
 });
@@ -1789,7 +1933,7 @@ describe("listing requires accepting the Host Terms", () => {
       `select host_terms_version, host_terms_accepted_at from profiles where id = auth.uid()`,
     );
 
-    expect(row.host_terms_version).toBe(1);
+    expect(row.host_terms_version).toBe(3);
     expect(row.host_terms_accepted_at).not.toBeNull();
   });
 
@@ -1797,7 +1941,7 @@ describe("listing requires accepting the Host Terms", () => {
   it("refuses to unset an accepted version", async () => {
     await asUser(
       NEW_HOST,
-      `update profiles set host_terms_version = 1 where id = auth.uid()`,
+      `update profiles set host_terms_version = 3 where id = auth.uid()`,
     );
     await expect(
       asUser(NEW_HOST, `update profiles set host_terms_version = null where id = auth.uid()`),
@@ -1822,5 +1966,357 @@ describe("listing requires accepting the Host Terms", () => {
     );
     expect(row.terms_version).toBe(1);
     expect(row.host_terms_version).toBeNull();
+  });
+});
+
+/**
+ * Practitioner trust (migration 0057): identity is the server's to set, the
+ * profession is a controlled value, and a host sees a coarse summary — never
+ * another host's bookings or any document.
+ */
+describe("practitioner trust and identity", () => {
+  // Isolated ids, so the counts here cannot be moved by the bookings other
+  // blocks in this shared database create.
+  const THOST = "00000057-0000-4000-8000-000000000001";
+  const TPRAC = "00000057-0000-4000-8000-000000000002";
+  const TOTHER = "00000057-0000-4000-8000-000000000003";
+  const TSPACE = "00000057-0000-4000-8000-000000000010";
+
+  beforeAll(async () => {
+    // Written as the server would (a direct exec has no auth.uid()), which the
+    // spoof test proves the client cannot do: verified identity, verified cover,
+    // a chosen profession.
+    await db.exec(`
+      insert into auth.users (id, email) values
+        ('${THOST}', 'thost@example.com'),
+        ('${TPRAC}', 'tprac@example.com'),
+        ('${TOTHER}', 'tother@example.com');
+
+      insert into profiles (id, display_name) values
+        ('${THOST}', 'Trust Host'),
+        ('${TOTHER}', 'Other Host');
+
+      insert into profiles (
+        id, display_name, identity_verified_at, insurance_doc_path,
+        insurance_doc_state, insurance_doc_reviewed_at,
+        insurance_effective_date, insurance_expires_at, profession
+      ) values (
+        '${TPRAC}', 'Trust Prac', now(), 'prac/x/cert.pdf',
+        'verified', now(), now() - interval '1 day', now() + interval '365 days', 'pilates'
+      );
+
+      insert into spaces (
+        id, host_id, name, category, hourly_rate_cents, capacity, access_type,
+        entry_instructions, address_line, status, sublease_doc_path, legal_ack_at,
+        sublease_doc_state, sublease_doc_reviewed_at
+      ) values (
+        '${TSPACE}', '${THOST}', 'Trust Room', 'physical', 4500, 3, 'keypad',
+        'Panel by the door', '1 Trust Way', 'active',
+        'space/t/lease.pdf', now(), 'verified', now()
+      );
+
+      -- A completed, paid session — the only kind that counts toward the number.
+      insert into bookings (
+        space_id, practitioner_id, starts_at, ends_at, is_instant, was_pro,
+        host_rate_cents, service_fee_cents, instant_fee_cents, pro_discount_cents,
+        credit_applied_cents, total_cents, platform_cents,
+        access_code, access_code_revealed_at, captured_at, status
+      ) values (
+        '${TSPACE}', '${TPRAC}',
+        now() - interval '2 days', now() - interval '2 days' + interval '1 hour',
+        false, false, 4500, 900, 0, 0, 0, 5400, 900,
+        '1111', now() - interval '2 days', now() - interval '2 days', 'completed'
+      );
+
+      -- Cancelled well ahead of the session: paid, but neither a completed
+      -- session nor a late cancellation, so it counts for nothing.
+      insert into bookings (
+        space_id, practitioner_id, starts_at, ends_at, is_instant, was_pro,
+        host_rate_cents, service_fee_cents, instant_fee_cents, pro_discount_cents,
+        credit_applied_cents, total_cents, platform_cents,
+        access_code, access_code_revealed_at, captured_at, status,
+        cancelled_at, cancelled_by
+      ) values (
+        '${TSPACE}', '${TPRAC}',
+        now() + interval '3 days', now() + interval '3 days' + interval '1 hour',
+        false, false, 4500, 900, 0, 0, 0, 5400, 900,
+        '2222', now() + interval '3 days', now() - interval '6 days',
+        'cancelled_by_practitioner', now() - interval '6 days', 'practitioner'
+      );
+
+      -- An unpaid hold — never counts.
+      insert into bookings (
+        space_id, practitioner_id, starts_at, ends_at, is_instant, was_pro,
+        host_rate_cents, service_fee_cents, instant_fee_cents, pro_discount_cents,
+        credit_applied_cents, total_cents, platform_cents,
+        access_code, access_code_revealed_at, status
+      ) values (
+        '${TSPACE}', '${TPRAC}',
+        now() + interval '4 days', now() + interval '4 days' + interval '1 hour',
+        false, false, 4500, 900, 0, 0, 0, 5400, 900,
+        '3333', now() + interval '4 days', 'upcoming'
+      );
+
+      -- A pending, card-authorized request — what host_requests() answers.
+      insert into bookings (
+        space_id, practitioner_id, starts_at, ends_at, is_instant, was_pro,
+        host_rate_cents, service_fee_cents, instant_fee_cents, pro_discount_cents,
+        credit_applied_cents, total_cents, platform_cents,
+        access_code, access_code_revealed_at, approval_state, authorized_at, status
+      ) values (
+        '${TSPACE}', '${TPRAC}',
+        now() + interval '5 days', now() + interval '5 days' + interval '1 hour',
+        false, false, 4500, 900, 0, 0, 0, 5400, 900,
+        '4444', now() + interval '5 days', 'pending', now(), 'upcoming'
+      );
+    `);
+  });
+
+  it("refuses a practitioner marking their own identity verified", async () => {
+    await expect(
+      asUser(TPRAC, `update profiles set identity_verified_at = now() where id = '${TPRAC}'`),
+    ).rejects.toThrow(/server/i);
+  });
+
+  it("refuses an unknown profession and accepts a known one", async () => {
+    await expect(
+      asUser(TPRAC, `update profiles set profession = 'astronaut' where id = '${TPRAC}'`),
+    ).rejects.toThrow();
+    await expect(
+      asUser(TPRAC, `update profiles set profession = 'yoga' where id = '${TPRAC}'`),
+    ).resolves.toBeDefined();
+    // Back to the value the summary tests read.
+    await db.exec(`update profiles set profession = 'pilates' where id = '${TPRAC}'`);
+  });
+
+  it("shows the host the practitioner's trust summary on a request", async () => {
+    const rows = await asUser<{
+      practitioner_profession: string | null;
+      practitioner_identity_verified: boolean;
+      practitioner_insurance_verified: boolean;
+      practitioner_good_standing: boolean;
+      practitioner_completed_sessions: number;
+    }>(THOST, `select * from host_requests()`);
+
+    expect(rows.length).toBe(1); // the one pending, authorized request
+    const req = rows[0];
+    expect(req.practitioner_profession).toBe("pilates");
+    expect(req.practitioner_identity_verified).toBe(true);
+    expect(req.practitioner_insurance_verified).toBe(true);
+    expect(req.practitioner_good_standing).toBe(true);
+    // Only the one completed, paid session — not the cancelled or unpaid rows.
+    expect(Number(req.practitioner_completed_sessions)).toBe(1);
+  });
+
+  it("counts only completed, paid sessions in the host's history summary", async () => {
+    const rows = await asUser<{ practitioner_completed_sessions: number }>(
+      THOST,
+      `select * from host_bookings()`,
+    );
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) {
+      expect(Number(row.practitioner_completed_sessions)).toBe(1);
+    }
+  });
+
+  it("does not leak a practitioner's bookings to an unrelated host", async () => {
+    const requests = await asUser(TOTHER, `select * from host_requests()`);
+    const history = await asUser(TOTHER, `select * from host_bookings()`);
+    expect(requests).toEqual([]);
+    expect(history).toEqual([]);
+  });
+
+  it("refuses a practitioner marking their own credential verified", async () => {
+    await expect(
+      asUser(TPRAC, `update profiles set credential_doc_state = 'verified' where id = '${TPRAC}'`),
+    ).rejects.toThrow(/staff/i);
+  });
+
+  it("returns a credential to pending review when a new document is submitted", async () => {
+    // A submitted document, then staff verify it in a second write (no path
+    // change, so the trigger does not reset it)…
+    await db.exec(
+      `update profiles set credential_doc_path = 'practitioner/${TPRAC}/cred-a.pdf' where id = '${TPRAC}'`,
+    );
+    await db.exec(
+      `update profiles set credential_doc_state = 'verified', credential_doc_reviewed_at = now() where id = '${TPRAC}'`,
+    );
+    // …then the practitioner uploads a replacement, which restarts review.
+    await asUser(
+      TPRAC,
+      `update profiles set credential_doc_path = 'practitioner/${TPRAC}/cred-b.pdf' where id = '${TPRAC}'`,
+    );
+    const [row] = await asUser<{
+      credential_doc_state: string | null;
+      credential_doc_reviewed_at: string | null;
+    }>(TPRAC, `select credential_doc_state, credential_doc_reviewed_at from profiles where id = '${TPRAC}'`);
+    expect(row.credential_doc_state).toBe("pending");
+    expect(row.credential_doc_reviewed_at).toBeNull();
+  });
+
+  it("shows the host a reviewed credential as a boolean, never the document or note", async () => {
+    // Path first (trigger resets to pending), then the verdict without a path
+    // change — the only way a verified state survives, and how staff review works.
+    await db.exec(
+      `update profiles set credential_doc_path = 'practitioner/${TPRAC}/cred.pdf' where id = '${TPRAC}'`,
+    );
+    await db.exec(
+      `update profiles set credential_doc_state = 'verified', credential_doc_reviewed_at = now() where id = '${TPRAC}'`,
+    );
+    const [req] = await asUser<Record<string, unknown>>(THOST, `select * from host_requests()`);
+    expect(req.practitioner_credential_reviewed).toBe(true);
+    expect(Object.keys(req)).not.toContain("credential_doc_path");
+    expect(Object.keys(req)).not.toContain("credential_number");
+    expect(Object.keys(req)).not.toContain("credential_review_note");
+  });
+});
+
+/*
+ * The verification verdicts — identity, insurance, credential — are the
+ * server's alone, on INSERT as much as UPDATE. The profile row is created by the
+ * client, so a crafted first INSERT is the vector these prove is closed: a fresh
+ * account cannot arrive already verified, and cannot self-promote afterwards.
+ * The service role (webhook, identity session route, admin review) still sets
+ * every verdict, and the practitioner can still upload documents.
+ */
+describe("verification verdicts are the server's, on insert and update", () => {
+  const FRESH = "00000058-0000-4000-8000-000000000001";
+
+  beforeAll(async () => {
+    await db.exec(`insert into auth.users (id, email) values ('${FRESH}', 'fresh58@example.com');`);
+  });
+
+  it("refuses a crafted first INSERT that self-verifies identity", async () => {
+    await expect(
+      asUser(FRESH, `insert into profiles (id, identity_verified_at) values (auth.uid(), now())`),
+    ).rejects.toThrow(/server/i);
+  });
+
+  it("refuses a crafted first INSERT that self-verifies insurance", async () => {
+    await expect(
+      asUser(
+        FRESH,
+        `insert into profiles (id, insurance_doc_state, insurance_doc_reviewed_at) values (auth.uid(), 'verified', now())`,
+      ),
+    ).rejects.toThrow(/staff/i);
+  });
+
+  it("refuses a crafted first INSERT that self-reviews a credential", async () => {
+    await expect(
+      asUser(
+        FRESH,
+        `insert into profiles (id, credential_doc_state, credential_doc_reviewed_at) values (auth.uid(), 'verified', now())`,
+      ),
+    ).rejects.toThrow(/staff/i);
+  });
+
+  it("refuses the all-at-once crafted INSERT the audit flagged", async () => {
+    await expect(
+      asUser(
+        FRESH,
+        `insert into profiles (id, identity_verified_at, insurance_doc_state, insurance_doc_reviewed_at,
+                               credential_doc_state, credential_doc_reviewed_at)
+           values (auth.uid(), now(), 'verified', now(), 'verified', now())`,
+      ),
+    ).rejects.toThrow(/server|staff/i);
+  });
+
+  it("still allows a plain first profile INSERT, verified of nothing", async () => {
+    await expect(
+      asUser(FRESH, `insert into profiles (id, display_name, account_type) values (auth.uid(), 'Fresh', 'practitioner')`),
+    ).resolves.toBeDefined();
+    const [row] = await asUser<{
+      identity_verified_at: string | null;
+      insurance_doc_state: string;
+      credential_doc_state: string | null;
+    }>(
+      FRESH,
+      `select identity_verified_at, insurance_doc_state, credential_doc_state from profiles where id = auth.uid()`,
+    );
+    expect(row.identity_verified_at).toBeNull();
+    expect(row.insurance_doc_state).toBe("pending");
+    expect(row.credential_doc_state).toBeNull();
+  });
+
+  it("refuses self-promoting any verdict through UPDATE", async () => {
+    await expect(
+      asUser(FRESH, `update profiles set identity_verified_at = now() where id = auth.uid()`),
+    ).rejects.toThrow(/server/i);
+    await expect(
+      asUser(
+        FRESH,
+        `update profiles set insurance_doc_state = 'verified', insurance_doc_reviewed_at = now() where id = auth.uid()`,
+      ),
+    ).rejects.toThrow(/staff/i);
+    await expect(
+      asUser(
+        FRESH,
+        `update profiles set credential_doc_state = 'verified', credential_doc_reviewed_at = now() where id = auth.uid()`,
+      ),
+    ).rejects.toThrow(/staff/i);
+  });
+
+  it("lets the practitioner upload insurance, which stays pending, then staff verify", async () => {
+    await asUser(FRESH, `update profiles set insurance_doc_path = 'prac/${FRESH}/ins.pdf' where id = auth.uid()`);
+    const [uploaded] = await asUser<{ insurance_doc_state: string; insurance_doc_reviewed_at: string | null }>(
+      FRESH,
+      `select insurance_doc_state, insurance_doc_reviewed_at from profiles where id = auth.uid()`,
+    );
+    expect(uploaded.insurance_doc_state).toBe("pending");
+    expect(uploaded.insurance_doc_reviewed_at).toBeNull();
+
+    // Staff (service role) verify it.
+    await db.exec(
+      `update profiles set insurance_doc_state = 'verified', insurance_doc_reviewed_at = now(),
+         insurance_effective_date = now() - interval '1 day', insurance_expires_at = now() + interval '365 days'
+       where id = '${FRESH}'`,
+    );
+    const [verified] = await asUser<{ insurance_doc_state: string }>(
+      FRESH,
+      `select insurance_doc_state from profiles where id = auth.uid()`,
+    );
+    expect(verified.insurance_doc_state).toBe("verified");
+  });
+
+  it("resets insurance to pending and clears the verdict when the certificate is replaced", async () => {
+    await asUser(FRESH, `update profiles set insurance_doc_path = 'prac/${FRESH}/ins2.pdf' where id = auth.uid()`);
+    const [row] = await asUser<{ insurance_doc_state: string; insurance_effective_date: string | null }>(
+      FRESH,
+      `select insurance_doc_state, insurance_effective_date from profiles where id = auth.uid()`,
+    );
+    expect(row.insurance_doc_state).toBe("pending");
+    expect(row.insurance_effective_date).toBeNull();
+  });
+
+  it("lets the practitioner upload a credential, which stays pending, then staff review", async () => {
+    await asUser(
+      FRESH,
+      `update profiles set credential_doc_path = 'prac/${FRESH}/cred.pdf', credential_type = 'RYT-200' where id = auth.uid()`,
+    );
+    const [pending] = await asUser<{ credential_doc_state: string | null }>(
+      FRESH,
+      `select credential_doc_state from profiles where id = auth.uid()`,
+    );
+    expect(pending.credential_doc_state).toBe("pending");
+
+    await db.exec(
+      `update profiles set credential_doc_state = 'verified', credential_doc_reviewed_at = now() where id = '${FRESH}'`,
+    );
+    const [reviewed] = await asUser<{ credential_doc_state: string | null }>(
+      FRESH,
+      `select credential_doc_state from profiles where id = auth.uid()`,
+    );
+    expect(reviewed.credential_doc_state).toBe("verified");
+  });
+
+  it("lets the Stripe Identity server flow verify identity (service role)", async () => {
+    await db.exec(
+      `update profiles set identity_verified_at = now(), identity_session_id = 'vs_test_123' where id = '${FRESH}'`,
+    );
+    const [row] = await asUser<{ identity_verified_at: string | null }>(
+      FRESH,
+      `select identity_verified_at from profiles where id = auth.uid()`,
+    );
+    expect(row.identity_verified_at).not.toBeNull();
   });
 });

@@ -16,7 +16,7 @@ import { ImageResponse } from "next/og";
 
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
-export const alt = "Minimum Stress — private rooms for every kind of practice";
+export const alt = "Minimum Stress — a place for your practice";
 
 export default function Image() {
   return new ImageResponse(
@@ -58,19 +58,19 @@ export default function Image() {
           */}
           <div style={{ display: "flex", flexDirection: "column" }}>
             <div
-              style={{ fontSize: 74, lineHeight: 1.14, color: "#FFFFFF", letterSpacing: -1.5 }}
+              style={{ fontSize: 82, lineHeight: 1.14, color: "#FFFFFF", letterSpacing: -1.5 }}
             >
-              Private rooms for your practice,
+              A place
             </div>
             <div
-              style={{ fontSize: 74, lineHeight: 1.14, color: "#FFFFFF", letterSpacing: -1.5 }}
+              style={{ fontSize: 82, lineHeight: 1.14, color: "#FFFFFF", letterSpacing: -1.5 }}
             >
-              for every kind of practice.
+              for your practice.
             </div>
           </div>
           <div style={{ fontSize: 31, color: "#A9C6E4", maxWidth: 860, lineHeight: 1.4 }}>
-            Movement, coaching, meditation and healing — booked on your schedule, in studios that
-            already have the room.
+            The professional platform for independent wellness work — book professional space for
+            your practice, on your schedule, without a lease.
           </div>
         </div>
 

@@ -21,6 +21,9 @@
  * routes in the Stripe milestone; until then they throw rather than pretend.
  */
 
+import { apiFetch } from "./api-fetch";
+import { openExternal } from "./native";
+import { type HeldBookingRow, isHeldBooking } from "./booking-visibility";
 import { payoutSetupFrom } from "./payout-setup";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -34,6 +37,33 @@ import { errorMessage } from "./error-message";
  * generic message, discarding the sentence a constraint or trigger raised for
  * exactly that moment.
  */
+/**
+ * The trust fields host_requests() and host_bookings() both carry, and the one
+ * place they are turned into a PractitionerTrust — so the request queue and the
+ * history cannot describe the same signals differently.
+ */
+interface HostRpcRow {
+  booking_id: string;
+  space_id: string;
+  practitioner_name: string | null;
+  practitioner_profession?: string | null;
+  practitioner_identity_verified?: boolean | null;
+  practitioner_insurance_verified?: boolean | null;
+  practitioner_credential_reviewed?: boolean | null;
+  practitioner_completed_sessions?: number | null;
+  practitioner_good_standing?: boolean | null;
+}
+
+function trustFrom(row: HostRpcRow): PractitionerTrust {
+  return {
+    identityVerified: Boolean(row.practitioner_identity_verified),
+    insuranceVerified: Boolean(row.practitioner_insurance_verified),
+    credentialReviewed: Boolean(row.practitioner_credential_reviewed),
+    completedSessions: Number(row.practitioner_completed_sessions ?? 0),
+    goodStanding: Boolean(row.practitioner_good_standing),
+  };
+}
+
 function asError(cause: unknown): Error {
   return cause instanceof Error ? cause : new Error(errorMessage(cause, "Request failed"));
 }
@@ -44,6 +74,7 @@ import type { NotificationEntry } from "./notify/history";
 import {
   rejectionReason,
   spaceDocPath,
+  practitionerDocPath,
   avatarPath,
   spaceMediaPath,
 } from "./uploads";
@@ -59,13 +90,18 @@ import type {
   Message,
   NewSpaceInput,
   OpenDispute,
+  PractitionerTrust,
   PublicReview,
   Profile,
   PublicSpace,
+  ReferralStatus,
+  ReferralSummary,
+  RewardState,
   SpaceAccessDetails,
   SpaceEdit,
 } from "./domain";
-import type { CancellationEvent } from "./reliability";
+import { isKnownProfession, professionLabel } from "./professions";
+import { toCancellationEvents, type CancellationEvent } from "./reliability";
 import type { CreateBookingInput, Repository, ReviewInput } from "./repository";
 import type { ApprovalState } from "./booking-approval";
 import { knownUses } from "./booking-use";
@@ -74,6 +110,8 @@ import { type CategoryKey, isRoomSetupKey, roomTypeFor } from "./taxonomy";
 import { type ClaimKind, claimType, overstayCents } from "./claims";
 import { type RefundReason, questionFor } from "./refunds";
 import { FALLBACK_ZONE } from "./timezone";
+import { MEDIA_SIGN_MAX_BATCH, type MediaSignResponse } from "./media-sign";
+import { buildImageVariants } from "./image-variants";
 
 /** Rows as PostgREST returns them, before mapping into domain shapes. */
 interface SpaceRow {
@@ -117,6 +155,11 @@ interface SpaceRow {
   doc_review_note?: string | null;
   lat?: number | null;
   lng?: number | null;
+  // The coarse point spaces_public exposes in place of lat/lng — offset a few
+  // hundred metres and stable per listing. Present on the view, absent on the
+  // base `spaces` table (so a host row read here simply has neither).
+  approx_lat?: number | null;
+  approx_lng?: number | null;
   // numeric(4,1) arrives as a string from PostgREST, not a number.
   area?: string | null;
   entrance_access?: string | null;
@@ -148,7 +191,65 @@ interface MediaRow {
   id: string;
   space_id: string;
   storage_path: string;
+  // The card thumbnail variant (0066); null on older rows and on video, where
+  // the app falls back to storage_path.
+  card_path: string | null;
   kind: "image" | "video";
+}
+
+/** A row of `bookings_with_access_code`, the fields a Booking is built from. */
+interface BookingViewRow {
+  id: string;
+  space_id: string;
+  practitioner_id: string;
+  starts_at: string;
+  ends_at: string;
+  status: string;
+  is_instant: boolean;
+  was_pro: boolean;
+  host_rate_cents: number;
+  service_fee_cents: number;
+  instant_fee_cents: number;
+  pro_discount_cents: number;
+  total_cents: number;
+  platform_cents: number;
+  revealed_access_code: string | null;
+  access_code_revealed_at: string;
+  approval_state: string | null;
+}
+
+/**
+ * One view row into the domain Booking. Shared by the list and the by-id read
+ * so they build the same shape; the space label comes from the public catalogue
+ * because the view carries no name.
+ */
+function mapBookingRow(row: BookingViewRow, byId: Map<string, PublicSpace>): Booking {
+  const space = byId.get(row.space_id);
+  const category = (space?.category ?? "physical") as CategoryKey;
+  return {
+    id: row.id,
+    spaceId: row.space_id,
+    spaceName: space?.name ?? "Your booking",
+    roomType: roomTypeFor(category),
+    category,
+    practitionerId: row.practitioner_id,
+    startsAt: new Date(row.starts_at),
+    endsAt: new Date(row.ends_at),
+    timeZone: space?.timeZone ?? FALLBACK_ZONE,
+    status: row.status as BookingStatus,
+    isInstant: row.is_instant,
+    wasPro: row.was_pro,
+    hostRateCents: row.host_rate_cents,
+    serviceFeeCents: row.service_fee_cents,
+    instantFeeCents: row.instant_fee_cents,
+    proDiscountCents: row.pro_discount_cents,
+    totalCents: row.total_cents,
+    platformCents: row.platform_cents,
+    revealedAccessCode: row.revealed_access_code ?? null,
+    accessCodeRevealedAt: new Date(row.access_code_revealed_at),
+    // Older rows predate the column and are not requests.
+    approvalState: (row.approval_state ?? "not_required") as ApprovalState,
+  };
 }
 
 
@@ -184,6 +285,24 @@ export class SupabaseRepository implements Repository {
       avatarUrl: data?.avatar_path ? this.publicUrl("avatars", data.avatar_path) : null,
       isPro: data?.is_pro ?? false,
       insuranceDocName: data?.insurance_doc_path ?? null,
+      // The practitioner's liability cover. Columns added in 0054; a row read
+      // before the migration ran simply has none of them, which reads as an
+      // unreviewed certificate — never as verified.
+      insuranceReview: {
+        state: (data?.insurance_doc_state as DocReviewState | undefined) ?? "pending",
+        reviewedAt: data?.insurance_doc_reviewed_at
+          ? new Date(data.insurance_doc_reviewed_at)
+          : null,
+      },
+      insuranceEffectiveDate: data?.insurance_effective_date
+        ? new Date(data.insurance_effective_date)
+        : null,
+      insuranceExpiresAt: data?.insurance_expires_at
+        ? new Date(data.insurance_expires_at)
+        : null,
+      insuranceInsurer: data?.insurance_insurer ?? null,
+      insurancePolicyNumber: data?.insurance_policy_number ?? null,
+      insuranceReviewNote: data?.insurance_review_note ?? null,
       payoutSchedule: data?.payout_schedule ?? "standard",
       payoutSetup: payoutSetupFrom({
         stripe_connect_account_id: data?.stripe_connect_account_id ?? null,
@@ -193,6 +312,25 @@ export class SupabaseRepository implements Repository {
       notifyPayouts: data?.notify_payouts ?? true,
       notifyOffers: data?.notify_offers ?? false,
       accountType: data?.account_type ?? null,
+      // Server-written; read here, never set from the client (migration 0057).
+      identityVerifiedAt: data?.identity_verified_at
+        ? new Date(data.identity_verified_at)
+        : null,
+      profession: (data?.profession as string | null) ?? null,
+      // A submitted credential and its staff verdict. Columns added in 0058; a
+      // row read before it has none, which reads as no credential. state null
+      // means nothing submitted; the verdict is never set from the client.
+      credentialDocName: data?.credential_doc_path ?? null,
+      credentialType: data?.credential_type ?? null,
+      credentialNumber: data?.credential_number ?? null,
+      credentialJurisdiction: data?.credential_jurisdiction ?? null,
+      credentialReview: {
+        state: (data?.credential_doc_state as DocReviewState | null | undefined) ?? null,
+        reviewedAt: data?.credential_doc_reviewed_at
+          ? new Date(data.credential_doc_reviewed_at)
+          : null,
+      },
+      credentialReviewNote: data?.credential_review_note ?? null,
       searchPostcode: data?.search_postcode ?? null,
       termsVersion: data?.terms_version ?? null,
       termsAcceptedAt: data?.terms_accepted_at ? new Date(data.terms_accepted_at) : null,
@@ -201,6 +339,16 @@ export class SupabaseRepository implements Repository {
         ? new Date(data.host_terms_accepted_at)
         : null,
       milestonesSeen: (data?.milestones_seen as string[] | null) ?? [],
+      // Server-written the moment a first listing goes live, and never from the
+      // client (migration 0060). Both null on a host who is not one of the fifty.
+      foundingHostAt: data?.founding_host_at ? new Date(data.founding_host_at) : null,
+      foundingNumber: (data?.founding_number as number | null) ?? null,
+      // The practitioner-side mirror, written by the server the moment a first
+      // real session completes (migration 0068). Both null until then.
+      foundingPractitionerAt: data?.founding_practitioner_at
+        ? new Date(data.founding_practitioner_at)
+        : null,
+      foundingPractitionerNumber: (data?.founding_practitioner_number as number | null) ?? null,
       // Read back only for its owner — this query runs as the signed-in user,
       // and no policy lets anyone select another person's profile row.
       emergencyContact: {
@@ -221,6 +369,18 @@ export class SupabaseRepository implements Repository {
     if (patch.notifyOffers !== undefined) row.notify_offers = patch.notifyOffers;
     if (patch.payoutSchedule !== undefined) row.payout_schedule = patch.payoutSchedule;
     if (patch.insuranceDocName !== undefined) row.insurance_doc_path = patch.insuranceDocName;
+    /*
+     * The credential the practitioner submits — the document, and what they type
+     * about it. The review verdict (credential_doc_state, reviewed_at, note) is
+     * deliberately never sent from here: a trigger refuses a client-set verdict,
+     * and a new document resets review to pending on its own (migration 0058).
+     */
+    if (patch.credentialDocName !== undefined) row.credential_doc_path = patch.credentialDocName;
+    if (patch.credentialType !== undefined) row.credential_type = patch.credentialType;
+    if (patch.credentialNumber !== undefined) row.credential_number = patch.credentialNumber;
+    if (patch.credentialJurisdiction !== undefined) {
+      row.credential_jurisdiction = patch.credentialJurisdiction;
+    }
     if (patch.emergencyContact !== undefined) {
       row.emergency_contact_name = patch.emergencyContact.name;
       row.emergency_contact_phone = patch.emergencyContact.phone;
@@ -234,6 +394,16 @@ export class SupabaseRepository implements Repository {
      */
     if (patch.searchPostcode !== undefined) row.search_postcode = patch.searchPostcode;
     if (patch.accountType !== undefined) row.account_type = patch.accountType;
+    /*
+     * One of the controlled keys or null. Rejected early with a clear message;
+     * the DB check constraint refuses an unknown one regardless.
+     */
+    if (patch.profession !== undefined) {
+      if (patch.profession !== null && !isKnownProfession(patch.profession)) {
+        throw new Error("Unknown profession");
+      }
+      row.profession = patch.profession;
+    }
     /*
      * The version travels; the timestamp does not. A trigger sets it from the
      * server clock, so a client cannot record that somebody agreed last year.
@@ -249,8 +419,9 @@ export class SupabaseRepository implements Repository {
     // reads this for money or access.
     if (patch.milestonesSeen !== undefined) row.milestones_seen = patch.milestonesSeen;
 
-    // isPro and stripeConnected are absent on purpose: both are set by webhooks
-    // after money or verification actually clears, never by the client asking.
+    // isPro, stripeConnected and identityVerifiedAt are absent on purpose: all
+    // are set by webhooks after money or verification actually clears, never by
+    // the client asking. The DB trigger in 0057 refuses an identity write here.
 
     const { error } = await this.db.from("profiles").upsert(row);
     if (error) throw asError(error);
@@ -287,6 +458,89 @@ export class SupabaseRepository implements Repository {
   }
 
   /**
+   * The practitioner's liability certificate, actually uploaded.
+   *
+   * The old flow stored the filename in insurance_doc_path and never uploaded
+   * anything, so the admin review card had a name and no file to open. This
+   * writes the bytes to the private verification-docs bucket under the
+   * practitioner's own folder — the one the storage policy in 0003 lets them
+   * write and the admin route knows how to sign — and records that real path.
+   *
+   * Uploaded first, recorded second, so the path in the row always points at
+   * bytes that are already there — the same order the avatar and listing
+   * documents use.
+   */
+  async uploadInsuranceCertificate(file: File): Promise<Profile> {
+    const reason = rejectionReason(file, "document");
+    if (reason) throw new Error(reason);
+
+    const id = await this.userId();
+    const path = practitionerDocPath(id, file.type, crypto.randomUUID());
+
+    const { error: uploadError } = await this.db.storage
+      .from("verification-docs")
+      .upload(path, file, { contentType: file.type, upsert: false });
+    if (uploadError) throw asError(uploadError);
+
+    /*
+     * A new certificate is unreviewed by definition, so the review returns to
+     * pending: the staff note is cleared and reviewed-at is nulled, the shape
+     * profiles_insurance_review_consistent (0054) requires and the booking gate
+     * reads. Profiles has no edit-reset trigger the way spaces do (0019), so it
+     * is set here. The verified-only date columns are left for staff to set on
+     * re-verification; the pending state makes insuranceStatus ignore them.
+     */
+    const { error } = await this.db.from("profiles").upsert({
+      id,
+      insurance_doc_path: path,
+      insurance_doc_state: "pending",
+      insurance_doc_reviewed_at: null,
+      insurance_review_note: null,
+    });
+    if (error) throw asError(error);
+
+    return this.getProfile();
+  }
+
+  /**
+   * A professional credential (license or certificate), uploaded the same way as
+   * insurance: bytes to the private verification-docs bucket, then the path and
+   * what the practitioner typed about it recorded on their row. The review state
+   * is not set here — the credential trigger (0058) forces it back to pending on
+   * a new document, and only staff can move it past that.
+   */
+  async uploadCredentialCertificate(
+    file: File,
+    details: {
+      credentialType: string | null;
+      credentialNumber: string | null;
+      credentialJurisdiction: string | null;
+    },
+  ): Promise<Profile> {
+    const reason = rejectionReason(file, "document");
+    if (reason) throw new Error(reason);
+
+    const id = await this.userId();
+    const path = practitionerDocPath(id, file.type, crypto.randomUUID());
+
+    const { error: uploadError } = await this.db.storage
+      .from("verification-docs")
+      .upload(path, file, { contentType: file.type, upsert: false });
+    if (uploadError) throw asError(uploadError);
+
+    const { error } = await this.db.from("profiles").upsert({
+      id,
+      credential_doc_path: path,
+      credential_type: details.credentialType,
+      credential_number: details.credentialNumber,
+      credential_jurisdiction: details.credentialJurisdiction,
+    });
+    if (error) throw asError(error);
+
+    return this.getProfile();
+  }
+
+  /**
    * Hands off to Stripe and leaves.
    *
    * Nothing is set here. The route decides whether this is a new subscription
@@ -295,7 +549,7 @@ export class SupabaseRepository implements Repository {
    * granted itself.
    */
   async startProSubscription(): Promise<Profile> {
-    const response = await fetch("/api/pro", { method: "POST" });
+    const response = await apiFetch("/api/pro", { method: "POST" });
 
     if (!response.ok) {
       const { error } = await response.json().catch(() => ({ error: null }));
@@ -303,10 +557,37 @@ export class SupabaseRepository implements Repository {
     }
 
     const { url } = (await response.json()) as { url: string };
-    window.location.href = url;
+    // On the web this navigates; in the native shell it opens the Stripe-hosted
+    // checkout in the system browser, never an embedded purchase webview
+    // (App Store Guideline 3.1.1). Pro is granted only by the webhook (server
+    // truth), which the app reconciles on resume when the user returns.
+    openExternal(url);
 
-    // The redirect ends this page. Returning the current profile keeps the
-    // signature honest for the moment before the browser leaves.
+    // The redirect ends this page (web) or hands off to Safari (native).
+    // Returning the current profile keeps the signature honest for that moment.
+    return this.getProfile();
+  }
+
+  async startIdentityVerification(): Promise<Profile> {
+    const response = await apiFetch("/api/identity/start", { method: "POST" });
+
+    if (!response.ok) {
+      const { error } = await response.json().catch(() => ({ error: null }));
+      throw new Error(error ?? "Could not start identity verification");
+    }
+
+    const body = (await response.json()) as {
+      url?: string;
+      alreadyVerified?: boolean;
+      checking?: boolean;
+    };
+    // Already done, or Stripe is still reviewing an earlier attempt: nothing to
+    // open. Hand back the current profile; the app's return poll shows the state.
+    if (body.alreadyVerified || body.checking || !body.url) return this.getProfile();
+
+    // Off to Stripe's hosted flow; the webhook writes the verified time on the
+    // way back. The redirect ends this page.
+    window.location.href = body.url;
     return this.getProfile();
   }
 
@@ -319,7 +600,7 @@ export class SupabaseRepository implements Repository {
    * only once Stripe says the account can actually receive money.
    */
   async connectPayouts(): Promise<Profile> {
-    const response = await fetch("/api/connect/onboard", { method: "POST" });
+    const response = await apiFetch("/api/connect/onboard", { method: "POST" });
     if (!response.ok) {
       const { error } = await response.json().catch(() => ({ error: null }));
       throw new Error(error ?? "Could not start payout setup");
@@ -350,7 +631,7 @@ export class SupabaseRepository implements Repository {
    * has always worked, a few lines up.
    */
   async openPayoutDashboard(): Promise<void> {
-    const response = await fetch("/api/connect/dashboard", { method: "POST" });
+    const response = await apiFetch("/api/connect/dashboard", { method: "POST" });
     if (!response.ok) {
       const { error } = await response.json().catch(() => ({ error: null }));
       throw new Error(error ?? "Could not open your payout account");
@@ -375,6 +656,44 @@ export class SupabaseRepository implements Repository {
     return this.db.storage.from(bucket).getPublicUrl(path).data.publicUrl;
   }
 
+  /**
+   * Signed URLs for private listing media, minted by the server.
+   *
+   * The space-media bucket is private, and a browser cannot sign its own URLs
+   * for it — a storage policy that authorises by listing has to subquery
+   * `spaces`, which is subject to that table's owner-only RLS, so it can never
+   * clear a non-owner practitioner. So signing goes through an authenticated
+   * same-origin route that checks database truth with the service role and hands
+   * back only the paths this caller may see (active listings, or their own). No
+   * public-URL fallback: a path the server did not authorise simply has no URL,
+   * and its image does not load rather than leaking a world-readable link.
+   *
+   * Batched, and chunked to the route's ceiling so a busy screen never loses
+   * images to the cap. A failed request drops that chunk rather than the load.
+   */
+  private async signSpaceMedia(paths: string[]): Promise<Map<string, string>> {
+    const unique = [...new Set(paths)];
+    const urls = new Map<string, string>();
+
+    for (let start = 0; start < unique.length; start += MEDIA_SIGN_MAX_BATCH) {
+      const chunk = unique.slice(start, start + MEDIA_SIGN_MAX_BATCH);
+      try {
+        const response = await apiFetch("/api/spaces/media/sign", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ paths: chunk }),
+        });
+        if (!response.ok) continue;
+        const body = (await response.json()) as MediaSignResponse;
+        for (const [path, url] of Object.entries(body.urls ?? {})) urls.set(path, url);
+      } catch {
+        // Network or parse failure: skip this chunk, never a public fallback.
+      }
+    }
+
+    return urls;
+  }
+
   async listPublicSpaces(): Promise<PublicSpace[]> {
     const { data: spaces, error } = await this.db.from("spaces_public").select("*");
     if (error) throw asError(error);
@@ -384,10 +703,11 @@ export class SupabaseRepository implements Repository {
 
     // Two extra round trips rather than a nested select, because availability
     // and media come from their own views with their own visibility rules.
-    const [{ data: blocks }, { data: media }, { data: ratings }] = await Promise.all([
+    const [{ data: blocks }, { data: media }, { data: ratings }, hostSignals] = await Promise.all([
       this.db.from("availability_public").select("*").in("space_id", ids),
       this.db.from("space_media_public").select("*").in("space_id", ids).order("position"),
       this.db.from("space_ratings").select("*").in("space_id", ids),
+      this.hostSignalsFor(spaces.map((s: SpaceRow) => s.host_id)),
     ]);
 
     const ratingFor = new Map(
@@ -398,12 +718,22 @@ export class SupabaseRepository implements Repository {
       ]),
     );
 
+    // One batch of signed URLs for the private media bucket (0064), shared
+    // across every card on the screen.
+    const mediaUrls = await this.signSpaceMedia(
+      ((media ?? []) as MediaRow[]).flatMap((m) =>
+        m.card_path ? [m.storage_path, m.card_path] : [m.storage_path],
+      ),
+    );
+
     return spaces.map((row: SpaceRow) =>
       this.toPublicSpace(
         row,
         (blocks ?? []).filter((b: AvailabilityRow) => b.space_id === row.id),
         (media ?? []).filter((m: MediaRow) => m.space_id === row.id),
+        (path) => mediaUrls.get(path) ?? "",
         ratingFor.get(row.id),
+        hostSignals.get(row.host_id),
       ),
     );
   }
@@ -417,19 +747,35 @@ export class SupabaseRepository implements Repository {
     if (error) throw asError(error);
     if (!data) return null;
 
-    const [{ data: blocks }, { data: media }] = await Promise.all([
+    const [{ data: blocks }, { data: media }, hostSignals] = await Promise.all([
       this.db.from("availability_public").select("*").eq("space_id", id),
       this.db.from("space_media_public").select("*").eq("space_id", id).order("position"),
+      this.hostSignalsFor([data.host_id]),
     ]);
 
-    return this.toPublicSpace(data, blocks ?? [], media ?? []);
+    const mediaUrls = await this.signSpaceMedia(
+      ((media ?? []) as MediaRow[]).flatMap((m) =>
+        m.card_path ? [m.storage_path, m.card_path] : [m.storage_path],
+      ),
+    );
+
+    return this.toPublicSpace(
+      data,
+      blocks ?? [],
+      media ?? [],
+      (path) => mediaUrls.get(path) ?? "",
+      undefined,
+      hostSignals.get(data.host_id),
+    );
   }
 
   private toPublicSpace(
     row: SpaceRow,
     blocks: AvailabilityRow[],
     media: MediaRow[],
+    mediaUrl: (path: string) => string,
     rating?: { count: number; average: number },
+    hostSignal?: { founding: boolean; milestone: number },
   ): PublicSpace {
     return {
       id: row.id,
@@ -450,16 +796,21 @@ export class SupabaseRepository implements Repository {
         limitMinutes: row.parking_limit_minutes ?? null,
       },
       floorAreaSqft: row.floor_area_sqft ?? null,
-      addressLine: row.address_line ?? null,
-      lat: row.lat ?? null,
-      lng: row.lng ?? null,
+      // The coarse point only. spaces_public no longer carries the exact
+      // lat/lng or the street address (see migration 0055); the exact values
+      // come back through getSpaceAccessDetails once a booking is held.
+      approxLat: row.approx_lat ?? null,
+      approxLng: row.approx_lng ?? null,
       amenities: row.amenities ?? [],
       requirements: row.requirements ?? [],
       houseRules: row.house_rules ?? "",
       description: row.description ?? "",
       media: media.map((m) => ({
         id: m.id,
-        url: this.publicUrl("space-media", m.storage_path),
+        // Detail-size for the gallery; the card thumbnail for lists, falling back
+        // to the detail URL when a row has no card variant (older media, video).
+        url: mediaUrl(m.storage_path),
+        cardUrl: (m.card_path ? mediaUrl(m.card_path) : "") || mediaUrl(m.storage_path),
         kind: m.kind,
       })),
       availability: blocks.map((b) => ({
@@ -491,7 +842,45 @@ export class SupabaseRepository implements Repository {
       distanceLabel: "nearby",
       reviewCount: rating?.count ?? 0,
       averageRating: rating?.average ?? null,
+      // The two host signals a practitioner may see, from public_host_profiles.
+      // Absent (a host row that predates 0060, or a self-preview that does not
+      // join it) reads as no founding status and no milestone — no badge.
+      hostFoundingHost: hostSignal?.founding ?? false,
+      hostSessionMilestone: hostSignal?.milestone ?? 0,
     };
+  }
+
+  /**
+   * The founding and milestone signals for a set of hosts, keyed by host id.
+   *
+   * One read of public_host_profiles — the only place a practitioner-facing
+   * surface is allowed to learn a host's founding status or session milestone,
+   * and it exposes a bucket, never a raw count. A host with no row, or the read
+   * failing, simply yields no signal rather than blocking the listings.
+   */
+  private async hostSignalsFor(
+    hostIds: string[],
+  ): Promise<Map<string, { founding: boolean; milestone: number }>> {
+    const out = new Map<string, { founding: boolean; milestone: number }>();
+    const unique = [...new Set(hostIds)];
+    if (unique.length === 0) return out;
+
+    const { data } = await this.db
+      .from("public_host_profiles")
+      .select("id, founding_host, session_milestone")
+      .in("id", unique);
+
+    for (const row of (data ?? []) as {
+      id: string;
+      founding_host: boolean | null;
+      session_milestone: number | null;
+    }[]) {
+      out.set(row.id, {
+        founding: row.founding_host ?? false,
+        milestone: row.session_milestone ?? 0,
+      });
+    }
+    return out;
   }
 
   async getSpaceAccessDetails(spaceId: string): Promise<SpaceAccessDetails | null> {
@@ -510,6 +899,18 @@ export class SupabaseRepository implements Repository {
       lat: row.lat ?? null,
       lng: row.lng ?? null,
     };
+  }
+
+  async requestSpace(input: { lookingIn: string; spaceType?: string | null }): Promise<void> {
+    const response = await apiFetch("/api/spaces/request", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lookingIn: input.lookingIn, spaceType: input.spaceType ?? null }),
+    });
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => ({}))) as { error?: string };
+      throw new Error(payload.error ?? `Could not record that (${response.status})`);
+    }
   }
 
   /* ---------------- bookings ---------------- */
@@ -576,11 +977,7 @@ export class SupabaseRepository implements Repository {
      * and the money is held. An abandoned checkout has neither, so it is still
      * excluded, which is what this filter was always for.
      */
-    const real = data.filter(
-      (row) =>
-        row.captured_at !== null ||
-        (row.approval_state === "pending" && row.authorized_at !== null),
-    );
+    const real = data.filter((row) => isHeldBooking(row as HeldBookingRow));
     if (!real.length) return [];
 
     // The view carries no space name, and a practitioner cannot read `spaces`
@@ -588,34 +985,34 @@ export class SupabaseRepository implements Repository {
     const spaces = await this.listPublicSpaces();
     const byId = new Map(spaces.map((s) => [s.id, s]));
 
-    return real.map((row): Booking => {
-      const space = byId.get(row.space_id);
-      const category = (space?.category ?? "physical") as CategoryKey;
-      return {
-        id: row.id,
-        spaceId: row.space_id,
-        spaceName: space?.name ?? "Your booking",
-        roomType: roomTypeFor(category),
-        category,
-        practitionerId: row.practitioner_id,
-        startsAt: new Date(row.starts_at),
-        endsAt: new Date(row.ends_at),
-        timeZone: space?.timeZone ?? FALLBACK_ZONE,
-        status: row.status as BookingStatus,
-        isInstant: row.is_instant,
-        wasPro: row.was_pro,
-        hostRateCents: row.host_rate_cents,
-        serviceFeeCents: row.service_fee_cents,
-        instantFeeCents: row.instant_fee_cents,
-        proDiscountCents: row.pro_discount_cents,
-        totalCents: row.total_cents,
-        platformCents: row.platform_cents,
-        revealedAccessCode: row.revealed_access_code ?? null,
-        accessCodeRevealedAt: new Date(row.access_code_revealed_at),
-        // Older rows predate the column and are not requests.
-        approvalState: (row.approval_state ?? "not_required") as ApprovalState,
-      };
-    });
+    return real.map((row) => mapBookingRow(row, byId));
+  }
+
+  /**
+   * One booking by its id, the just-created one included.
+   *
+   * `listMyBookings` deliberately hides an in-flight checkout hold — captured_at
+   * null, approval "not_required" — because it has no place in a list of real
+   * sessions. But the moment right after creating one, the caller needs exactly
+   * that row back so the payment sheet can open against it. This reads it
+   * directly by id, scoped to the signed-in practitioner so it is still only
+   * ever their own booking, and applies no held-visibility filter. It invents
+   * nothing: every field is the server's, read back from the view.
+   */
+  async getBookingById(bookingId: string): Promise<Booking | null> {
+    const me = await this.userId();
+
+    const { data, error } = await this.db
+      .from("bookings_with_access_code")
+      .select("*")
+      .eq("id", bookingId)
+      .eq("practitioner_id", me)
+      .maybeSingle();
+    if (error) throw asError(error);
+    if (!data) return null;
+
+    const spaces = await this.listPublicSpaces();
+    return mapBookingRow(data, new Map(spaces.map((s) => [s.id, s])));
   }
 
   /**
@@ -633,7 +1030,7 @@ export class SupabaseRepository implements Repository {
    * it were safe to.
    */
   async createBooking(input: CreateBookingInput): Promise<CreatedBooking> {
-    const response = await fetch("/api/bookings", {
+    const response = await apiFetch("/api/bookings", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -657,10 +1054,12 @@ export class SupabaseRepository implements Repository {
       throw new Error(payload.error ?? `Booking failed (${response.status})`);
     }
 
-    // Read back rather than assembled from the response: the row the database
-    // holds is the one every other screen will show, and building a second
-    // version here is how two truths appear.
-    const booking = (await this.listMyBookings()).find((b) => b.id === payload.bookingId);
+    // Read the row back by id rather than through listMyBookings: a booking
+    // still awaiting its card is a hold that list deliberately hides, so routing
+    // the just-created one through it would drop the very row the payment sheet
+    // needs. This reads the database's own row directly — no second, invented
+    // version — so the sheet opens against real server state.
+    const booking = await this.getBookingById(payload.bookingId);
     if (!booking) throw new Error("Booking was created but could not be read back");
 
     return { booking, clientSecret: payload.clientSecret ?? null };
@@ -672,7 +1071,7 @@ export class SupabaseRepository implements Repository {
    * same route for the same reason.
    */
   async cancelBooking(id: string, actor: "practitioner" | "host"): Promise<Booking> {
-    const response = await fetch(`/api/bookings/${encodeURIComponent(id)}/cancel`, {
+    const response = await apiFetch(`/api/bookings/${encodeURIComponent(id)}/cancel`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ actor }),
@@ -694,7 +1093,7 @@ export class SupabaseRepository implements Repository {
    * `reviews` has no insert policy at all.
    */
   async submitReview(input: ReviewInput): Promise<void> {
-    const response = await fetch("/api/reviews", {
+    const response = await apiFetch("/api/reviews", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(input),
@@ -766,7 +1165,7 @@ export class SupabaseRepository implements Repository {
   }
 
   async sendMessage(bookingId: string, body: string): Promise<{ notice: string | null }> {
-    const response = await fetch("/api/messages", {
+    const response = await apiFetch("/api/messages", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ bookingId, body }),
@@ -779,6 +1178,48 @@ export class SupabaseRepository implements Repository {
 
     if (!response.ok) throw new Error(payload.error ?? `Could not send (${response.status})`);
     return { notice: payload.notice ?? null };
+  }
+
+  async markMessagesRead(bookingId: string): Promise<number> {
+    const { data, error } = await this.db.rpc("mark_messages_read", { p_booking_id: bookingId });
+    if (error) throw asError(error);
+    return typeof data === "number" ? data : 0;
+  }
+
+  async reportBooking(bookingId: string, reason: string): Promise<void> {
+    // The server derives the reported party from the booking and verifies the
+    // caller is a participant. Nothing but who / which booking / why is stored.
+    const response = await apiFetch("/api/messages/report", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bookingId, reason }),
+    });
+    if (!response.ok) {
+      const body = (await response.json().catch(() => ({}))) as { error?: string };
+      throw new Error(body.error ?? "We couldn't file that report just now.");
+    }
+  }
+
+  async blockBookingParty(bookingId: string): Promise<void> {
+    const response = await apiFetch("/api/messages/block", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bookingId }),
+    });
+    if (!response.ok) {
+      const body = (await response.json().catch(() => ({}))) as { error?: string };
+      throw new Error(body.error ?? "We couldn't block that person just now.");
+    }
+  }
+
+  async unreadMessageCounts(): Promise<Record<string, number>> {
+    const { data, error } = await this.db.rpc("unread_message_counts");
+    if (error) throw asError(error);
+    const counts: Record<string, number> = {};
+    for (const row of (data ?? []) as { booking_id: string; unread: number }[]) {
+      counts[row.booking_id] = row.unread;
+    }
+    return counts;
   }
 
   /* ---------------- standing ---------------- */
@@ -799,6 +1240,71 @@ export class SupabaseRepository implements Repository {
     return data?.sessions ?? 0;
   }
 
+  async foundingHostsRemaining(): Promise<number> {
+    // A plain count of the fifty still open, from the database's own reckoning
+    // of who holds a founding number — never a stored countdown.
+    const { data, error } = await this.db.rpc("founding_hosts_remaining");
+    if (error) throw asError(error);
+    return typeof data === "number" ? data : (data ?? 0);
+  }
+
+  async foundingPractitionersRemaining(): Promise<number> {
+    // The practitioner-side twin of the above — the database's own count of the
+    // fifty still open, never a stored countdown.
+    const { data, error } = await this.db.rpc("founding_practitioners_remaining");
+    if (error) throw asError(error);
+    return typeof data === "number" ? data : (data ?? 0);
+  }
+
+  /* ---------------- referrals ---------------- */
+
+  async myReferralCode(): Promise<string> {
+    // Assigns a code the first time, then returns the same one for good.
+    const { data, error } = await this.db.rpc("my_referral_code");
+    if (error) throw asError(error);
+    return (data as string | null) ?? "";
+  }
+
+  async listReferrals(): Promise<ReferralSummary[]> {
+    // The referral list and the reward ledger are read separately (the shipped
+    // my_referrals keeps its signature) and merged here by referral id. Both are
+    // server-scoped to the caller.
+    const [referrals, rewards] = await Promise.all([
+      this.db.rpc("my_referrals"),
+      this.db.rpc("my_referral_rewards"),
+    ]);
+    if (referrals.error) throw asError(referrals.error);
+    if (rewards.error) throw asError(rewards.error);
+
+    const rewardBy = new Map(
+      ((rewards.data ?? []) as {
+        referral_id: string;
+        amount_cents: number;
+        payout_state: RewardState;
+      }[]).map((r) => [r.referral_id, r]),
+    );
+
+    return (
+      (referrals.data ?? []) as { id: string; status: ReferralStatus; joined_at: string }[]
+    ).map((row) => {
+      const reward = rewardBy.get(row.id);
+      return {
+        id: row.id,
+        status: row.status,
+        joinedAt: new Date(row.joined_at),
+        rewardCents: reward?.amount_cents ?? 0,
+        rewardState: reward?.payout_state ?? null,
+      };
+    });
+  }
+
+  async attributeReferral(code: string): Promise<void> {
+    // Server-authoritative and idempotent — every anti-abuse rule is enforced
+    // in attribute_referral, so a bad code or a repeat call is a harmless no-op.
+    const { error } = await this.db.rpc("attribute_referral", { p_code: code });
+    if (error) throw asError(error);
+  }
+
   /* ---------------- credit ---------------- */
 
   /**
@@ -817,18 +1323,22 @@ export class SupabaseRepository implements Repository {
   async listCancellationHistory(): Promise<CancellationEvent[]> {
     const { data, error } = await this.db
       .from("bookings")
-      .select("starts_at, cancelled_at, cancelled_by")
-      .not("cancelled_at", "is", null)
-      .not("captured_at", "is", null);
+      .select("starts_at, cancelled_at, cancelled_by, captured_at")
+      .not("cancelled_at", "is", null);
     if (error) throw asError(error);
 
-    return (data ?? [])
-      .filter((row) => row.cancelled_by === "host" || row.cancelled_by === "practitioner")
-      .map((row) => ({
-        at: new Date(row.cancelled_at),
-        sessionStart: new Date(row.starts_at),
-        by: row.cancelled_by as "host" | "practitioner",
-      }));
+    // The abandoned-checkout exclusion lives in toCancellationEvents, shared
+    // with the server booking gate and the admin watchlist, so the card and the
+    // enforcement can never count different things. A released hold has no
+    // captured_at and drops out there; standingFor keeps only the caller's side.
+    return toCancellationEvents(
+      (data ?? []).map((row) => ({
+        cancelledBy: row.cancelled_by,
+        capturedAt: row.captured_at,
+        cancelledAt: row.cancelled_at,
+        sessionStart: row.starts_at,
+      })),
+    );
   }
 
   /* ---------------- hosting ---------------- */
@@ -852,11 +1362,20 @@ export class SupabaseRepository implements Repository {
       this.db.from("space_media").select("*").in("space_id", ids).order("position"),
     ]);
 
+    // The host reads their own media from the private bucket (0064); the owner
+    // branch of the storage policy lets them sign it at any listing status.
+    const mediaUrls = await this.signSpaceMedia(
+      ((media ?? []) as MediaRow[]).flatMap((m) =>
+        m.card_path ? [m.storage_path, m.card_path] : [m.storage_path],
+      ),
+    );
+
     return spaces.map((row: SpaceRow): HostSpace => {
       const base = this.toPublicSpace(
         row,
         (blocks ?? []).filter((b: AvailabilityRow) => b.space_id === row.id),
         (media ?? []).filter((m: MediaRow) => m.space_id === row.id),
+        (path) => mediaUrls.get(path) ?? "",
       );
       return {
         ...base,
@@ -1093,18 +1612,13 @@ export class SupabaseRepository implements Repository {
     let position = ((existing?.[0]?.position as number) ?? -1) + 1;
 
     for (const item of files) {
-      const path = spaceMediaPath(hostId, spaceId, item.file.type, crypto.randomUUID());
-
-      const { error: uploadError } = await this.db.storage
-        .from("space-media")
-        .upload(path, item.file, { contentType: item.file.type, upsert: false });
-      if (uploadError) throw asError(uploadError);
+      const { storage_path, card_path } = await this.uploadListingMedia(hostId, spaceId, item);
 
       // Uploaded first, recorded second, so a row always points at bytes that
       // are already there.
       const { error } = await this.db
         .from("space_media")
-        .insert({ space_id: spaceId, storage_path: path, kind: item.kind, position });
+        .insert({ space_id: spaceId, storage_path, card_path, kind: item.kind, position });
       if (error) throw asError(error);
 
       position += 1;
@@ -1117,7 +1631,7 @@ export class SupabaseRepository implements Repository {
   async removeSpaceMedia(spaceId: string, mediaId: string): Promise<HostSpace> {
     const { data: row, error: readError } = await this.db
       .from("space_media")
-      .select("storage_path")
+      .select("storage_path, card_path")
       .eq("id", mediaId)
       .eq("space_id", spaceId)
       .maybeSingle();
@@ -1132,13 +1646,21 @@ export class SupabaseRepository implements Repository {
     if (error) throw asError(error);
 
     /*
-     * The row goes first, the file second.
+     * The row goes first, the files second.
      *
      * If the storage delete fails the listing is already correct and an
      * orphaned object is a cleanup job. The other order leaves a row pointing
      * at a file that is gone, which is a broken image on somebody's screen.
+     *
+     * Both the detail (storage_path) and the card variant (card_path, 0066) are
+     * removed; an old row with no card variant has just the one path, and a
+     * degenerate row where the two happen to match is deduped so it is not
+     * removed twice.
      */
-    await this.db.storage.from("space-media").remove([row.storage_path as string]);
+    const paths = [...new Set([row.storage_path as string, row.card_path as string | null].filter(
+      (path): path is string => typeof path === "string" && path.length > 0,
+    ))];
+    await this.db.storage.from("space-media").remove(paths);
 
     const [updated] = (await this.listMySpaces()).filter((s) => s.id === spaceId);
     return updated;
@@ -1260,28 +1782,68 @@ export class SupabaseRepository implements Repository {
    * is a convenience for the person filling it in; this is the last point
    * before bytes reach a bucket, and the only one that is not a UI.
    */
-  private async uploadSpaceFiles(
-    spaceId: string,
+  /**
+   * Uploads one listing media item and returns the paths recorded for it.
+   *
+   * An image is resized into a card and a detail variant (0066) and both are
+   * stored — no full-size original is kept, since nothing serves one. If the
+   * browser cannot build variants (an unusual format, a canvas failure), the
+   * original is uploaded unchanged so an upload never fails for the sake of the
+   * optimisation; a backfill can improve it later. Video is uploaded as-is and
+   * has no card variant. The bucket is private throughout; nothing here reads.
+   */
+  private async uploadListingMedia(
     hostId: string,
-    input: NewSpaceInput,
-  ): Promise<void> {
-    const mediaRows: { space_id: string; storage_path: string; kind: MediaKind; position: number }[] =
-      [];
-
-    for (const [index, item] of input.media.entries()) {
-      const reason = rejectionReason(item.file, item.kind);
-      if (reason) throw new Error(reason);
-
-      const path = spaceMediaPath(hostId, spaceId, item.file.type, crypto.randomUUID());
-      const { error } = await this.db.storage.from("space-media").upload(path, item.file, {
-        contentType: item.file.type,
+    spaceId: string,
+    item: { file: File; kind: MediaKind },
+  ): Promise<{ storage_path: string; card_path: string | null }> {
+    const put = async (blob: Blob, type: string): Promise<string> => {
+      const path = spaceMediaPath(hostId, spaceId, type, crypto.randomUUID());
+      const { error } = await this.db.storage.from("space-media").upload(path, blob, {
+        contentType: type,
         // Never overwrite. A generated name should not collide, and if it
         // somehow did, replacing another listing's photo is the wrong repair.
         upsert: false,
       });
       if (error) throw asError(error);
+      return path;
+    };
 
-      mediaRows.push({ space_id: spaceId, storage_path: path, kind: item.kind, position: index });
+    if (item.kind !== "image") {
+      return { storage_path: await put(item.file, item.file.type), card_path: null };
+    }
+
+    try {
+      const { card, detail } = await buildImageVariants(item.file);
+      // storage_path is the detail variant; the original is not retained.
+      const storage_path = await put(detail, detail.type);
+      const card_path = await put(card, card.type);
+      return { storage_path, card_path };
+    } catch {
+      // The optimisation failed — keep the upload working with the original.
+      return { storage_path: await put(item.file, item.file.type), card_path: null };
+    }
+  }
+
+  private async uploadSpaceFiles(
+    spaceId: string,
+    hostId: string,
+    input: NewSpaceInput,
+  ): Promise<void> {
+    const mediaRows: {
+      space_id: string;
+      storage_path: string;
+      card_path: string | null;
+      kind: MediaKind;
+      position: number;
+    }[] = [];
+
+    for (const [index, item] of input.media.entries()) {
+      const reason = rejectionReason(item.file, item.kind);
+      if (reason) throw new Error(reason);
+
+      const { storage_path, card_path } = await this.uploadListingMedia(hostId, spaceId, item);
+      mediaRows.push({ space_id: spaceId, storage_path, card_path, kind: item.kind, position: index });
     }
 
     if (mediaRows.length > 0) {
@@ -1361,25 +1923,23 @@ export class SupabaseRepository implements Repository {
     if (error) throw asError(error);
 
     return (data ?? []).map(
-      (row: {
-        booking_id: string;
-        space_id: string;
+      (row: HostRpcRow & {
         starts_at: string;
         ends_at: string;
         status: BookingStatus;
         host_paid_at: string | null;
         net_cents: number;
-        practitioner_name: string | null;
       }): HostBooking => ({
         id: row.booking_id,
         spaceId: row.space_id,
         practitionerName: row.practitioner_name ?? "A practitioner",
-        practitionerCraft: "",
+        practitionerCraft: professionLabel(row.practitioner_profession) ?? "",
         startsAt: new Date(row.starts_at),
         endsAt: new Date(row.ends_at),
         status: row.status,
         netCents: row.net_cents,
         hostPaidAt: row.host_paid_at ? new Date(row.host_paid_at) : null,
+        ...trustFrom(row),
       }),
     );
   }
@@ -1389,15 +1949,12 @@ export class SupabaseRepository implements Repository {
     if (error) throw asError(error);
 
     return (data ?? []).map(
-      (row: {
-        booking_id: string;
-        space_id: string;
+      (row: HostRpcRow & {
         space_name: string;
         starts_at: string;
         ends_at: string;
         requested_at: string;
         net_cents: number;
-        practitioner_name: string | null;
         purpose: string | null;
         purpose_note: string | null;
         attendee_count: number | null;
@@ -1406,6 +1963,7 @@ export class SupabaseRepository implements Repository {
         spaceId: row.space_id,
         spaceName: row.space_name,
         practitionerName: row.practitioner_name ?? "A practitioner",
+        practitionerCraft: professionLabel(row.practitioner_profession) ?? "",
         startsAt: new Date(row.starts_at),
         endsAt: new Date(row.ends_at),
         requestedAt: new Date(row.requested_at),
@@ -1413,6 +1971,7 @@ export class SupabaseRepository implements Repository {
         purpose: row.purpose,
         purposeNote: row.purpose_note,
         attendeeCount: row.attendee_count,
+        ...trustFrom(row),
       }),
     );
   }
@@ -1432,7 +1991,7 @@ export class SupabaseRepository implements Repository {
     decision: "approve" | "decline",
     note?: string,
   ): Promise<void> {
-    const response = await fetch(
+    const response = await apiFetch(
       `/api/bookings/${encodeURIComponent(bookingId)}/approval`,
       {
         method: "POST",

@@ -170,6 +170,32 @@ describe("the words a version stands for", () => {
      * acceptance is actually recorded against.
      */
     2: "fffbd1f7",
+    /*
+     * Version 3 tightens the practitioner cancellation standing: a pause now
+     * comes at three late cancellations in 90 days rather than six, and lasts
+     * 7 days rather than 14. That is a stricter cancellation term — a change to
+     * cancellation, which this file's own rule says raises the version — so
+     * every practitioner is asked again. The host rule (three, 14 days) is
+     * unchanged; only the practitioner lines and the shared "pauses lift" line
+     * moved, along with the "seven days" and "shorter pause" wording.
+     */
+    3: "abc408a5",
+    /*
+     * Version 4 adds the identity-verification privacy disclosure: that we use
+     * Stripe for identity verification, what Stripe may collect to run it (ID
+     * and selfie images, identifying information, device and fraud signals),
+     * that we store no copies of those images and keep only the status and a
+     * reference, and how to ask for that data to be deleted or redacted. New
+     * processing of a new category of personal data, so everyone is asked again.
+     */
+    4: "30c0ee0b",
+    /*
+     * Version 5 adds three prohibited uses to "What a space may be used for":
+     * overnight/residential use, transferring or subletting a booking, and
+     * intentional or reckless misuse of the space, furniture or equipment. New
+     * obligations on every user, so everybody is asked again.
+     */
+    5: "8da98c80",
   };
 
   it("still says what the current version said", () => {

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { CreditCard, Trash2 } from "lucide-react";
 
+import { apiFetch } from "@/lib/api-fetch";
 import { CLAIM_CAP_CENTS, CLEANING_FEE_CENTS, CLAIM_WINDOW_HOURS } from "@/lib/claims";
 import { formatCents } from "@/lib/money";
 
@@ -44,7 +45,7 @@ export function SavedCard({ isPro }: { isPro: boolean }) {
    */
   const load = async (): Promise<Card | null> => {
     try {
-      const response = await fetch("/api/account/card");
+      const response = await apiFetch("/api/account/card");
       const body = (await response.json().catch(() => ({}))) as { card?: Card | null };
       return body.card ?? null;
     } catch {
@@ -70,7 +71,7 @@ export function SavedCard({ isPro }: { isPro: boolean }) {
     setBusy(true);
     setError(null);
     try {
-      const response = await fetch("/api/account/card", { method: "DELETE" });
+      const response = await apiFetch("/api/account/card", { method: "DELETE" });
       const body = (await response.json().catch(() => ({}))) as { error?: string };
       if (!response.ok) throw new Error(body.error ?? "That did not work.");
       setCard(await load());

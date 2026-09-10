@@ -102,21 +102,21 @@ describe("rebookable", () => {
 
     expect(found).toHaveLength(1);
     expect(found[0].spaceName).toBe("Willow Room");
-    expect(found[0].nextStart.getHours()).toBe(14);
+    expect(hourOf(found[0].nextStart)).toBe(14);
   });
 
   it("offers each room once, at its most recent hour", () => {
     const found = rebookable(
       [
-        booking({ id: "old", startsAt: new Date(2026, 6, 21, 9, 0, 0) }),
-        booking({ id: "new", startsAt: new Date(2026, 6, 28, 14, 0, 0) }),
+        booking({ id: "old", startsAt: at(7, 21, 9) }),
+        booking({ id: "new", startsAt: at(7, 28, 14) }),
       ],
       NOW,
       HORIZON,
     );
 
     expect(found).toHaveLength(1);
-    expect(found[0].nextStart.getHours()).toBe(14);
+    expect(hourOf(found[0].nextStart)).toBe(14);
   });
 
   /** A session somebody called off is not one to hand back to them. */
@@ -132,7 +132,7 @@ describe("rebookable", () => {
   /** Evidence of the same habit, just not yet in the past. */
   it("counts a session still ahead", () => {
     const found = rebookable(
-      [booking({ status: "upcoming", startsAt: new Date(2026, 7, 5, 11, 0, 0) })],
+      [booking({ status: "upcoming", startsAt: at(8, 5, 11) })],
       NOW,
       HORIZON,
     );
@@ -146,7 +146,7 @@ describe("rebookable", () => {
         id: `b${i}`,
         spaceId: `space-${i}`,
         spaceName: `Room ${i}`,
-        startsAt: new Date(2026, 6, 28 - i, 14, 0, 0),
+        startsAt: at(7, 28 - i, 14),
       }),
     );
 

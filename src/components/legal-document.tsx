@@ -2,7 +2,7 @@ import Link from "next/link";
 
 import { APP_URL, BRAND, LEGAL_ENTITY, SUPPORT_EMAIL } from "@/lib/company";
 import { type LegalScope, sectionsFor } from "@/lib/legal-text";
-import { TERMS_VERSION, effectiveDateLabel } from "@/lib/terms";
+import { effectiveDateLabel } from "@/lib/terms";
 
 /**
  * The published version of the terms, as a document rather than a screen.
@@ -80,9 +80,13 @@ export function LegalDocument({
             no entity and offers no address is one nobody can act on — which is
             the same reason company.ts exists as a single constant.
           */}
+          {/*
+            The date, not the number. The acceptance version is internal
+            metadata — it decides who is re-asked, not something a reader needs —
+            and "in effect since" is the ordinary way to date a document.
+          */}
           <p className="font-body font-normal text-[13.5px] leading-relaxed text-ink-soft">
-            {title} for {BRAND}, operated by {LEGAL_ENTITY}. Version {TERMS_VERSION}, in effect
-            since {effectiveDateLabel()}.
+            {title} for {BRAND}, operated by {LEGAL_ENTITY}. In effect since {effectiveDateLabel()}.
           </p>
           <p className="font-body font-normal text-[13.5px] leading-relaxed text-ink-soft mt-2">
             Questions about this document go to{" "}

@@ -7,6 +7,7 @@ import {
   sortByDistance,
 } from "@/lib/distance";
 import { LIMITS, check, identify, tooManyRequests } from "@/lib/api/rate-limit";
+import { requireUser } from "@/lib/api/session";
 import type { LatLng } from "@/lib/geo";
 import { geocodeOne } from "@/lib/geocode";
 import { supabaseAdmin } from "@/lib/supabase/server";
@@ -27,6 +28,13 @@ import { supabaseAdmin } from "@/lib/supabase/server";
  * is both the honest thing and what the consent screen promises.
  */
 export async function GET(request: NextRequest): Promise<Response> {
+  // Distance ranking reads the exact coordinates no client may see, so it is for
+  // the signed-in marketplace only (migration 0064 moved individual inventory
+  // there). requireUser accepts the web cookie or the native bearer token; an
+  // anonymous caller is turned away before any coordinate is read or geocoded.
+  const auth = await requireUser();
+  if ("response" in auth) return auth.response;
+
   // A ZIP lookup runs a geocode, so this endpoint is metered too, one step
   // removed.
   const limited = check("nearby", identify(request), LIMITS.nearby);

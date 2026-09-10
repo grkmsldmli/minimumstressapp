@@ -103,6 +103,25 @@ export function timestamp(body: Record<string, unknown>, field: string): Validat
 }
 
 /**
+ * A calendar date, `YYYY-MM-DD`, returned as the string a `date` column stores.
+ *
+ * Distinct from `timestamp`: an insurance window is whole days, and turning it
+ * into an instant here would invent a time-of-day and a zone the certificate
+ * never carried. The shape is the whole check — Postgres refuses an impossible
+ * day like 2026-02-30 on its own, and a 400 that says which field beats
+ * re-implementing the length of every month here.
+ */
+export function dateOnly(body: Record<string, unknown>, field: string): Validated<string> {
+  const value = body[field];
+  if (typeof value !== "string") return bad(`${field} is required, as YYYY-MM-DD`);
+
+  const trimmed = value.trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return bad(`${field} must be a date, as YYYY-MM-DD`);
+
+  return ok(trimmed);
+}
+
+/**
  * An integer inside a range.
  *
  * Rejects a non-integer rather than rounding it. A caller sending 3.5 stars

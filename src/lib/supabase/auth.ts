@@ -1,5 +1,6 @@
 "use client";
 
+import { NATIVE_AUTH_REDIRECT, capacitorPlugin, isNativeApp } from "../native";
 import { supabaseBrowser } from "./client";
 
 /** Supabase's keys. "azure" is Microsoft — see PROVIDER_LABELS. */
@@ -62,17 +63,72 @@ export async function verifyEmailCode(email: string, token: string): Promise<voi
 }
 
 /**
+ * Password sign-in, for the one account that has no inbox to receive a code.
+ *
+ * This is not a second front door for everyone: the screen only calls it for
+ * the reviewer address (see lib/reviewer-login.ts), and the passwordless flow
+ * above is unchanged for every other user. On success it establishes exactly
+ * the same session as the code flow — the same browser client, the same stored
+ * token — so bearer and native behaviour after login are identical.
+ *
+ * The password is handed straight to Supabase and never stored, returned or
+ * logged. A failure surfaces as Supabase's own error ("Invalid login
+ * credentials"), which the caller renders through the shared, user-safe
+ * describeAuthError — the password is never part of that message.
+ */
+export async function signInWithPassword(email: string, password: string): Promise<void> {
+  const { error } = await supabaseBrowser().auth.signInWithPassword({ email, password });
+  if (error) throw error;
+}
+
+/**
  * Hands off to Apple or Google.
  *
  * Both need configuring in the Supabase dashboard before they will do anything;
  * until then the call returns a provider error rather than failing silently,
  * which is why the caller surfaces it.
+ *
+ * Web: an ordinary full-page redirect to the provider and back to
+ * `/auth/callback`, which exchanges the code into a cookie session server-side.
+ *
+ * Native: the provider will not run inside the WKWebView (Google returns
+ * "disallowed_useragent" and it is against App Store 3.1.1), so the URL is
+ * opened in the SYSTEM browser via the Capacitor Browser plugin and the provider
+ * returns to a custom-scheme deep link the app intercepts (see the appUrlOpen
+ * handler in app.tsx, which calls exchangeOAuthCode). `skipBrowserRedirect`
+ * keeps supabase-js from trying to navigate the WebView itself.
  */
 export async function signInWithProvider(provider: OAuthProvider): Promise<void> {
-  const { error } = await supabaseBrowser().auth.signInWithOAuth({
+  const client = supabaseBrowser();
+
+  if (isNativeApp()) {
+    const { data, error } = await client.auth.signInWithOAuth({
+      provider,
+      options: { redirectTo: NATIVE_AUTH_REDIRECT, skipBrowserRedirect: true },
+    });
+    if (error) throw error;
+    if (!data?.url) throw new Error("Could not start sign-in. Please try again.");
+
+    const browser = capacitorPlugin<{ open: (o: { url: string }) => Promise<void> }>("Browser");
+    if (!browser) throw new Error("Sign-in needs the latest version of the app.");
+    await browser.open({ url: data.url });
+    return;
+  }
+
+  const { error } = await client.auth.signInWithOAuth({
     provider,
     options: { redirectTo: `${window.location.origin}/auth/callback` },
   });
+  if (error) throw error;
+}
+
+/**
+ * Trade an OAuth `code` (from the native deep-link return) for a session in the
+ * localStorage client. The web never calls this — its exchange happens
+ * server-side in the /auth/callback route so the session lands in a cookie.
+ */
+export async function exchangeOAuthCode(code: string): Promise<void> {
+  const { error } = await supabaseBrowser().auth.exchangeCodeForSession(code);
   if (error) throw error;
 }
 

@@ -52,6 +52,48 @@ describe("every kind", () => {
   });
 });
 
+describe("insurance review", () => {
+  it("names the outcome and, when we have it, the cover expiry", () => {
+    const message = render("insurance_verified", { name: "Sam", until: "May 2, 2027" });
+    expect(message.subject).toMatch(/verified/i);
+    expect(message.body).toMatch(/verified and is now on file/i);
+    expect(message.body).toContain("Coverage expires: May 2, 2027");
+    // Booking is subject to the normal gates, not guaranteed by insurance alone.
+    expect(message.body).toMatch(/subject to the normal booking requirements/i);
+  });
+
+  it("promises nothing it cannot keep", () => {
+    const message = render("insurance_verified", { name: "Sam", until: "May 2, 2027" });
+    // There is no expiry-reminder scheduler, so it must not promise one.
+    expect(message.body).not.toMatch(/remind|we'?ll ask|before then|fresh certificate/i);
+  });
+
+  it("reads cleanly when the expiry is not supplied", () => {
+    const message = render("insurance_verified", { name: "Sam" });
+    expect(message.body).toMatch(/verified and is now on file/i);
+    // No empty "Coverage expires:" line, and no leaked slot.
+    expect(message.body).not.toMatch(/coverage expires/i);
+    expect(message.body).not.toMatch(/undefined|null/i);
+  });
+
+  it("carries the reviewer's own words and says what to do next", () => {
+    const message = render("insurance_rejected", {
+      name: "Sam",
+      note: "The second page of the certificate is cut off.",
+    });
+    expect(message.subject).toMatch(/action needed/i);
+    expect(message.body).toContain("The second page of the certificate is cut off.");
+    expect(message.body).toMatch(/upload/i);
+  });
+
+  it("still reads as a rejection when no note is attached", () => {
+    const message = render("insurance_rejected", { name: "Sam" });
+    expect(message.body).toMatch(/could not verify/i);
+    expect(message.body).toMatch(/upload/i);
+    expect(message.body).not.toMatch(/why:\s*[.\n]/i);
+  });
+});
+
 describe("what SMS is for", () => {
   /**
    * SMS is metered and it interrupts someone. Only the two kinds where being

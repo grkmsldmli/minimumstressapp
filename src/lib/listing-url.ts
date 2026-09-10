@@ -51,6 +51,30 @@ export function idFromSlug(slug: string): string | null {
 }
 
 /**
+ * The eight-character prefix expanded into the id range it stands for.
+ *
+ * The URL carries only the first group of the uuid — its first four bytes — so
+ * the lookup has to match every id that begins with them. `like` is not the way
+ * to do that: Postgres has no `uuid ~~ text` operator, so `id like '4e313239%'`
+ * throws (`operator does not exist: uuid ~~ unknown`, 42883), and casting the
+ * column to text to pattern-match it would abandon the primary-key index. A
+ * bounded range does neither. Uuids compare by their bytes, so every id whose
+ * first group is `4e313239` sits between `4e313239-0000-…-000000000000` and
+ * `4e313239-ffff-…-ffffffffffff`, and `>=`/`<=` on those bounds is answered by
+ * the same index a lookup on the whole id would use.
+ *
+ * Null when the prefix is not exactly eight lowercase hex characters — a
+ * truncated or hand-edited slug — which the caller turns into a 404.
+ */
+export function uuidPrefixRange(prefix: string): { min: string; max: string } | null {
+  if (!new RegExp(`^[0-9a-f]{${ID_LENGTH}}$`).test(prefix)) return null;
+  return {
+    min: `${prefix}-0000-0000-0000-000000000000`,
+    max: `${prefix}-ffff-ffff-ffff-ffffffffffff`,
+  };
+}
+
+/**
  * Whether this segment is a room rather than a category of rooms.
  *
  * Checked in that order on purpose: a use slug is a fixed name we control, so

@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!--
+    Privacy manifest for the Minimum Stress app target.
+
+    Place this at ios/App/App/PrivacyInfo.xcprivacy on the mobile-app branch and
+    add it to the "App" target's Copy Bundle Resources. The app is a Capacitor
+    shell that loads the production web app; it runs no advertising or analytics
+    SDK, so it does not track.
+
+    - NSPrivacyTracking: false, and no tracking domains — do NOT add an ATT prompt.
+    - NSPrivacyCollectedDataTypes is intentionally empty here: data collection
+      happens server-side through the web app and is disclosed in the App Store
+      Connect App Privacy label (see docs/app-store/privacy-label.md), which is the
+      authoritative source. If App Store validation asks for the types mirrored in
+      the manifest, populate them from privacy-label.md.
+    - Required-reason API: Capacitor and WKWebView read/write UserDefaults for
+      same-app state (reason CA92.1). Verify against the final plugin set and add
+      any additional reasons your bundled plugins require.
+    - Each bundled Capacitor plugin / third-party SDK (and Stripe, if the native
+      SDK is added later) must ship its own PrivacyInfo.xcprivacy; confirm they are
+      present during `cap sync ios` before archiving.
+  -->
+  <key>NSPrivacyTracking</key>
+  <false/>
+  <key>NSPrivacyTrackingDomains</key>
+  <array/>
+  <key>NSPrivacyCollectedDataTypes</key>
+  <array/>
+  <key>NSPrivacyAccessedAPITypes</key>
+  <array>
+    <dict>
+      <key>NSPrivacyAccessedAPIType</key>
+      <string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+      <key>NSPrivacyAccessedAPITypeReasons</key>
+      <array>
+        <string>CA92.1</string>
+      </array>
+    </dict>
+  </array>
+</dict>
+</plist>

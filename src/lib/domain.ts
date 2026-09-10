@@ -56,6 +56,23 @@ export interface Profile {
   email: string | null;
   isPro: boolean;
   insuranceDocName: string | null;
+  /**
+   * The practitioner's professional liability cover — the review state, when it
+   * was looked at, the policy window, and enough to identify the policy.
+   *
+   * Distinct from a host space's own property insurance (HostSpace.
+   * insuranceReview): a professional carries this to book a room, a host carries
+   * theirs for the building, and one never stands in for the other. Both dates
+   * are known only once staff verify the certificate — an uploaded file is not
+   * proof of cover. See migration 0054 and lib/insurance.ts.
+   */
+  insuranceReview: DocumentReview;
+  insuranceEffectiveDate: Date | null;
+  insuranceExpiresAt: Date | null;
+  insuranceInsurer: string | null;
+  insurancePolicyNumber: string | null;
+  /** Staff's own words when a certificate is turned down, shown verbatim. */
+  insuranceReviewNote: string | null;
   payoutSchedule: PayoutSchedule;
   /**
    * Where payout setup actually stands.
@@ -73,6 +90,37 @@ export interface Profile {
   emergencyContact: EmergencyContact;
   /** Null until chosen. Cannot be changed afterwards — see migration 0012. */
   accountType: AccountType | null;
+  /**
+   * When the practitioner's identity was verified, or null.
+   *
+   * Written only by the Stripe Identity webhook (server-authoritative); the
+   * client can read it but never set it — see migration 0057. Null means the
+   * booking gate refuses a new booking until they verify.
+   */
+  identityVerifiedAt: Date | null;
+  /**
+   * What the practitioner does, one of lib/professions' controlled keys, or
+   * null until chosen. A host reads the label, and its credential rule decides
+   * whether a verified credential is needed to book.
+   */
+  profession: string | null;
+  /**
+   * A professional credential the practitioner submitted, and its staff verdict.
+   *
+   * `credentialDocName` is the uploaded file's stored path (what they submitted);
+   * `credentialReview.state` is null until anything is submitted, then
+   * pending/verified/rejected — written only by staff (migration 0058). The
+   * number and jurisdiction are what they typed. The review note is theirs to
+   * read when rejected, the same way an insurance note is. Required only for a
+   * profession whose rule is "required"; optional for the rest.
+   */
+  credentialDocName: string | null;
+  credentialType: string | null;
+  credentialNumber: string | null;
+  credentialJurisdiction: string | null;
+  /** State is null until anything is submitted, then pending/verified/rejected. */
+  credentialReview: { state: DocReviewState | null; reviewedAt: Date | null };
+  credentialReviewNote: string | null;
   /**
    * Which version of the terms this account accepted, and when.
    *
@@ -105,11 +153,63 @@ export interface Profile {
    * from what actually happened or be granted by writing a row.
    */
   milestonesSeen: string[];
+  /**
+   * When this host earned Founding Host status, and their number in the fifty.
+   *
+   * Both null on everyone who is not a Founding Host, and set together the
+   * moment a host's first listing goes live — by the server alone. The client
+   * can read them but can never write them (migration 0060 refuses it on insert
+   * and update), and the number is a permanent 1..50 the database itself caps.
+   * See lib/founding.ts.
+   */
+  foundingHostAt: Date | null;
+  foundingNumber: number | null;
+
+  /**
+   * The practitioner-side mirror of the two above. Both null for everyone who
+   * is not a Founding Practitioner, and set together the moment a practitioner
+   * finishes their first real, paid session — by the server alone (migration
+   * 0068 refuses a client write and caps the number at 1..50). See lib/founding.
+   */
+  foundingPractitionerAt: Date | null;
+  foundingPractitionerNumber: number | null;
+}
+
+/**
+ * How far one referred host has got, as the referrer is allowed to see it.
+ *
+ * The safe projection of a `referrals` row (migration 0061): the referral's own
+ * id, a factual status, and when the host joined — never the referred host's id,
+ * name, email, listings, bookings, or revenue. `joined` is attributed and
+ * nothing more; `space_live` is their first listing live; `qualified` is their
+ * first completed, captured booking — the referral qualified. No reward is
+ * implied by any of these; economics are not part of this package.
+ */
+export type ReferralStatus = "joined" | "space_live" | "qualified";
+
+/** The payout state of a referral reward. 'earned' until a payout is actually sent. */
+export type RewardState = "earned" | "paid";
+
+export interface ReferralSummary {
+  /** The referral's stable id — the anchor its reward attaches to. */
+  id: string;
+  status: ReferralStatus;
+  joinedAt: Date;
+  /**
+   * The reward this referral has earned, in cents. 0 until it qualifies — a
+   * reward exists only for a qualified referral (migration 0062).
+   */
+  rewardCents: number;
+  /** The reward's payout state, or null when there is no reward yet. */
+  rewardState: RewardState | null;
 }
 
 export interface SpaceMedia {
   id: string;
+  /** Detail-size image for the gallery (the original, on media predating 0066). */
   url: string;
+  /** Card thumbnail for lists; falls back to `url` when there is no card variant. */
+  cardUrl: string;
   kind: MediaKind;
 }
 
@@ -192,16 +292,6 @@ export interface PublicSpace {
   /** Private room, a room inside a shared studio, or the whole place. */
   roomSetup: RoomSetupKey;
   /**
-   * The street, and where it is on a map.
-   *
-   * Public because every listing here is a retail studio whose address is
-   * already on Google Maps and its own website — withholding it protected
-   * nothing and cost a practitioner the fact they judge a room by. The entry
-   * instructions and the access code are what stay behind the booking.
-   *
-   * Null on a listing that predates geocoding.
-   */
-  /**
    * What "accessible" means for this room, as four answered facts.
    *
    * Replaces a boolean that rendered as "Wheelchair accessible" and told
@@ -216,9 +306,17 @@ export interface PublicSpace {
    * exists — and because "street parking" locates nothing.
    */
   parking: Parking;
-  addressLine: string | null;
-  lat: number | null;
-  lng: number | null;
+  /**
+   * Roughly where the room is, for the browse map — a point offset a few
+   * hundred metres from the real one and stable per listing (see approx_lat /
+   * approx_lng in the DB). Never the exact building. The precise coordinates
+   * and the street address are not in this type at all; they are revealed
+   * through the booking's access flow once a session is confirmed.
+   *
+   * Null on a listing that predates geocoding.
+   */
+  approxLat: number | null;
+  approxLng: number | null;
   distanceLabel: string;
   /**
    * Counted from released reviews only, so a sealed one cannot be inferred by
@@ -227,6 +325,18 @@ export interface PublicSpace {
    */
   reviewCount: number;
   averageRating: number | null;
+  /**
+   * Two host trust signals a practitioner may see, and only these two.
+   *
+   * `hostFoundingHost` is whether the host is one of the Founding 50.
+   * `hostSessionMilestone` is the highest completed-session milestone their
+   * rooms have reached, as a bucket (0/1/10/50/100/250/500/1000) — never the
+   * exact count. Both come from the `public_host_profiles` view, which is the
+   * only host data this type is allowed to carry: no name beyond the listing,
+   * no volume, no verdicts. See lib/host-achievements and migration 0060.
+   */
+  hostFoundingHost: boolean;
+  hostSessionMilestone: number;
 }
 
 /**
@@ -461,7 +571,7 @@ export interface Booking extends BookingMoneyRecord {
 }
 
 /** A booking as its host sees it: net earnings, never a fee percentage. */
-export interface HostBooking {
+export interface HostBooking extends PractitionerTrust {
   id: string;
   spaceId: string;
   practitionerName: string;
@@ -489,11 +599,40 @@ export interface HostBooking {
  * payout to report; a finished session has no deadline. Folding them together
  * would give one type where half the fields are null in either direction.
  */
-export interface BookingRequest {
+/**
+ * The coarse trust signals a host may see about a practitioner — before
+ * approving a request, and on their booking history.
+ *
+ * A summary and nothing more: never a document, a policy number, a date of
+ * birth, contact detail, or another host's booking. Assembled server-side by
+ * the host_requests / host_bookings functions, which can read across accounts
+ * safely and return only these.
+ */
+export interface PractitionerTrust {
+  /** Their identity passed a Stripe Identity check. */
+  identityVerified: boolean;
+  /** Their liability certificate is verified (not the document, just the fact). */
+  insuranceVerified: boolean;
+  /**
+   * A submitted professional credential has been reviewed and verified — the
+   * plain fact only, never the document, number, jurisdiction, or note. False
+   * when none was submitted or it is unreviewed, so the host UI shows the line
+   * only when it is true.
+   */
+  credentialReviewed: boolean;
+  /** Completed, paid sessions across the platform — a plain reputation count. */
+  completedSessions: number;
+  /** In clear standing: fewer than the warn threshold of late cancellations. */
+  goodStanding: boolean;
+}
+
+export interface BookingRequest extends PractitionerTrust {
   id: string;
   spaceId: string;
   spaceName: string;
   practitionerName: string;
+  /** What they do, as a natural label from lib/professions. Empty if unset. */
+  practitionerCraft: string;
   startsAt: Date;
   endsAt: Date;
   /** When it was asked for. The expiry counts from here. */

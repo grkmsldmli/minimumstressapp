@@ -36,3 +36,28 @@ export function openExternal(url: string): void {
   }
   window.location.href = url;
 }
+
+/**
+ * The URL the native OAuth flow returns to.
+ *
+ * A custom scheme the iOS/Android shell registers (CFBundleURLTypes /
+ * intent-filter on the mobile-app branch), so the system browser hands control
+ * back to the app after Apple/Google sign-in. The web uses `/auth/callback`
+ * instead. Supabase must allowlist this exact value as a redirect URL.
+ */
+export const NATIVE_AUTH_REDIRECT = "com.minimumstress.app://auth-callback";
+
+/**
+ * A Capacitor plugin injected into the native shell, or null on the web / when
+ * the plugin is not installed.
+ *
+ * Read from the `window.Capacitor.Plugins` global — the same reasoning as
+ * `isNativeApp`: the web bundle carries no `@capacitor/*` dependency, and the
+ * OAuth code that uses this (Browser, App) is dormant until the native build
+ * ships those plugins. Callers must handle null (fail cleanly, never crash).
+ */
+export function capacitorPlugin<T = unknown>(name: string): T | null {
+  if (typeof window === "undefined") return null;
+  const cap = (window as { Capacitor?: { Plugins?: Record<string, unknown> } }).Capacitor;
+  return (cap?.Plugins?.[name] as T | undefined) ?? null;
+}

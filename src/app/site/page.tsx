@@ -68,7 +68,7 @@ const HERO: Slide[] = [
   },
   {
     src: "/photos/moment-booking.webp",
-    label: "Book the hour",
+    label: "Book your time",
     alt: "A practitioner checking her phone beside a made treatment table.",
   },
   {
@@ -113,7 +113,7 @@ const GROUPS = CATEGORIES.map((category) => ({
 
 const STEPS = [
   { n: "1", title: "Find a space", body: "Search nearby spaces that fit the way you work." },
-  { n: "2", title: "Choose your time", body: "Pick an available hour that works for you." },
+  { n: "2", title: "Choose your time", body: "Pick an available time that works for you." },
   { n: "3", title: "Get to work", body: "Book, get the access details, and meet your client." },
 ];
 
@@ -369,7 +369,7 @@ function ForPractitioners() {
               no lease required.
             </h2>
             <p className={`mt-5 ${TYPE.body}`} style={{ color: COLOUR.body }}>
-              You need a room a few hours a week, not a studio all year. Book the hours you
+              You need a room a few hours a week, not a studio all year. Book the time you
               need, see your clients, and leave.
             </p>
 
@@ -513,7 +513,7 @@ function Recurring() {
                 Need the same room every week?
               </h2>
               <p className={`mt-5 ${TYPE.body}`} style={{ color: COLOUR.body }}>
-                Book several weeks at once — same room, same hour. Your clients get a regular
+                Book several weeks at once — same room, same time. Your clients get a regular
                 time and you still have no contract.
               </p>
               <Link

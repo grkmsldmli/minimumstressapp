@@ -49,7 +49,7 @@ const SIDES = [
     claim: "Work independently without carrying a full-time space.",
     body:
       "You should not need a year-long lease to see clients properly. Book a private room or " +
-      "a studio for the hours you actually use, and bring your own people to it.",
+      "a studio for the time you actually use, and bring your own people to it.",
     href: "/spaces",
     action: "Find a space",
   },

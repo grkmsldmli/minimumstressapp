@@ -84,7 +84,7 @@ export const SPACE_TYPES: readonly SpaceType[] = [
     label: "Acupuncture Room",
     plural: "Acupuncture Rooms",
     category: "traditional",
-    blurb: "Quiet, private and set up for treatment, hired for the hours you need it.",
+    blurb: "Quiet, private and set up for treatment, for the time you need it.",
   },
   {
     slug: "esthetician-room",

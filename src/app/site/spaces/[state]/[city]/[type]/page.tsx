@@ -162,7 +162,7 @@ export default async function CityTypePage({
             </h2>
             <p className="mt-2 text-[15px] leading-[1.75]" style={{ color: "#5f6673" }}>
               Individual rooms, their photos and hours, and booking are in the app. Browse what&rsquo;s
-              available and book by the hour.
+              available and book when you need it.
             </p>
             <a
               href={APP_URL}

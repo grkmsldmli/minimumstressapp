@@ -667,8 +667,8 @@ export function RoleSelect({
           <Users color="#fff" size={20} />
           <p className="font-body font-medium text-[16.5px] text-white mt-3">I teach or practice</p>
           <p className="font-body font-normal text-[13.5px] text-white/80 mt-1">
-            Bring your own clients. Book professional space by the hour — no lease, one all-in
-            price.
+            Bring your own clients. Book flexible professional space — no lease, no long-term
+            commitment.
           </p>
           <span className="inline-flex items-center gap-1 font-body text-[15px] font-medium text-white mt-3">
             Browse spaces <ChevronRight size={14} />

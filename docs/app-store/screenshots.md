@@ -16,8 +16,8 @@ the web app at a phone width) and drop in the captions below.
 1. **Discover spaces** — the Discover list/rail with real listings and the
    optimized card thumbnails. Caption: **"Find professional space near you."**
 2. **Space Detail** — a listing's gallery (detail images), price, "good for", and
-   the approximate-area line. Caption: **"See the room. Book the hour."**
-3. **Book by the hour** — the time/hour selection or the payment sheet step (do
+   the approximate-area line. Caption: **"See the room. Book your time."**
+3. **Book only the time you need** — the time/hour selection or the payment sheet step (do
    not capture real card entry). Caption: **"Pay for only the time you need."**
 4. **Professional trust** — the verification/trust screen (identity, insurance,
    professional proof requirements). Caption: **"Verified professionals. Real

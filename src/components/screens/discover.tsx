@@ -277,7 +277,7 @@ export function Discover({
           app is for, for a practitioner arriving with clients of their own.
         */}
         <p className="font-body font-normal text-[13px] leading-relaxed text-white/55 mt-1.5">
-          Book professional space by the hour for your own clients — one all-in price, no lease.
+          Professional spaces for your practice — flexible, simple, no lease.
         </p>
       </div>
 

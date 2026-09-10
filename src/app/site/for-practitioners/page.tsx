@@ -23,13 +23,13 @@ import { APP_URL } from "@/lib/company";
 export const metadata: Metadata = {
   title: "Flexible Space for Wellness Practitioners",
   description:
-    "Bring your own clients and book professional wellness and movement space by the hour — " +
+    "Bring your own clients and book flexible professional wellness and movement space — " +
     "without a long-term lease.",
 };
 
 const BENEFITS = [
   {
-    title: "Book by the hour",
+    title: "Book when you need it",
     body: "Pay for the time you actually need.",
   },
   {
@@ -69,7 +69,7 @@ const STEPS = [
   {
     n: "02",
     title: "Choose your time",
-    body: "Book the hour you need, inside the hours the host has opened.",
+    body: "Book the time you need, inside the hours the host has opened.",
   },
   {
     n: "03",
@@ -107,8 +107,8 @@ export default function ForPractitionersPage() {
             </h1>
 
             <p className="mt-6 max-w-md text-[16.5px] leading-[1.75]" style={{ color: "#5f6673" }}>
-              Find professional wellness and movement spaces by the hour — without committing to a
-              lease.
+              Find professional wellness and movement spaces that fit the way you work — without
+              committing to a lease.
             </p>
 
             <div className="mt-8 flex flex-wrap items-center gap-4">
@@ -174,7 +174,7 @@ export default function ForPractitionersPage() {
           </h2>
           <p className="mt-3 max-w-2xl text-[15.5px] leading-[1.75]" style={{ color: "#5f6673" }}>
             Independent professionals who bring their own clients, students, or participants, and
-            need a room for the hour rather than a lease for the year.
+            need a room for a session rather than a lease for the year.
           </p>
 
           <div className="mt-6 flex flex-wrap gap-2">
@@ -253,7 +253,7 @@ export default function ForPractitionersPage() {
             className="text-[24px] leading-[1.35] sm:text-[28px]"
             style={{ fontFamily: "var(--font-dm-serif)", color: "#0F2F55" }}
           >
-            Your client already booked the hour. You don&rsquo;t need the studio for the rest of the
+            Your client already booked the session. You don&rsquo;t need the studio for the rest of the
             week.
           </p>
           <a

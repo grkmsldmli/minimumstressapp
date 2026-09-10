@@ -11,27 +11,27 @@ Bundle ID (already set, do not change): `com.minimumstress.app`
 ## App information
 
 - **App Name:** `Minimum Stress`
-- **Subtitle (≤30 chars):** `Book pro space by the hour`
+- **Subtitle (≤30 chars):** `Book only the space you need`
 - **Primary Category:** Business
 - **Secondary Category:** Lifestyle
 - **Content Rights:** Does not use third-party content.
 
 ## Promotional Text (≤170 chars — editable without review)
 ```
-Have clients. Need space? Find professional wellness and movement rooms near you and book them by the hour — no lease, no deposit, one all-in price.
+Have clients. Need space? Find professional wellness and movement rooms near you and book them when you need them — no lease, no deposit, one all-in price.
 ```
 
 ## Description
 ```
-Minimum Stress is where independent wellness and movement professionals book the space they need, by the hour, to see their own clients — without signing a lease.
+Minimum Stress is where independent wellness and movement professionals book the space they need, when they need it, to see their own clients — without signing a lease.
 
 Bring your clients. Book only the space you need.
 
 FIND SPACE THAT FITS YOUR PRACTICE
-Search professional rooms and studios near you — movement studios, private consultation rooms, and quiet rooms for coaching, meditation, breathwork, bodywork, small groups, classes, and workshops. Every listing shows one all-in hourly price, with the service fee already included.
+Search professional rooms and studios near you — movement studios, private consultation rooms, and quiet rooms for coaching, meditation, breathwork, bodywork, small groups, classes, and workshops. Every listing shows one all-in price, with the service fee already included.
 
-BOOK BY THE HOUR
-Pick the hour you need, inside the hours the host has opened. Pay securely in the app. No lease, no deposit, no paying for a room when you are not using it.
+BOOK ONLY WHAT YOU NEED
+Pick the time you need, inside the hours the host has opened. Pay securely in the app. No lease, no deposit, no paying for a room when you are not using it.
 
 BUILT FOR PROFESSIONALS
 Booking your first space requires identity verification, liability insurance, and proof of your profession — so hosts know who is coming into their room, and practitioners work alongside others who have done the same.

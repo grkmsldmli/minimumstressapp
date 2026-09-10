@@ -2,19 +2,11 @@
 #
 # The app is server-driven: capacitor.config.ts points at minimumstress.app, so
 # the build does NOT compile the Next.js site — it only installs dependencies,
-# syncs Capacitor (which copies the mobile/www fallback and wires the native
-# projects), and builds the native app.
-#
-# Start with `android-debug`: it needs no signing, produces an installable APK
-# to test on a device, and proves the whole thing compiles. `ios-release` and a
-# signed Android release come once the Apple Developer and Play accounts are
-# verified and their signing is connected in the Codemagic UI.
+# syncs Capacitor, and builds the native app.
 
 workflows:
   android-debug:
     name: Android debug (test build, no signing)
-    # macOS M2 is the instance the free plan provides; Android builds run on it
-    # fine (the Android SDK is preinstalled). linux_x2 needs a paid plan.
     instance_type: mac_mini_m2
     max_build_duration: 60
     environment:
@@ -26,17 +18,12 @@ workflows:
         script: npx cap sync android
       - name: Build debug APK
         script: |
-          # Capacitor 8's Android library compiles at Java 21. Show what the
-          # runner has, select JDK 21, and force Gradle to use that exact JDK
-          # (not just the ambient JAVA_HOME) with no reused daemon.
           echo "=== JDKs available on this runner ==="
           /usr/libexec/java_home -V 2>&1 || true
           export JAVA_HOME=$(/usr/libexec/java_home -v 21)
           echo "Using JAVA_HOME=$JAVA_HOME"
           "$JAVA_HOME/bin/java" -version
           cd android
-          # gradlew is committed from Windows without the executable bit, so the
-          # macOS runner can't run it directly. Grant it here.
           chmod +x ./gradlew
           ./gradlew assembleDebug -Dorg.gradle.java.home="$JAVA_HOME" --no-daemon
     artifacts:
@@ -47,47 +34,47 @@ workflows:
     instance_type: mac_mini_m2
     max_build_duration: 90
     integrations:
-      # Add an App Store Connect API key in Codemagic (Teams or App settings →
-      # Integrations → App Store Connect) and name it EXACTLY this. It carries
-      # the .p8 key, the Key ID and the Issuer ID, and is what lets Codemagic
-      # sign the build and upload it to TestFlight.
       app_store_connect: minimumstress_asc
     environment:
       node: 22
       xcode: latest
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.minimumstress.app
     scripts:
       - name: Install dependencies
         script: npm ci
       - name: Sync Capacitor (iOS)
-        # This project uses Swift Package Manager, not CocoaPods — there is no
-        # Podfile. cap sync writes Package.swift, and xcodebuild resolves the
-        # SPM packages during the build, so there is nothing to pod install.
         script: npx cap sync ios
-      - name: Set up code signing (create cert + profile)
+      - name: Apply uploaded signing files
         script: |
-          keychain initialize
-          # A fresh account has no distribution certificate, and creating one
-          # needs a private key to sign the request with. Without it the log
-          # reads "Cannot save Signing Certificates without certificate private
-          # key" and nothing downstream has a profile — which is why the archive
-          # said it needed one. Generate a key, hand it to fetch-signing-files,
-          # and it creates the certificate and the App Store profile together.
-          openssl genrsa -out /tmp/cert_key.pem 2048
-          app-store-connect fetch-signing-files "com.minimumstress.app" \
-            --type IOS_APP_STORE \
-            --certificate-key @file:/tmp/cert_key.pem \
-            --create
-          keychain add-certificates
           xcode-project use-profiles
+      - name: Verify Sign in with Apple provisioning
+        script: |
+          set -e
+          PROFILE_PATH="${CM_PROVISIONING_PROFILE:-}"
+          if [ -z "$PROFILE_PATH" ]; then
+            PROFILE_PATH=$(find "$HOME/Library/MobileDevice/Provisioning Profiles" -type f -name '*.mobileprovision' 2>/dev/null | head -n 1 || true)
+          fi
+          if [ -z "$PROFILE_PATH" ] || [ ! -f "$PROFILE_PATH" ]; then
+            echo "No provisioning profile was fetched by Codemagic. Upload the App Store profile for com.minimumstress.app under Code signing identities."
+            exit 1
+          fi
+          security cms -D -i "$PROFILE_PATH" > /tmp/profile.plist
+          PROFILE_NAME=$(/usr/libexec/PlistBuddy -c 'Print :Name' /tmp/profile.plist 2>/dev/null || true)
+          PROFILE_UUID=$(/usr/libexec/PlistBuddy -c 'Print :UUID' /tmp/profile.plist 2>/dev/null || true)
+          echo "Provisioning profile: $PROFILE_NAME"
+          echo "Provisioning UUID: $PROFILE_UUID"
+          /usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.developer.applesignin' /tmp/profile.plist >/dev/null 2>&1 || {
+            echo "Selected provisioning profile does not contain the Sign in with Apple entitlement."
+            exit 1
+          }
+          echo "Sign in with Apple entitlement: present"
       - name: Unique build number
-        # A timestamp guarantees each TestFlight upload gets a higher build
-        # number than the last, without having to look the previous one up.
         script: |
           cd ios/App
           agvtool new-version -all "$(date +%s)"
       - name: Build the signed IPA
-        # SPM project, so build the .xcodeproj directly — there is no CocoaPods
-        # .xcworkspace to point at.
         script: |
           xcode-project build-ipa \
             --project "ios/App/App.xcodeproj" \
@@ -97,6 +84,4 @@ workflows:
     publishing:
       app_store_connect:
         auth: integration
-        # Straight to TestFlight so it can be installed on a device; App Store
-        # review is a separate, later step.
         submit_to_testflight: true

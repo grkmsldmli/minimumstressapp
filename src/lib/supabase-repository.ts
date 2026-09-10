@@ -69,8 +69,20 @@ function asError(cause: unknown): Error {
 }
 
 import type { AccessDetails } from "./access-details";
-import type { AvailabilityBlock } from "./availability";
+import { normalize, type AvailabilityBlock } from "./availability";
 import type { NotificationEntry } from "./notify/history";
+import type {
+  ClassTemplate,
+  ClassTemplateInput,
+  CoverageRequest,
+  CoverageRequestInput,
+  RequestInterest,
+  WorkInterestState,
+  WorkOpportunity,
+  WorkPreferences,
+  WorkPreferencesInput,
+  WorkRequestState,
+} from "./domain";
 import {
   rejectionReason,
   spaceDocPath,
@@ -109,7 +121,7 @@ import { knownSpaceTypes } from "./space-types";
 import { type CategoryKey, isRoomSetupKey, roomTypeFor } from "./taxonomy";
 import { type ClaimKind, claimType, overstayCents } from "./claims";
 import { type RefundReason, questionFor } from "./refunds";
-import { FALLBACK_ZONE } from "./timezone";
+import { FALLBACK_ZONE, isKnownZone } from "./timezone";
 import { MEDIA_SIGN_MAX_BATCH, type MediaSignResponse } from "./media-sign";
 import { buildImageVariants } from "./image-variants";
 
@@ -2016,8 +2028,384 @@ export class SupabaseRepository implements Repository {
   async simulateInboundBooking(): Promise<null> {
     return null;
   }
+
+  /* ---------------- work (practitioner) ---------------- */
+
+  async getWorkPreferences(): Promise<WorkPreferences> {
+    const me = await this.userId();
+    const { data, error } = await this.db
+      .from("work_preferences")
+      .select("*")
+      .eq("practitioner_id", me)
+      .maybeSingle();
+    if (error) throw asError(error);
+    if (!data) {
+      return {
+        availableForWork: false,
+        workTimeZone: FALLBACK_ZONE,
+        hasLocation: false,
+        basePostcode: null,
+        maxTravelMiles: null,
+        minPayCents: null,
+        openToOnetime: true,
+        openToRecurring: false,
+      };
+    }
+    return mapWorkPreferences(data);
+  }
+
+  async updateWorkPreferences(patch: WorkPreferencesInput): Promise<WorkPreferences> {
+    const me = await this.userId();
+    const row: Record<string, unknown> = {
+      practitioner_id: me,
+      updated_at: new Date().toISOString(),
+    };
+    if (patch.availableForWork !== undefined) row.available_for_work = patch.availableForWork;
+    if (patch.workTimeZone !== undefined) {
+      if (!isKnownZone(patch.workTimeZone)) throw new Error("Unknown time zone");
+      row.work_timezone = patch.workTimeZone;
+    }
+    if (patch.location !== undefined) {
+      row.base_lat = patch.location?.lat ?? null;
+      row.base_lng = patch.location?.lng ?? null;
+    }
+    if (patch.basePostcode !== undefined) row.base_postcode = patch.basePostcode;
+    if (patch.maxTravelMiles !== undefined) row.max_travel_miles = patch.maxTravelMiles;
+    if (patch.minPayCents !== undefined) row.min_pay_cents = patch.minPayCents;
+    if (patch.openToOnetime !== undefined) row.open_to_onetime = patch.openToOnetime;
+    if (patch.openToRecurring !== undefined) row.open_to_recurring = patch.openToRecurring;
+
+    const { error } = await this.db
+      .from("work_preferences")
+      .upsert(row, { onConflict: "practitioner_id" });
+    if (error) throw asError(error);
+    return this.getWorkPreferences();
+  }
+
+  async getWorkAvailability(): Promise<AvailabilityBlock[]> {
+    const me = await this.userId();
+    const { data, error } = await this.db
+      .from("work_availability")
+      .select("weekday, start_minute, end_minute")
+      .eq("practitioner_id", me);
+    if (error) throw asError(error);
+    return (data ?? []).map((b) => ({
+      weekday: b.weekday as number,
+      startMinute: b.start_minute as number,
+      endMinute: b.end_minute as number,
+    }));
+  }
+
+  async setWorkAvailability(blocks: AvailabilityBlock[]): Promise<AvailabilityBlock[]> {
+    const me = await this.userId();
+    // Replace, not diff. The template is small and a partial update is the bug.
+    const clean = normalize(blocks);
+    const { error: delError } = await this.db
+      .from("work_availability")
+      .delete()
+      .eq("practitioner_id", me);
+    if (delError) throw asError(delError);
+    if (clean.length > 0) {
+      const { error: insError } = await this.db.from("work_availability").insert(
+        clean.map((b) => ({
+          practitioner_id: me,
+          weekday: b.weekday,
+          start_minute: b.startMinute,
+          end_minute: b.endMinute,
+        })),
+      );
+      if (insError) throw asError(insError);
+    }
+    return this.getWorkAvailability();
+  }
+
+  async listWorkOpportunities(): Promise<WorkOpportunity[]> {
+    const response = await apiFetch("/api/work/opportunities");
+    const payload = (await response.json().catch(() => ({}))) as {
+      opportunities?: unknown[];
+      error?: string;
+    };
+    if (!response.ok) {
+      throw new Error(payload.error ?? `Could not load opportunities (${response.status})`);
+    }
+    return (payload.opportunities ?? []).map(mapOpportunity);
+  }
+
+  async expressWorkInterest(requestId: string, message: string | null): Promise<void> {
+    const response = await apiFetch(
+      `/api/work/coverage/${encodeURIComponent(requestId)}/interest`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message }),
+      },
+    );
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => ({}))) as { error?: string };
+      throw new Error(payload.error ?? `Could not express interest (${response.status})`);
+    }
+  }
+
+  async withdrawWorkInterest(interestId: string): Promise<void> {
+    const response = await apiFetch(
+      `/api/work/interest/${encodeURIComponent(interestId)}/withdraw`,
+      { method: "POST" },
+    );
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => ({}))) as { error?: string };
+      throw new Error(payload.error ?? `Could not withdraw (${response.status})`);
+    }
+  }
+
+  /* ---------------- work (host / studio) ---------------- */
+
+  async listClassTemplates(): Promise<ClassTemplate[]> {
+    const me = await this.userId();
+    const { data, error } = await this.db
+      .from("class_templates")
+      .select("*")
+      .eq("host_id", me)
+      .is("archived_at", null)
+      .order("created_at", { ascending: false });
+    if (error) throw asError(error);
+    return (data ?? []).map(mapClassTemplate);
+  }
+
+  async createClassTemplate(input: ClassTemplateInput): Promise<ClassTemplate> {
+    const me = await this.userId();
+    const { data, error } = await this.db
+      .from("class_templates")
+      .insert({ host_id: me, ...templateRow(input) })
+      .select("*")
+      .single();
+    if (error || !data) throw asError(error ?? new Error("Could not create template"));
+    return mapClassTemplate(data);
+  }
+
+  async updateClassTemplate(id: string, patch: ClassTemplateInput): Promise<ClassTemplate> {
+    await this.userId();
+    const { data, error } = await this.db
+      .from("class_templates")
+      .update({ ...templateRow(patch), updated_at: new Date().toISOString() })
+      .eq("id", id)
+      .select("*")
+      .single();
+    if (error || !data) throw asError(error ?? new Error("Could not update template"));
+    return mapClassTemplate(data);
+  }
+
+  async archiveClassTemplate(id: string): Promise<void> {
+    await this.userId();
+    const { error } = await this.db
+      .from("class_templates")
+      .update({ archived_at: new Date().toISOString() })
+      .eq("id", id);
+    if (error) throw asError(error);
+  }
+
+  async listCoverageRequests(): Promise<CoverageRequest[]> {
+    const me = await this.userId();
+    const { data, error } = await this.db
+      .from("work_requests")
+      .select("*")
+      .eq("host_id", me)
+      .order("created_at", { ascending: false });
+    if (error) throw asError(error);
+    const rows = data ?? [];
+    if (rows.length === 0) return [];
+
+    const spaceIds = [...new Set(rows.map((r) => r.space_id).filter(Boolean))] as string[];
+    const spaceNames = new Map<string, string>();
+    if (spaceIds.length > 0) {
+      const { data: spaces } = await this.db.from("spaces").select("id, name").in("id", spaceIds);
+      for (const s of spaces ?? []) spaceNames.set(s.id as string, s.name as string);
+    }
+
+    const { data: interests } = await this.db
+      .from("work_interest")
+      .select("request_id, state")
+      .in("request_id", rows.map((r) => r.id as string));
+    const counts = new Map<string, number>();
+    for (const i of interests ?? []) {
+      if (i.state === "interested" || i.state === "confirmed") {
+        counts.set(i.request_id as string, (counts.get(i.request_id as string) ?? 0) + 1);
+      }
+    }
+
+    return rows.map((r) => ({
+      id: r.id as string,
+      classTemplateId: (r.class_template_id as string | null) ?? null,
+      spaceId: (r.space_id as string | null) ?? null,
+      spaceName: r.space_id ? spaceNames.get(r.space_id as string) ?? null : null,
+      title: r.title as string,
+      profession: (r.profession as string | null) ?? null,
+      startsAt: new Date(r.starts_at as string),
+      endsAt: new Date(r.ends_at as string),
+      timeZone: r.time_zone as string,
+      payCents: r.pay_cents as number,
+      notes: (r.notes as string | null) ?? null,
+      urgent: Boolean(r.urgent),
+      state: r.state as WorkRequestState,
+      interestCount: counts.get(r.id as string) ?? 0,
+      createdAt: new Date(r.created_at as string),
+    }));
+  }
+
+  async createCoverageRequest(input: CoverageRequestInput): Promise<CoverageRequest> {
+    const response = await apiFetch("/api/work/coverage", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        classTemplateId: input.classTemplateId ?? null,
+        spaceId: input.spaceId,
+        title: input.title,
+        profession: input.profession,
+        startsAt: input.startsAt.toISOString(),
+        durationMinutes: input.durationMinutes,
+        payCents: input.payCents,
+        notes: input.notes,
+        urgent: input.urgent,
+      }),
+    });
+    const payload = (await response.json().catch(() => ({}))) as {
+      requestId?: string;
+      error?: string;
+    };
+    if (!response.ok || !payload.requestId) {
+      throw new Error(payload.error ?? `Could not post coverage (${response.status})`);
+    }
+    const created = (await this.listCoverageRequests()).find((r) => r.id === payload.requestId);
+    if (!created) throw new Error("Coverage was posted but could not be read back");
+    return created;
+  }
+
+  async cancelCoverageRequest(id: string): Promise<void> {
+    const response = await apiFetch(
+      `/api/work/coverage/${encodeURIComponent(id)}/cancel`,
+      { method: "POST" },
+    );
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => ({}))) as { error?: string };
+      throw new Error(payload.error ?? `Could not cancel (${response.status})`);
+    }
+  }
+
+  async listRequestInterest(requestId: string): Promise<RequestInterest[]> {
+    const response = await apiFetch(
+      `/api/work/coverage/${encodeURIComponent(requestId)}/interest`,
+    );
+    const payload = (await response.json().catch(() => ({}))) as {
+      interest?: unknown[];
+      error?: string;
+    };
+    if (!response.ok) {
+      throw new Error(payload.error ?? `Could not load interest (${response.status})`);
+    }
+    return (payload.interest ?? []).map(mapRequestInterest);
+  }
+
+  async confirmRequestInterest(requestId: string, interestId: string): Promise<void> {
+    const response = await apiFetch(
+      `/api/work/coverage/${encodeURIComponent(requestId)}/confirm`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ interestId }),
+      },
+    );
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => ({}))) as { error?: string };
+      throw new Error(payload.error ?? `Could not confirm (${response.status})`);
+    }
+  }
 }
 
+
+/* ---------------- work mapping helpers ---------------- */
+
+function mapWorkPreferences(row: Record<string, unknown>): WorkPreferences {
+  return {
+    availableForWork: Boolean(row.available_for_work),
+    workTimeZone: (row.work_timezone as string | null) ?? FALLBACK_ZONE,
+    hasLocation: row.base_lat != null && row.base_lng != null,
+    basePostcode: (row.base_postcode as string | null) ?? null,
+    maxTravelMiles: (row.max_travel_miles as number | null) ?? null,
+    minPayCents: (row.min_pay_cents as number | null) ?? null,
+    openToOnetime: row.open_to_onetime !== false,
+    openToRecurring: Boolean(row.open_to_recurring),
+  };
+}
+
+function templateRow(input: ClassTemplateInput): Record<string, unknown> {
+  return {
+    title: input.title,
+    profession: input.profession && isKnownProfession(input.profession) ? input.profession : null,
+    level: input.level,
+    equipment: input.equipment,
+    duration_minutes: input.durationMinutes,
+    max_participants: input.maxParticipants,
+    notes: input.notes,
+    arrival_notes: input.arrivalNotes,
+    requires_credential: input.requiresCredential,
+  };
+}
+
+function mapClassTemplate(row: Record<string, unknown>): ClassTemplate {
+  return {
+    id: row.id as string,
+    title: row.title as string,
+    profession: (row.profession as string | null) ?? null,
+    level: (row.level as string | null) ?? null,
+    equipment: (row.equipment as string | null) ?? null,
+    durationMinutes: row.duration_minutes as number,
+    maxParticipants: (row.max_participants as number | null) ?? null,
+    notes: (row.notes as string | null) ?? null,
+    arrivalNotes: (row.arrival_notes as string | null) ?? null,
+    requiresCredential: Boolean(row.requires_credential),
+    archivedAt: row.archived_at ? new Date(row.archived_at as string) : null,
+  };
+}
+
+function mapOpportunity(raw: unknown): WorkOpportunity {
+  const o = raw as Record<string, unknown>;
+  return {
+    requestId: o.requestId as string,
+    title: o.title as string,
+    profession: (o.profession as string | null) ?? null,
+    spaceName: (o.spaceName as string | null) ?? null,
+    area: (o.area as string | null) ?? null,
+    startsAt: new Date(o.startsAt as string),
+    endsAt: new Date(o.endsAt as string),
+    timeZone: o.timeZone as string,
+    payCents: o.payCents as number,
+    notes: (o.notes as string | null) ?? null,
+    urgent: Boolean(o.urgent),
+    distanceLabel: (o.distanceLabel as string | null) ?? null,
+    interestState: (o.interestState as WorkInterestState | null) ?? null,
+    state: o.state as WorkRequestState,
+  };
+}
+
+function mapRequestInterest(raw: unknown): RequestInterest {
+  const i = raw as Record<string, unknown>;
+  return {
+    interestId: i.interestId as string,
+    displayName: i.displayName as string,
+    fullName: (i.fullName as string | null) ?? null,
+    avatarUrl: (i.avatarUrl as string | null) ?? null,
+    craft: i.craft as string,
+    foundingPractitioner: Boolean(i.foundingPractitioner),
+    distanceLabel: (i.distanceLabel as string | null) ?? null,
+    message: (i.message as string | null) ?? null,
+    state: i.state as WorkInterestState,
+    createdAt: new Date(i.createdAt as string),
+    identityVerified: Boolean(i.identityVerified),
+    insuranceVerified: Boolean(i.insuranceVerified),
+    credentialReviewed: Boolean(i.credentialReviewed),
+    completedSessions: (i.completedSessions as number) ?? 0,
+    goodStanding: Boolean(i.goodStanding),
+  };
+}
 
 /** The joined shapes the dispute lists read back, named so the casts are honest. */
 interface RefundBookingRow {

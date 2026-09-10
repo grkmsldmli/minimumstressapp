@@ -13,6 +13,10 @@ import type {
   Booking,
   CreatedBooking,
   BookingRequest,
+  ClassTemplate,
+  ClassTemplateInput,
+  CoverageRequest,
+  CoverageRequestInput,
   HostBooking,
   HostSpace,
   MediaKind,
@@ -23,9 +27,14 @@ import type {
   PublicReview,
   PublicSpace,
   ReferralSummary,
+  RequestInterest,
   SpaceAccessDetails,
   SpaceEdit,
+  WorkOpportunity,
+  WorkPreferences,
+  WorkPreferencesInput,
 } from "./domain";
+import type { AvailabilityBlock } from "./availability";
 import type { NotificationEntry } from "./notify/history";
 import type { DeclaredUse } from "./booking-use";
 import type { CancellationEvent } from "./reliability";
@@ -313,6 +322,64 @@ export interface Repository {
    * has started asking for.
    */
   openPayoutDashboard(): Promise<void>;
+
+  /* ---------------- work (practitioner) ---------------- */
+
+  /**
+   * The caller's Work opt-in and preferences. Returns defaults (off, no
+   * location) for a practitioner who has never opened Work — the row is created
+   * on first save, not on first read.
+   */
+  getWorkPreferences(): Promise<WorkPreferences>;
+  /**
+   * Change the "available for work" switch and the soft preferences around it.
+   * Turning it off takes the practitioner out of future matching immediately;
+   * existing interest and confirmed shifts are untouched.
+   */
+  updateWorkPreferences(patch: WorkPreferencesInput): Promise<WorkPreferences>;
+
+  /** The caller's recurring weekly work availability, as a flat block list. */
+  getWorkAvailability(): Promise<AvailabilityBlock[]>;
+  /** Replace the whole weekly template (normalised) — never a partial diff. */
+  setWorkAvailability(blocks: AvailabilityBlock[]): Promise<AvailabilityBlock[]>;
+
+  /**
+   * Coverage requests this practitioner has been matched to, plus any they have
+   * already expressed interest in — server-matched, so an ineligible or
+   * far-away request never appears. Never the marketplace's whole open list.
+   */
+  listWorkOpportunities(): Promise<WorkOpportunity[]>;
+  /** Say "I can cover that." No practitioner id — the server derives it. */
+  expressWorkInterest(requestId: string, message: string | null): Promise<void>;
+  /** Take back an interest, or step out of a shift already confirmed. */
+  withdrawWorkInterest(interestId: string): Promise<void>;
+
+  /* ---------------- work (host / studio) ---------------- */
+
+  /** The host's own reusable class templates, newest first, archived excluded. */
+  listClassTemplates(): Promise<ClassTemplate[]>;
+  createClassTemplate(input: ClassTemplateInput): Promise<ClassTemplate>;
+  updateClassTemplate(id: string, patch: ClassTemplateInput): Promise<ClassTemplate>;
+  /** Archive rather than delete — a past request may still name it. */
+  archiveClassTemplate(id: string): Promise<void>;
+
+  /** The host's own coverage requests, newest first, with a live interest count. */
+  listCoverageRequests(): Promise<CoverageRequest[]>;
+  createCoverageRequest(input: CoverageRequestInput): Promise<CoverageRequest>;
+  cancelCoverageRequest(id: string): Promise<void>;
+
+  /**
+   * The practitioners interested in one of the host's requests, as safe previews
+   * — a partial name, profession, the coarse trust signals, a distance label.
+   * Never a document, contact detail, or exact location. Full name arrives only
+   * once one is confirmed.
+   */
+  listRequestInterest(requestId: string): Promise<RequestInterest[]>;
+  /**
+   * Confirm one interested practitioner. Atomic on the server: exactly one is
+   * confirmed and the rest are declined, so a second confirm cannot double-fill.
+   */
+  confirmRequestInterest(requestId: string, interestId: string): Promise<void>;
 
   /** Ends the session. */
   signOut(): Promise<void>;

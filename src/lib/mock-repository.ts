@@ -48,6 +48,17 @@ import { toCancellationEvents, type CancellationEvent } from "./reliability";
 import type { CreateBookingInput, Repository } from "./repository";
 import type { AccessDetails } from "./access-details";
 import type { MediaKind, SpaceEdit } from "./domain";
+import type {
+  ClassTemplate,
+  ClassTemplateInput,
+  CoverageRequest,
+  CoverageRequestInput,
+  RequestInterest,
+  WorkInterestState,
+  WorkOpportunity,
+  WorkPreferences,
+  WorkPreferencesInput,
+} from "./domain";
 import type { NotificationEntry } from "./notify/history";
 import { knownUses } from "./booking-use";
 import { FOUNDING_HOST_LIMIT, FOUNDING_PRACTITIONER_LIMIT } from "./founding";
@@ -321,6 +332,28 @@ export class MockRepository implements Repository {
    */
   private notifications: NotificationEntry[] = [];
   private hostBookings: HostBooking[] = [];
+
+  /*
+   * Work state. A mock account is one side, so preferences/availability belong
+   * to a practitioner and templates/requests to a host; the two never collide.
+   * Matching needs other users, which the single-user mock has none of, so the
+   * opportunity/interest lists stay empty here — the real matching is proved in
+   * the pure and pglite tests, not against the mock.
+   */
+  private workPreferences: WorkPreferences = {
+    availableForWork: false,
+    workTimeZone: FALLBACK_ZONE,
+    hasLocation: false,
+    basePostcode: null,
+    maxTravelMiles: null,
+    minPayCents: null,
+    openToOnetime: true,
+    openToRecurring: false,
+  };
+  private workAvailability: AvailabilityBlock[] = [];
+  private classTemplates: ClassTemplate[] = [];
+  private coverageRequests: CoverageRequest[] = [];
+  private myInterests = new Map<string, WorkInterestState>();
 
   constructor() {
     this.publicSpaces = SEED_SPACES.map((seed, index) => {
@@ -1095,5 +1128,120 @@ export class MockRepository implements Repository {
       }
     }
     return null;
+  }
+
+  /* ---------------- work (practitioner) ---------------- */
+
+  async getWorkPreferences(): Promise<WorkPreferences> {
+    return { ...this.workPreferences };
+  }
+
+  async updateWorkPreferences(patch: WorkPreferencesInput): Promise<WorkPreferences> {
+    const p = this.workPreferences;
+    if (patch.availableForWork !== undefined) p.availableForWork = patch.availableForWork;
+    if (patch.workTimeZone !== undefined) p.workTimeZone = patch.workTimeZone;
+    if (patch.location !== undefined) p.hasLocation = patch.location !== null;
+    if (patch.basePostcode !== undefined) p.basePostcode = patch.basePostcode;
+    if (patch.maxTravelMiles !== undefined) p.maxTravelMiles = patch.maxTravelMiles;
+    if (patch.minPayCents !== undefined) p.minPayCents = patch.minPayCents;
+    if (patch.openToOnetime !== undefined) p.openToOnetime = patch.openToOnetime;
+    if (patch.openToRecurring !== undefined) p.openToRecurring = patch.openToRecurring;
+    return { ...p };
+  }
+
+  async getWorkAvailability(): Promise<AvailabilityBlock[]> {
+    return this.workAvailability.map((b) => ({ ...b }));
+  }
+
+  async setWorkAvailability(blocks: AvailabilityBlock[]): Promise<AvailabilityBlock[]> {
+    this.workAvailability = normalize(blocks);
+    return this.getWorkAvailability();
+  }
+
+  async listWorkOpportunities(): Promise<WorkOpportunity[]> {
+    // A single-user mock has no other studios posting; the list is empty by
+    // construction rather than faked.
+    return [];
+  }
+
+  async expressWorkInterest(requestId: string, _message: string | null): Promise<void> {
+    const current = this.myInterests.get(requestId);
+    if (current === "confirmed" || current === "declined") return;
+    this.myInterests.set(requestId, "interested");
+  }
+
+  async withdrawWorkInterest(interestId: string): Promise<void> {
+    if (this.myInterests.has(interestId)) this.myInterests.set(interestId, "withdrawn");
+  }
+
+  /* ---------------- work (host / studio) ---------------- */
+
+  async listClassTemplates(): Promise<ClassTemplate[]> {
+    return this.classTemplates.filter((t) => t.archivedAt === null).map((t) => ({ ...t }));
+  }
+
+  async createClassTemplate(input: ClassTemplateInput): Promise<ClassTemplate> {
+    const template: ClassTemplate = { id: id("tpl"), archivedAt: null, ...input };
+    this.classTemplates.unshift(template);
+    return { ...template };
+  }
+
+  async updateClassTemplate(templateId: string, patch: ClassTemplateInput): Promise<ClassTemplate> {
+    const template = this.classTemplates.find((t) => t.id === templateId);
+    if (!template) throw new Error(`no such template: ${templateId}`);
+    Object.assign(template, patch);
+    return { ...template };
+  }
+
+  async archiveClassTemplate(templateId: string): Promise<void> {
+    const template = this.classTemplates.find((t) => t.id === templateId);
+    if (template) template.archivedAt = new Date();
+  }
+
+  async listCoverageRequests(): Promise<CoverageRequest[]> {
+    return this.coverageRequests.map((r) => ({ ...r }));
+  }
+
+  async createCoverageRequest(input: CoverageRequestInput): Promise<CoverageRequest> {
+    const startsAt = input.startsAt;
+    const request: CoverageRequest = {
+      id: id("cov"),
+      classTemplateId: input.classTemplateId ?? null,
+      spaceId: input.spaceId,
+      spaceName: this.mySpaces.find((s) => s.id === input.spaceId)?.name ?? null,
+      title: input.title,
+      profession: input.profession,
+      startsAt,
+      endsAt: new Date(startsAt.getTime() + input.durationMinutes * 60 * 1000),
+      timeZone: this.mySpaces.find((s) => s.id === input.spaceId)?.timeZone ?? FALLBACK_ZONE,
+      payCents: input.payCents,
+      notes: input.notes,
+      urgent: input.urgent,
+      state: "open",
+      interestCount: 0,
+      createdAt: new Date(),
+    };
+    this.coverageRequests.unshift(request);
+    return { ...request };
+  }
+
+  async cancelCoverageRequest(requestId: string): Promise<void> {
+    const request = this.coverageRequests.find((r) => r.id === requestId);
+    if (!request) throw new Error(`no such request: ${requestId}`);
+    if (request.state !== "open" && request.state !== "draft") {
+      throw new Error("This request can no longer be cancelled.");
+    }
+    request.state = "cancelled";
+  }
+
+  async listRequestInterest(_requestId: string): Promise<RequestInterest[]> {
+    return [];
+  }
+
+  async confirmRequestInterest(requestId: string, _interestId: string): Promise<void> {
+    const request = this.coverageRequests.find((r) => r.id === requestId);
+    if (!request) throw new Error(`no such request: ${requestId}`);
+    if (request.state !== "open") throw new Error("This request is no longer open.");
+    request.state = "filled";
   }
 }

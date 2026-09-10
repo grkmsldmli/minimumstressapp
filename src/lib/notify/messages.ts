@@ -43,6 +43,11 @@ export const NOTIFICATION_KINDS = [
   "staff_waiting",
   "insurance_verified",
   "insurance_rejected",
+  "work_opportunity",
+  "work_interest_received",
+  "work_confirmed",
+  "work_request_cancelled",
+  "work_selection_withdrawn",
 ] as const;
 
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
@@ -118,6 +123,8 @@ export interface MessageContext {
   purpose?: string;
   attendees?: number;
   deadline?: string;
+  /** Work: the class/coverage title, e.g. "Reformer Flow 1". */
+  className?: string;
 }
 
 /**
@@ -695,6 +702,84 @@ export function render(kind: NotificationKind, context: MessageContext): Message
         ),
         sms: null,
       };
+
+    /*
+     * Work — a studio is short a teacher, a practitioner can cover it. The
+     * wording states the class, the place and the time; the app carries the
+     * detail and the action. Only eligible, opted-in practitioners are written
+     * to, so this is never a broadcast.
+     */
+    case "work_opportunity": {
+      const cls = context.className ?? "a class";
+      return {
+        subject: `Coverage available: ${cls}`,
+        body: lines(
+          greeting(name),
+          `A studio needs coverage for ${cls} at ${spaceName} on ${when}.`,
+          context.amountCents !== undefined ? `Pay: ${formatCents(context.amountCents)}.` : null,
+          "Open the app to say you're available.",
+          SIGN_OFF,
+        ),
+        sms: null,
+      };
+    }
+
+    case "work_interest_received": {
+      const cls = context.className ?? "your class";
+      return {
+        subject: `Someone can cover ${cls}`,
+        body: lines(
+          greeting(name),
+          `A professional is available to cover ${cls} on ${when}.`,
+          "Review who is available and confirm one in the app.",
+          SIGN_OFF,
+        ),
+        sms: null,
+      };
+    }
+
+    case "work_confirmed": {
+      const cls = context.className ?? "a class";
+      return {
+        subject: `You're confirmed: ${cls}`,
+        body: lines(
+          greeting(name),
+          `You're confirmed to cover ${cls} at ${spaceName} on ${when}.`,
+          context.amountCents !== undefined ? `Pay: ${formatCents(context.amountCents)}.` : null,
+          "The studio has your details. The rest is in the app.",
+          SIGN_OFF,
+        ),
+        sms: null,
+      };
+    }
+
+    case "work_request_cancelled": {
+      const cls = context.className ?? "a class";
+      return {
+        subject: `Cancelled: ${cls}`,
+        body: lines(
+          greeting(name),
+          `The coverage request for ${cls} on ${when} was cancelled.`,
+          "Other coverage is open in the app.",
+          SIGN_OFF,
+        ),
+        sms: null,
+      };
+    }
+
+    case "work_selection_withdrawn": {
+      const cls = context.className ?? "your class";
+      return {
+        subject: `Coverage fell through: ${cls}`,
+        body: lines(
+          greeting(name),
+          `The professional confirmed for ${cls} on ${when} withdrew.`,
+          "Post it again to reach other available professionals.",
+          SIGN_OFF,
+        ),
+        sms: null,
+      };
+    }
   }
 }
 

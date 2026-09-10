@@ -92,8 +92,9 @@ describe("migrations apply cleanly", () => {
          where table_schema = 'public' and table_type = 'BASE TABLE'`,
       );
       // +2 in 0067: blocked_users and message_reports. +1 in 0068:
-      // founding_practitioners.
-      expect(tables.rows).toHaveLength(21);
+      // founding_practitioners. +5 in 0069 (Work): work_preferences,
+      // work_availability, class_templates, work_requests, work_interest.
+      expect(tables.rows).toHaveLength(26);
     } finally {
       await fresh.close();
     }
@@ -154,12 +155,14 @@ describe("migrations apply cleanly", () => {
       // A user severs the message channel with another (App Store 1.2, 0067).
       "blocked_users",
       "bookings",
+      // A studio's reusable class definition, for Work coverage (0069).
+      "class_templates",
       "credit_ledger",
       // The durable Founding 50 ledger — server-only, so a spot once earned is
       // never re-opened by a deletion (migration 0060).
       "founding_hosts",
-      // Its practitioner-side twin — the first fifty to complete a real, paid
-      // session, server-only and equally permanent (migration 0068).
+      // Its practitioner-side twin — the first fifty to complete professional
+      // onboarding (verification-based), server-only and equally permanent (0068).
       "founding_practitioners",
       // Booking-chat abuse reports for staff review (App Store 1.2, 0067).
       "message_reports",
@@ -182,6 +185,14 @@ describe("migrations apply cleanly", () => {
       "space_requests",
       "spaces",
       "studio_claims",
+      // Work (0069): a practitioner's recurring weekly work availability.
+      "work_availability",
+      // A practitioner's interest in a coverage request, and the studio's answer.
+      "work_interest",
+      // A practitioner's Work opt-in and preferences.
+      "work_preferences",
+      // A studio's "need coverage" post, with an explicit lifecycle.
+      "work_requests",
     ]);
   });
 

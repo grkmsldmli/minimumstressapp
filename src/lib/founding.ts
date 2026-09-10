@@ -4,7 +4,9 @@
  *
  * FOUNDING HOST is a permanent legacy status for the first fifty hosts to bring
  * a listing live in the Bay Area. FOUNDING PRACTITIONER is its mirror on the
- * other side: the first fifty practitioners to complete a real, paid session.
+ * other side: the first fifty practitioners to complete professional onboarding
+ * — a vetted early professional (verified identity, insurance and credential,
+ * with a name and chosen profession), not the first to run a transaction.
  * Both are a distinction, not a deal — no fee change, no free period, nothing to
  * reconcile — recognition only, the same choice `lib/badges`, `lib/milestones`
  * and `lib/host-achievements` all make.

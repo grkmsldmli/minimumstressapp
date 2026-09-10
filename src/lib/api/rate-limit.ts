@@ -174,6 +174,19 @@ export const LIMITS = {
    * mid-problem is exactly when somebody reaches for a phone number instead.
    */
   message: { limit: 30, windowMs: 60_000 },
+
+  /**
+   * Work coverage mutations — posting a request, cancelling, confirming one.
+   * Each fans out into matching and notifications, so it is metered like a
+   * booking: enough for a studio managing a busy week, far below a loop.
+   */
+  work: { limit: 20, windowMs: 60_000 },
+
+  /**
+   * Reading Work lists — opportunities for a practitioner, interest for a host.
+   * A screen open and a pull-to-refresh or two; generous, cheap, per-caller.
+   */
+  workRead: { limit: 60, windowMs: 60_000 },
 } as const satisfies Record<string, RateLimit>;
 
 export interface RateLimitResult {

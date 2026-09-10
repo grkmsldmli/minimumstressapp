@@ -52,6 +52,11 @@ const LABELS: Record<NotificationKind, string> = {
   claim_decided: "A studio claim was decided",
   insurance_verified: "Your insurance was verified",
   insurance_rejected: "Your insurance needs another look",
+  work_opportunity: "A coverage opportunity is available",
+  work_interest_received: "Someone can cover your class",
+  work_confirmed: "You were confirmed for coverage",
+  work_request_cancelled: "A coverage request was cancelled",
+  work_selection_withdrawn: "A confirmed professional withdrew",
 };
 
 /**

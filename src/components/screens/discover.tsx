@@ -566,7 +566,7 @@ function RoundButton({
       type="button"
       onClick={onClick}
       aria-label={label}
-      className="relative w-9 h-9 rounded-full flex items-center justify-center press"
+      className="relative w-10 h-10 rounded-full flex items-center justify-center press"
       style={{ backgroundColor: "rgba(255,255,255,0.12)" }}
     >
       {children}

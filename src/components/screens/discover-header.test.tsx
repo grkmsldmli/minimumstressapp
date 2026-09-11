@@ -50,6 +50,7 @@ function renderDiscover(over: Partial<Parameters<typeof Discover>[0]> = {}) {
     greetingName: "Sam",
     you: null,
     rebookable: [],
+    onRebook: vi.fn(),
     savedPostcode: null,
     onChangePostcode: vi.fn(),
     nearbyOrder: null,

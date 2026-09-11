@@ -239,7 +239,14 @@ export function Discover({
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        {/*
+          Four header utilities as a compact 2×2 on the phone, so they no longer
+          squeeze the greeting into one cramped row; a wide screen (iPad) opens
+          them back out to a single row. Small round buttons, not dashboard tiles
+          — this stays header chrome, and the 2-row cluster balances the two-line
+          greeting/badge beside it.
+        */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 shrink-0 justify-items-center">
           <RoundButton label="Work" onClick={onGoWork}>
             <Briefcase size={15} color="#fff" />
           </RoundButton>
@@ -559,7 +566,7 @@ function RoundButton({
       type="button"
       onClick={onClick}
       aria-label={label}
-      className="w-9 h-9 rounded-full flex items-center justify-center press"
+      className="relative w-10 h-10 rounded-full flex items-center justify-center press"
       style={{ backgroundColor: "rgba(255,255,255,0.12)" }}
     >
       {children}

@@ -77,6 +77,7 @@ import type {
   CoverageRequest,
   CoverageRequestInput,
   RequestInterest,
+  SessionFormat,
   WorkInterestState,
   WorkOpportunity,
   WorkPreferences,
@@ -124,6 +125,10 @@ import { type RefundReason, questionFor } from "./refunds";
 import { FALLBACK_ZONE, isKnownZone } from "./timezone";
 import { MEDIA_SIGN_MAX_BATCH, type MediaSignResponse } from "./media-sign";
 import { buildImageVariants } from "./image-variants";
+import {
+  sessionDetailsFromRow,
+  sessionDetailsToRow,
+} from "./work/session-details";
 
 /** Rows as PostgREST returns them, before mapping into domain shapes. */
 interface SpaceRow {
@@ -2261,6 +2266,9 @@ export class SupabaseRepository implements Repository {
       spaceName: r.space_id ? spaceNames.get(r.space_id as string) ?? null : null,
       title: r.title as string,
       profession: (r.profession as string | null) ?? null,
+      level: (r.level as string | null) ?? null,
+      participantsMax: (r.participants_max as number | null) ?? null,
+      equipmentNotes: (r.equipment_notes as string | null) ?? null,
       startsAt: new Date(r.starts_at as string),
       endsAt: new Date(r.ends_at as string),
       timeZone: r.time_zone as string,
@@ -2270,6 +2278,7 @@ export class SupabaseRepository implements Repository {
       state: r.state as WorkRequestState,
       interestCount: counts.get(r.id as string) ?? 0,
       createdAt: new Date(r.created_at as string),
+      ...sessionDetailsFromRow(r),
     }));
   }
 
@@ -2282,11 +2291,24 @@ export class SupabaseRepository implements Repository {
         spaceId: input.spaceId,
         title: input.title,
         profession: input.profession,
+        level: input.level,
+        participantsMax: input.participantsMax,
+        equipmentNotes: input.equipmentNotes,
         startsAt: input.startsAt.toISOString(),
         durationMinutes: input.durationMinutes,
         payCents: input.payCents,
         notes: input.notes,
         urgent: input.urgent,
+        sessionFormat: input.sessionFormat,
+        participantsExpected: input.participantsExpected,
+        audience: input.audience,
+        teachingNotes: input.teachingNotes,
+        requiredQualifications: input.requiredQualifications,
+        preferredQualifications: input.preferredQualifications,
+        sessionGoal: input.sessionGoal,
+        clientExperience: input.clientExperience,
+        accommodations: input.accommodations,
+        programming: input.programming,
       }),
     });
     const payload = (await response.json().catch(() => ({}))) as {
@@ -2369,6 +2391,8 @@ function templateRow(input: ClassTemplateInput): Record<string, unknown> {
     notes: input.notes,
     arrival_notes: input.arrivalNotes,
     requires_credential: input.requiresCredential,
+    default_pay_cents: input.defaultPayCents,
+    ...sessionDetailsToRow(input),
   };
 }
 
@@ -2384,7 +2408,9 @@ function mapClassTemplate(row: Record<string, unknown>): ClassTemplate {
     notes: (row.notes as string | null) ?? null,
     arrivalNotes: (row.arrival_notes as string | null) ?? null,
     requiresCredential: Boolean(row.requires_credential),
+    defaultPayCents: (row.default_pay_cents as number | null) ?? null,
     archivedAt: row.archived_at ? new Date(row.archived_at as string) : null,
+    ...sessionDetailsFromRow(row),
   };
 }
 
@@ -2394,6 +2420,11 @@ function mapOpportunity(raw: unknown): WorkOpportunity {
     requestId: o.requestId as string,
     title: o.title as string,
     profession: (o.profession as string | null) ?? null,
+    sessionFormat: (o.sessionFormat as SessionFormat | null) ?? null,
+    level: (o.level as string | null) ?? null,
+    requiredQualifications: (o.requiredQualifications as string[] | null) ?? [],
+    participantsExpected: (o.participantsExpected as number | null) ?? null,
+    participantsMax: (o.participantsMax as number | null) ?? null,
     spaceName: (o.spaceName as string | null) ?? null,
     area: (o.area as string | null) ?? null,
     startsAt: new Date(o.startsAt as string),

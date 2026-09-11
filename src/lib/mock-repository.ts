@@ -1221,6 +1221,9 @@ export class MockRepository implements Repository {
       spaceName: this.mySpaces.find((s) => s.id === input.spaceId)?.name ?? null,
       title: input.title,
       profession: input.profession,
+      level: input.level,
+      participantsMax: input.participantsMax,
+      equipmentNotes: input.equipmentNotes,
       startsAt,
       endsAt: new Date(startsAt.getTime() + input.durationMinutes * 60 * 1000),
       timeZone: this.mySpaces.find((s) => s.id === input.spaceId)?.timeZone ?? FALLBACK_ZONE,
@@ -1230,6 +1233,16 @@ export class MockRepository implements Repository {
       state: "open",
       interestCount: 0,
       createdAt: new Date(),
+      sessionFormat: input.sessionFormat,
+      participantsExpected: input.participantsExpected,
+      audience: input.audience,
+      teachingNotes: input.teachingNotes,
+      requiredQualifications: input.requiredQualifications,
+      preferredQualifications: input.preferredQualifications,
+      sessionGoal: input.sessionGoal,
+      clientExperience: input.clientExperience,
+      accommodations: input.accommodations,
+      programming: input.programming,
     };
     this.coverageRequests.unshift(request);
     return { ...request };

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { MockRepository } from "./mock-repository";
+import { emptySessionDetails } from "./work/session-details";
 
 /**
  * The mock's Work surface, proving the plain business shape without a database:
@@ -43,6 +44,8 @@ describe("MockRepository — Work", () => {
       notes: null,
       arrivalNotes: null,
       requiresCredential: false,
+      defaultPayCents: null,
+      ...emptySessionDetails(),
     });
     expect((await repo.listClassTemplates()).map((t) => t.id)).toContain(created.id);
     await repo.archiveClassTemplate(created.id);
@@ -54,11 +57,15 @@ describe("MockRepository — Work", () => {
       spaceId: null,
       title: "Cover my 6pm",
       profession: "yoga",
+      level: null,
+      participantsMax: null,
+      equipmentNotes: null,
       startsAt: new Date(Date.now() + 2 * 86_400_000),
       durationMinutes: 60,
       payCents: 6000,
       notes: null,
       urgent: false,
+      ...emptySessionDetails(),
     });
     expect(request.state).toBe("open");
 
@@ -74,11 +81,15 @@ describe("MockRepository — Work", () => {
       spaceId: null,
       title: "Cover",
       profession: null,
+      level: null,
+      participantsMax: null,
+      equipmentNotes: null,
       startsAt: new Date(Date.now() + 2 * 86_400_000),
       durationMinutes: 60,
       payCents: 5000,
       notes: null,
       urgent: false,
+      ...emptySessionDetails(),
     });
     await repo.cancelCoverageRequest(r.id);
     expect((await repo.listCoverageRequests())[0].state).toBe("cancelled");

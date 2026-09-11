@@ -1,12 +1,19 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowLeft, Award, CalendarClock, Check, Clock, MapPin } from "lucide-react";
+import { ArrowLeft, Award, CalendarClock, Check, Clock, Lock, MapPin } from "lucide-react";
 
 import { Ambient, Headline } from "@/components/brand";
 import { PawLoader } from "@/components/paw-loader";
 import { PrimaryButton, Toggle } from "@/components/primitives";
-import type { ClassTemplate, CoverageRequest, CoverageRequestInput, RequestInterest } from "@/lib/domain";
+import type {
+  ClassTemplate,
+  CoverageRequest,
+  CoverageRequestInput,
+  ProgrammingMode,
+  RequestInterest,
+  SessionFormat,
+} from "@/lib/domain";
 import { formatCents } from "@/lib/money";
 import { PRACTITIONER_PROFESSIONS } from "@/lib/professions";
 import { type CivilDate, instantFrom } from "@/lib/timezone";
@@ -18,6 +25,27 @@ const NAVY = "radial-gradient(140% 120% at 15% 0%, #1E4066 0%, #16304E 85%)";
 const INPUT = "w-full px-4 py-3 rounded-xl font-body text-[15px] text-navy outline-none";
 const INPUT_STYLE = { border: "1px solid #DCE7F2" } as const;
 
+const SESSION_FORMATS: { key: SessionFormat; label: string; hint: string }[] = [
+  { key: "group", label: "Group class", hint: "One cover, many participants" },
+  { key: "private", label: "Private 1:1", hint: "One client, by name after you confirm" },
+  { key: "semiprivate", label: "Semi-private", hint: "A small handful of clients" },
+  { key: "workshop", label: "Workshop", hint: "A one-off themed session" },
+];
+
+const PROGRAMMING_MODES: { key: ProgrammingMode; label: string; hint: string }[] = [
+  { key: "continue", label: "Continue the plan", hint: "Pick up the existing programming" },
+  { key: "studio", label: "Studio's format", hint: "Teach it the studio's way" },
+  { key: "design", label: "Design the session", hint: "Bring your own plan" },
+];
+
+/** A comma / newline separated field ↔ a clean list of labels. */
+function splitList(raw: string): string[] {
+  return raw
+    .split(/[,\n]/)
+    .map((s) => s.trim())
+    .filter((s) => s !== "");
+}
+
 function parseCivil(dateStr: string): CivilDate | null {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
   if (!m) return null;
@@ -28,6 +56,13 @@ function parseMinutes(timeStr: string): number | null {
   const m = /^(\d{2}):(\d{2})$/.exec(timeStr);
   if (!m) return null;
   return Number(m[1]) * 60 + Number(m[2]);
+}
+
+function numOrNull(raw: string): number | null {
+  const t = raw.trim();
+  if (t === "") return null;
+  const n = Math.round(Number(t));
+  return Number.isFinite(n) ? n : null;
 }
 
 /* ================================ Post ================================ */
@@ -47,6 +82,7 @@ export function CoveragePost({
 }) {
   const [spaceId, setSpaceId] = useState(spaces[0]?.id ?? "");
   const [templateId, setTemplateId] = useState("");
+  const [sessionFormat, setSessionFormat] = useState<SessionFormat>("group");
   const [title, setTitle] = useState("");
   const [profession, setProfession] = useState("");
   const [dateStr, setDateStr] = useState("");
@@ -55,16 +91,47 @@ export function CoveragePost({
   const [pay, setPay] = useState("");
   const [notes, setNotes] = useState("");
   const [urgent, setUrgent] = useState(false);
+  // Group / workshop details
+  const [level, setLevel] = useState("");
+  const [participantsExpected, setParticipantsExpected] = useState("");
+  const [participantsMax, setParticipantsMax] = useState("");
+  const [audience, setAudience] = useState("");
+  const [teachingNotes, setTeachingNotes] = useState("");
+  const [equipmentNotes, setEquipmentNotes] = useState("");
+  // Private / semi-private details
+  const [sessionGoal, setSessionGoal] = useState("");
+  const [clientExperience, setClientExperience] = useState("");
+  const [accommodations, setAccommodations] = useState("");
+  const [programming, setProgramming] = useState<ProgrammingMode | "">("");
+  // Qualifications — required vs preferred, kept apart on purpose
+  const [requiredQuals, setRequiredQuals] = useState("");
+  const [preferredQuals, setPreferredQuals] = useState("");
   const [error, setError] = useState<string | null>(null);
+
+  const showGroup = sessionFormat === "group" || sessionFormat === "semiprivate" || sessionFormat === "workshop";
+  const showPrivate = sessionFormat === "private" || sessionFormat === "semiprivate";
 
   const applyTemplate = (id: string) => {
     setTemplateId(id);
     const t = templates.find((x) => x.id === id);
-    if (t) {
-      setTitle(t.title);
-      setProfession(t.profession ?? "");
-      setDuration(String(t.durationMinutes));
-    }
+    if (!t) return;
+    setTitle(t.title);
+    setProfession(t.profession ?? "");
+    setDuration(String(t.durationMinutes));
+    if (t.sessionFormat) setSessionFormat(t.sessionFormat);
+    if (t.level != null) setLevel(t.level);
+    if (t.participantsExpected != null) setParticipantsExpected(String(t.participantsExpected));
+    if (t.maxParticipants != null) setParticipantsMax(String(t.maxParticipants));
+    if (t.audience != null) setAudience(t.audience);
+    if (t.teachingNotes != null) setTeachingNotes(t.teachingNotes);
+    if (t.equipment != null) setEquipmentNotes(t.equipment);
+    if (t.sessionGoal != null) setSessionGoal(t.sessionGoal);
+    if (t.clientExperience != null) setClientExperience(t.clientExperience);
+    if (t.accommodations != null) setAccommodations(t.accommodations);
+    if (t.programming != null) setProgramming(t.programming);
+    if (t.requiredQualifications.length) setRequiredQuals(t.requiredQualifications.join(", "));
+    if (t.preferredQualifications.length) setPreferredQuals(t.preferredQualifications.join(", "));
+    if (t.defaultPayCents != null) setPay(String(Math.round(t.defaultPayCents / 100)));
   };
 
   const space = spaces.find((s) => s.id === spaceId);
@@ -106,11 +173,24 @@ export function CoveragePost({
       classTemplateId: templateId || null,
       title: title.trim(),
       profession: profession || null,
+      level: showGroup ? level.trim() || null : null,
+      participantsMax: showGroup ? numOrNull(participantsMax) : null,
+      equipmentNotes: showGroup ? equipmentNotes.trim() || null : null,
       startsAt,
       durationMinutes: durationNum,
       payCents: payNum,
       notes: notes.trim() || null,
       urgent,
+      sessionFormat,
+      participantsExpected: showGroup ? numOrNull(participantsExpected) : null,
+      audience: showGroup ? audience.trim() || null : null,
+      teachingNotes: showGroup ? teachingNotes.trim() || null : null,
+      requiredQualifications: splitList(requiredQuals),
+      preferredQualifications: splitList(preferredQuals),
+      sessionGoal: showPrivate ? sessionGoal.trim() || null : null,
+      clientExperience: showPrivate ? clientExperience.trim() || null : null,
+      accommodations: showPrivate ? accommodations.trim() || null : null,
+      programming: showPrivate && programming ? programming : null,
     });
   };
 
@@ -171,6 +251,31 @@ export function CoveragePost({
               </option>
             ))}
           </select>
+        </div>
+
+        <div>
+          <label className="font-body font-medium text-[13.5px] text-navy">Session format</label>
+          <div className="grid grid-cols-2 gap-2 mt-1.5">
+            {SESSION_FORMATS.map((f) => {
+              const on = sessionFormat === f.key;
+              return (
+                <button
+                  key={f.key}
+                  type="button"
+                  onClick={() => setSessionFormat(f.key)}
+                  aria-pressed={on}
+                  className="text-left px-3 py-2.5 rounded-xl press"
+                  style={{
+                    border: on ? "1.5px solid #2578C2" : "1px solid #DCE7F2",
+                    backgroundColor: on ? "#EDF6FE" : "#fff",
+                  }}
+                >
+                  <p className="font-body font-medium text-[13.5px] text-navy">{f.label}</p>
+                  <p className="font-body font-normal text-[11.5px] text-ink-faint mt-0.5">{f.hint}</p>
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         <div>
@@ -248,6 +353,207 @@ export function CoveragePost({
               inputMode="numeric"
               placeholder="e.g. 60"
               aria-label="Offered pay in dollars"
+              className={`${INPUT} mt-1.5`}
+              style={INPUT_STYLE}
+            />
+          </div>
+        </div>
+
+        {showGroup && (
+          <div className="space-y-3 pt-1">
+            <GroupLabel>Group details</GroupLabel>
+            <div>
+              <label className="font-body font-medium text-[13.5px] text-navy">
+                Level <span className="font-normal text-ink-faint">(optional)</span>
+              </label>
+              <input
+                value={level}
+                onChange={(e) => setLevel(e.target.value)}
+                placeholder="e.g. All levels, Intermediate"
+                aria-label="Level"
+                className={`${INPUT} mt-1.5`}
+                style={INPUT_STYLE}
+              />
+            </div>
+            <div className="flex gap-3">
+              <div className="flex-1">
+                <label className="font-body font-medium text-[13.5px] text-navy">Expected</label>
+                <input
+                  value={participantsExpected}
+                  onChange={(e) => setParticipantsExpected(e.target.value.replace(/[^0-9]/g, ""))}
+                  inputMode="numeric"
+                  placeholder="e.g. 12"
+                  aria-label="Expected participants"
+                  className={`${INPUT} mt-1.5`}
+                  style={INPUT_STYLE}
+                />
+              </div>
+              <div className="flex-1">
+                <label className="font-body font-medium text-[13.5px] text-navy">Max</label>
+                <input
+                  value={participantsMax}
+                  onChange={(e) => setParticipantsMax(e.target.value.replace(/[^0-9]/g, ""))}
+                  inputMode="numeric"
+                  placeholder="e.g. 16"
+                  aria-label="Maximum participants"
+                  className={`${INPUT} mt-1.5`}
+                  style={INPUT_STYLE}
+                />
+              </div>
+            </div>
+            <div>
+              <label className="font-body font-medium text-[13.5px] text-navy">
+                Who it&apos;s for <span className="font-normal text-ink-faint">(optional)</span>
+              </label>
+              <input
+                value={audience}
+                onChange={(e) => setAudience(e.target.value)}
+                placeholder="e.g. Prenatal-friendly, drop-in regulars"
+                aria-label="Audience"
+                className={`${INPUT} mt-1.5`}
+                style={INPUT_STYLE}
+              />
+            </div>
+            <div>
+              <label className="font-body font-medium text-[13.5px] text-navy">
+                Teaching notes <span className="font-normal text-ink-faint">(optional)</span>
+              </label>
+              <textarea
+                value={teachingNotes}
+                onChange={(e) => setTeachingNotes(e.target.value)}
+                rows={2}
+                placeholder="How this class usually runs"
+                aria-label="Teaching notes"
+                className={`${INPUT} mt-1.5 resize-none`}
+                style={INPUT_STYLE}
+              />
+            </div>
+            <div>
+              <label className="font-body font-medium text-[13.5px] text-navy">
+                Equipment <span className="font-normal text-ink-faint">(optional)</span>
+              </label>
+              <input
+                value={equipmentNotes}
+                onChange={(e) => setEquipmentNotes(e.target.value)}
+                placeholder="e.g. Reformers, blocks provided"
+                aria-label="Equipment"
+                className={`${INPUT} mt-1.5`}
+                style={INPUT_STYLE}
+              />
+            </div>
+          </div>
+        )}
+
+        {showPrivate && (
+          <div className="space-y-3 pt-1">
+            <GroupLabel>Private details</GroupLabel>
+            <div
+              className="flex items-start gap-2 p-3 rounded-xl"
+              style={{ backgroundColor: "#F4F8FC", border: "1px solid #E7EEF6" }}
+            >
+              <Lock size={14} color="#5B7A99" style={{ marginTop: 2 }} />
+              <p className="font-body font-normal text-[12px] text-ink-soft">
+                Describe the session, never the client. No names, contact details, address, or medical
+                information — those are shared only with the professional you confirm.
+              </p>
+            </div>
+            <div>
+              <label className="font-body font-medium text-[13.5px] text-navy">
+                Session goal <span className="font-normal text-ink-faint">(optional)</span>
+              </label>
+              <textarea
+                value={sessionGoal}
+                onChange={(e) => setSessionGoal(e.target.value)}
+                rows={2}
+                placeholder="What this session should accomplish"
+                aria-label="Session goal"
+                className={`${INPUT} mt-1.5 resize-none`}
+                style={INPUT_STYLE}
+              />
+            </div>
+            <div>
+              <label className="font-body font-medium text-[13.5px] text-navy">
+                Client experience <span className="font-normal text-ink-faint">(optional)</span>
+              </label>
+              <input
+                value={clientExperience}
+                onChange={(e) => setClientExperience(e.target.value)}
+                placeholder="e.g. New to reformer, 6 months practising"
+                aria-label="Client experience"
+                className={`${INPUT} mt-1.5`}
+                style={INPUT_STYLE}
+              />
+            </div>
+            <div>
+              <label className="font-body font-medium text-[13.5px] text-navy">
+                Accommodations <span className="font-normal text-ink-faint">(optional)</span>
+              </label>
+              <input
+                value={accommodations}
+                onChange={(e) => setAccommodations(e.target.value)}
+                placeholder="e.g. Prefers low-impact, wrist-sensitive"
+                aria-label="Accommodations"
+                className={`${INPUT} mt-1.5`}
+                style={INPUT_STYLE}
+              />
+            </div>
+            <div>
+              <label className="font-body font-medium text-[13.5px] text-navy">Programming</label>
+              <div className="space-y-2 mt-1.5">
+                {PROGRAMMING_MODES.map((p) => {
+                  const on = programming === p.key;
+                  return (
+                    <button
+                      key={p.key}
+                      type="button"
+                      onClick={() => setProgramming(on ? "" : p.key)}
+                      aria-pressed={on}
+                      className="w-full text-left px-3 py-2.5 rounded-xl press"
+                      style={{
+                        border: on ? "1.5px solid #2578C2" : "1px solid #DCE7F2",
+                        backgroundColor: on ? "#EDF6FE" : "#fff",
+                      }}
+                    >
+                      <p className="font-body font-medium text-[13.5px] text-navy">{p.label}</p>
+                      <p className="font-body font-normal text-[11.5px] text-ink-faint mt-0.5">{p.hint}</p>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="space-y-3 pt-1">
+          <GroupLabel>Qualifications</GroupLabel>
+          <div>
+            <label className="font-body font-medium text-[13.5px] text-navy">
+              Required <span className="font-normal text-ink-faint">(comma separated)</span>
+            </label>
+            <p className="font-body font-normal text-[11.5px] text-ink-faint mt-0.5">
+              Must-haves to apply — e.g. current insurance, reformer certification.
+            </p>
+            <input
+              value={requiredQuals}
+              onChange={(e) => setRequiredQuals(e.target.value)}
+              placeholder="e.g. Reformer cert, current insurance"
+              aria-label="Required qualifications"
+              className={`${INPUT} mt-1.5`}
+              style={INPUT_STYLE}
+            />
+          </div>
+          <div>
+            <label className="font-body font-medium text-[13.5px] text-navy">
+              Preferred <span className="font-normal text-ink-faint">(comma separated)</span>
+            </label>
+            <p className="font-body font-normal text-[11.5px] text-ink-faint mt-0.5">
+              Nice-to-haves. Shown to everyone — never used to hide the listing.
+            </p>
+            <input
+              value={preferredQuals}
+              onChange={(e) => setPreferredQuals(e.target.value)}
+              placeholder="e.g. Prenatal experience"
+              aria-label="Preferred qualifications"
               className={`${INPUT} mt-1.5`}
               style={INPUT_STYLE}
             />
@@ -476,9 +782,9 @@ export function CoverageDetail({
               className="rounded-2xl p-6 text-center"
               style={{ backgroundColor: "#F4F8FC", border: "1px solid #E7EEF6" }}
             >
-              <p className="font-display italic text-[16px] text-navy">No interest yet.</p>
+              <p className="font-display italic text-[16px] text-navy">No applicants yet.</p>
               <p className="font-body font-normal text-[13.5px] text-ink-soft mt-1.5">
-                Available professionals who match will appear here as they respond.
+                Professionals who apply from the board will appear here for you to choose from.
               </p>
             </div>
           ) : (

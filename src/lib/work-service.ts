@@ -10,12 +10,13 @@ import type {
   WorkRequestState,
 } from "./domain";
 import { distanceBetween, distanceLabel } from "./distance";
+import { type EntitlementFacts, entitlementsFor } from "./entitlements";
 import type { LatLng } from "./geo";
 import type { InsuranceFacts } from "./insurance";
+import { workEligibility } from "./work/eligibility";
 import {
   notifyWorkConfirmed,
   notifyWorkInterestReceived,
-  notifyWorkOpportunity,
   notifyWorkRequestCancelled,
   notifyWorkSelectionWithdrawn,
   type WorkNotifyContext,
@@ -23,24 +24,23 @@ import {
 import { professionLabel } from "./professions";
 import { standingFor, toCancellationEvents } from "./reliability";
 import { FALLBACK_ZONE, isKnownZone } from "./timezone";
-import {
-  type CandidateFacts,
-  type RequestFacts,
-  matchCandidate,
-  rankCandidates,
-} from "./work/matching";
+import type { CandidateFacts } from "./work/matching";
 import { acceptsInterest, effectiveRequestState } from "./work/request-state";
+import { sessionDetailsFromRow, sessionDetailsToRow } from "./work/session-details";
 
 /**
- * The server half of Work: matching, notification, and the mutations that must
- * outrank the signed-in user (posting, confirming atomically, cancelling). All
- * of it runs on the admin client passed in — so, like every admin-path write,
- * ownership is re-checked in code here, not left to a policy the admin bypasses.
+ * The server half of Work: the coverage board read, notification, and the
+ * mutations that must outrank the signed-in user (posting, confirming
+ * atomically, cancelling). All of it runs on the admin client passed in — so,
+ * like every admin-path write, ownership and entitlement are re-checked in code
+ * here, not left to a policy the admin bypasses.
  *
- * Matching is TypeScript, not SQL: it reuses the exact pure predicates the
- * booking gate uses (lib/work/matching, lib/work/eligibility), so "matchable"
- * and "bookable" cannot drift, and the only thing that ever leaves the server is
- * a coarse, safe preview (a masked name, a distance label, the trust booleans).
+ * The board is browse-all: every open, future request is visible to any Pro
+ * practitioner. Matching no longer decides visibility — filters narrow the
+ * browse, and the practitioner decides whether to apply. Entitlement is the pure
+ * function in lib/entitlements over server-written columns, and the only thing
+ * that ever leaves the server is a coarse, safe preview (area not street, a
+ * masked name, a distance label, the trust booleans).
  */
 
 export type WorkFailure =
@@ -53,6 +53,8 @@ export type WorkFailure =
   | "request_not_open"
   | "request_not_yours"
   | "not_matchable"
+  | "not_entitled"
+  | "not_eligible"
   | "already_decided"
   | "interest_not_found"
   | "interest_not_yours"
@@ -82,6 +84,13 @@ export function explainWorkFailure(reason: WorkFailure): { message: string; stat
       return { message: "This request is no longer open.", status: 409 };
     case "not_matchable":
       return { message: "This coverage isn't a match for your profile.", status: 409 };
+    case "not_entitled":
+      return { message: "This needs an active subscription.", status: 403 };
+    case "not_eligible":
+      return {
+        message: "Finish your professional profile before applying.",
+        status: 403,
+      };
     case "already_decided":
       return { message: "This has already been decided.", status: 409 };
     case "already_filled":
@@ -92,8 +101,63 @@ export function explainWorkFailure(reason: WorkFailure): { message: string; stat
 }
 
 const MINUTE_MS = 60_000;
-/** How many matched practitioners a single posted request will alert. */
-const MAX_OPPORTUNITY_ALERTS = 50;
+
+/**
+ * The entitlement of the calling account, from server-written columns only —
+ * the same discipline as the booking gate. Every Work mutation re-checks this,
+ * so a UI paywall can never be the only gate.
+ */
+export async function loadEntitlements(
+  admin: SupabaseClient,
+  userId: string,
+  now: Date = new Date(),
+): Promise<ReturnType<typeof entitlementsFor>> {
+  const { data: p } = await admin
+    .from("profiles")
+    .select(
+      "account_type, is_pro, studio_pro, founding_host_at, profession, identity_verified_at, insurance_doc_path, insurance_doc_state, insurance_effective_date, insurance_expires_at, credential_doc_state",
+    )
+    .eq("id", userId)
+    .maybeSingle();
+
+  const { data: bookings } = await admin
+    .from("bookings")
+    .select("cancelled_by, captured_at, cancelled_at, starts_at")
+    .eq("practitioner_id", userId);
+  const cancellations = toCancellationEvents(
+    (bookings ?? []).map((b) => ({
+      cancelledBy: (b.cancelled_by as string | null) ?? null,
+      capturedAt: (b.captured_at as string | null) ?? null,
+      cancelledAt: (b.cancelled_at as string | null) ?? null,
+      sessionStart: b.starts_at as string,
+    })),
+  );
+
+  const facts: EntitlementFacts = {
+    accountType: (p?.account_type as "practitioner" | "host" | null) ?? null,
+    isPro: Boolean(p?.is_pro),
+    studioProSubscription: Boolean(p?.studio_pro),
+    foundingHostAt: p?.founding_host_at ? new Date(p.founding_host_at as string) : null,
+    work: workEligibility(
+      {
+        accountType: (p?.account_type as "practitioner" | "host" | null) ?? null,
+        profession: (p?.profession as string | null) ?? null,
+        identityVerified: Boolean(p?.identity_verified_at),
+        credentialVerified: p?.credential_doc_state === "verified",
+        insurance: insuranceFactsFrom({
+          insurance_doc_path: (p?.insurance_doc_path as string | null) ?? null,
+          insurance_doc_state: (p?.insurance_doc_state as string | null) ?? null,
+          insurance_effective_date: (p?.insurance_effective_date as string | null) ?? null,
+          insurance_expires_at: (p?.insurance_expires_at as string | null) ?? null,
+        }),
+        cancellations,
+      },
+      now,
+    ),
+    now,
+  };
+  return entitlementsFor(facts);
+}
 
 /* ------------------------------------------------------------------ */
 /*  Loading practitioner facts                                         */
@@ -278,17 +342,6 @@ async function loadSpaces(admin: SupabaseClient, spaceIds: string[]): Promise<Ma
   return new Map((data ?? []).map((s) => [s.id as string, s as SpaceRow]));
 }
 
-function requestFactsFrom(request: RequestRow, space: SpaceRow | undefined): RequestFacts {
-  return {
-    hostId: request.host_id,
-    profession: request.profession,
-    startsAt: new Date(request.starts_at),
-    endsAt: new Date(request.ends_at),
-    payCents: request.pay_cents,
-    space: space?.lat != null && space?.lng != null ? { lat: space.lat, lng: space.lng } : null,
-  };
-}
-
 function areaOf(space: SpaceRow | undefined): string | null {
   if (!space) return null;
   return [space.city, space.state].filter(Boolean).join(", ") || null;
@@ -317,6 +370,11 @@ export async function postCoverage(
 ): Promise<WorkResult<{ requestId: string }>> {
   const { data: host } = await admin.from("profiles").select("account_type").eq("id", hostId).maybeSingle();
   if (host?.account_type !== "host") return { ok: false, reason: "not_a_host" };
+  // Studio Pro (or a Founding free period) is required to post — server-side, so
+  // a lapsed host cannot post through a stale client or a direct API call.
+  if (!(await loadEntitlements(admin, hostId, now)).canPostCoverage) {
+    return { ok: false, reason: "not_entitled" };
+  }
 
   if (!input.spaceId) return { ok: false, reason: "space_required" };
   const { data: space } = await admin
@@ -351,6 +409,12 @@ export async function postCoverage(
       space_id: space.id,
       title: input.title,
       profession: input.profession,
+      // Snapshot the session context onto the request, so editing or archiving
+      // the source template later never changes a live or historical request.
+      ...sessionDetailsToRow(input),
+      level: input.level,
+      participants_max: input.participantsMax,
+      equipment_notes: input.equipmentNotes,
       starts_at: startsAt.toISOString(),
       ends_at: endsAt.toISOString(),
       time_zone: timeZone,
@@ -364,36 +428,10 @@ export async function postCoverage(
     .single();
   if (error || !created) throw error ?? new Error("Could not create coverage request");
 
-  // Match and alert eligible, opted-in practitioners — best-effort.
-  void alertMatches(admin, created as RequestRow, space as SpaceRow, now).catch(() => {});
-
+  // No match-based fan-out on post: the board is browse-all, so a new listing is
+  // not pushed at anyone. Notifications fire on real actions instead — a host is
+  // told when someone applies, a practitioner when they are confirmed.
   return { ok: true, value: { requestId: created.id as string } };
-}
-
-async function alertMatches(
-  admin: SupabaseClient,
-  request: RequestRow,
-  space: SpaceRow,
-  now: Date,
-): Promise<void> {
-  const { data: prefs } = await admin
-    .from("work_preferences")
-    .select("practitioner_id")
-    .eq("available_for_work", true);
-  const ids = (prefs ?? []).map((p) => p.practitioner_id as string);
-  if (ids.length === 0) return;
-
-  const candidates = await loadCandidates(admin, ids, now);
-  const requestFacts = requestFactsFrom(request, space);
-  const ranked = rankCandidates(
-    requestFacts,
-    [...candidates.values()].map((c) => c.facts),
-    now,
-  );
-  const ctx = ctxFrom(request, space);
-  for (const { candidate } of ranked.slice(0, MAX_OPPORTUNITY_ALERTS)) {
-    await notifyWorkOpportunity(admin, candidate.practitionerId, ctx).catch(() => {});
-  }
 }
 
 export async function cancelCoverage(
@@ -462,13 +500,14 @@ export async function expressInterest(
     return { ok: false, reason: "request_not_open" };
   }
 
-  // The practitioner must genuinely match — this is the server gate behind the
-  // client's opportunity list, and it also refuses a self-match.
-  const candidate = (await loadCandidates(admin, [practitionerId], now)).get(practitionerId);
-  if (!candidate) return { ok: false, reason: "not_matchable" };
-  const space = (await loadSpaces(admin, [request.space_id as string])).get(request.space_id as string);
-  const result = matchCandidate(requestFactsFrom(request as RequestRow, space), candidate.facts, now);
-  if (!result.matches) return { ok: false, reason: "not_matchable" };
+  // A browseable board means the practitioner decides whether to apply — no
+  // modality/availability/distance filter gates this. What still holds:
+  //  - Pro + a verified professional profile (canApplyToWork), server-checked;
+  //  - no self-match (a host cannot apply to their own request).
+  if (request.host_id === practitionerId) return { ok: false, reason: "not_matchable" };
+  const ent = await loadEntitlements(admin, practitionerId, now);
+  if (ent.canBrowseWork && !ent.canApplyToWork) return { ok: false, reason: "not_eligible" };
+  if (!ent.canApplyToWork) return { ok: false, reason: "not_entitled" };
 
   // Idempotent: a fresh interest, or reviving a withdrawn one. A confirmed,
   // declined, or already-interested row is left as it is.
@@ -500,6 +539,7 @@ export async function expressInterest(
     return { ok: false, reason: "already_decided" };
   }
 
+  const space = (await loadSpaces(admin, [request.space_id as string])).get(request.space_id as string);
   const ctx = ctxFrom(request as RequestRow, space);
   void notifyWorkInterestReceived(admin, request.host_id as string, ctx).catch(() => {});
 
@@ -559,7 +599,7 @@ export async function confirmInterest(
   hostId: string,
   requestId: string,
   interestId: string,
-  _now: Date = new Date(),
+  now: Date = new Date(),
 ): Promise<WorkResult<{ interestId: string }>> {
   const { data: request } = await admin
     .from("work_requests")
@@ -568,6 +608,13 @@ export async function confirmInterest(
     .maybeSingle();
   if (!request) return { ok: false, reason: "request_not_found" };
   if (request.host_id !== hostId) return { ok: false, reason: "request_not_yours" };
+
+  // Confirming is a managing action — it needs an active Studio Pro (or a
+  // Founding free period). A lapsed studio can still see its applicants and
+  // history, but cannot choose a new cover until it resubscribes.
+  if (!(await loadEntitlements(admin, hostId, now)).canManageApplicants) {
+    return { ok: false, reason: "not_entitled" };
+  }
 
   // The database does the atomic part: locks the request, confirms one, declines
   // the rest, flips to filled — all or nothing. Returns null if it could not.
@@ -595,16 +642,47 @@ export async function confirmInterest(
 /*  Reads: opportunities (practitioner) and interest (host)            */
 /* ------------------------------------------------------------------ */
 
+/** Board filters a practitioner chooses — they narrow the browse, they never
+ *  exclude a listing the practitioner did not filter out. No algorithm decides
+ *  visibility. */
+export interface BoardFilters {
+  profession?: string | null;
+  sessionFormat?: string | null;
+  minPayCents?: number | null;
+  level?: string | null;
+  urgentOnly?: boolean;
+  onOrAfter?: Date | null;
+  onOrBefore?: Date | null;
+}
+
+function passesFilters(row: RequestRow & Record<string, unknown>, f: BoardFilters): boolean {
+  if (f.profession && row.profession !== f.profession) return false;
+  if (f.sessionFormat && (row as { session_format?: string }).session_format !== f.sessionFormat) return false;
+  if (f.level && (row as { level?: string }).level !== f.level) return false;
+  if (f.urgentOnly && !row.urgent) return false;
+  if (f.minPayCents != null && row.pay_cents < f.minPayCents) return false;
+  const start = new Date(row.starts_at).getTime();
+  if (f.onOrAfter && start < f.onOrAfter.getTime()) return false;
+  if (f.onOrBefore && start > f.onOrBefore.getTime()) return false;
+  return true;
+}
+
+/**
+ * The coverage job board: every open, future request, browseable by any Pro
+ * practitioner — no matching, no availability gate, no algorithmic exclusion.
+ * The practitioner's own active applications are always included for status, and
+ * the optional filters only narrow the browse. Only safe previews leave the
+ * server (area not street, no host id, coarse distance).
+ */
 export async function listOpportunities(
   admin: SupabaseClient,
   practitionerId: string,
+  filters: BoardFilters = {},
   now: Date = new Date(),
 ): Promise<WorkOpportunity[]> {
   const candidate = (await loadCandidates(admin, [practitionerId], now)).get(practitionerId);
-  if (!candidate) return [];
+  const base = candidate?.facts.base ?? null;
 
-  // The practitioner's own interests, whatever their state, so status is always
-  // visible even after they toggle availability off.
   const { data: myInterest } = await admin
     .from("work_interest")
     .select("id, request_id, state")
@@ -616,54 +694,50 @@ export async function listOpportunities(
     ]),
   );
 
-  // Open requests to match against (only when available), plus every request the
-  // practitioner already has an interest on.
-  const requestIds = new Set(interestByRequest.keys());
-  let openRows: RequestRow[] = [];
-  if (candidate.facts.availableForWork) {
-    const { data } = await admin
-      .from("work_requests")
-      .select("*")
-      .eq("state", "open")
-      .gt("starts_at", now.toISOString());
-    openRows = (data ?? []) as RequestRow[];
-    for (const r of openRows) requestIds.add(r.id);
-  }
-
-  if (requestIds.size === 0) return [];
-
-  const { data: allRows } = await admin
+  const { data: openData } = await admin
     .from("work_requests")
     .select("*")
-    .in("id", [...requestIds]);
-  const rows = (allRows ?? []) as RequestRow[];
+    .eq("state", "open")
+    .gt("starts_at", now.toISOString());
+  const openRows = (openData ?? []) as RequestRow[];
+  const openIds = new Set(openRows.map((r) => r.id));
+
+  // Requests the practitioner is actively engaged with but which are no longer
+  // in the open set (filled/past) — fetched so their application status shows.
+  const engagedMissing = [...interestByRequest.entries()]
+    .filter(([id, s]) => !openIds.has(id) && (s.state === "interested" || s.state === "confirmed"))
+    .map(([id]) => id);
+  let rows = openRows;
+  if (engagedMissing.length > 0) {
+    const { data: extra } = await admin.from("work_requests").select("*").in("id", engagedMissing);
+    rows = [...openRows, ...((extra ?? []) as RequestRow[])];
+  }
+
   const spaces = await loadSpaces(admin, rows.map((r) => r.space_id as string));
 
   const opportunities: WorkOpportunity[] = [];
   for (const row of rows) {
     const mine = interestByRequest.get(row.id) ?? null;
+    const engaged = mine?.state === "interested" || mine?.state === "confirmed";
+    // Filters narrow the browse; a request the practitioner is actively engaged
+    // with is always kept so they never lose track of an application.
+    if (!engaged && !passesFilters(row as RequestRow & Record<string, unknown>, filters)) continue;
+
     const space = spaces.get(row.space_id as string);
-    // New opportunities (no interest yet) must actually match; ones they have
-    // already engaged with are always shown for status.
-    if (!mine) {
-      if (!candidate.facts.availableForWork) continue;
-      if (!matchCandidate(requestFactsFrom(row, space), candidate.facts, now).matches) continue;
-    }
-    // A withdrawn interest with no live match should drop off the list.
-    if (mine && (mine.state === "withdrawn" || mine.state === "declined")) {
-      const stillMatches =
-        candidate.facts.availableForWork &&
-        matchCandidate(requestFactsFrom(row, space), candidate.facts, now).matches;
-      if (mine.state === "withdrawn" && !stillMatches) continue;
-    }
+    const details = sessionDetailsFromRow(row as unknown as Record<string, unknown>);
     const dist =
-      candidate.facts.base && space?.lat != null && space?.lng != null
-        ? distanceLabel(distanceBetween(candidate.facts.base, { lat: space.lat, lng: space.lng }, "mi"))
+      base && space?.lat != null && space?.lng != null
+        ? distanceLabel(distanceBetween(base, { lat: space.lat, lng: space.lng }, "mi"))
         : null;
     opportunities.push({
       requestId: row.id,
       title: row.title,
       profession: row.profession,
+      sessionFormat: details.sessionFormat,
+      level: (row as { level?: string | null }).level ?? null,
+      requiredQualifications: details.requiredQualifications,
+      participantsExpected: details.participantsExpected,
+      participantsMax: (row as { participants_max?: number | null }).participants_max ?? null,
       spaceName: space?.name ?? null,
       area: areaOf(space),
       startsAt: new Date(row.starts_at),
@@ -682,7 +756,10 @@ export async function listOpportunities(
     });
   }
 
-  opportunities.sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
+  // Urgent first, then soonest — a sort order, never a visibility filter.
+  opportunities.sort(
+    (a, b) => Number(b.urgent) - Number(a.urgent) || a.startsAt.getTime() - b.startsAt.getTime(),
+  );
   return opportunities;
 }
 

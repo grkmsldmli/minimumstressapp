@@ -49,11 +49,13 @@ import type { CreateBookingInput, Repository } from "./repository";
 import type { AccessDetails } from "./access-details";
 import type { MediaKind, SpaceEdit } from "./domain";
 import type {
+  BoardFilters,
   ClassTemplate,
   ClassTemplateInput,
   CoverageRequest,
   CoverageRequestInput,
   RequestInterest,
+  RosterMember,
   WorkInterestState,
   WorkOpportunity,
   WorkPreferences,
@@ -358,6 +360,7 @@ export class MockRepository implements Repository {
   private classTemplates: ClassTemplate[] = [];
   private coverageRequests: CoverageRequest[] = [];
   private myInterests = new Map<string, WorkInterestState>();
+  private roster: RosterMember[] = [];
 
   constructor() {
     this.publicSpaces = SEED_SPACES.map((seed, index) => {
@@ -1168,7 +1171,7 @@ export class MockRepository implements Repository {
     return this.getWorkAvailability();
   }
 
-  async listWorkOpportunities(): Promise<WorkOpportunity[]> {
+  async listWorkOpportunities(_filters: BoardFilters = {}): Promise<WorkOpportunity[]> {
     // A single-user mock has no other studios posting; the list is empty by
     // construction rather than faked.
     return [];
@@ -1266,5 +1269,67 @@ export class MockRepository implements Repository {
     if (!request) throw new Error(`no such request: ${requestId}`);
     if (request.state !== "open") throw new Error("This request is no longer open.");
     request.state = "filled";
+  }
+
+  async duplicateCoverageRequest(id: string, startsAt: Date): Promise<CoverageRequest> {
+    const src = this.coverageRequests.find((r) => r.id === id);
+    if (!src) throw new Error(`no such request: ${id}`);
+    const durationMinutes = Math.round((src.endsAt.getTime() - src.startsAt.getTime()) / 60000);
+    return this.createCoverageRequest({
+      spaceId: src.spaceId,
+      classTemplateId: src.classTemplateId,
+      title: src.title,
+      profession: src.profession,
+      level: src.level,
+      participantsMax: src.participantsMax,
+      equipmentNotes: src.equipmentNotes,
+      startsAt,
+      durationMinutes: durationMinutes >= 15 ? durationMinutes : 60,
+      payCents: src.payCents,
+      notes: src.notes,
+      urgent: src.urgent,
+      sessionFormat: src.sessionFormat,
+      participantsExpected: src.participantsExpected,
+      audience: src.audience,
+      teachingNotes: src.teachingNotes,
+      requiredQualifications: src.requiredQualifications,
+      preferredQualifications: src.preferredQualifications,
+      sessionGoal: src.sessionGoal,
+      clientExperience: src.clientExperience,
+      accommodations: src.accommodations,
+      programming: src.programming,
+    });
+  }
+
+  /* ---------------- work (My Roster) ---------------- */
+
+  // A single-user mock has no confirmed cross-account relationships, so the
+  // roster is simply an in-memory list that round-trips.
+  async listRoster(): Promise<RosterMember[]> {
+    return this.roster.map((m) => ({ ...m }));
+  }
+
+  async addToRoster(practitionerId: string, note: string | null): Promise<void> {
+    if (this.roster.some((m) => m.practitionerId === practitionerId)) return;
+    this.roster.unshift({
+      id: id("ros"),
+      practitionerId,
+      displayName: "A professional",
+      avatarUrl: null,
+      craft: "Wellness professional",
+      foundingPractitioner: false,
+      note,
+      timesWorkedTogether: 1,
+      availableForWork: true,
+      addedAt: new Date(),
+    });
+  }
+
+  async removeFromRoster(rosterId: string): Promise<void> {
+    this.roster = this.roster.filter((m) => m.id !== rosterId);
+  }
+
+  async inviteFromRoster(_requestId: string, _practitionerId: string): Promise<void> {
+    // Notification-only; nothing to persist in the mock.
   }
 }

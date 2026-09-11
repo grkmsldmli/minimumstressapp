@@ -3,8 +3,10 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type {
+  BoardFilters,
   CoverageRequestInput,
   RequestInterest,
+  RosterMember,
   WorkInterestState,
   WorkOpportunity,
   WorkRequestState,
@@ -17,6 +19,7 @@ import { workEligibility } from "./work/eligibility";
 import {
   notifyWorkConfirmed,
   notifyWorkInterestReceived,
+  notifyWorkOpportunity,
   notifyWorkRequestCancelled,
   notifyWorkSelectionWithdrawn,
   type WorkNotifyContext,
@@ -59,6 +62,8 @@ export type WorkFailure =
   | "interest_not_found"
   | "interest_not_yours"
   | "already_filled"
+  | "no_relationship"
+  | "practitioner_unavailable"
   | "invalid_time";
 
 export type WorkResult<T> = { ok: true; value: T } | { ok: false; reason: WorkFailure };
@@ -95,6 +100,13 @@ export function explainWorkFailure(reason: WorkFailure): { message: string; stat
       return { message: "This has already been decided.", status: 409 };
     case "already_filled":
       return { message: "This request was just filled. Nothing was changed.", status: 409 };
+    case "no_relationship":
+      return {
+        message: "You can add someone to your roster once you've confirmed them for a class.",
+        status: 409,
+      };
+    case "practitioner_unavailable":
+      return { message: "That professional isn't available to invite right now.", status: 409 };
     case "invalid_time":
       return { message: "Choose a time in the future.", status: 400 };
   }
@@ -474,6 +486,52 @@ export async function cancelCoverage(
   return { ok: true, value: null };
 }
 
+/**
+ * Duplicate / repost a request into a fresh open one at a new time.
+ *
+ * The whole session context is copied from the source row — a repost of a class
+ * that expired or was cancelled is one tap, not a re-fill of the form — but it
+ * goes through postCoverage, so ownership, entitlement, the future-time check and
+ * the snapshot all hold exactly as they do for a new post. It never carries over
+ * applicants: a repost is a new request nobody has applied to yet.
+ */
+export async function duplicateCoverage(
+  admin: SupabaseClient,
+  hostId: string,
+  sourceRequestId: string,
+  startsAt: Date,
+  now: Date = new Date(),
+): Promise<WorkResult<{ requestId: string }>> {
+  const { data: src } = await admin
+    .from("work_requests")
+    .select("*")
+    .eq("id", sourceRequestId)
+    .maybeSingle();
+  if (!src) return { ok: false, reason: "request_not_found" };
+  if (src.host_id !== hostId) return { ok: false, reason: "request_not_yours" };
+
+  const durationMinutes = Math.round(
+    (new Date(src.ends_at as string).getTime() - new Date(src.starts_at as string).getTime()) / MINUTE_MS,
+  );
+  const details = sessionDetailsFromRow(src as unknown as Record<string, unknown>);
+  const input: CoverageRequestInput = {
+    spaceId: (src.space_id as string | null) ?? null,
+    classTemplateId: (src.class_template_id as string | null) ?? null,
+    title: src.title as string,
+    profession: (src.profession as string | null) ?? null,
+    level: (src.level as string | null) ?? null,
+    participantsMax: (src.participants_max as number | null) ?? null,
+    equipmentNotes: (src.equipment_notes as string | null) ?? null,
+    startsAt,
+    durationMinutes: durationMinutes >= 15 ? durationMinutes : 60,
+    payCents: src.pay_cents as number,
+    notes: (src.notes as string | null) ?? null,
+    urgent: Boolean(src.urgent),
+    ...details,
+  };
+  return postCoverage(admin, hostId, input, now);
+}
+
 /* ------------------------------------------------------------------ */
 /*  Practitioner: express / withdraw interest                          */
 /* ------------------------------------------------------------------ */
@@ -641,19 +699,6 @@ export async function confirmInterest(
 /* ------------------------------------------------------------------ */
 /*  Reads: opportunities (practitioner) and interest (host)            */
 /* ------------------------------------------------------------------ */
-
-/** Board filters a practitioner chooses — they narrow the browse, they never
- *  exclude a listing the practitioner did not filter out. No algorithm decides
- *  visibility. */
-export interface BoardFilters {
-  profession?: string | null;
-  sessionFormat?: string | null;
-  minPayCents?: number | null;
-  level?: string | null;
-  urgentOnly?: boolean;
-  onOrAfter?: Date | null;
-  onOrBefore?: Date | null;
-}
 
 function passesFilters(row: RequestRow & Record<string, unknown>, f: BoardFilters): boolean {
   if (f.profession && row.profession !== f.profession) return false;
@@ -833,4 +878,176 @@ export function maskName(name: string | null): string {
   const parts = name.trim().split(/\s+/);
   if (parts.length === 1) return parts[0];
   return `${parts[0]} ${parts[parts.length - 1][0]}.`;
+}
+
+/* ------------------------------------------------------------------ */
+/*  My Roster — a studio's own trusted substitute network              */
+/* ------------------------------------------------------------------ */
+
+/** Confirmed covers per practitioner for this host — the real relationship the
+ *  roster is built from, counted from interest rows so it cannot drift. */
+async function confirmedCountsForHost(
+  admin: SupabaseClient,
+  hostId: string,
+): Promise<Map<string, number>> {
+  const counts = new Map<string, number>();
+  const { data: reqs } = await admin.from("work_requests").select("id").eq("host_id", hostId);
+  const ids = (reqs ?? []).map((r) => r.id as string);
+  if (ids.length === 0) return counts;
+  const { data: interests } = await admin
+    .from("work_interest")
+    .select("practitioner_id, state")
+    .in("request_id", ids)
+    .eq("state", "confirmed");
+  for (const i of interests ?? []) {
+    const pid = i.practitioner_id as string;
+    counts.set(pid, (counts.get(pid) ?? 0) + 1);
+  }
+  return counts;
+}
+
+export async function listRoster(
+  admin: SupabaseClient,
+  hostId: string,
+  now: Date = new Date(),
+): Promise<WorkResult<RosterMember[]>> {
+  if (!(await loadEntitlements(admin, hostId, now)).canUseRoster) {
+    return { ok: false, reason: "not_entitled" };
+  }
+  const { data: rows } = await admin
+    .from("work_roster")
+    .select("id, practitioner_id, note, added_at")
+    .eq("host_id", hostId)
+    .order("added_at", { ascending: false });
+  if (!rows || rows.length === 0) return { ok: true, value: [] };
+
+  const ids = rows.map((r) => r.practitioner_id as string);
+  const [candidates, counts] = await Promise.all([
+    loadCandidates(admin, ids, now),
+    confirmedCountsForHost(admin, hostId),
+  ]);
+
+  const value: RosterMember[] = [];
+  for (const row of rows) {
+    const pid = row.practitioner_id as string;
+    const loaded = candidates.get(pid);
+    // A closed account leaves the row but drops out of the list safely.
+    if (!loaded) continue;
+    const { preview, facts } = loaded;
+    const avatarUrl = preview.avatarPath
+      ? admin.storage.from("avatars").getPublicUrl(preview.avatarPath).data.publicUrl
+      : null;
+    value.push({
+      id: row.id as string,
+      practitionerId: pid,
+      displayName: preview.displayName ?? "A professional",
+      avatarUrl,
+      craft: professionLabel(facts.profession) ?? "Wellness professional",
+      foundingPractitioner: preview.foundingPractitioner,
+      note: (row.note as string | null) ?? null,
+      timesWorkedTogether: counts.get(pid) ?? 0,
+      availableForWork: facts.availableForWork,
+      addedAt: new Date(row.added_at as string),
+    });
+  }
+  return { ok: true, value };
+}
+
+export async function addToRoster(
+  admin: SupabaseClient,
+  hostId: string,
+  practitionerId: string,
+  note: string | null,
+  now: Date = new Date(),
+): Promise<WorkResult<{ id: string }>> {
+  if (!(await loadEntitlements(admin, hostId, now)).canUseRoster) {
+    return { ok: false, reason: "not_entitled" };
+  }
+  // A roster entry is earned: the host must have confirmed this practitioner for
+  // at least one class. No cold-adding a stranger from a preview.
+  const counts = await confirmedCountsForHost(admin, hostId);
+  if (!counts.has(practitionerId)) return { ok: false, reason: "no_relationship" };
+
+  const { data, error } = await admin
+    .from("work_roster")
+    .upsert(
+      { host_id: hostId, practitioner_id: practitionerId, note },
+      { onConflict: "host_id,practitioner_id" },
+    )
+    .select("id")
+    .single();
+  if (error || !data) throw error ?? new Error("Could not add to roster");
+  return { ok: true, value: { id: data.id as string } };
+}
+
+export async function removeFromRoster(
+  admin: SupabaseClient,
+  hostId: string,
+  rosterId: string,
+): Promise<WorkResult<null>> {
+  // Scoped to the host's own row — a delete that matches nothing is still a
+  // success, so a double-tap is harmless.
+  const { error } = await admin
+    .from("work_roster")
+    .delete()
+    .eq("id", rosterId)
+    .eq("host_id", hostId);
+  if (error) throw error;
+  return { ok: true, value: null };
+}
+
+/**
+ * Invite a roster member to a specific open request. This is a notification, not
+ * an assignment — the practitioner still applies and is confirmed the normal way,
+ * so a roster can never bypass the atomic single-fill. A closed or unreachable
+ * account fails softly rather than half-sending.
+ */
+export async function inviteFromRoster(
+  admin: SupabaseClient,
+  hostId: string,
+  requestId: string,
+  practitionerId: string,
+  now: Date = new Date(),
+): Promise<WorkResult<null>> {
+  if (!(await loadEntitlements(admin, hostId, now)).canUseRoster) {
+    return { ok: false, reason: "not_entitled" };
+  }
+  const { data: request } = await admin
+    .from("work_requests")
+    .select("*")
+    .eq("id", requestId)
+    .maybeSingle();
+  if (!request) return { ok: false, reason: "request_not_found" };
+  if (request.host_id !== hostId) return { ok: false, reason: "request_not_yours" };
+  if (
+    !acceptsInterest(
+      { state: request.state as WorkRequestState, startsAt: new Date(request.starts_at), endsAt: new Date(request.ends_at) },
+      now,
+    )
+  ) {
+    return { ok: false, reason: "request_not_open" };
+  }
+
+  // Must be on this host's roster, and the account must still exist.
+  const { data: onRoster } = await admin
+    .from("work_roster")
+    .select("id")
+    .eq("host_id", hostId)
+    .eq("practitioner_id", practitionerId)
+    .maybeSingle();
+  if (!onRoster) return { ok: false, reason: "practitioner_unavailable" };
+
+  const { data: prof } = await admin
+    .from("profiles")
+    .select("id, account_type")
+    .eq("id", practitionerId)
+    .maybeSingle();
+  if (!prof || prof.account_type !== "practitioner") {
+    return { ok: false, reason: "practitioner_unavailable" };
+  }
+
+  const space = (await loadSpaces(admin, [request.space_id as string])).get(request.space_id as string);
+  const ctx = ctxFrom(request as RequestRow, space);
+  void notifyWorkOpportunity(admin, practitionerId, ctx).catch(() => {});
+  return { ok: true, value: null };
 }

@@ -72,11 +72,13 @@ import type { AccessDetails } from "./access-details";
 import { normalize, type AvailabilityBlock } from "./availability";
 import type { NotificationEntry } from "./notify/history";
 import type {
+  BoardFilters,
   ClassTemplate,
   ClassTemplateInput,
   CoverageRequest,
   CoverageRequestInput,
   RequestInterest,
+  RosterMember,
   SessionFormat,
   WorkInterestState,
   WorkOpportunity,
@@ -2146,8 +2148,17 @@ export class SupabaseRepository implements Repository {
     return this.getWorkAvailability();
   }
 
-  async listWorkOpportunities(): Promise<WorkOpportunity[]> {
-    const response = await apiFetch("/api/work/opportunities");
+  async listWorkOpportunities(filters: BoardFilters = {}): Promise<WorkOpportunity[]> {
+    const q = new URLSearchParams();
+    if (filters.profession) q.set("profession", filters.profession);
+    if (filters.sessionFormat) q.set("sessionFormat", filters.sessionFormat);
+    if (filters.level) q.set("level", filters.level);
+    if (filters.minPayCents != null) q.set("minPayCents", String(filters.minPayCents));
+    if (filters.urgentOnly) q.set("urgentOnly", "true");
+    if (filters.onOrAfter) q.set("onOrAfter", filters.onOrAfter.toISOString());
+    if (filters.onOrBefore) q.set("onOrBefore", filters.onOrBefore.toISOString());
+    const suffix = q.toString();
+    const response = await apiFetch(`/api/work/opportunities${suffix ? `?${suffix}` : ""}`);
     const payload = (await response.json().catch(() => ({}))) as {
       opportunities?: unknown[];
       error?: string;
@@ -2362,6 +2373,75 @@ export class SupabaseRepository implements Repository {
       throw new Error(payload.error ?? `Could not confirm (${response.status})`);
     }
   }
+
+  async duplicateCoverageRequest(id: string, startsAt: Date): Promise<CoverageRequest> {
+    const response = await apiFetch(
+      `/api/work/coverage/${encodeURIComponent(id)}/duplicate`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ startsAt: startsAt.toISOString() }),
+      },
+    );
+    const payload = (await response.json().catch(() => ({}))) as {
+      requestId?: string;
+      error?: string;
+    };
+    if (!response.ok || !payload.requestId) {
+      throw new Error(payload.error ?? `Could not repost (${response.status})`);
+    }
+    const created = (await this.listCoverageRequests()).find((r) => r.id === payload.requestId);
+    if (!created) throw new Error("Reposted, but could not be read back");
+    return created;
+  }
+
+  /* ---------------- work (My Roster) ---------------- */
+
+  async listRoster(): Promise<RosterMember[]> {
+    const response = await apiFetch("/api/work/roster");
+    const payload = (await response.json().catch(() => ({}))) as {
+      roster?: unknown[];
+      error?: string;
+    };
+    if (!response.ok) {
+      throw new Error(payload.error ?? `Could not load roster (${response.status})`);
+    }
+    return (payload.roster ?? []).map(mapRosterMember);
+  }
+
+  async addToRoster(practitionerId: string, note: string | null): Promise<void> {
+    const response = await apiFetch("/api/work/roster", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ practitionerId, note }),
+    });
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => ({}))) as { error?: string };
+      throw new Error(payload.error ?? `Could not add to roster (${response.status})`);
+    }
+  }
+
+  async removeFromRoster(rosterId: string): Promise<void> {
+    const response = await apiFetch(`/api/work/roster/${encodeURIComponent(rosterId)}`, {
+      method: "DELETE",
+    });
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => ({}))) as { error?: string };
+      throw new Error(payload.error ?? `Could not remove from roster (${response.status})`);
+    }
+  }
+
+  async inviteFromRoster(requestId: string, practitionerId: string): Promise<void> {
+    const response = await apiFetch("/api/work/roster/invite", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ requestId, practitionerId }),
+    });
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => ({}))) as { error?: string };
+      throw new Error(payload.error ?? `Could not send invite (${response.status})`);
+    }
+  }
 }
 
 
@@ -2458,6 +2538,22 @@ function mapRequestInterest(raw: unknown): RequestInterest {
     credentialReviewed: Boolean(i.credentialReviewed),
     completedSessions: (i.completedSessions as number) ?? 0,
     goodStanding: Boolean(i.goodStanding),
+  };
+}
+
+function mapRosterMember(raw: unknown): RosterMember {
+  const m = raw as Record<string, unknown>;
+  return {
+    id: m.id as string,
+    practitionerId: m.practitionerId as string,
+    displayName: m.displayName as string,
+    avatarUrl: (m.avatarUrl as string | null) ?? null,
+    craft: m.craft as string,
+    foundingPractitioner: Boolean(m.foundingPractitioner),
+    note: (m.note as string | null) ?? null,
+    timesWorkedTogether: (m.timesWorkedTogether as number) ?? 0,
+    availableForWork: Boolean(m.availableForWork),
+    addedAt: new Date(m.addedAt as string),
   };
 }
 

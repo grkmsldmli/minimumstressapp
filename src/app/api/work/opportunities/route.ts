@@ -2,8 +2,9 @@ import type { NextRequest } from "next/server";
 
 import { LIMITS, check, identify, tooManyRequests } from "@/lib/api/rate-limit";
 import { handled, jsonError, requireUser } from "@/lib/api/session";
+import type { BoardFilters } from "@/lib/domain";
 import { supabaseAdmin } from "@/lib/supabase/server";
-import { type BoardFilters, listOpportunities, loadEntitlements } from "@/lib/work-service";
+import { listOpportunities, loadEntitlements } from "@/lib/work-service";
 
 /**
  * The coverage job board: every open, future request, browseable by a Pro

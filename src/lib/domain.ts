@@ -943,6 +943,42 @@ export interface RequestInterest extends PractitionerTrust {
  * is ever included. `interestState` is the practitioner's own standing on it:
  * null when they have not acted yet.
  */
+/**
+ * Board filters a practitioner chooses. They narrow the browse; they never
+ * exclude a listing the practitioner did not filter out. No algorithm decides
+ * visibility — a preference is a filter the practitioner sets and can clear.
+ */
+export interface BoardFilters {
+  profession?: string | null;
+  sessionFormat?: string | null;
+  minPayCents?: number | null;
+  level?: string | null;
+  urgentOnly?: boolean;
+  onOrAfter?: Date | null;
+  onOrBefore?: Date | null;
+}
+
+/**
+ * A member of a studio's own trusted-substitute network (My Roster).
+ *
+ * A host earns a roster entry from a real confirmed relationship, so the name is
+ * the full name, not the masked preview a fresh applicant shows. `timesWorked`
+ * is derived from confirmed covers at read time — never stored, so it can't
+ * drift. Being on a roster is never an assignment: an invite is a notification.
+ */
+export interface RosterMember {
+  id: string;
+  practitionerId: string;
+  displayName: string;
+  avatarUrl: string | null;
+  craft: string;
+  foundingPractitioner: boolean;
+  note: string | null;
+  timesWorkedTogether: number;
+  availableForWork: boolean;
+  addedAt: Date;
+}
+
 export interface WorkOpportunity {
   requestId: string;
   title: string;

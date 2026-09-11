@@ -2,6 +2,10 @@ import type { NextRequest } from "next/server";
 
 import { LIMITS, check, identify, tooManyRequests } from "@/lib/api/rate-limit";
 import { handled, jsonError, requireUser } from "@/lib/api/session";
+import {
+  foundingPractitionerFreeUntil,
+  withinFoundingPractitionerFreePeriod,
+} from "@/lib/entitlements";
 import { billingPortal, customerFor, startSubscription } from "@/lib/stripe/subscription";
 import { supabaseAdmin } from "@/lib/supabase/server";
 
@@ -26,7 +30,7 @@ export async function POST(request: NextRequest): Promise<Response> {
 
     const { data: profile, error } = await admin
       .from("profiles")
-      .select("stripe_customer_id, is_pro")
+      .select("stripe_customer_id, is_pro, founding_practitioner_at")
       .eq("id", auth.user.id)
       .maybeSingle();
 
@@ -57,9 +61,29 @@ export async function POST(request: NextRequest): Promise<Response> {
      * subscription — Stripe does not stop it, and neither would a client that
      * simply asked for whichever screen it felt like.
      */
-    const url = profile?.is_pro
-      ? await billingPortal(customerId, origin)
-      : await startSubscription({ customerId, userId: auth.user.id, origin });
+    if (profile?.is_pro) {
+      return Response.json({ url: await billingPortal(customerId, origin) });
+    }
+
+    // A Founding Practitioner carries the lifetime 50% coupon (belongs to the
+    // benefit, applied again on any resubscribe); one still inside their free
+    // window gets a trial to its end, so nothing is charged before then. The free
+    // months themselves need no checkout — they are derived in lib/entitlements.
+    const foundingPractitionerAt = profile?.founding_practitioner_at
+      ? new Date(profile.founding_practitioner_at)
+      : null;
+    const trialEndUnix =
+      foundingPractitionerAt && withinFoundingPractitionerFreePeriod(foundingPractitionerAt, new Date())
+        ? Math.floor(foundingPractitionerFreeUntil(foundingPractitionerAt).getTime() / 1000)
+        : undefined;
+
+    const url = await startSubscription({
+      customerId,
+      userId: auth.user.id,
+      origin,
+      foundingDiscount: foundingPractitionerAt !== null,
+      trialEndUnix,
+    });
 
     return Response.json({ url });
   });

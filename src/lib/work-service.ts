@@ -128,7 +128,7 @@ export async function loadEntitlements(
   const { data: p } = await admin
     .from("profiles")
     .select(
-      "account_type, is_pro, studio_pro, founding_host_at, profession, identity_verified_at, insurance_doc_path, insurance_doc_state, insurance_effective_date, insurance_expires_at, credential_doc_state",
+      "account_type, is_pro, studio_pro, founding_host_at, founding_practitioner_at, profession, identity_verified_at, insurance_doc_path, insurance_doc_state, insurance_effective_date, insurance_expires_at, credential_doc_state",
     )
     .eq("id", userId)
     .maybeSingle();
@@ -151,6 +151,9 @@ export async function loadEntitlements(
     isPro: Boolean(p?.is_pro),
     studioProSubscription: Boolean(p?.studio_pro),
     foundingHostAt: p?.founding_host_at ? new Date(p.founding_host_at as string) : null,
+    foundingPractitionerAt: p?.founding_practitioner_at
+      ? new Date(p.founding_practitioner_at as string)
+      : null,
     work: workEligibility(
       {
         accountType: (p?.account_type as "practitioner" | "host" | null) ?? null,

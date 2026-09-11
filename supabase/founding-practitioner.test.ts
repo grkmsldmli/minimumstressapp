@@ -154,19 +154,25 @@ describe("the guarantees around it", () => {
     ).rejects.toThrow();
   });
 
-  it("stops at fifty — the fifty-first onboarded practitioner gets no number", async () => {
+  it("stops at one hundred — the hundred-and-first onboarded practitioner gets no number", async () => {
+    const over = FOUNDING_PRACTITIONER_LIMIT + 1; // 101
     const id = (n: number) => `c0000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
     let seed = "";
-    for (let i = 1; i <= 51; i++) {
+    for (let i = 1; i <= over; i++) {
       seed += `insert into auth.users (id, email) values ('${id(i)}', '${i}@e.com');`;
       seed += `insert into profiles (id, account_type, display_name) values ('${id(i)}', 'practitioner', 'P${i}');`;
     }
     await db.exec(seed);
-    for (let i = 1; i <= 51; i++) await db.exec(`select award_founding_practitioner('${id(i)}')`);
+    for (let i = 1; i <= over; i++) await db.exec(`select award_founding_practitioner('${id(i)}')`);
 
     const [{ c }] = await rows<{ c: number }>(`select count(*)::int as c from founding_practitioners`);
     expect(c).toBe(FOUNDING_PRACTITIONER_LIMIT);
-    const [last] = await rows<{ n: number | null }>(`select founding_practitioner_number as n from profiles where id = '${id(51)}'`);
+    // The hundredth is numbered; the hundred-and-first is not.
+    const [hundredth] = await rows<{ n: number | null }>(
+      `select founding_practitioner_number as n from profiles where id = '${id(FOUNDING_PRACTITIONER_LIMIT)}'`,
+    );
+    expect(hundredth.n).toBe(FOUNDING_PRACTITIONER_LIMIT);
+    const [last] = await rows<{ n: number | null }>(`select founding_practitioner_number as n from profiles where id = '${id(over)}'`);
     expect(last.n).toBeNull();
     const [{ r }] = await rows<{ r: number }>(`select founding_practitioners_remaining() as r`);
     expect(r).toBe(0);

@@ -1,29 +1,35 @@
 /**
- * Founding 50 — the marketplace's first hosts and first practitioners, named
+ * Founding 100 — the marketplace's first hosts and first practitioners, named
  * for good.
  *
- * FOUNDING HOST is a permanent legacy status for the first fifty hosts to bring
+ * FOUNDING HOST is a permanent legacy status for the first hundred hosts to bring
  * a listing live in the Bay Area. FOUNDING PRACTITIONER is its mirror on the
- * other side: the first fifty practitioners to complete professional onboarding
+ * other side: the first hundred practitioners to complete professional onboarding
  * — a vetted early professional (verified identity, insurance and credential,
- * with a name and chosen profession), not the first to run a transaction.
- * Both are a distinction, not a deal — no fee change, no free period, nothing to
- * reconcile — recognition only, the same choice `lib/badges`, `lib/milestones`
- * and `lib/host-achievements` all make.
+ * with a name and chosen profession), not the first to run a transaction. The two
+ * cohorts are independent: the hundredth host does not affect practitioner
+ * capacity, nor the reverse.
+ *
+ * The status and its number are permanent recognition — never taken away. On top
+ * of that recognition each cohort now also carries a Pro benefit (six months
+ * free, then a lifetime 50% off the applicable Pro price): Founding Host → Studio
+ * Pro, Founding Practitioner → practitioner Pro. Those economics live in
+ * `lib/entitlements` + `lib/stripe/subscription`, DERIVED from the founding award
+ * date, not here — this file holds only the cohort caps and the words around them.
  *
  * Each status, its number, and the count still available are the server's alone.
- * This file holds only the caps and the words around them; the allocation, the
- * qualifying moment, and the atomic guarantee that a fifty-first can never be
- * granted live in migrations 0060 (host) and 0068 (practitioner) —
- * `award_founding_host`/`founding_hosts_remaining` and their practitioner twins.
- * The numbers here are pinned to the SQL caps by founding-sql-sync.test.
+ * The allocation, the qualifying moment, and the atomic guarantee that a
+ * hundred-and-first can never be granted live in migrations 0060 (host) and 0068
+ * (practitioner), with the cap RAISED from 50 to 100 in 0071 via create-or-replace
+ * (0060/0068 are frozen). The numbers here are pinned to the SQL caps by
+ * founding-sql-sync.test, which reads the authoritative 0071 definitions.
  */
 
-/** How many Founding Host spots exist, ever. Matches the 1..50 cap in 0060. */
-export const FOUNDING_HOST_LIMIT = 50;
+/** How many Founding Host spots exist, ever. Matches the 1..100 cap in 0071. */
+export const FOUNDING_HOST_LIMIT = 100;
 
-/** How many Founding Practitioner spots exist, ever. Matches the 1..50 cap in 0068. */
-export const FOUNDING_PRACTITIONER_LIMIT = 50;
+/** How many Founding Practitioner spots exist, ever. Matches the 1..100 cap in 0071. */
+export const FOUNDING_PRACTITIONER_LIMIT = 100;
 
 /** What a Founding Host's status is called, wherever it is shown. */
 export const FOUNDING_HOST_LABEL = "Founding Host";

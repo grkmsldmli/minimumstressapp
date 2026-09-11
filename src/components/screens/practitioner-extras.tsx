@@ -31,10 +31,7 @@ import { StandingSummary } from "@/components/standing-notice";
 import { shortName } from "@/components/document-status";
 import { AvatarUpload, DocumentUpload } from "@/components/uploads";
 import { SUPPORT_EMAIL } from "@/lib/company";
-import {
-  FOUNDING_PRACTITIONER_LABEL,
-  foundingPractitionerSpotsRemainingLabel,
-} from "@/lib/founding";
+import { FOUNDING_PRACTITIONER_LABEL, FOUNDING_PRACTITIONER_LIMIT } from "@/lib/founding";
 import type { AccountType, Profile } from "@/lib/domain";
 import { PRACTITIONER_PROFESSIONS } from "@/lib/professions";
 import { type InsuranceStatus, insuranceStatus } from "@/lib/insurance";
@@ -589,6 +586,8 @@ export function ProScreen({
   onSubscribe,
   celebrate = false,
   confirming = false,
+  foundingFreeActive = false,
+  foundingDiscount = false,
 }: {
   isPro: boolean;
   onBack: () => void;
@@ -599,7 +598,14 @@ export function ProScreen({
   celebrate?: boolean;
   /** Returned from checkout, waiting on the webhook to confirm the payment. */
   confirming?: boolean;
+  /** This Founding Practitioner is inside their free window right now (no card). */
+  foundingFreeActive?: boolean;
+  /** This practitioner holds the permanent Founding 50%-off right to Pro. */
+  foundingDiscount?: boolean;
 }) {
+  // The Founding Practitioner pays half the applicable list price, forever — the
+  // server applies the coupon at checkout; this only shows the right numbers.
+  const effectivePrice = foundingDiscount ? Math.round(PRO_PRICE_CENTS / 2) : PRO_PRICE_CENTS;
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
 
@@ -683,10 +689,31 @@ export function ProScreen({
           <div className="mt-2 flex justify-center">
             <Headline pre="Go" accent="Pro." size={30} light />
           </div>
-          <p className="font-display italic font-semibold text-white mt-3" style={{ fontSize: 38 }}>
-            {formatCents(PRO_PRICE_CENTS)}
-            <span className="font-body font-normal text-[15.5px] text-white/60">/mo</span>
-          </p>
+          {foundingFreeActive ? (
+            <>
+              <p className="font-display italic font-semibold text-white mt-3" style={{ fontSize: 30 }}>
+                Free for 6 months
+              </p>
+              <p className="font-body font-normal text-[13.5px] text-white/65 mt-1">
+                then {formatCents(effectivePrice)}/mo · your permanent Founding rate
+              </p>
+            </>
+          ) : (
+            <p className="font-display italic font-semibold text-white mt-3" style={{ fontSize: 38 }}>
+              {foundingDiscount && (
+                <span className="font-body font-normal text-[16px] text-white/45 line-through mr-2">
+                  {formatCents(PRO_PRICE_CENTS)}
+                </span>
+              )}
+              {formatCents(effectivePrice)}
+              <span className="font-body font-normal text-[15.5px] text-white/60">/mo</span>
+            </p>
+          )}
+          {foundingDiscount && !foundingFreeActive && (
+            <p className="font-body font-normal text-[13px] text-white/65 mt-1">
+              Founding Practitioner · 50% for life
+            </p>
+          )}
         </div>
       </div>
 
@@ -779,10 +806,16 @@ export function ProScreen({
               .finally(() => setBusy(false));
           }}
         >
-          {busy ? "One moment…" : `Start Pro — ${formatCents(PRO_PRICE_CENTS)}/mo`}
+          {busy
+            ? "One moment…"
+            : foundingFreeActive
+              ? "Start free — no card needed"
+              : `Start Pro — ${formatCents(effectivePrice)}/mo`}
         </PrimaryButton>
         <p className="text-center font-body font-normal text-[13.5px] mt-2.5 text-ink-faint">
-          Cancel anytime.
+          {foundingFreeActive
+            ? "No card for your free months, and nothing auto-charges when they end."
+            : "Cancel anytime."}
         </p>
       </div>
     </div>
@@ -913,29 +946,46 @@ export function PractitionerProfile({
 
       <PullToRefresh className="flex-1 px-6 pt-5 pb-8 safe-pb-8" onRefresh={onRefresh}>
         {/*
-          Founding Practitioner — a small, permanent recognition, server-derived
-          (profile.foundingPractitionerNumber, migration 0068). Earned shows a
-          quiet award mark, not a card; unearned shows a single factual line
-          while real spots remain. Never client-assigned, never manufactured.
+          Founding Practitioner — server-derived (profile.foundingPractitionerNumber,
+          0068/0071), never client-assigned. Earned shows the permanent status (and
+          its number when present); unearned shows the discovery promo while real
+          spots remain — the real server count, never a manufactured countdown. This
+          is the founding program's home; the Work screen stays about Work.
         */}
         {profile.foundingPractitionerNumber !== null ? (
-          <div className="flex items-center gap-2 mb-5">
-            <span
-              className="w-7 h-7 rounded-full flex items-center justify-center shrink-0"
-              style={{ backgroundColor: "#F1F7FD" }}
-            >
+          <div
+            className="rounded-2xl p-4 mb-5"
+            style={{ backgroundColor: "#F1F7FD", border: "1px solid #DCEAF7" }}
+          >
+            <div className="flex items-center gap-2">
               <Award size={15} color="#2E7CC4" />
-            </span>
-            <span className="font-body font-medium text-[14px] text-navy">
-              {FOUNDING_PRACTITIONER_LABEL}
-            </span>
+              <span className="font-body font-semibold text-[14.5px] text-navy">
+                {FOUNDING_PRACTITIONER_LABEL} #{profile.foundingPractitionerNumber}
+              </span>
+            </div>
+            <p className="font-body font-normal text-[12.5px] leading-relaxed text-ink-soft mt-1.5">
+              One of the first 100 professionals building Minimum Stress — a permanent status, plus
+              six months of Pro free and a lifetime 50% rate.
+            </p>
           </div>
         ) : (
           foundingRemaining > 0 && (
-            <p className="font-body font-normal text-[13px] leading-relaxed text-ink-soft mb-5">
-              {foundingPractitionerSpotsRemainingLabel(foundingRemaining)} — earned on your first
-              completed session.
-            </p>
+            <div
+              className="rounded-2xl p-4 mb-5"
+              style={{ backgroundColor: "#F1F7FD", border: "1px solid #DCEAF7" }}
+            >
+              <p className="font-body font-semibold text-[14.5px] text-navy">
+                Become a Founding Practitioner
+              </p>
+              <p className="font-body font-normal text-[12.5px] leading-relaxed text-ink-soft mt-1.5">
+                One of the first 100 verified professionals building Minimum Stress. Complete your
+                professional verification to claim a place — permanent status, six months of Pro
+                free, then a lifetime 50% rate.
+              </p>
+              <p className="font-display italic font-semibold text-[15px] text-navy mt-2">
+                {Math.max(0, Math.min(FOUNDING_PRACTITIONER_LIMIT, foundingRemaining))} spots remaining
+              </p>
+            </div>
           )
         )}
 

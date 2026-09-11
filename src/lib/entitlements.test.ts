@@ -4,11 +4,15 @@ import {
   type EntitlementFacts,
   entitlementsFor,
   foundingHostFreeUntil,
+  foundingPractitionerFreeUntil,
+  hasFoundingPractitionerDiscount,
   hasFoundingStudioDiscount,
+  isPractitionerProActive,
   isStudioProActive,
+  withinFoundingPractitionerFreePeriod,
   withinFoundingFreePeriod,
 } from "./entitlements";
-import { STUDIO_PRO_LAUNCHED_AT } from "./money";
+import { FOUNDING_PRACTITIONER_PRO_LAUNCHED_AT, STUDIO_PRO_LAUNCHED_AT } from "./money";
 import type { WorkEligibility } from "./work/eligibility";
 
 const READY_WORK: WorkEligibility = { eligible: true, gaps: [] };
@@ -20,6 +24,7 @@ function facts(over: Partial<EntitlementFacts>): EntitlementFacts {
     isPro: false,
     studioProSubscription: false,
     foundingHostAt: null,
+    foundingPractitionerAt: null,
     work: NO_WORK,
     now: new Date("2026-10-01T00:00:00Z"),
     ...over,
@@ -140,5 +145,117 @@ describe("entitlementsFor — practitioner (Work)", () => {
 
   it("a practitioner is never granted host posting", () => {
     expect(prac({ isPro: true, work: READY_WORK }).canPostCoverage).toBe(false);
+  });
+});
+
+describe("founding practitioner free period", () => {
+  it("an existing Founding Practitioner (awarded before launch) gets a full 6 months from launch", () => {
+    const at = new Date("2026-05-01T00:00:00Z"); // before launch
+    expect(foundingPractitionerFreeUntil(at).toISOString()).toBe(
+      addMonths(FOUNDING_PRACTITIONER_PRO_LAUNCHED_AT, 6).toISOString(),
+    );
+  });
+
+  it("a Founding Practitioner awarded after launch gets 6 months from their award", () => {
+    const at = new Date("2027-01-15T00:00:00Z"); // after launch
+    expect(foundingPractitionerFreeUntil(at).toISOString()).toBe(addMonths(at, 6).toISOString());
+  });
+
+  it("is active during the window and inactive exactly at the boundary", () => {
+    const at = FOUNDING_PRACTITIONER_PRO_LAUNCHED_AT;
+    const until = foundingPractitionerFreeUntil(at);
+    expect(withinFoundingPractitionerFreePeriod(at, new Date(until.getTime() - 1))).toBe(true);
+    expect(withinFoundingPractitionerFreePeriod(at, until)).toBe(false); // boundary → over
+    expect(withinFoundingPractitionerFreePeriod(at, new Date(until.getTime() + 1))).toBe(false);
+  });
+
+  it("a non-founding practitioner is never in a free period", () => {
+    expect(withinFoundingPractitionerFreePeriod(null, new Date())).toBe(false);
+  });
+});
+
+describe("isPractitionerProActive", () => {
+  it("is active with a live Stripe subscription and no founding status", () => {
+    expect(isPractitionerProActive(facts({ isPro: true }))).toBe(true);
+  });
+  it("is active for a Founding Practitioner inside the free period with no subscription", () => {
+    expect(
+      isPractitionerProActive(
+        facts({ foundingPractitionerAt: FOUNDING_PRACTITIONER_PRO_LAUNCHED_AT, isPro: false }),
+      ),
+    ).toBe(true);
+  });
+  it("is inactive for a Founding Practitioner after the free period with no subscription", () => {
+    expect(
+      isPractitionerProActive(
+        facts({
+          foundingPractitionerAt: FOUNDING_PRACTITIONER_PRO_LAUNCHED_AT,
+          now: new Date(
+            foundingPractitionerFreeUntil(FOUNDING_PRACTITIONER_PRO_LAUNCHED_AT).getTime() + 1000,
+          ),
+        }),
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("entitlementsFor — Founding Practitioner (Pro benefit)", () => {
+  const prac = (over: Partial<EntitlementFacts>) =>
+    entitlementsFor(facts({ accountType: "practitioner", ...over }));
+
+  it("a Founding Practitioner in the free period can browse, with the badge and free-until date", () => {
+    const e = prac({ foundingPractitionerAt: FOUNDING_PRACTITIONER_PRO_LAUNCHED_AT, work: READY_WORK });
+    expect(e.canBrowseWork).toBe(true);
+    expect(e.canApplyToWork).toBe(true); // free Pro + verified
+    expect(e.practitionerProActive).toBe(true);
+    expect(e.foundingProFreeUntil?.toISOString()).toBe(
+      foundingPractitionerFreeUntil(FOUNDING_PRACTITIONER_PRO_LAUNCHED_AT).toISOString(),
+    );
+    expect(e.foundingProDiscount).toBe(true);
+  });
+
+  it("in the free period but unverified: can browse, cannot apply", () => {
+    const e = prac({ foundingPractitionerAt: FOUNDING_PRACTITIONER_PRO_LAUNCHED_AT, work: NO_WORK });
+    expect(e.canBrowseWork).toBe(true);
+    expect(e.canApplyToWork).toBe(false);
+  });
+
+  it("keeps the lifetime 50% right even after the free period with no subscription", () => {
+    const after = new Date(
+      foundingPractitionerFreeUntil(FOUNDING_PRACTITIONER_PRO_LAUNCHED_AT).getTime() + 1000,
+    );
+    const e = prac({ foundingPractitionerAt: FOUNDING_PRACTITIONER_PRO_LAUNCHED_AT, now: after, work: READY_WORK });
+    expect(e.practitionerProActive).toBe(false); // free period over, not subscribed
+    expect(e.canBrowseWork).toBe(false); // no new browsing without active Pro
+    expect(e.foundingProDiscount).toBe(true); // …but the discount right is permanent
+    expect(hasFoundingPractitionerDiscount(FOUNDING_PRACTITIONER_PRO_LAUNCHED_AT)).toBe(true);
+  });
+
+  it("a resubscribed (paid) Founding Practitioner is active and still holds the discount", () => {
+    const after = new Date(
+      foundingPractitionerFreeUntil(FOUNDING_PRACTITIONER_PRO_LAUNCHED_AT).getTime() + 1000,
+    );
+    const e = prac({
+      foundingPractitionerAt: FOUNDING_PRACTITIONER_PRO_LAUNCHED_AT,
+      isPro: true,
+      now: after,
+      work: READY_WORK,
+    });
+    expect(e.practitionerProActive).toBe(true);
+    expect(e.foundingProDiscount).toBe(true);
+  });
+
+  it("a Founding Practitioner's Pro state never grants host posting", () => {
+    const e = prac({ foundingPractitionerAt: FOUNDING_PRACTITIONER_PRO_LAUNCHED_AT, work: READY_WORK });
+    expect(e.canPostCoverage).toBe(false);
+    expect(e.studioProActive).toBe(false);
+  });
+
+  it("a Founding Host's founding status never grants a practitioner Pro benefit", () => {
+    const e = entitlementsFor(
+      facts({ accountType: "host", foundingHostAt: STUDIO_PRO_LAUNCHED_AT, work: READY_WORK }),
+    );
+    expect(e.practitionerProActive).toBe(false);
+    expect(e.foundingProDiscount).toBe(false);
   });
 });

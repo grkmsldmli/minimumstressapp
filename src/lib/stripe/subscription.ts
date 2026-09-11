@@ -74,11 +74,46 @@ export async function customerFor(
   return customer.id;
 }
 
-/** Where Stripe sends somebody to pay, and where it returns them afterwards. */
+/** A stable, forever 50%-off coupon for Founding Practitioners, created once —
+ *  the practitioner-side twin of the Founding-Host coupon below. Distinct id and
+ *  name so the two can never be confused, though both are percent_off:50 forever. */
+const FOUNDING_PRACTITIONER_COUPON_ID = "founding_practitioner_pro_50";
+
+/**
+ * The Founding-Practitioner discount, tied to the benefit rather than to one
+ * subscription — so it survives cancel and applies again on resubscribe. Percent
+ * based and forever, so it tracks the applicable Pro list price even if that
+ * price later changes.
+ */
+async function foundingPractitionerCouponId(): Promise<string> {
+  try {
+    return (await stripe().coupons.retrieve(FOUNDING_PRACTITIONER_COUPON_ID)).id;
+  } catch {
+    const coupon = await stripe().coupons.create({
+      id: FOUNDING_PRACTITIONER_COUPON_ID,
+      percent_off: 50,
+      duration: "forever",
+      name: "Founding Practitioner — 50% off Pro",
+    });
+    return coupon.id;
+  }
+}
+
+/**
+ * Where Stripe sends somebody to pay, and where it returns them afterwards.
+ *
+ * `trialEndUnix` (seconds) is set only for a Founding Practitioner who subscribes
+ * while still inside their free window, so Stripe charges nothing until then.
+ * Founding Practitioners carry the 50% coupon (applied to the recurring charge
+ * after any trial), which belongs to the benefit and applies again on resubscribe.
+ * No card is ever collected outside this deliberate, opted-in flow.
+ */
 export async function startSubscription(input: {
   customerId: string;
   userId: string;
   origin: string;
+  foundingDiscount?: boolean;
+  trialEndUnix?: number;
 }): Promise<string> {
   const session = await stripe().checkout.sessions.create({
     mode: "subscription",
@@ -87,8 +122,14 @@ export async function startSubscription(input: {
 
     // Carried through to the webhook, which is what turns a completed payment
     // into a Pro flag on the right row.
-    subscription_data: { metadata: { app_user_id: input.userId } },
+    subscription_data: {
+      metadata: { app_user_id: input.userId },
+      ...(input.trialEndUnix ? { trial_end: input.trialEndUnix } : {}),
+    },
     metadata: { app_user_id: input.userId },
+    ...(input.foundingDiscount
+      ? { discounts: [{ coupon: await foundingPractitionerCouponId() }] }
+      : {}),
 
     success_url: `${input.origin}/?pro=started`,
     cancel_url: `${input.origin}/?pro=cancelled`,

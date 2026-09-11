@@ -11,6 +11,13 @@ import { FOUNDING_HOST_LIMIT, FOUNDING_PRACTITIONER_LIMIT } from "./founding";
  * own comment long claimed a "founding-sql-sync.test"; this is it, and it now
  * covers both cohorts.
  *
+ * The AUTHORITATIVE cap now lives in 0071, which raised both cohorts from 50 to
+ * 100 by create-or-replace-ing the award/remaining functions and swapping the
+ * range/ceiling constraints. 0060 and 0068 are frozen historical migrations that
+ * still read 50 — so this test reads the cap from 0071 (which each cohort's four
+ * cap literals appear in) and separately pins 0060/0068 to their frozen 50, so a
+ * future edit to either the constant or 0071 can never drift without a red test.
+ *
  * Only the founding-specific cap shapes are read, so the session-milestone
  * buckets in 0060 (n >= 1000, 500, …) are never mistaken for a founding cap:
  *   - `between 1 and N`   the profiles range check and the ledger PK check
@@ -29,16 +36,22 @@ function foundingCaps(sql: string): number[] {
 }
 
 describe("founding caps stay in sync between the TS constants and the SQL", () => {
-  it("host: every cap literal in 0060 equals FOUNDING_HOST_LIMIT", () => {
-    const caps = foundingCaps(read("../../supabase/migrations/0060_founding_host.sql"));
-    // 2 range/PK checks + 1 allocation ceiling + 1 remaining().
-    expect(caps.length).toBeGreaterThanOrEqual(4);
-    for (const n of caps) expect(n).toBe(FOUNDING_HOST_LIMIT);
+  it("0071 is the authoritative cap and equals both TS constants (100)", () => {
+    const caps = foundingCaps(read("../../supabase/migrations/0071_founding_100_and_practitioner_pro.sql"));
+    // Per cohort: 2 range/PK checks + 1 allocation ceiling + 1 remaining() = 4,
+    // and 0071 carries both cohorts, so at least 8 cap literals — all 100.
+    expect(caps.length).toBeGreaterThanOrEqual(8);
+    for (const n of caps) expect(n).toBe(100);
+    expect(FOUNDING_HOST_LIMIT).toBe(100);
+    expect(FOUNDING_PRACTITIONER_LIMIT).toBe(100);
   });
 
-  it("practitioner: every cap literal in 0068 equals FOUNDING_PRACTITIONER_LIMIT", () => {
-    const caps = foundingCaps(read("../../supabase/migrations/0068_founding_practitioner.sql"));
-    expect(caps.length).toBeGreaterThanOrEqual(4);
-    for (const n of caps) expect(n).toBe(FOUNDING_PRACTITIONER_LIMIT);
+  it("the frozen 0060/0068 originals still read 50 (never edited)", () => {
+    for (const n of foundingCaps(read("../../supabase/migrations/0060_founding_host.sql"))) {
+      expect(n).toBe(50);
+    }
+    for (const n of foundingCaps(read("../../supabase/migrations/0068_founding_practitioner.sql"))) {
+      expect(n).toBe(50);
+    }
   });
 });

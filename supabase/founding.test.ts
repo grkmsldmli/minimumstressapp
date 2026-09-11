@@ -8,14 +8,15 @@ import { FOUNDING_HOST_LIMIT } from "../src/lib/founding";
 import { SESSION_MILESTONE_THRESHOLDS } from "../src/lib/host-achievements";
 
 /**
- * The Founding 50 award, run against a real Postgres (PGlite).
+ * The Founding 100 award, run against a real Postgres (PGlite).
  *
- * The guarantees that matter here — a fifty-first can never be granted, a host
- * counts once however many rooms they list, the status is permanent, and no
+ * The guarantees that matter here — a hundred-and-first can never be granted, a
+ * host counts once however many rooms they list, the status is permanent, and no
  * signed-in account can grant it to itself — are database behaviour, not app
- * behaviour, so they are proved by executing migration 0060 rather than reading
- * it. The app only ever calls `award_founding_host` at the one moment a listing
- * goes live; that wiring is in the admin route, and what it relies on is here.
+ * behaviour, so they are proved by executing the migrations (0060, with the cap
+ * raised to 100 in 0071) rather than reading them. The app only ever calls
+ * `award_founding_host` at the one moment a listing goes live; that wiring is in
+ * the admin route, and what it relies on is here.
  */
 const STUBS = "0000_supabase_stubs.sql";
 const migrationsDir = join(import.meta.dirname, "migrations");
@@ -160,20 +161,21 @@ describe("earning the status", () => {
 });
 
 describe("the cap can never be exceeded", () => {
-  it("grants exactly fifty and refuses the fifty-first", async () => {
-    // Fifty-one hosts, each brought live in turn. The fifty-first must come
-    // away with nothing, the count must stop at fifty, and no spot must remain.
+  it("grants exactly one hundred and refuses the hundred-and-first", async () => {
+    // A hundred-and-one hosts, each brought live in turn. The hundred-and-first
+    // must come away with nothing, the count must stop at a hundred, and no spot
+    // must remain. (0071 raised the cap from 50 to 100.)
     await db.exec(`
       insert into auth.users (id, email)
         select ('cccccccc-0000-4000-8000-' || lpad(n::text, 12, '0'))::uuid, 'h' || n || '@e.com'
-        from generate_series(1, 51) n;
+        from generate_series(1, 101) n;
       insert into profiles (id, display_name)
         select ('cccccccc-0000-4000-8000-' || lpad(n::text, 12, '0'))::uuid, 'Host ' || n
-        from generate_series(1, 51) n;
+        from generate_series(1, 101) n;
       do $$
       declare i int;
       begin
-        for i in 1..51 loop
+        for i in 1..101 loop
           perform award_founding_host(('cccccccc-0000-4000-8000-' || lpad(i::text, 12, '0'))::uuid);
         end loop;
       end $$;
@@ -183,25 +185,26 @@ describe("the cap can never be exceeded", () => {
       `select count(*)::int as c, coalesce(max(founding_number), 0)::int as top
        from profiles where founding_number is not null`,
     );
-    expect(c).toBe(50);
-    expect(top).toBe(50);
+    expect(c).toBe(100);
+    expect(top).toBe(100);
 
     const [{ n }] = await rows<{ n: number }>(`select founding_hosts_remaining() as n`);
     expect(n).toBe(0);
 
-    // The fifty-first host — number 51 in the loop — holds no founding status.
-    const fiftyFirst = "cccccccc-0000-4000-8000-000000000051";
+    // The hundred-and-first host — number 101 in the loop — holds no founding status.
+    const overCap = "cccccccc-0000-4000-8000-000000000101";
     const [p] = await rows<{ founding_number: number | null }>(
-      `select founding_number from profiles where id = '${fiftyFirst}'`,
+      `select founding_number from profiles where id = '${overCap}'`,
     );
     expect(p.founding_number).toBeNull();
   });
 
-  it("keeps the schema itself a backstop: no number above fifty, no duplicate", async () => {
+  it("keeps the schema itself a backstop: no number above one hundred, no duplicate", async () => {
     // Even a caller that bypassed the function entirely (this runs as superuser,
-    // past the client trigger) is stopped by the row constraints from 0060.
+    // past the client trigger) is stopped by the row constraints (raised to 100
+    // in 0071). 101 is above the cap and must be refused.
     await expect(
-      rows(`update profiles set founding_host_at = now(), founding_number = 51 where id = '${HOST}'`),
+      rows(`update profiles set founding_host_at = now(), founding_number = 101 where id = '${HOST}'`),
     ).rejects.toThrow();
 
     await rows(`select award_founding_host('${HOST}')`); // host takes number 1
@@ -235,13 +238,13 @@ describe("only the server may grant it", () => {
 });
 
 describe("spots remaining is derived from real rows", () => {
-  it("counts down from fifty as hosts are awarded, never a stored number", async () => {
+  it("counts down from one hundred as hosts are awarded, never a stored number", async () => {
     const [{ n0 }] = await rows<{ n0: number }>(`select founding_hosts_remaining() as n0`);
-    expect(n0).toBe(50);
+    expect(n0).toBe(100);
 
     await rows(`select award_founding_host('${HOST}')`);
     const [{ n1 }] = await rows<{ n1: number }>(`select founding_hosts_remaining() as n1`);
-    expect(n1).toBe(49);
+    expect(n1).toBe(99);
   });
 });
 
@@ -337,27 +340,27 @@ describe("approval and allocation are one transaction", () => {
     expect(p.founding_number).toBe(1);
   });
 
-  it("lets the 51st approval succeed with no Founding award — not in the fifty is not an error", async () => {
+  it("lets the 101st approval succeed with no Founding award — not in the hundred is not an error", async () => {
     await db.exec(`
       insert into auth.users (id, email)
         select ('f1000000-0000-4000-8000-' || lpad(n::text, 12, '0'))::uuid, 'g' || n || '@e.com'
-        from generate_series(1, 50) n;
+        from generate_series(1, 100) n;
       insert into profiles (id, display_name)
         select ('f1000000-0000-4000-8000-' || lpad(n::text, 12, '0'))::uuid, 'G' || n
-        from generate_series(1, 50) n;
+        from generate_series(1, 100) n;
       do $$
       declare i int;
       begin
-        for i in 1..50 loop
+        for i in 1..100 loop
           perform award_founding_host(('f1000000-0000-4000-8000-' || lpad(i::text, 12, '0'))::uuid);
         end loop;
       end $$;
     `);
 
-    const host = "f2000000-0000-4000-8000-000000000051";
+    const host = "f2000000-0000-4000-8000-000000000101";
     const space = "f2000000-0000-4000-8000-0000000000b1";
-    await rows(`insert into auth.users (id, email) values ('${host}', 'g51@e.com')`);
-    await rows(`insert into profiles (id, display_name) values ('${host}', 'G51')`);
+    await rows(`insert into auth.users (id, email) values ('${host}', 'g101@e.com')`);
+    await rows(`insert into profiles (id, display_name) values ('${host}', 'G101')`);
     await rows(pendingSpace(space, host, "Latecomer"));
 
     await expect(approve(space)).resolves.toBeDefined();
@@ -509,14 +512,16 @@ describe("the one-time backfill of hosts already live", () => {
     await d.close();
   });
 
-  it("stops at fifty even with more than fifty qualified hosts", async () => {
+  it("stops at one hundred even with more than a hundred qualified hosts", async () => {
+    // 105 qualified live hosts. 0060's backfill numbers the first 50; 0071's
+    // re-backfill opens the rest of the cohort up to 100 and no further.
     const seed = `
       insert into auth.users (id, email)
         select ('b0000000-0000-4000-8000-' || lpad(n::text, 12, '0'))::uuid, 'h' || n || '@e.com'
-        from generate_series(1, 55) n;
+        from generate_series(1, 105) n;
       insert into profiles (id, display_name)
         select ('b0000000-0000-4000-8000-' || lpad(n::text, 12, '0'))::uuid, 'H' || n
-        from generate_series(1, 55) n;
+        from generate_series(1, 105) n;
       insert into spaces (
         id, host_id, name, category, hourly_rate_cents, capacity, access_type,
         entry_instructions, address_line, status, sublease_doc_path, legal_ack_at,
@@ -526,7 +531,7 @@ describe("the one-time backfill of hosts already live", () => {
              ('b0000000-0000-4000-8000-' || lpad(n::text, 12, '0'))::uuid,
              'Room', 'physical', 4500, 3, 'keypad', 'Panel', '1 Way', 'active',
              'space/x/lease.pdf', now(), 'verified', timestamptz '2026-01-01' + (n || ' minutes')::interval
-      from generate_series(1, 55) n;
+      from generate_series(1, 105) n;
     `;
     const d = await withBackfill(seed);
     const [{ c, top, remaining }] = (
@@ -536,8 +541,8 @@ describe("the one-time backfill of hosts already live", () => {
                 founding_hosts_remaining() as remaining`,
       )
     ).rows;
-    expect(c).toBe(50);
-    expect(top).toBe(50);
+    expect(c).toBe(100);
+    expect(top).toBe(100);
     expect(remaining).toBe(0);
     await d.close();
   });
@@ -628,7 +633,7 @@ describe("remaining is the true global count for every caller", () => {
 
   it("gives anon, a non-founding user, and a Founding Host the same real number", async () => {
     const { founder, other } = await seedThreeFounders();
-    const expected = 50 - 3;
+    const expected = FOUNDING_HOST_LIMIT - 3;
 
     const [anon] = await asRole<{ n: number }>("anon", "", `select founding_hosts_remaining() as n`);
     const [nonFounder] = await asRole<{ n: number }>(
@@ -657,7 +662,7 @@ describe("remaining is the true global count for every caller", () => {
       other,
       `select founding_hosts_remaining() as n`,
     );
-    expect(n).toBe(47);
+    expect(n).toBe(FOUNDING_HOST_LIMIT - 3);
 
     const own = await asRole<{ id: string }>("authenticated", other, `select id from profiles`);
     expect(own).toHaveLength(1);
@@ -715,14 +720,14 @@ describe("a consumed Founding spot is never recycled", () => {
     expect(owner).toBe(ids[6]);
   });
 
-  it("deleting No. 50 does not re-open the fiftieth spot", async () => {
-    const ids = await awardHosts(50);
+  it("deleting No. 100 does not re-open the hundredth spot", async () => {
+    const ids = await awardHosts(FOUNDING_HOST_LIMIT); // fill the cohort
     const [{ before }] = await rows<{ before: number }>(
       `select founding_hosts_remaining() as before`,
     );
     expect(before).toBe(0);
 
-    await rows(`delete from auth.users where id = '${ids[49]}'`); // number 50
+    await rows(`delete from auth.users where id = '${ids[FOUNDING_HOST_LIMIT - 1]}'`); // number 100
 
     // The spot stays consumed: remaining is still zero, and a new host gets none.
     const [{ after }] = await rows<{ after: number }>(`select founding_hosts_remaining() as after`);
@@ -738,14 +743,14 @@ describe("a consumed Founding spot is never recycled", () => {
     expect(p.num).toBeNull();
   });
 
-  it("never exceeds fifty allocations even after deletions, and approval still succeeds", async () => {
-    const ids = await awardHosts(50);
+  it("never exceeds one hundred allocations even after deletions, and approval still succeeds", async () => {
+    const ids = await awardHosts(FOUNDING_HOST_LIMIT); // fill the cohort
     // Delete a few in the middle.
     await rows(`delete from auth.users where id = '${ids[6]}'`);
     await rows(`delete from auth.users where id = '${ids[20]}'`);
 
     // A newly qualifying host brings a listing live — approval must succeed with
-    // no Founding award, and the ledger must still hold exactly fifty.
+    // no Founding award, and the ledger must still hold exactly one hundred.
     const host = "c5000000-0000-4000-8000-000000000001";
     const space = "c5000000-0000-4000-8000-0000000000f1";
     await rows(`insert into auth.users (id, email) values ('${host}', 'h@e.com')`);
@@ -758,7 +763,7 @@ describe("a consumed Founding spot is never recycled", () => {
       `select (select count(*) from founding_hosts)::int as ledger,
               (select status::text from spaces where id = '${space}') as status`,
     );
-    expect(ledger).toBe(50); // never more than the original fifty
+    expect(ledger).toBe(FOUNDING_HOST_LIMIT); // never more than the original hundred
     expect(status).toBe("active"); // and the listing is live regardless
     const [p] = await rows<{ num: number | null }>(
       `select founding_number as num from profiles where id = '${host}'`,
@@ -852,11 +857,14 @@ describe("the SQL and the app agree on the numbers", () => {
     expect(bucketsInSql.sort((a, b) => a - b)).toEqual([...SESSION_MILESTONE_THRESHOLDS]);
   });
 
-  it("pins the cap to lib/founding", () => {
-    // The 1..N check and the ceiling test both read the same number the app
-    // shows as spots remaining.
-    expect(sql0060).toContain(`between 1 and ${FOUNDING_HOST_LIMIT}`);
-    expect(sql0060).toContain(`taken >= ${FOUNDING_HOST_LIMIT}`);
-    expect(sql0060).toContain(`${FOUNDING_HOST_LIMIT} - (select count(*)`);
+  it("keeps 0060 frozen at its original cap of 50", () => {
+    // 0060 is an applied, frozen migration: its literals stay 50 forever. The
+    // AUTHORITATIVE cap (now FOUNDING_HOST_LIMIT === 100) moved to 0071, and the
+    // constant↔0071 sync is pinned by founding-sql-sync.test. This only guards
+    // that 0060 itself was never edited.
+    expect(sql0060).toContain("between 1 and 50");
+    expect(sql0060).toContain("taken >= 50");
+    expect(sql0060).toContain("50 - (select count(*)");
+    expect(FOUNDING_HOST_LIMIT).toBe(100);
   });
 });

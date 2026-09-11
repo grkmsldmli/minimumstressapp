@@ -10,8 +10,8 @@ import {
 } from "./founding";
 
 describe("the cap", () => {
-  it("is fifty", () => {
-    expect(FOUNDING_HOST_LIMIT).toBe(50);
+  it("is one hundred", () => {
+    expect(FOUNDING_HOST_LIMIT).toBe(100);
   });
 
   it("names the status the way the brief does", () => {
@@ -19,7 +19,7 @@ describe("the cap", () => {
   });
 
   it("mirrors the same cap and naming on the practitioner side", () => {
-    expect(FOUNDING_PRACTITIONER_LIMIT).toBe(50);
+    expect(FOUNDING_PRACTITIONER_LIMIT).toBe(100);
     expect(FOUNDING_PRACTITIONER_LABEL).toBe("Founding Practitioner");
   });
 });
@@ -35,7 +35,7 @@ describe("the spots-remaining line", () => {
 
   it("never reads below zero or above the cap, whatever it is handed", () => {
     expect(foundingSpotsRemainingLabel(-3)).toBe("0 Founding Host spots remaining");
-    expect(foundingSpotsRemainingLabel(999)).toBe("50 Founding Host spots remaining");
+    expect(foundingSpotsRemainingLabel(999)).toBe("100 Founding Host spots remaining");
   });
 
   it("reads the same way for practitioners, with their own label", () => {
@@ -49,7 +49,7 @@ describe("the spots-remaining line", () => {
       "0 Founding Practitioner spots remaining",
     );
     expect(foundingPractitionerSpotsRemainingLabel(999)).toBe(
-      "50 Founding Practitioner spots remaining",
+      "100 Founding Practitioner spots remaining",
     );
   });
 });

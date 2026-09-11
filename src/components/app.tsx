@@ -1751,6 +1751,7 @@ export function App() {
     isPro: profile.isPro,
     studioProSubscription: profile.studioPro,
     foundingHostAt: profile.foundingHostAt,
+    foundingPractitionerAt: profile.foundingPractitionerAt,
     work: workEligible,
     now,
   });
@@ -1792,12 +1793,13 @@ export function App() {
       <WorkPractitioner
         canBrowse={entitlements.canBrowseWork}
         canApply={entitlements.canApplyToWork}
+        practitionerProActive={entitlements.practitionerProActive}
+        foundingProFreeUntil={entitlements.foundingProFreeUntil}
+        now={now}
         gaps={workEligible.gaps}
         preferences={workPreferences}
         availabilityCount={workAvailability.length}
         opportunities={workOpportunities}
-        foundingNumber={profile.foundingPractitionerNumber}
-        foundingRemaining={data.foundingPractitionerRemaining}
         busyRequestId={workBusyId}
         onGoPro={() => go("pro")}
         onToggleAvailable={() =>
@@ -2456,6 +2458,8 @@ export function App() {
           isPro={profile.isPro}
           celebrate={justUpgraded}
           confirming={confirmingPro}
+          foundingFreeActive={entitlements.foundingProFreeUntil !== null}
+          foundingDiscount={entitlements.foundingProDiscount}
           onBack={() => {
             // Leaving clears the one-time celebration so a later visit does not
             // replay it.

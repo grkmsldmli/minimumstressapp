@@ -1105,7 +1105,13 @@ export function PractitionerProfile({
               id="profession"
               value={profile.profession ?? ""}
               onChange={(event) => onUpdate({ profession: event.target.value || null })}
-              className="font-body text-[13.5px] text-ink-soft bg-white"
+              // min-w-0 + max-width so the control can shrink below its widest
+              // option instead of forcing the row wider than the viewport — a
+              // <select> otherwise sizes to its longest <option>, which the mobile
+              // 16px font floor widens, and with the row's flex-1 label that made
+              // the whole screen pannable on a real phone. text-right keeps the
+              // value aligned with the rows below it.
+              className="min-w-0 max-w-[60%] truncate text-right font-body text-[13.5px] text-ink-soft bg-white"
             >
               <option value="">Choose…</option>
               {PRACTITIONER_PROFESSIONS.map((profession) => (

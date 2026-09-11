@@ -145,4 +145,17 @@ describe("PullToRefresh", () => {
     expect(screen.getByTestId("content")).toBeDefined();
     expect((scrollers[0] as HTMLElement).style.overscrollBehaviorY).toBe("contain");
   });
+
+  it("clips horizontal overflow so no screen can pan left/right", () => {
+    // A bare overflow-y-auto computes overflow-x to `auto`, turning any over-wide
+    // child into a horizontal pan of the whole screen — the native overflow bug.
+    // The scroller must clip x, on every screen that uses it.
+    const { container } = render(
+      <PullToRefresh onRefresh={() => Promise.resolve()} className="flex-1">
+        <div>rows</div>
+      </PullToRefresh>,
+    );
+    const scroller = container.querySelector(".overflow-y-auto") as HTMLElement;
+    expect(scroller.className).toContain("overflow-x-hidden");
+  });
 });

@@ -25,6 +25,8 @@ function facts(over: Partial<EntitlementFacts>): EntitlementFacts {
     studioProSubscription: false,
     foundingHostAt: null,
     foundingPractitionerAt: null,
+    foundingHostDiscountForfeitedAt: null,
+    foundingPractitionerDiscountForfeitedAt: null,
     work: NO_WORK,
     now: new Date("2026-10-01T00:00:00Z"),
     ...over,
@@ -111,12 +113,23 @@ describe("entitlementsFor — host (Studio Pro)", () => {
     expect(e.foundingStudioDiscount).toBe(true);
   });
 
-  it("keeps the Founding 50% discount right even with no subscription and after the free period", () => {
+  it("keeps the Founding 50% discount after the free period when it was never forfeited", () => {
     const after = new Date(foundingHostFreeUntil(STUDIO_PRO_LAUNCHED_AT).getTime() + 1000);
     const e = entitlementsFor(facts({ foundingHostAt: STUDIO_PRO_LAUNCHED_AT, now: after }));
     expect(e.studioProActive).toBe(false); // free period over, not subscribed
-    expect(e.foundingStudioDiscount).toBe(true); // …but the discount right is permanent
-    expect(hasFoundingStudioDiscount(STUDIO_PRO_LAUNCHED_AT)).toBe(true);
+    expect(e.foundingStudioDiscount).toBe(true); // …available for a first conversion (not forfeited)
+    expect(hasFoundingStudioDiscount(STUDIO_PRO_LAUNCHED_AT, null)).toBe(true);
+  });
+
+  it("forfeits the Founding 50% discount once a discounted subscription has terminally ended", () => {
+    const forfeited = new Date("2027-03-01T00:00:00Z");
+    const e = entitlementsFor(
+      facts({ foundingHostAt: STUDIO_PRO_LAUNCHED_AT, foundingHostDiscountForfeitedAt: forfeited }),
+    );
+    expect(e.foundingStudioDiscount).toBe(false); // the 50% right is spent…
+    expect(e.foundingFreeUntil !== undefined).toBe(true); // …but founding status is untouched
+    expect(hasFoundingStudioDiscount(STUDIO_PRO_LAUNCHED_AT, forfeited)).toBe(false);
+    expect(hasFoundingStudioDiscount(STUDIO_PRO_LAUNCHED_AT, null)).toBe(true);
   });
 
   it("host Studio-Pro state never grants practitioner Work access", () => {
@@ -220,15 +233,41 @@ describe("entitlementsFor — Founding Practitioner (Pro benefit)", () => {
     expect(e.canApplyToWork).toBe(false);
   });
 
-  it("keeps the lifetime 50% right even after the free period with no subscription", () => {
+  it("keeps the 50% right after the free period when never converted (not forfeited)", () => {
     const after = new Date(
       foundingPractitionerFreeUntil(FOUNDING_PRACTITIONER_PRO_LAUNCHED_AT).getTime() + 1000,
     );
     const e = prac({ foundingPractitionerAt: FOUNDING_PRACTITIONER_PRO_LAUNCHED_AT, now: after, work: READY_WORK });
     expect(e.practitionerProActive).toBe(false); // free period over, not subscribed
     expect(e.canBrowseWork).toBe(false); // no new browsing without active Pro
-    expect(e.foundingProDiscount).toBe(true); // …but the discount right is permanent
-    expect(hasFoundingPractitionerDiscount(FOUNDING_PRACTITIONER_PRO_LAUNCHED_AT)).toBe(true);
+    expect(e.foundingProDiscount).toBe(true); // …but the 50% is still available for a first conversion
+    expect(hasFoundingPractitionerDiscount(FOUNDING_PRACTITIONER_PRO_LAUNCHED_AT, null)).toBe(true);
+  });
+
+  it("forfeits the 50% right once a discounted subscription has terminally ended", () => {
+    const forfeited = new Date("2027-06-01T00:00:00Z");
+    const e = prac({
+      foundingPractitionerAt: FOUNDING_PRACTITIONER_PRO_LAUNCHED_AT,
+      foundingPractitionerDiscountForfeitedAt: forfeited,
+      work: READY_WORK,
+    });
+    expect(e.foundingProDiscount).toBe(false); // the 50% right is spent
+    expect(hasFoundingPractitionerDiscount(FOUNDING_PRACTITIONER_PRO_LAUNCHED_AT, forfeited)).toBe(false);
+    expect(hasFoundingPractitionerDiscount(FOUNDING_PRACTITIONER_PRO_LAUNCHED_AT, null)).toBe(true);
+  });
+
+  it("resubscribing after forfeiture: active Pro but no discount (full price)", () => {
+    const forfeited = new Date("2027-06-01T00:00:00Z");
+    const e = prac({
+      foundingPractitionerAt: FOUNDING_PRACTITIONER_PRO_LAUNCHED_AT,
+      foundingPractitionerDiscountForfeitedAt: forfeited,
+      isPro: true, // resubscribed at full price
+      now: new Date("2027-07-01T00:00:00Z"),
+      work: READY_WORK,
+    });
+    expect(e.practitionerProActive).toBe(true);
+    expect(e.canApplyToWork).toBe(true);
+    expect(e.foundingProDiscount).toBe(false); // full price on the new subscription
   });
 
   it("a resubscribed (paid) Founding Practitioner is active and still holds the discount", () => {

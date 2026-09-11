@@ -1752,6 +1752,8 @@ export function App() {
     studioProSubscription: profile.studioPro,
     foundingHostAt: profile.foundingHostAt,
     foundingPractitionerAt: profile.foundingPractitionerAt,
+    foundingHostDiscountForfeitedAt: profile.foundingHostDiscountForfeitedAt,
+    foundingPractitionerDiscountForfeitedAt: profile.foundingPractitionerDiscountForfeitedAt,
     work: workEligible,
     now,
   });

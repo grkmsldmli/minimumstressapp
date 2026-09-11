@@ -228,4 +228,120 @@ describe("stripe webhook", () => {
     expect(patch.studio_pro).toBe(true);
     expect(updateChain.eq).toHaveBeenCalledWith("stripe_customer_id", "cus_1");
   });
+
+  /* ---------------- Founding discount forfeiture (0072) ---------------- */
+
+  // The founding-discount forfeiture write, if any, across every update() call
+  // this event produced (the first update is always the is_pro/studio_pro patch).
+  const forfeiture = () =>
+    (updateChain.update.mock.calls.map((c) => c[0]) as Record<string, unknown>[]).find(
+      (p) =>
+        "founding_practitioner_discount_forfeited_at" in p ||
+        "founding_host_discount_forfeited_at" in p,
+    );
+
+  const pro = (over: Record<string, unknown>) =>
+    subEvent({
+      id: "sub_pro",
+      items: { data: [{ price: { lookup_key: "minimum_stress_pro_monthly" } }] },
+      ...over,
+    });
+  const studio = (over: Record<string, unknown>) =>
+    subEvent({ id: "sub_studio", items: { data: [] }, ...over });
+
+  it("forfeits the practitioner discount when a founding-discounted Pro sub terminally ends", async () => {
+    vi.stubEnv("STRIPE_WEBHOOK_SECRET", PLATFORM_SECRET);
+    await post(
+      signed(PLATFORM_SECRET, pro({ status: "canceled", metadata: { app_user_id: "user_1", founding_discount: "true" } })),
+    );
+    const f = forfeiture();
+    expect(f).toBeDefined();
+    expect(f).toHaveProperty("founding_practitioner_discount_forfeited_at");
+    expect(f).not.toHaveProperty("founding_host_discount_forfeited_at"); // no cross-contamination
+    expect(f!.founding_practitioner_discount_forfeited_at).not.toBeNull();
+    // Idempotent + out-of-order safe: the write is scoped to where it is still null.
+    expect(updateChain.is).toHaveBeenCalledWith("founding_practitioner_discount_forfeited_at", null);
+  });
+
+  it("forfeits the host discount when a founding-discounted Studio Pro sub terminally ends", async () => {
+    vi.stubEnv("STRIPE_WEBHOOK_SECRET", PLATFORM_SECRET);
+    await post(
+      signed(
+        PLATFORM_SECRET,
+        studio({ status: "canceled", metadata: { app_user_id: "user_1", kind: "studio_pro", founding_discount: "true" } }),
+      ),
+    );
+    const f = forfeiture();
+    expect(f).toHaveProperty("founding_host_discount_forfeited_at");
+    expect(f).not.toHaveProperty("founding_practitioner_discount_forfeited_at");
+    expect(updateChain.is).toHaveBeenCalledWith("founding_host_discount_forfeited_at", null);
+  });
+
+  it("also forfeits on a true customer.subscription.deleted event", async () => {
+    vi.stubEnv("STRIPE_WEBHOOK_SECRET", PLATFORM_SECRET);
+    await post(
+      signed(PLATFORM_SECRET, {
+        id: "evt_del",
+        type: "customer.subscription.deleted",
+        data: {
+          object: {
+            id: "sub_pro",
+            customer: "cus_1",
+            status: "canceled",
+            cancel_at_period_end: false,
+            metadata: { app_user_id: "user_1", founding_discount: "true" },
+            items: { data: [{ price: { lookup_key: "minimum_stress_pro_monthly" } }] },
+          },
+        },
+      }),
+    );
+    expect(forfeiture()).toHaveProperty("founding_practitioner_discount_forfeited_at");
+  });
+
+  it("does NOT forfeit on past_due — a payment failure that may still recover", async () => {
+    vi.stubEnv("STRIPE_WEBHOOK_SECRET", PLATFORM_SECRET);
+    await post(
+      signed(PLATFORM_SECRET, pro({ status: "past_due", metadata: { app_user_id: "user_1", founding_discount: "true" } })),
+    );
+    expect(forfeiture()).toBeUndefined();
+  });
+
+  it("does NOT forfeit on unpaid — not a terminal 'ended' state here", async () => {
+    vi.stubEnv("STRIPE_WEBHOOK_SECRET", PLATFORM_SECRET);
+    await post(
+      signed(PLATFORM_SECRET, pro({ status: "unpaid", metadata: { app_user_id: "user_1", founding_discount: "true" } })),
+    );
+    expect(forfeiture()).toBeUndefined();
+  });
+
+  it("does NOT forfeit when the ended sub never carried the founding discount", async () => {
+    vi.stubEnv("STRIPE_WEBHOOK_SECRET", PLATFORM_SECRET);
+    await post(signed(PLATFORM_SECRET, pro({ status: "canceled", metadata: { app_user_id: "user_1" } })));
+    expect(forfeiture()).toBeUndefined();
+  });
+
+  it("a later active event never writes (nor clears) a forfeiture — out-of-order safe", async () => {
+    vi.stubEnv("STRIPE_WEBHOOK_SECRET", PLATFORM_SECRET);
+    await post(
+      signed(PLATFORM_SECRET, pro({ status: "active", metadata: { app_user_id: "user_1", founding_discount: "true" } })),
+    );
+    // The webhook only ever SETS the forfeiture column, and only on a terminal
+    // event — an active event touches neither column, so it can't un-forfeit.
+    expect(forfeiture()).toBeUndefined();
+  });
+
+  it("a duplicate terminal event forfeits idempotently — always guarded by is(column,null), never cleared", async () => {
+    vi.stubEnv("STRIPE_WEBHOOK_SECRET", PLATFORM_SECRET);
+    const ev = pro({ status: "canceled", metadata: { app_user_id: "user_1", founding_discount: "true" } });
+    await post(signed(PLATFORM_SECRET, ev));
+    await post(signed(PLATFORM_SECRET, ev));
+    // Both writes go through the same null-guarded path (the DB no-ops the second),
+    // and no forfeiture write ever sets the column to null.
+    expect(updateChain.is).toHaveBeenCalledWith("founding_practitioner_discount_forfeited_at", null);
+    for (const p of updateChain.update.mock.calls.map((c) => c[0]) as Record<string, unknown>[]) {
+      if ("founding_practitioner_discount_forfeited_at" in p) {
+        expect(p.founding_practitioner_discount_forfeited_at).not.toBeNull();
+      }
+    }
+  });
 });

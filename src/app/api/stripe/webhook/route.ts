@@ -329,6 +329,36 @@ async function handle(event: Stripe.Event): Promise<void> {
         : await query.eq("stripe_customer_id", subscription.customer as string);
 
       if (error) throw error;
+
+      /*
+       * Founding-discount forfeiture — the 50% rate is permanent only while the
+       * paid subscription stays continuously active after conversion.
+       *
+       * Forfeit ONLY at the real terminal transition (the deleted event, or a
+       * status of canceled), and ONLY for the subscription that actually carried
+       * the founding discount (metadata.founding_discount, stamped at checkout) —
+       * so a full-price resubscribe's later end is a no-op, and a non-founding
+       * sub never writes it. Never on past_due/unpaid: those may still recover,
+       * and burning the benefit on a temporary failure is exactly what rule 5
+       * forbids. The write sets the timestamp once, only where it is still null,
+       * and nothing ever clears it — so duplicate and out-of-order events can
+       * neither double-forfeit nor un-forfeit. Founding STATUS is untouched.
+       */
+      const terminated =
+        event.type === "customer.subscription.deleted" || subscription.status === "canceled";
+      if (terminated && subscription.metadata?.founding_discount === "true") {
+        const column = isStudioProSubscription(subscription)
+          ? "founding_host_discount_forfeited_at"
+          : "founding_practitioner_discount_forfeited_at";
+        const forfeit = admin
+          .from("profiles")
+          .update({ [column]: new Date().toISOString() });
+        const scoped = userId
+          ? forfeit.eq("id", userId)
+          : forfeit.eq("stripe_customer_id", subscription.customer as string);
+        const { error: forfeitError } = await scoped.is(column, null);
+        if (forfeitError) throw forfeitError;
+      }
       return;
     }
 

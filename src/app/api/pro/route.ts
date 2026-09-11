@@ -4,6 +4,7 @@ import { LIMITS, check, identify, tooManyRequests } from "@/lib/api/rate-limit";
 import { handled, jsonError, requireUser } from "@/lib/api/session";
 import {
   foundingPractitionerFreeUntil,
+  hasFoundingPractitionerDiscount,
   withinFoundingPractitionerFreePeriod,
 } from "@/lib/entitlements";
 import { billingPortal, customerFor, startSubscription } from "@/lib/stripe/subscription";
@@ -30,7 +31,9 @@ export async function POST(request: NextRequest): Promise<Response> {
 
     const { data: profile, error } = await admin
       .from("profiles")
-      .select("stripe_customer_id, is_pro, founding_practitioner_at")
+      .select(
+        "stripe_customer_id, is_pro, founding_practitioner_at, founding_practitioner_discount_forfeited_at",
+      )
       .eq("id", auth.user.id)
       .maybeSingle();
 
@@ -65,13 +68,19 @@ export async function POST(request: NextRequest): Promise<Response> {
       return Response.json({ url: await billingPortal(customerId, origin) });
     }
 
-    // A Founding Practitioner carries the lifetime 50% coupon (belongs to the
-    // benefit, applied again on any resubscribe); one still inside their free
-    // window gets a trial to its end, so nothing is charged before then. The free
-    // months themselves need no checkout — they are derived in lib/entitlements.
+    // A Founding Practitioner carries the 50% coupon — but only while it has not
+    // been forfeited (a prior discounted subscription that terminally ended). One
+    // still inside their free window gets a trial to its end, so nothing is
+    // charged before then. The free months themselves need no checkout — they are
+    // derived in lib/entitlements. hasFoundingPractitionerDiscount is the single
+    // source of truth the UI mirrors, so checkout and screen can never disagree.
     const foundingPractitionerAt = profile?.founding_practitioner_at
       ? new Date(profile.founding_practitioner_at)
       : null;
+    const discountForfeitedAt = profile?.founding_practitioner_discount_forfeited_at
+      ? new Date(profile.founding_practitioner_discount_forfeited_at)
+      : null;
+    const foundingDiscount = hasFoundingPractitionerDiscount(foundingPractitionerAt, discountForfeitedAt);
     const now = new Date();
     // Stripe rejects a checkout trial_end under ~48h in the future. If a founding
     // practitioner opts in during the last two days of their window, clamp the
@@ -89,7 +98,7 @@ export async function POST(request: NextRequest): Promise<Response> {
       customerId,
       userId: auth.user.id,
       origin,
-      foundingDiscount: foundingPractitionerAt !== null,
+      foundingDiscount,
       trialEndUnix,
     });
 

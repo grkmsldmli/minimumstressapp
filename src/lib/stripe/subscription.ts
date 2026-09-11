@@ -121,9 +121,15 @@ export async function startSubscription(input: {
     line_items: [{ price: await proPriceId(), quantity: 1 }],
 
     // Carried through to the webhook, which is what turns a completed payment
-    // into a Pro flag on the right row.
+    // into a Pro flag on the right row. `founding_discount` is stamped only when
+    // the coupon is actually applied, so the webhook can tell — reliably, from
+    // metadata present on every event including deletion — that THIS subscription
+    // was the founding-discounted one and forfeit the 50% right when it ends.
     subscription_data: {
-      metadata: { app_user_id: input.userId },
+      metadata: {
+        app_user_id: input.userId,
+        ...(input.foundingDiscount ? { founding_discount: "true" } : {}),
+      },
       ...(input.trialEndUnix ? { trial_end: input.trialEndUnix } : {}),
     },
     metadata: { app_user_id: input.userId },
@@ -245,7 +251,14 @@ export async function startStudioProSubscription(input: {
     line_items: [{ price: await studioProPriceId(), quantity: 1 }],
     subscription_data: {
       // `kind` is what the webhook branches on so this never touches is_pro.
-      metadata: { app_user_id: input.userId, kind: "studio_pro" },
+      // `founding_discount` marks this as the discounted sub, so its terminal end
+      // forfeits the Founding-Host 50% right (and a full-price resubscribe's end
+      // does not).
+      metadata: {
+        app_user_id: input.userId,
+        kind: "studio_pro",
+        ...(input.foundingDiscount ? { founding_discount: "true" } : {}),
+      },
       ...(input.trialEndUnix ? { trial_end: input.trialEndUnix } : {}),
     },
     metadata: { app_user_id: input.userId, kind: "studio_pro" },

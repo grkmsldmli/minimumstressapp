@@ -62,9 +62,22 @@ export function withinFoundingFreePeriod(foundingHostAt: Date | null, now: Date)
   return withinFree(foundingHostAt, STUDIO_PRO_LAUNCHED_AT, FOUNDING_HOST_FREE_MONTHS, now);
 }
 
-/** Whether a host holds the permanent Founding-Host right to Studio Pro at 50% off. */
-export function hasFoundingStudioDiscount(foundingHostAt: Date | null): boolean {
-  return foundingHostAt !== null;
+/**
+ * Whether a host still holds the Founding-Host right to Studio Pro at 50% off.
+ *
+ * The right comes with founding status, but it is NOT unconditionally permanent:
+ * it lasts only while the paid subscription stays continuously active after the
+ * host first converts. Once a founding-discounted subscription terminally ends,
+ * the server stamps founding_host_discount_forfeited_at and the right is gone for
+ * good — a later resubscribe is at full price. Founding STATUS itself is never
+ * affected. Never having converted leaves forfeited_at null, so the first paid
+ * conversion still gets the discount.
+ */
+export function hasFoundingStudioDiscount(
+  foundingHostAt: Date | null,
+  discountForfeitedAt: Date | null,
+): boolean {
+  return foundingHostAt !== null && discountForfeitedAt === null;
 }
 
 /* ---- Founding Practitioner → practitioner Pro (the mirror) ---- */
@@ -90,9 +103,18 @@ export function withinFoundingPractitionerFreePeriod(
   );
 }
 
-/** Whether a practitioner holds the permanent Founding-Practitioner right to Pro at 50% off. */
-export function hasFoundingPractitionerDiscount(foundingPractitionerAt: Date | null): boolean {
-  return foundingPractitionerAt !== null;
+/**
+ * Whether a practitioner still holds the Founding-Practitioner right to Pro at
+ * 50% off. Same rule as the host twin above: it survives founding status, but
+ * only while the paid subscription stays continuously active after the first
+ * conversion — a terminal cancellation stamps
+ * founding_practitioner_discount_forfeited_at and forfeits it permanently.
+ */
+export function hasFoundingPractitionerDiscount(
+  foundingPractitionerAt: Date | null,
+  discountForfeitedAt: Date | null,
+): boolean {
+  return foundingPractitionerAt !== null && discountForfeitedAt === null;
 }
 
 export interface EntitlementFacts {
@@ -105,6 +127,11 @@ export interface EntitlementFacts {
   foundingHostAt: Date | null;
   /** When this practitioner became a Founding Practitioner, or null. Drives the Pro free period + discount. */
   foundingPractitionerAt: Date | null;
+  /** When the host's Founding Studio-Pro discount was forfeited (a discounted sub
+   *  terminally ended), or null. Server-written; never cleared. */
+  foundingHostDiscountForfeitedAt: Date | null;
+  /** When the practitioner's Founding Pro discount was forfeited, or null. */
+  foundingPractitionerDiscountForfeitedAt: Date | null;
   /** The verification gate (workEligibility) — only meaningful for a practitioner. */
   work: WorkEligibility;
   now: Date;
@@ -174,10 +201,16 @@ export function entitlementsFor(facts: EntitlementFacts): Entitlements {
       inProFree && facts.foundingPractitionerAt
         ? foundingPractitionerFreeUntil(facts.foundingPractitionerAt)
         : null,
-    foundingProDiscount: hasFoundingPractitionerDiscount(facts.foundingPractitionerAt),
+    foundingProDiscount: hasFoundingPractitionerDiscount(
+      facts.foundingPractitionerAt,
+      facts.foundingPractitionerDiscountForfeitedAt,
+    ),
     studioProActive: spActive,
     foundingFreeUntil:
       inHostFree && facts.foundingHostAt ? foundingHostFreeUntil(facts.foundingHostAt) : null,
-    foundingStudioDiscount: hasFoundingStudioDiscount(facts.foundingHostAt),
+    foundingStudioDiscount: hasFoundingStudioDiscount(
+      facts.foundingHostAt,
+      facts.foundingHostDiscountForfeitedAt,
+    ),
   };
 }

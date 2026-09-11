@@ -993,8 +993,9 @@ export function PractitionerProfile({
               </span>
             </div>
             <p className="font-body font-normal text-[12.5px] leading-relaxed text-ink-soft mt-1.5">
-              One of the first 100 professionals building Minimum Stress — a permanent status, plus
-              six months of Pro free and a lifetime 50% rate.
+              {profile.foundingPractitionerDiscountForfeitedAt === null
+                ? "One of the first 100 professionals building Minimum Stress — a permanent status, plus six months of Pro free and a lifetime 50% rate."
+                : "One of the first 100 professionals building Minimum Stress — a permanent status."}
             </p>
           </div>
         ) : (

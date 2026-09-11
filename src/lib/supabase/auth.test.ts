@@ -12,24 +12,41 @@ import { REVIEWER_EMAIL } from "../reviewer-login";
  * place it is allowed to go: straight into Supabase, and nowhere else.
  */
 
-const { signInWithOtpSpy, passwordGrantSpy } = vi.hoisted(() => ({
-  signInWithOtpSpy: vi.fn(),
-  passwordGrantSpy: vi.fn(),
-}));
+const { signInWithOtpSpy, passwordGrantSpy, signInWithOAuthSpy, browserOpenSpy, nativeState } =
+  vi.hoisted(() => ({
+    signInWithOtpSpy: vi.fn(),
+    passwordGrantSpy: vi.fn(),
+    signInWithOAuthSpy: vi.fn(),
+    browserOpenSpy: vi.fn(),
+    nativeState: { native: false },
+  }));
 
 vi.mock("./client", () => ({
   supabaseBrowser: () => ({
-    auth: { signInWithOtp: signInWithOtpSpy, signInWithPassword: passwordGrantSpy },
+    auth: {
+      signInWithOtp: signInWithOtpSpy,
+      signInWithPassword: passwordGrantSpy,
+      signInWithOAuth: signInWithOAuthSpy,
+    },
   }),
 }));
 
-import { sendEmailCode, signInWithPassword } from "./auth";
+vi.mock("../native", () => ({
+  isNativeApp: () => nativeState.native,
+  capacitorPlugin: () => ({ open: browserOpenSpy }),
+  NATIVE_AUTH_REDIRECT: "com.minimumstress.app://auth-callback",
+}));
+
+import { sendEmailCode, signInWithPassword, signInWithProvider } from "./auth";
 
 const PASSWORD = "correct-horse-battery-staple";
 
 beforeEach(() => {
   signInWithOtpSpy.mockReset().mockResolvedValue({ error: null });
   passwordGrantSpy.mockReset().mockResolvedValue({ error: null });
+  signInWithOAuthSpy.mockReset().mockResolvedValue({ error: null });
+  browserOpenSpy.mockReset().mockResolvedValue(undefined);
+  nativeState.native = false;
 });
 
 afterEach(() => vi.restoreAllMocks());
@@ -91,5 +108,48 @@ describe("reviewer sign-in", () => {
 
     // An error with no message still becomes a sentence, never a blank.
     expect(describeAuthError(new Error(""))).toMatch(/check your connection/i);
+  });
+});
+
+describe("provider sign-in — Google account chooser", () => {
+  const optionsOf = () => signInWithOAuthSpy.mock.calls[0][0].options as Record<string, unknown>;
+
+  it("web Google forces the account chooser with prompt=select_account", async () => {
+    await signInWithProvider("google");
+    expect(signInWithOAuthSpy).toHaveBeenCalledTimes(1);
+    expect(signInWithOAuthSpy.mock.calls[0][0].provider).toBe("google");
+    expect(optionsOf().queryParams).toEqual({ prompt: "select_account" });
+  });
+
+  it("native Google forces the account chooser and opens the system browser", async () => {
+    nativeState.native = true;
+    signInWithOAuthSpy.mockResolvedValue({ data: { url: "https://accounts.google.test/o" }, error: null });
+
+    await signInWithProvider("google");
+
+    const options = optionsOf();
+    expect(options.queryParams).toEqual({ prompt: "select_account" });
+    expect(options.skipBrowserRedirect).toBe(true);
+    expect(options.redirectTo).toBe("com.minimumstress.app://auth-callback");
+    // The provider URL is opened in the SYSTEM browser, never the WebView.
+    expect(browserOpenSpy).toHaveBeenCalledWith({ url: "https://accounts.google.test/o" });
+  });
+
+  it("Apple is left untouched — no prompt param (web)", async () => {
+    await signInWithProvider("apple");
+    expect(signInWithOAuthSpy.mock.calls[0][0].provider).toBe("apple");
+    expect(optionsOf().queryParams).toBeUndefined();
+  });
+
+  it("Apple is left untouched — no prompt param (native)", async () => {
+    nativeState.native = true;
+    signInWithOAuthSpy.mockResolvedValue({ data: { url: "https://appleid.test/o" }, error: null });
+    await signInWithProvider("apple");
+    expect(optionsOf().queryParams).toBeUndefined();
+  });
+
+  it("Microsoft (azure) is left untouched — the chooser is Google-only", async () => {
+    await signInWithProvider("azure");
+    expect(optionsOf().queryParams).toBeUndefined();
   });
 });

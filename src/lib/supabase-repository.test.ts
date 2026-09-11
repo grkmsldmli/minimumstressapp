@@ -397,3 +397,24 @@ describe("removing media cleans up all its storage objects", () => {
     expect(removed).toEqual(["host-1/space-1/original.jpg"]);
   });
 });
+
+describe("signOut", () => {
+  it("clears the Supabase session (application-scoped logout)", async () => {
+    const signOut = vi.fn().mockResolvedValue({ error: null });
+    const repo = new SupabaseRepository({
+      auth: { signOut },
+    } as unknown as SupabaseClient);
+
+    await repo.signOut();
+
+    expect(signOut).toHaveBeenCalledTimes(1);
+  });
+
+  it("surfaces a sign-out failure rather than pretending it worked", async () => {
+    const repo = new SupabaseRepository({
+      auth: { signOut: vi.fn().mockResolvedValue({ error: new Error("network down") }) },
+    } as unknown as SupabaseClient);
+
+    await expect(repo.signOut()).rejects.toThrow("network down");
+  });
+});

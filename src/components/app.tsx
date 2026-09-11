@@ -326,6 +326,9 @@ export function App() {
   const checkoutStartedRef = useRef(false);
   // The ?pro= redirect marker is acted on once per load, never replayed.
   const proReturnHandledRef = useRef(false);
+  // Held while an OAuth sign-in is being started, so a rapid double-tap on a
+  // provider button can never launch two browser flows at once.
+  const oauthInFlightRef = useRef(false);
 
   // Studio Pro checkout, confirmed the same honest way as Pro — the success
   // screen is gated on the server's studio_pro, never on "checkout opened".
@@ -1228,6 +1231,7 @@ export function App() {
     if (!response.ok) throw new Error(payload.error ?? "Could not delete the account");
 
     await repo.signOut();
+    setData(null);
     reset();
     refresh();
   }, [repo, reset, refresh]);
@@ -1235,6 +1239,11 @@ export function App() {
   const signOut = useCallback(() => {
     void (async () => {
       await repo.signOut();
+      // Drop the previous account's snapshot from memory immediately, so nothing
+      // of user A survives into the auth screen or a subsequent user B sign-in —
+      // the load effect is skipped while signed out (needsAccount), so without
+      // this the stale snapshot would otherwise linger until B's data lands.
+      setData(null);
       reset();
       refresh();
     })();
@@ -1320,11 +1329,24 @@ export function App() {
             // Leaves the app entirely and comes back through /auth/callback,
             // so there is no success path to handle here — only a failure to
             // start, which happens when the provider is not configured yet.
+            //
+            // Guarded against a double-tap: the ref rejects a second tap while
+            // the first is still opening the browser (the window where two
+            // Browser.open calls could race), and busy disables the buttons for
+            // that moment. Once the system browser is open the app is
+            // backgrounded, so releasing here is safe — a cancel or callback
+            // return finds the guard already clear and can retry.
+            if (oauthInFlightRef.current) return;
+            oauthInFlightRef.current = true;
+            setAuthBusy(true);
             void (async () => {
               try {
                 await signInWithProvider(provider);
               } catch (error) {
                 setAuthError(describeAuthError(error));
+              } finally {
+                oauthInFlightRef.current = false;
+                setAuthBusy(false);
               }
             })();
           }}

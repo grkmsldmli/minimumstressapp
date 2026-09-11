@@ -4,10 +4,14 @@ import {
   ArrowLeft,
   CalendarClock,
   ChevronRight,
+  ClipboardList,
   Clock,
   LayoutGrid,
+  type LucideIcon,
   MapPin,
   Plus,
+  ToggleLeft,
+  ToggleRight,
   Users,
 } from "lucide-react";
 
@@ -25,9 +29,53 @@ import { professionLabel } from "@/lib/professions";
 import { sessionDayShort, sessionTime, sessionZoneLabel } from "@/lib/when";
 import { describeWorkGap, type WorkEligibilityGap } from "@/lib/work/eligibility";
 import { effectiveRequestState, interestStateLabel, requestStateLabel } from "@/lib/work/request-state";
-import { GroupLabel, ProfileRow, SettingToggle } from "./practitioner-extras";
+import { GroupLabel, ProfileRow } from "./practitioner-extras";
 
 const NAVY = "radial-gradient(140% 120% at 15% 0%, #1E4066 0%, #16304E 85%)";
+
+/**
+ * One tile in the practitioner Work action grid — a fixed-height, comfortable
+ * touch target with an icon, a label, and a state/value line. Kept uniform so a
+ * 2×2 (or, on a wide iPad, a single row) reads as one intentional grid rather
+ * than buttons that happened to wrap.
+ */
+function ActionTile({
+  icon: Icon,
+  label,
+  value,
+  tone = "default",
+  onClick,
+}: {
+  icon: LucideIcon;
+  label: string;
+  value: string;
+  tone?: "default" | "on" | "off";
+  onClick: () => void;
+}) {
+  const valueColor = tone === "on" ? "#557255" : tone === "off" ? "#8AA0B6" : "#2670B0";
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="rounded-2xl bg-white p-3.5 text-left press flex flex-col justify-between min-h-[92px]"
+      style={{ border: "1px solid #E7EEF6" }}
+    >
+      <Icon size={18} color="#8BA3BD" aria-hidden />
+      <div className="mt-3">
+        <p className="font-body font-medium text-[13px] text-navy leading-tight">{label}</p>
+        <p className="font-body font-semibold text-[13.5px] mt-0.5" style={{ color: valueColor }}>
+          {value}
+        </p>
+      </div>
+    </button>
+  );
+}
+
+/** Smoothly bring one of the Work sections into view when its tile is tapped. */
+function scrollToSection(id: string): void {
+  if (typeof document === "undefined") return;
+  document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
 
 function whenLabel(startsAt: Date, timeZone: string): string {
   const zone = sessionZoneLabel(startsAt, timeZone);
@@ -288,18 +336,43 @@ export function WorkPractitioner({
           </div>
         )}
 
-        <SettingToggle
-          label="Available for work"
-          sub="Show studios you're open to covering classes"
-          on={preferences.availableForWork}
-          onToggle={onToggleAvailable}
-        />
+        {/* A balanced 2×2 of the practitioner's Work actions — availability on/off
+            and weekly hours are the real controls; applications and the board are
+            quick jumps to the sections below. Four equal tiles so the top reads as
+            one intentional grid, opening out to a single row on a wide iPad. */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <ActionTile
+            icon={preferences.availableForWork ? ToggleRight : ToggleLeft}
+            label="Available for work"
+            value={preferences.availableForWork ? "On" : "Off"}
+            tone={preferences.availableForWork ? "on" : "off"}
+            onClick={onToggleAvailable}
+          />
+          <ActionTile
+            icon={CalendarClock}
+            label="Weekly hours"
+            value={availabilityCount > 0 ? `${availabilityCount} set` : "Not set"}
+            onClick={onEditAvailability}
+          />
+          <ActionTile
+            icon={ClipboardList}
+            label="My applications"
+            value={String(myApplications.length)}
+            onClick={() => scrollToSection("work-applications")}
+          />
+          <ActionTile
+            icon={LayoutGrid}
+            label="Coverage board"
+            value={canBrowse ? `${boardOnly.length} open` : "Pro"}
+            onClick={() => scrollToSection("work-board")}
+          />
+        </div>
 
         {/* Pro is what unlocks the board; verification is what unlocks applying.
             Two distinct gates, shown separately so neither reads as the other. */}
         {canBrowse && !canApply && (
           <div
-            className="rounded-2xl p-4 mt-3"
+            className="rounded-2xl p-4 mt-4"
             style={{ backgroundColor: "#FFF8F1", border: "1px solid #F5DFC4" }}
           >
             <p className="font-body font-medium text-[14px] text-navy">Finish your profile to apply</p>
@@ -328,20 +401,10 @@ export function WorkPractitioner({
           </div>
         )}
 
-        <div className="mt-6">
-          <GroupLabel>Availability</GroupLabel>
-          <ProfileRow
-            icon={CalendarClock}
-            label="Weekly availability"
-            value={availabilityCount > 0 ? `${availabilityCount} set` : "Not set"}
-            onClick={onEditAvailability}
-          />
-        </div>
-
         {/* Existing applications are always the practitioner's to manage — shown
             whether or not they currently have Pro. */}
         {myApplications.length > 0 && (
-          <div className="mt-6">
+          <div className="mt-6" id="work-applications">
             <GroupLabel>Your applications</GroupLabel>
             {myApplications.map((o) => (
               <OpportunityCard
@@ -356,7 +419,7 @@ export function WorkPractitioner({
           </div>
         )}
 
-        <div className="mt-6">
+        <div className="mt-6" id="work-board">
           <GroupLabel>Coverage board</GroupLabel>
           {!canBrowse ? (
             <div

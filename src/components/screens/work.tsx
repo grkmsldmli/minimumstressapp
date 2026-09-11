@@ -2,7 +2,6 @@
 
 import {
   ArrowLeft,
-  Award,
   CalendarClock,
   ChevronRight,
   Clock,
@@ -21,7 +20,6 @@ import type {
   WorkOpportunity,
   WorkPreferences,
 } from "@/lib/domain";
-import { FOUNDING_PRACTITIONER_LABEL, foundingPractitionerSpotsRemainingLabel } from "@/lib/founding";
 import { formatCents } from "@/lib/money";
 import { professionLabel } from "@/lib/professions";
 import { sessionDayShort, sessionTime, sessionZoneLabel } from "@/lib/when";
@@ -169,12 +167,13 @@ function OpportunityCard({
 export function WorkPractitioner({
   canBrowse,
   canApply,
+  practitionerProActive,
+  foundingProFreeUntil,
+  now,
   gaps,
   preferences,
   availabilityCount,
   opportunities,
-  foundingNumber,
-  foundingRemaining,
   busyRequestId,
   onToggleAvailable,
   onEditAvailability,
@@ -189,12 +188,16 @@ export function WorkPractitioner({
   canBrowse: boolean;
   /** Pro AND a complete, verified profile: may apply to new coverage. */
   canApply: boolean;
+  /** Pro is active (paid or founding free) — drives the PRO badge. */
+  practitionerProActive: boolean;
+  /** The end of the practitioner founding free period, when in one (for the reminder). */
+  foundingProFreeUntil: Date | null;
+  /** The render's clock, passed in so this stays a pure component. */
+  now: Date;
   gaps: WorkEligibilityGap[];
   preferences: WorkPreferences;
   availabilityCount: number;
   opportunities: WorkOpportunity[];
-  foundingNumber: number | null;
-  foundingRemaining: number;
   busyRequestId: string | null;
   onToggleAvailable: () => void;
   onEditAvailability: () => void;
@@ -213,6 +216,10 @@ export function WorkPractitioner({
   const boardOnly = opportunities.filter(
     (o) => !(o.interestState === "interested" || o.interestState === "confirmed"),
   );
+  const freeDaysLeft =
+    foundingProFreeUntil != null
+      ? Math.max(0, Math.ceil((foundingProFreeUntil.getTime() - now.getTime()) / 86_400_000))
+      : null;
   const hero = (
     <div
       className="-mx-6 px-6 pt-8 safe-pt-8 pb-7 rounded-b-[30px] relative overflow-hidden shrink-0"
@@ -229,7 +236,17 @@ export function WorkPractitioner({
         >
           <ArrowLeft size={17} color="#fff" />
         </button>
-        <AccountBadge accountType="practitioner" tone="dark" />
+        <div className="flex items-center gap-2">
+          {practitionerProActive && (
+            <span
+              className="px-2 py-0.5 rounded-full font-body font-bold text-[11px] tracking-wide"
+              style={{ backgroundColor: "rgba(255,255,255,0.16)", color: "#fff" }}
+            >
+              PRO
+            </span>
+          )}
+          <AccountBadge accountType="practitioner" tone="dark" />
+        </div>
       </div>
       <div className="mt-6 relative z-10">
         <p className="font-body font-semibold text-[12px] uppercase tracking-[0.2em] text-sky-soft">
@@ -247,24 +264,28 @@ export function WorkPractitioner({
       <PullToRefresh header={hero} className="flex-1 px-6 pb-8 safe-pb-8" onRefresh={onRefresh}>
         <div className="mt-4" />
 
-        {foundingNumber !== null ? (
-          <div className="flex items-center gap-2 mb-4">
-            <span
-              className="w-7 h-7 rounded-full flex items-center justify-center shrink-0"
-              style={{ backgroundColor: "#F1F7FD" }}
-            >
-              <Award size={14} color="#2E7CC4" />
-            </span>
-            <span className="font-body font-medium text-[13.5px] text-navy">
-              {FOUNDING_PRACTITIONER_LABEL}
-            </span>
-          </div>
-        ) : (
-          foundingRemaining > 0 && (
-            <p className="font-body font-normal text-[13px] text-ink-soft mb-4">
-              {foundingPractitionerSpotsRemainingLabel(foundingRemaining)}.
+        {/* A Founding Practitioner inside their free window — a gentle reminder,
+            no card on file, nothing auto-charges. */}
+        {practitionerProActive && freeDaysLeft != null && (
+          <div
+            className="rounded-2xl p-4 mb-4"
+            style={{ backgroundColor: "#F4F8FC", border: "1px solid #E7EEF6" }}
+          >
+            <p className="font-body font-medium text-[13.5px] text-navy">
+              Pro is free for you — {freeDaysLeft} {freeDaysLeft === 1 ? "day" : "days"} left
             </p>
-          )
+            <p className="font-body font-normal text-[12.5px] text-ink-soft mt-1">
+              As a Founding Practitioner your first six months are on us. Nothing is charged, and it
+              only continues if you choose to — at your permanent 50% rate.
+            </p>
+            <button
+              type="button"
+              onClick={onGoPro}
+              className="mt-2 font-body font-medium text-[13px] text-sky-text press"
+            >
+              Continue at 50% →
+            </button>
+          </div>
         )}
 
         <SettingToggle

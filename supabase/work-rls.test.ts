@@ -291,3 +291,39 @@ describe("studio_pro — server-only, like is_pro's stricter cousin (0070)", () 
     expect(row.studio_pro).toBe(true);
   });
 });
+
+describe("founding discount forfeiture — server-only (0072)", () => {
+  it("a host cannot forfeit their own founding_host discount from the client", async () => {
+    await expect(
+      asUser(HOST, `update profiles set founding_host_discount_forfeited_at = now() where id = '${HOST}'`),
+    ).rejects.toThrow(/founding discount forfeiture is set by the server/i);
+  });
+
+  it("a practitioner cannot forfeit their own founding_practitioner discount from the client", async () => {
+    await expect(
+      asUser(
+        P1,
+        `update profiles set founding_practitioner_discount_forfeited_at = now() where id = '${P1}'`,
+      ),
+    ).rejects.toThrow(/founding discount forfeiture is set by the server/i);
+  });
+
+  it("the guard leaves unrelated client updates alone", async () => {
+    await asUser(HOST, `update profiles set display_name = 'Still Editable' where id = '${HOST}'`);
+    const [row] = await asUser<{ display_name: string }>(
+      HOST,
+      `select display_name from profiles where id = '${HOST}'`,
+    );
+    expect(row.display_name).toBe("Still Editable");
+  });
+
+  it("the server (superuser) can stamp forfeiture — the webhook's path", async () => {
+    await db.exec(
+      `update profiles set founding_practitioner_discount_forfeited_at = now() where id = '${P1}'`,
+    );
+    const [row] = await rows<{ at: string | null }>(
+      `select founding_practitioner_discount_forfeited_at as at from profiles where id = '${P1}'`,
+    );
+    expect(row.at).not.toBeNull();
+  });
+});

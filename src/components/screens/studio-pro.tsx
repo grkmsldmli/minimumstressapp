@@ -94,8 +94,10 @@ export function StudioProScreen({
             {freeDaysLeft != null ? (
               <p className="font-body font-normal text-[14px] text-white/70 leading-relaxed mt-3">
                 Free for {freeDaysLeft} more {freeDaysLeft === 1 ? "day" : "days"} as a Founding Host.
-                Nothing is charged, and it only continues if you choose to — then at your permanent
-                50% rate ({formatCents(effectivePrice)}/mo).
+                Nothing is charged, and it only continues if you choose to —{" "}
+                {foundingDiscount
+                  ? `then at your permanent 50% rate (${formatCents(effectivePrice)}/mo).`
+                  : `then at the standard ${formatCents(listPrice)}/mo.`}
               </p>
             ) : (
               <p className="font-body font-normal text-[14px] text-white/70 leading-relaxed mt-3">

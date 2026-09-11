@@ -375,6 +375,13 @@ export class SupabaseRepository implements Repository {
         ? new Date(data.studio_pro_current_period_end)
         : null,
       studioProCancelAtPeriodEnd: data?.studio_pro_cancel_at_period_end ?? false,
+      // Founding-discount forfeiture (migration 0072), webhook-written only.
+      foundingPractitionerDiscountForfeitedAt: data?.founding_practitioner_discount_forfeited_at
+        ? new Date(data.founding_practitioner_discount_forfeited_at)
+        : null,
+      foundingHostDiscountForfeitedAt: data?.founding_host_discount_forfeited_at
+        ? new Date(data.founding_host_discount_forfeited_at)
+        : null,
       // Read back only for its owner — this query runs as the signed-in user,
       // and no policy lets anyone select another person's profile row.
       emergencyContact: {

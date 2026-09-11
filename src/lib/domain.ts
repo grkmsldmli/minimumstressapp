@@ -187,6 +187,17 @@ export interface Profile {
   studioProSince: Date | null;
   studioProCurrentPeriodEnd: Date | null;
   studioProCancelAtPeriodEnd: boolean;
+
+  /**
+   * When a founding member's 50% discount was forfeited — set by the server (the
+   * Stripe webhook, migration 0072) the moment a founding-discounted paid
+   * subscription terminally ends, and never cleared. Null while the discount is
+   * still available (including throughout the six-month free period and for a
+   * first conversion that has never lapsed). Founding STATUS is unaffected by
+   * these — only the subscription discount. See lib/entitlements.
+   */
+  foundingPractitionerDiscountForfeitedAt: Date | null;
+  foundingHostDiscountForfeitedAt: Date | null;
 }
 
 /**

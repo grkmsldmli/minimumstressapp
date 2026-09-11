@@ -2,7 +2,11 @@ import type { NextRequest } from "next/server";
 
 import { LIMITS, check, identify, tooManyRequests } from "@/lib/api/rate-limit";
 import { handled, jsonError, requireUser } from "@/lib/api/session";
-import { foundingHostFreeUntil, withinFoundingFreePeriod } from "@/lib/entitlements";
+import {
+  foundingHostFreeUntil,
+  hasFoundingStudioDiscount,
+  withinFoundingFreePeriod,
+} from "@/lib/entitlements";
 import { billingPortal, customerFor, startStudioProSubscription } from "@/lib/stripe/subscription";
 import { supabaseAdmin } from "@/lib/supabase/server";
 
@@ -32,7 +36,9 @@ export async function POST(request: NextRequest): Promise<Response> {
 
     const { data: profile, error } = await admin
       .from("profiles")
-      .select("stripe_customer_id, studio_pro, account_type, founding_host_at")
+      .select(
+        "stripe_customer_id, studio_pro, account_type, founding_host_at, founding_host_discount_forfeited_at",
+      )
       .eq("id", auth.user.id)
       .maybeSingle();
     if (error) throw error;
@@ -62,19 +68,30 @@ export async function POST(request: NextRequest): Promise<Response> {
     }
 
     const foundingHostAt = profile?.founding_host_at ? new Date(profile.founding_host_at) : null;
+    const discountForfeitedAt = profile?.founding_host_discount_forfeited_at
+      ? new Date(profile.founding_host_discount_forfeited_at)
+      : null;
+    // The 50% coupon applies only while the right has not been forfeited (a prior
+    // discounted subscription that terminally ended).
+    const foundingDiscount = hasFoundingStudioDiscount(foundingHostAt, discountForfeitedAt);
     const now = new Date();
     // Founding host still in the free window subscribing early → charge nothing
-    // until the free period ends.
+    // until the free period ends. Clamp to Stripe's ~48h minimum trial_end so an
+    // opt-in in the final two days can't 400 the checkout.
+    const MIN_TRIAL_SECONDS = 48 * 60 * 60;
     const trialEndUnix =
       foundingHostAt && withinFoundingFreePeriod(foundingHostAt, now)
-        ? Math.floor(foundingHostFreeUntil(foundingHostAt).getTime() / 1000)
+        ? Math.max(
+            Math.floor(foundingHostFreeUntil(foundingHostAt).getTime() / 1000),
+            Math.floor(now.getTime() / 1000) + MIN_TRIAL_SECONDS,
+          )
         : undefined;
 
     const url = await startStudioProSubscription({
       customerId,
       userId: auth.user.id,
       origin,
-      foundingDiscount: foundingHostAt !== null,
+      foundingDiscount,
       trialEndUnix,
     });
     return Response.json({ url });

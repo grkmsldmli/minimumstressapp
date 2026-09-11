@@ -31,10 +31,7 @@ import { StandingSummary } from "@/components/standing-notice";
 import { shortName } from "@/components/document-status";
 import { AvatarUpload, DocumentUpload } from "@/components/uploads";
 import { SUPPORT_EMAIL } from "@/lib/company";
-import {
-  FOUNDING_PRACTITIONER_LABEL,
-  foundingPractitionerSpotsRemainingLabel,
-} from "@/lib/founding";
+import { FOUNDING_PRACTITIONER_LABEL, FOUNDING_PRACTITIONER_LIMIT } from "@/lib/founding";
 import type { AccountType, Profile } from "@/lib/domain";
 import { PRACTITIONER_PROFESSIONS } from "@/lib/professions";
 import { type InsuranceStatus, insuranceStatus } from "@/lib/insurance";
@@ -44,6 +41,7 @@ import type { Standing } from "@/lib/reliability";
 import type { MilestoneKey } from "@/lib/milestones";
 import {
   BOOKING_HORIZON_DAYS,
+  FOUNDING_PRACTITIONER_DISCOUNT,
   MAX_UPCOMING_BOOKINGS_FREE,
   PRO_BOOKING_HORIZON_DAYS,
   PRO_PRICE_CENTS,
@@ -585,25 +583,44 @@ export function proView(input: {
 
 export function ProScreen({
   isPro,
+  proActive = false,
   onBack,
   onSubscribe,
   celebrate = false,
   confirming = false,
+  foundingFreeActive = false,
+  foundingDiscount = false,
 }: {
   isPro: boolean;
+  /** Pro is active (paid OR a Founding Practitioner's derived free period) — drives
+   *  the "You're Pro" view even before any paid subscription exists. */
+  proActive?: boolean;
   onBack: () => void;
   /** Opens checkout. Rejects only when the checkout could not be opened — it is
    *  never proof of payment, so it never shows the success screen. */
   onSubscribe: () => Promise<unknown>;
-  /** A fresh, server-confirmed upgrade. Adds the confetti, shown once. */
+  /** A fresh, server-confirmed PAID upgrade. Adds the confetti, shown once. */
   celebrate?: boolean;
   /** Returned from checkout, waiting on the webhook to confirm the payment. */
   confirming?: boolean;
+  /** This Founding Practitioner is inside their free window right now. */
+  foundingFreeActive?: boolean;
+  /** This practitioner holds the permanent Founding 50%-off right to Pro. */
+  foundingDiscount?: boolean;
 }) {
+  // The Founding Practitioner pays the applicable list price less their permanent
+  // discount, forever — the server applies the coupon at checkout; this only shows
+  // the right number, off the same constant so display and coupon can't drift.
+  const effectivePrice = foundingDiscount
+    ? Math.round(PRO_PRICE_CENTS * (1 - FOUNDING_PRACTITIONER_DISCOUNT))
+    : PRO_PRICE_CENTS;
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
 
-  const view = proView({ isPro, confirming, celebrate });
+  // Active covers both paid Pro and a founding free period — so a Founding
+  // Practitioner in their free window sees "You're Pro", never an offer to buy
+  // what they already have for free. Celebrate stays tied to a real paid upgrade.
+  const view = proView({ isPro: proActive || isPro, confirming, celebrate });
 
   if (view === "active" || view === "celebrate") {
     return (
@@ -618,11 +635,44 @@ export function ProScreen({
             No limit on how many sessions you hold, {PRO_BOOKING_HORIZON_DAYS} days to plan
             ahead, whole terms booked in one go, and early cancellations cost you nothing.
           </p>
+          {/* Founding Practitioner in the derived free window: it's already theirs,
+              free, no card. The only action is the optional opt-in to continue when
+              it ends — that path collects a card, honestly. The 50% is only offered
+              while the discount right stands (not forfeited by a prior lapse). */}
+          {foundingFreeActive && !isPro && (
+            <p className="font-body font-normal text-[13.5px] text-white/60 leading-relaxed mt-3">
+              {foundingDiscount
+                ? `Free for your first six months as a Founding Practitioner — no card, nothing auto-charges. Continue any time at your permanent 50% rate (${formatCents(effectivePrice)}/mo).`
+                : `Free for your first six months — no card, nothing auto-charges. Continue any time at the standard ${formatCents(PRO_PRICE_CENTS)}/mo.`}
+            </p>
+          )}
+          {foundingFreeActive && !isPro && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                setFailed(null);
+                setBusy(true);
+                void onSubscribe()
+                  .catch((cause) => setFailed(errorMessage(cause, "Could not open checkout.")))
+                  .finally(() => setBusy(false));
+              }}
+              className="mt-6 px-8 py-3.5 rounded-full font-body font-medium text-[14.5px] text-white press disabled:opacity-60"
+              style={{ backgroundColor: "#2578C2" }}
+            >
+              {busy ? "One moment…" : foundingDiscount ? "Continue at 50%" : "Continue"}
+            </button>
+          )}
+          {failed && (
+            <p className="font-body font-normal text-[13px] text-white/80 mt-3" role="alert">
+              {failed}
+            </p>
+          )}
           <button
             type="button"
             onClick={onBack}
-            className="mt-7 px-8 py-3.5 rounded-full font-body font-medium text-[14.5px] text-white press"
-            style={{ backgroundColor: "#2578C2" }}
+            className={`${foundingFreeActive && !isPro ? "mt-3 text-white/70 text-[14px]" : "mt-7 px-8 py-3.5 text-white text-[14.5px]"} rounded-full font-body font-medium press`}
+            style={foundingFreeActive && !isPro ? undefined : { backgroundColor: "#2578C2" }}
           >
             Done
           </button>
@@ -683,10 +733,24 @@ export function ProScreen({
           <div className="mt-2 flex justify-center">
             <Headline pre="Go" accent="Pro." size={30} light />
           </div>
+          {/* The offer is only reached when Pro is NOT active — so a founding
+              practitioner sees it only AFTER their free window, at their permanent
+              50% rate (list price struck through). During the free window they get
+              the active "You're Pro" view instead. */}
           <p className="font-display italic font-semibold text-white mt-3" style={{ fontSize: 38 }}>
-            {formatCents(PRO_PRICE_CENTS)}
+            {foundingDiscount && (
+              <span className="font-body font-normal text-[16px] text-white/45 line-through mr-2">
+                {formatCents(PRO_PRICE_CENTS)}
+              </span>
+            )}
+            {formatCents(effectivePrice)}
             <span className="font-body font-normal text-[15.5px] text-white/60">/mo</span>
           </p>
+          {foundingDiscount && (
+            <p className="font-body font-normal text-[13px] text-white/65 mt-1">
+              Founding Practitioner · 50% for life
+            </p>
+          )}
         </div>
       </div>
 
@@ -779,7 +843,7 @@ export function ProScreen({
               .finally(() => setBusy(false));
           }}
         >
-          {busy ? "One moment…" : `Start Pro — ${formatCents(PRO_PRICE_CENTS)}/mo`}
+          {busy ? "One moment…" : `Start Pro — ${formatCents(effectivePrice)}/mo`}
         </PrimaryButton>
         <p className="text-center font-body font-normal text-[13.5px] mt-2.5 text-ink-faint">
           Cancel anytime.
@@ -913,29 +977,47 @@ export function PractitionerProfile({
 
       <PullToRefresh className="flex-1 px-6 pt-5 pb-8 safe-pb-8" onRefresh={onRefresh}>
         {/*
-          Founding Practitioner — a small, permanent recognition, server-derived
-          (profile.foundingPractitionerNumber, migration 0068). Earned shows a
-          quiet award mark, not a card; unearned shows a single factual line
-          while real spots remain. Never client-assigned, never manufactured.
+          Founding Practitioner — server-derived (profile.foundingPractitionerNumber,
+          0068/0071), never client-assigned. Earned shows the permanent status (and
+          its number when present); unearned shows the discovery promo while real
+          spots remain — the real server count, never a manufactured countdown. This
+          is the founding program's home; the Work screen stays about Work.
         */}
         {profile.foundingPractitionerNumber !== null ? (
-          <div className="flex items-center gap-2 mb-5">
-            <span
-              className="w-7 h-7 rounded-full flex items-center justify-center shrink-0"
-              style={{ backgroundColor: "#F1F7FD" }}
-            >
+          <div
+            className="rounded-2xl p-4 mb-5"
+            style={{ backgroundColor: "#F1F7FD", border: "1px solid #DCEAF7" }}
+          >
+            <div className="flex items-center gap-2">
               <Award size={15} color="#2E7CC4" />
-            </span>
-            <span className="font-body font-medium text-[14px] text-navy">
-              {FOUNDING_PRACTITIONER_LABEL}
-            </span>
+              <span className="font-body font-semibold text-[14.5px] text-navy">
+                {FOUNDING_PRACTITIONER_LABEL} #{profile.foundingPractitionerNumber}
+              </span>
+            </div>
+            <p className="font-body font-normal text-[12.5px] leading-relaxed text-ink-soft mt-1.5">
+              {profile.foundingPractitionerDiscountForfeitedAt === null
+                ? "One of the first 100 professionals building Minimum Stress — a permanent status, plus six months of Pro free and a lifetime 50% rate."
+                : "One of the first 100 professionals building Minimum Stress — a permanent status."}
+            </p>
           </div>
         ) : (
           foundingRemaining > 0 && (
-            <p className="font-body font-normal text-[13px] leading-relaxed text-ink-soft mb-5">
-              {foundingPractitionerSpotsRemainingLabel(foundingRemaining)} — earned on your first
-              completed session.
-            </p>
+            <div
+              className="rounded-2xl p-4 mb-5"
+              style={{ backgroundColor: "#F1F7FD", border: "1px solid #DCEAF7" }}
+            >
+              <p className="font-body font-semibold text-[14.5px] text-navy">
+                Become a Founding Practitioner
+              </p>
+              <p className="font-body font-normal text-[12.5px] leading-relaxed text-ink-soft mt-1.5">
+                One of the first 100 verified professionals building Minimum Stress. Complete your
+                professional verification to claim a place — permanent status, six months of Pro
+                free, then a lifetime 50% rate.
+              </p>
+              <p className="font-display italic font-semibold text-[15px] text-navy mt-2">
+                {Math.max(0, Math.min(FOUNDING_PRACTITIONER_LIMIT, foundingRemaining))} spots remaining
+              </p>
+            </div>
           )
         )}
 

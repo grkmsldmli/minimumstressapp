@@ -74,11 +74,49 @@ export async function customerFor(
   return customer.id;
 }
 
-/** Where Stripe sends somebody to pay, and where it returns them afterwards. */
+/** A stable, forever 50%-off coupon for Founding Practitioners, created once —
+ *  the practitioner-side twin of the Founding-Host coupon below. Distinct id and
+ *  name so the two can never be confused, though both are percent_off:50 forever. */
+const FOUNDING_PRACTITIONER_COUPON_ID = "founding_practitioner_pro_50";
+
+/**
+ * The Founding-Practitioner discount coupon. `duration: "forever"` keeps it on a
+ * subscription for that subscription's whole life, and being percent-based it
+ * tracks the applicable Pro list price even if that price later changes. It is
+ * NOT unconditionally lifetime across subscriptions, though: the caller only
+ * attaches it while the member still holds the discount right (not forfeited by a
+ * discounted paid subscription that terminally ended — see lib/entitlements).
+ */
+async function foundingPractitionerCouponId(): Promise<string> {
+  try {
+    return (await stripe().coupons.retrieve(FOUNDING_PRACTITIONER_COUPON_ID)).id;
+  } catch {
+    const coupon = await stripe().coupons.create({
+      id: FOUNDING_PRACTITIONER_COUPON_ID,
+      percent_off: 50,
+      duration: "forever",
+      name: "Founding Practitioner — 50% off Pro",
+    });
+    return coupon.id;
+  }
+}
+
+/**
+ * Where Stripe sends somebody to pay, and where it returns them afterwards.
+ *
+ * `trialEndUnix` (seconds) is set only for a Founding Practitioner who subscribes
+ * while still inside their free window, so Stripe charges nothing until then.
+ * `foundingDiscount` (decided by the caller from hasFoundingPractitionerDiscount)
+ * attaches the 50% coupon — only while the discount right still stands; once it
+ * has been forfeited, the caller passes false and this is a full-price checkout.
+ * No card is ever collected outside this deliberate, opted-in flow.
+ */
 export async function startSubscription(input: {
   customerId: string;
   userId: string;
   origin: string;
+  foundingDiscount?: boolean;
+  trialEndUnix?: number;
 }): Promise<string> {
   const session = await stripe().checkout.sessions.create({
     mode: "subscription",
@@ -86,9 +124,21 @@ export async function startSubscription(input: {
     line_items: [{ price: await proPriceId(), quantity: 1 }],
 
     // Carried through to the webhook, which is what turns a completed payment
-    // into a Pro flag on the right row.
-    subscription_data: { metadata: { app_user_id: input.userId } },
+    // into a Pro flag on the right row. `founding_discount` is stamped only when
+    // the coupon is actually applied, so the webhook can tell — reliably, from
+    // metadata present on every event including deletion — that THIS subscription
+    // was the founding-discounted one and forfeit the 50% right when it ends.
+    subscription_data: {
+      metadata: {
+        app_user_id: input.userId,
+        ...(input.foundingDiscount ? { founding_discount: "true" } : {}),
+      },
+      ...(input.trialEndUnix ? { trial_end: input.trialEndUnix } : {}),
+    },
     metadata: { app_user_id: input.userId },
+    ...(input.foundingDiscount
+      ? { discounts: [{ coupon: await foundingPractitionerCouponId() }] }
+      : {}),
 
     success_url: `${input.origin}/?pro=started`,
     cancel_url: `${input.origin}/?pro=cancelled`,
@@ -137,7 +187,9 @@ export function grantsPro(status: string): boolean {
 /*  and no card — so they are NOT modelled here; only voluntary         */
 /*  continuation goes through checkout, where a founding host still in   */
 /*  their free window gets trial_end = free_until (so no charge before   */
-/*  it ends) and every founding host gets the lifetime 50% coupon.      */
+/*  it ends) and gets the 50% coupon WHILE the discount right stands —   */
+/*  once forfeited (a discounted paid sub that ended), the caller passes */
+/*  foundingDiscount=false and it is a full-price checkout.             */
 /* ------------------------------------------------------------------ */
 
 const STUDIO_PRO_PRICE_LOOKUP_KEY = "minimum_stress_studio_pro_monthly";
@@ -164,10 +216,11 @@ export async function studioProPriceId(): Promise<string> {
 }
 
 /**
- * The Founding-Host discount, as a coupon tied to the benefit rather than to one
- * subscription — so it survives cancel and applies again on resubscribe. Created
- * once with a fixed id; percent-based and forever, so it tracks the applicable
- * Studio Pro list price even if that price later changes.
+ * The Founding-Host discount coupon. `duration: "forever"` keeps it on a
+ * subscription for that subscription's whole life, and being percent-based it
+ * tracks the applicable Studio Pro list price even if that price later changes.
+ * It is not unconditionally lifetime across subscriptions: the caller only
+ * attaches it while the host still holds the discount right (not forfeited).
  */
 async function foundingHostCouponId(): Promise<string> {
   try {
@@ -187,9 +240,11 @@ async function foundingHostCouponId(): Promise<string> {
  * Start (or continue) a Studio Pro subscription via hosted Checkout.
  *
  * `trialEndUnix` (seconds) is set only for a founding host who subscribes while
- * still inside their free window, so Stripe charges nothing until then. Founding
- * hosts always carry the 50% coupon (applied to the recurring charge after any
- * trial). No card is ever collected outside this deliberate, opted-in flow.
+ * still inside their free window, so Stripe charges nothing until then.
+ * `foundingDiscount` (decided by the caller from hasFoundingStudioDiscount)
+ * attaches the 50% coupon — only while the discount right still stands; once
+ * forfeited, the caller passes false and this is a full-price checkout. No card
+ * is ever collected outside this deliberate, opted-in flow.
  */
 export async function startStudioProSubscription(input: {
   customerId: string;
@@ -204,7 +259,14 @@ export async function startStudioProSubscription(input: {
     line_items: [{ price: await studioProPriceId(), quantity: 1 }],
     subscription_data: {
       // `kind` is what the webhook branches on so this never touches is_pro.
-      metadata: { app_user_id: input.userId, kind: "studio_pro" },
+      // `founding_discount` marks this as the discounted sub, so its terminal end
+      // forfeits the Founding-Host 50% right (and a full-price resubscribe's end
+      // does not).
+      metadata: {
+        app_user_id: input.userId,
+        kind: "studio_pro",
+        ...(input.foundingDiscount ? { founding_discount: "true" } : {}),
+      },
       ...(input.trialEndUnix ? { trial_end: input.trialEndUnix } : {}),
     },
     metadata: { app_user_id: input.userId, kind: "studio_pro" },

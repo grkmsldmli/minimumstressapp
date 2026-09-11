@@ -62,6 +62,22 @@ export const FOUNDING_HOST_FREE_MONTHS = 6;
 /** …then a permanent right to continue at half the applicable Studio Pro price. */
 export const FOUNDING_HOST_STUDIO_DISCOUNT = 0.5;
 
+/**
+ * When the Founding-Practitioner Pro benefit launched — the practitioner-side
+ * mirror of STUDIO_PRO_LAUNCHED_AT. The free period is measured from
+ * max(founding_practitioner_at, this), so a practitioner who became Founding
+ * before this benefit existed still gets the full six months from launch rather
+ * than losing them. A fixed instant, never "now" — the entitlement must be the
+ * same on every read.
+ */
+export const FOUNDING_PRACTITIONER_PRO_LAUNCHED_AT = new Date("2026-09-10T00:00:00Z");
+
+/** Founding Practitioners get practitioner Pro free for this long, no card required. */
+export const FOUNDING_PRACTITIONER_FREE_MONTHS = 6;
+
+/** …then a permanent right to continue at half the applicable Pro price. */
+export const FOUNDING_PRACTITIONER_DISCOUNT = 0.5;
+
 /** A slot starting within this window of now is "Instant". */
 export const INSTANT_WINDOW_MS = 2 * 60 * 60 * 1000;
 

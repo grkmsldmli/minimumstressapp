@@ -8,6 +8,37 @@ import { grantsPro, isStudioProSubscription } from "@/lib/stripe/subscription";
 import { supabaseAdmin } from "@/lib/supabase/server";
 
 /**
+ * Whether a subscription ever converted to a genuinely PAID state — i.e. it
+ * billed at least once, rather than ending inside its trial or before its first
+ * charge ever succeeded. This is what separates "the member paid at the discount
+ * then let it lapse" (forfeit the 50%) from "they opted in early and cancelled
+ * during the free trial" or "their first charge never went through" (keep it).
+ *
+ * incomplete / incomplete_expired never had a successful first charge. trialing —
+ * or a sub whose trial had not yet finished, or that ended at or before its
+ * trial_end (including a cancel_at_period_end that lands on trial end without
+ * billing) — never billed. Everything else (no trial, or a trial that completed
+ * into a paid period) counts as converted.
+ */
+function subscriptionConvertedToPaid(sub: Stripe.Subscription): boolean {
+  if (
+    sub.status === "incomplete" ||
+    sub.status === "incomplete_expired" ||
+    sub.status === "trialing"
+  ) {
+    return false;
+  }
+  const trialEnd = sub.trial_end;
+  if (trialEnd != null) {
+    const nowUnix = Math.floor(Date.now() / 1000);
+    if (trialEnd > nowUnix) return false; // the trial had not finished, so nothing billed
+    const endedAt = sub.ended_at ?? sub.canceled_at;
+    if (endedAt != null && endedAt <= trialEnd) return false; // ended at/before trial end → never billed
+  }
+  return true;
+}
+
+/**
  * Stripe's side of the conversation.
  *
  * Everything here is driven by what Stripe reports, not by what the app hoped
@@ -329,6 +360,48 @@ async function handle(event: Stripe.Event): Promise<void> {
         : await query.eq("stripe_customer_id", subscription.customer as string);
 
       if (error) throw error;
+
+      /*
+       * Founding-discount forfeiture — the 50% rate is permanent only while the
+       * paid subscription stays continuously active after the user CONVERTS to
+       * paid.
+       *
+       * Forfeit ONLY when a discounted subscription that actually converted to
+       * paid then terminally ends. All three gates must hold:
+       *  - terminal: the deleted event, or a canceled status (never past_due /
+       *    unpaid / incomplete — those may recover, and burning the benefit on a
+       *    temporary failure is what rule 5 forbids);
+       *  - it carried the founding discount (metadata.founding_discount, stamped
+       *    at checkout) — so a full-price resubscribe's end is a no-op and a
+       *    non-founding sub never writes it;
+       *  - it converted to paid (subscriptionConvertedToPaid) — so a sub that
+       *    ended before it ever billed (cancelled during the trial an early
+       *    opt-in creates, or a first charge that never succeeds) does NOT
+       *    forfeit. Never converting keeps the 50% for the real first conversion.
+       *
+       * The write sets the timestamp once, only where it is still null, and
+       * nothing ever clears it — so duplicate and out-of-order events can neither
+       * double-forfeit nor un-forfeit. Founding STATUS is untouched throughout.
+       */
+      const terminated =
+        event.type === "customer.subscription.deleted" || subscription.status === "canceled";
+      if (
+        terminated &&
+        subscription.metadata?.founding_discount === "true" &&
+        subscriptionConvertedToPaid(subscription)
+      ) {
+        const column = isStudioProSubscription(subscription)
+          ? "founding_host_discount_forfeited_at"
+          : "founding_practitioner_discount_forfeited_at";
+        const forfeit = admin
+          .from("profiles")
+          .update({ [column]: new Date().toISOString() });
+        const scoped = userId
+          ? forfeit.eq("id", userId)
+          : forfeit.eq("stripe_customer_id", subscription.customer as string);
+        const { error: forfeitError } = await scoped.is(column, null);
+        if (forfeitError) throw forfeitError;
+      }
       return;
     }
 

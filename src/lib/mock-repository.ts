@@ -325,6 +325,8 @@ export class MockRepository implements Repository {
     studioProSince: null,
     studioProCurrentPeriodEnd: null,
     studioProCancelAtPeriodEnd: false,
+    foundingPractitionerDiscountForfeitedAt: null,
+    foundingHostDiscountForfeitedAt: null,
   };
 
   private publicSpaces: PublicSpace[] = [];

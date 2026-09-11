@@ -123,14 +123,14 @@ function HostRecognition({
             className="font-body font-semibold text-[11px] uppercase tracking-[0.22em]"
             style={{ color: "#5B7A9C" }}
           >
-            Founding 50 · Bay Area
+            Founding 100 · Bay Area
           </p>
           <p className="font-display italic font-semibold text-[19px] text-navy mt-1.5">
             {foundingSpotsRemainingLabel(foundingRemaining)}
           </p>
           <p className="font-body font-normal text-[13.5px] leading-relaxed text-ink-soft mt-1">
-            Bring your first listing live to claim one of the fifty — a
-            permanent place, not a discount.
+            Bring your first listing live to claim one of the hundred — a permanent
+            place, plus six months of Studio Pro free.
           </p>
         </div>
       )}

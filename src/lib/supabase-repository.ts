@@ -361,6 +361,13 @@ export class SupabaseRepository implements Repository {
         ? new Date(data.founding_practitioner_at)
         : null,
       foundingPractitionerNumber: (data?.founding_practitioner_number as number | null) ?? null,
+      // Studio Pro (host subscription), webhook-written only (migration 0070).
+      studioPro: data?.studio_pro ?? false,
+      studioProSince: data?.studio_pro_since ? new Date(data.studio_pro_since) : null,
+      studioProCurrentPeriodEnd: data?.studio_pro_current_period_end
+        ? new Date(data.studio_pro_current_period_end)
+        : null,
+      studioProCancelAtPeriodEnd: data?.studio_pro_cancel_at_period_end ?? false,
       // Read back only for its owner — this query runs as the signed-in user,
       // and no policy lets anyone select another person's profile row.
       emergencyContact: {
@@ -577,6 +584,21 @@ export class SupabaseRepository implements Repository {
 
     // The redirect ends this page (web) or hands off to Safari (native).
     // Returning the current profile keeps the signature honest for that moment.
+    return this.getProfile();
+  }
+
+  async startStudioProSubscription(): Promise<Profile> {
+    const response = await apiFetch("/api/studio-pro", { method: "POST" });
+
+    if (!response.ok) {
+      const { error } = await response.json().catch(() => ({ error: null }));
+      throw new Error(error ?? "Could not open Studio Pro");
+    }
+
+    const { url } = (await response.json()) as { url: string };
+    // Same discipline as Pro: system browser in native, webhook-granted, the app
+    // reconciles studio_pro from server truth on resume.
+    openExternal(url);
     return this.getProfile();
   }
 

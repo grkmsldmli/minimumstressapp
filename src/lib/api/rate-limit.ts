@@ -150,6 +150,9 @@ export const LIMITS = {
   /** Opening Stripe checkout or the billing portal. A link, followed once. */
   pro: { limit: 5, windowMs: 60_000 },
 
+  /** Studio Pro checkout / billing portal — same shape as pro. */
+  studioPro: { limit: 5, windowMs: 60_000 },
+
   /**
    * Leaving a review. One per booking per side is already enforced in the
    * database, so this only stops a loop probing which bookings exist.

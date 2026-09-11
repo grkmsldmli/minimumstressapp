@@ -4,7 +4,7 @@ import type Stripe from "stripe";
 import { notifyBookingCreated, notifyRequestMade, recipientFor } from "@/lib/notify/for-booking";
 import { notify } from "@/lib/notify/send";
 import { stripe } from "@/lib/stripe/client";
-import { grantsPro } from "@/lib/stripe/subscription";
+import { grantsPro, isStudioProSubscription } from "@/lib/stripe/subscription";
 import { supabaseAdmin } from "@/lib/supabase/server";
 
 /**
@@ -294,14 +294,35 @@ async function handle(event: Stripe.Event): Promise<void> {
     case "customer.subscription.deleted": {
       const subscription = event.data.object;
       const userId = subscription.metadata?.app_user_id;
+      const entitled = grantsPro(subscription.status);
+      const nowOrNull = entitled ? new Date().toISOString() : null;
+
+      /*
+       * Two products ride the same customer, so which column moves is decided by
+       * the subscription's own identity, never by the customer. Studio Pro (host)
+       * writes studio_pro; practitioner Pro writes is_pro. Without this a Studio
+       * Pro event would wrongly toggle a practitioner's is_pro, and vice-versa.
+       */
+      const periodEnd = (subscription as { current_period_end?: number }).current_period_end;
+      const patch = isStudioProSubscription(subscription)
+        ? {
+            studio_pro: entitled,
+            studio_pro_since: nowOrNull,
+            studio_pro_current_period_end: periodEnd
+              ? new Date(periodEnd * 1000).toISOString()
+              : null,
+            studio_pro_cancel_at_period_end: Boolean(subscription.cancel_at_period_end),
+          }
+        : {
+            is_pro: entitled,
+            pro_since: nowOrNull,
+          };
 
       // Matched by customer id when the metadata is missing — a subscription
       // created from the Stripe dashboard by hand has no metadata, and that is
-      // exactly how a support fix gets applied.
-      const query = admin.from("profiles").update({
-        is_pro: grantsPro(subscription.status),
-        pro_since: grantsPro(subscription.status) ? new Date().toISOString() : null,
-      });
+      // exactly how a support fix gets applied; the price lookup_key still
+      // routes it to the right column via isStudioProSubscription.
+      const query = admin.from("profiles").update(patch);
 
       const { error } = userId
         ? await query.eq("id", userId)

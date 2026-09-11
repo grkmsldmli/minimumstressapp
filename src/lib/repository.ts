@@ -301,6 +301,15 @@ export interface Repository {
   startProSubscription(): Promise<Profile>;
 
   /**
+   * Start or manage Studio Pro — the host-account subscription that unlocks the
+   * Work coverage board's host side. Opens hosted Stripe Checkout (or the billing
+   * portal if already subscribed) in the system browser; studio_pro is granted
+   * only by the webhook. The Founding-Host free period needs no call at all — it
+   * is derived server-side from founding status.
+   */
+  startStudioProSubscription(): Promise<Profile>;
+
+  /**
    * Begin the one-time identity check. Against Stripe this opens a hosted
    * Identity session — a government ID and a selfie, which we never see — and
    * hands the practitioner to it. The verified state is written only by the

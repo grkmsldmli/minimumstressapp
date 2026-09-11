@@ -319,6 +319,10 @@ export class MockRepository implements Repository {
     foundingNumber: null,
     foundingPractitionerAt: null,
     foundingPractitionerNumber: null,
+    studioPro: false,
+    studioProSince: null,
+    studioProCurrentPeriodEnd: null,
+    studioProCancelAtPeriodEnd: false,
   };
 
   private publicSpaces: PublicSpace[] = [];
@@ -491,6 +495,12 @@ export class MockRepository implements Repository {
 
   async startProSubscription(): Promise<Profile> {
     this.profile = { ...this.profile, isPro: true };
+    return { ...this.profile };
+  }
+
+  async startStudioProSubscription(): Promise<Profile> {
+    // Demo only: the real flag is webhook-written after Stripe Checkout.
+    this.profile = { ...this.profile, studioPro: true, studioProSince: new Date() };
     return { ...this.profile };
   }
 

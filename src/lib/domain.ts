@@ -175,6 +175,18 @@ export interface Profile {
    */
   foundingPractitionerAt: Date | null;
   foundingPractitionerNumber: number | null;
+
+  /**
+   * Studio Pro — the host-account subscription (migration 0070). Written only by
+   * the Stripe webhook (a DB trigger refuses a client write), and deliberately
+   * separate from `isPro`, which is practitioner Pro. `studioPro` reflects a
+   * live Stripe subscription; the Founding-Host free six months is NOT stored
+   * here — it is derived from `foundingHostAt` in lib/entitlements.
+   */
+  studioPro: boolean;
+  studioProSince: Date | null;
+  studioProCurrentPeriodEnd: Date | null;
+  studioProCancelAtPeriodEnd: boolean;
 }
 
 /**

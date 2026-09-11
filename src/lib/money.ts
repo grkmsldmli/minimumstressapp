@@ -40,6 +40,28 @@ export const INSTANT_FEE_CENTS = 500;
 /** Pro subscription price, practitioner-side only. */
 export const PRO_PRICE_CENTS = 990;
 
+/**
+ * Studio Pro — the host-side subscription that unlocks the Work coverage board.
+ *
+ * Flat monthly, per host account (never per space), with no per-booking effect —
+ * the same "access, not a discount" discipline as practitioner Pro above.
+ */
+export const STUDIO_PRO_PRICE_CENTS = 1990;
+
+/**
+ * When Studio Pro launched. The Founding-Host free period is measured from
+ * max(founding_host_at, this), so a host who became Founding before Studio Pro
+ * existed still gets the full six months from launch rather than losing them.
+ * A fixed instant, never "now" — the entitlement must be the same on every read.
+ */
+export const STUDIO_PRO_LAUNCHED_AT = new Date("2026-09-10T00:00:00Z");
+
+/** Founding Hosts get Studio Pro free for this long, no card required. */
+export const FOUNDING_HOST_FREE_MONTHS = 6;
+
+/** …then a permanent right to continue at half the applicable Studio Pro price. */
+export const FOUNDING_HOST_STUDIO_DISCOUNT = 0.5;
+
 /** A slot starting within this window of now is "Instant". */
 export const INSTANT_WINDOW_MS = 2 * 60 * 60 * 1000;
 

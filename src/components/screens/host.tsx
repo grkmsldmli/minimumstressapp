@@ -358,6 +358,7 @@ export function HostDashboard({
   hostTermsVersion,
   hostTermsAcceptedAt,
   foundingNumber,
+  studioProActive = false,
   foundingRemaining,
   completedSessions,
   referralCode,
@@ -409,6 +410,9 @@ export function HostDashboard({
    * the achievement ladder is read from.
    */
   foundingNumber: number | null;
+  /** Active Studio Pro (paid or Founding free period) — shows the PRO badge,
+   *  distinct from and alongside the Founding Host mark. */
+  studioProActive?: boolean;
   foundingRemaining: number;
   completedSessions: number;
   /** This host's shareable referral code, and their referrals as safe summaries. */
@@ -579,6 +583,14 @@ export function HostDashboard({
           <p className="font-body font-semibold text-[12px] uppercase tracking-[0.2em] text-sky-soft">
             Host studio
           </p>
+          {studioProActive && (
+            <span
+              className="px-2 py-0.5 rounded-full font-body font-bold text-[10.5px] tracking-wide"
+              style={{ backgroundColor: "rgba(255,255,255,0.16)", color: "#fff" }}
+            >
+              PRO
+            </span>
+          )}
           <AccountBadge accountType="host" tone="dark" />
         </div>
         {/*

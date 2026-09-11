@@ -1,20 +1,21 @@
 import type { NextRequest } from "next/server";
 
 import { LIMITS, check, identify, tooManyRequests } from "@/lib/api/rate-limit";
-import { handled, jsonError, requireUser } from "@/lib/api/session";
+import { handled, requireUser } from "@/lib/api/session";
 import type { BoardFilters } from "@/lib/domain";
 import { supabaseAdmin } from "@/lib/supabase/server";
-import { listOpportunities, loadEntitlements } from "@/lib/work-service";
+import { listOpportunities } from "@/lib/work-service";
 
 /**
  * The coverage job board: every open, future request, browseable by a Pro
  * practitioner. There is no matching and no algorithmic exclusion — the query
  * params are filters the practitioner chose, which only narrow the browse.
  *
- * The board itself is gated on Pro (canBrowseWork), checked server-side on the
- * admin client so a free practitioner cannot read it through a stale client or a
- * direct call. Only the safe previews ever leave the server (area not street, no
- * host id, coarse distance).
+ * The browse is Pro-gated inside listOpportunities (canBrowseWork), server-side:
+ * a free or lapsed practitioner gets only their own existing applications back,
+ * never the open board, so they can still manage what they committed to while the
+ * client shows the Pro upsell in place of the board. Only safe previews ever
+ * leave the server (area not street, no host id, coarse distance).
  */
 export async function GET(request: NextRequest): Promise<Response> {
   return handled(async () => {
@@ -25,10 +26,6 @@ export async function GET(request: NextRequest): Promise<Response> {
     if (!limited.ok) return tooManyRequests(limited);
 
     const admin = supabaseAdmin();
-    const ent = await loadEntitlements(admin, auth.user.id);
-    if (!ent.canBrowseWork) {
-      return jsonError("Work Pro is required to browse the coverage board.", 403);
-    }
 
     const q = request.nextUrl.searchParams;
     const parseDate = (raw: string | null): Date | null => {

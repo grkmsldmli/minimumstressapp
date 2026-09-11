@@ -15,6 +15,7 @@ import type {
   PublicReview,
   ReferralSummary,
   RequestInterest,
+  RosterMember,
   SpaceAccessDetails,
   WorkOpportunity,
   WorkPreferences,
@@ -22,6 +23,7 @@ import type {
 import type { AvailabilityBlock } from "@/lib/availability";
 import { viewerZone } from "@/lib/timezone";
 import { type WorkEligibilityGap, workEligibility } from "@/lib/work/eligibility";
+import { entitlementsFor } from "@/lib/entitlements";
 import { apiFetch } from "@/lib/api-fetch";
 import {
   SPACE_DEEP_LINK_PARAM,
@@ -113,6 +115,8 @@ import { WorkPractitioner, WorkStudio } from "./screens/work";
 import { WorkAvailabilityEditor } from "./screens/work-availability";
 import { ClassTemplates } from "./screens/class-templates";
 import { CoverageDetail, CoveragePost } from "./screens/coverage";
+import { StudioProScreen } from "./screens/studio-pro";
+import { RosterScreen } from "./screens/roster";
 
 /**
  * Whether this account can confirm a booking on these dates, decided on the
@@ -215,6 +219,8 @@ interface Snapshot {
   workOpportunities: WorkOpportunity[];
   classTemplates: ClassTemplate[];
   coverageRequests: CoverageRequest[];
+  /** The host's trusted-substitute network (Studio Pro). Empty for practitioners. */
+  roster: RosterMember[];
 }
 
 /** Work preferences a fetch failure falls back to — everything off, nothing set. */
@@ -311,6 +317,12 @@ export function App() {
   const checkoutStartedRef = useRef(false);
   // The ?pro= redirect marker is acted on once per load, never replayed.
   const proReturnHandledRef = useRef(false);
+
+  // Studio Pro checkout, confirmed the same honest way as Pro — the success
+  // screen is gated on the server's studio_pro, never on "checkout opened".
+  const [confirmingStudioPro, setConfirmingStudioPro] = useState(false);
+  const studioProCheckoutStartedRef = useRef(false);
+  const studioProReturnHandledRef = useRef(false);
 
   /**
    * Identity verification, confirmed the same honest way Pro is.
@@ -669,6 +681,7 @@ export function App() {
         workOpportunities,
         classTemplates,
         coverageRequests,
+        roster,
       ] = await Promise.all([
           repo.getProfile(),
           repo.listPublicSpaces(),
@@ -697,6 +710,9 @@ export function App() {
           repo.listWorkOpportunities().catch(() => []),
           repo.listClassTemplates().catch(() => []),
           repo.listCoverageRequests().catch(() => []),
+          // Host-only, Studio-Pro-gated (403 for everyone else) — an empty list
+          // on any failure, like the rest of Work.
+          repo.listRoster().catch(() => []),
         ]);
 
       // Address details are per-space and authorization-gated, so they are
@@ -728,6 +744,7 @@ export function App() {
         workOpportunities,
         classTemplates,
         coverageRequests,
+        roster,
       };
     };
 
@@ -858,6 +875,51 @@ export function App() {
     const timer = setTimeout(() => setJustUpgraded(false), 6000);
     return () => clearTimeout(timer);
   }, [justUpgraded]);
+
+  /** Studio Pro's twin of confirmProSubscription — polls the server's studio_pro
+   *  after a real checkout; never grants it. */
+  const confirmStudioProSubscription = useCallback(async () => {
+    setConfirmingStudioPro(true);
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const profile = await repo.getProfile().catch(() => null);
+      if (profile?.studioPro) {
+        setData((prev) => (prev ? { ...prev, profile } : prev));
+        setConfirmingStudioPro(false);
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+    }
+    setConfirmingStudioPro(false);
+  }, [repo]);
+
+  /** Returning from Studio Pro checkout on the web: ?studiopro=started. */
+  useEffect(() => {
+    if (studioProReturnHandledRef.current || !data || typeof window === "undefined") return;
+    const marker = new URLSearchParams(window.location.search).get("studiopro");
+    if (marker !== "started" && marker !== "cancelled") return;
+    studioProReturnHandledRef.current = true;
+    window.history.replaceState({}, "", window.location.pathname);
+    go("studio-pro");
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (marker === "started") void confirmStudioProSubscription();
+  }, [data, go, confirmStudioProSubscription]);
+
+  /** Returning from Studio Pro checkout in the native shell (no URL marker). */
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const onVisible = () => {
+      if (
+        document.visibilityState === "visible" &&
+        studioProCheckoutStartedRef.current &&
+        !data?.profile.studioPro
+      ) {
+        studioProCheckoutStartedRef.current = false;
+        void confirmStudioProSubscription();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [data?.profile.studioPro, confirmStudioProSubscription]);
 
   /**
    * Returning from Stripe on the web. The redirect lands on ?pro=started or
@@ -1642,6 +1704,7 @@ export function App() {
            * already the completed-and-paid count hostFactsFrom made honest.
            */
           foundingNumber={profile.foundingNumber}
+          studioProActive={entitlements.studioProActive}
           foundingRemaining={data.foundingRemaining}
           completedSessions={hostFacts.sessionsHosted}
           referralCode={data.referralCode}
@@ -1671,6 +1734,18 @@ export function App() {
     now,
   );
 
+  // The one entitlement object the Work UI consumes, from the same pure function
+  // and the same server-written columns the API routes re-check. The UI is a
+  // mirror; the server is the authority, so a stale client can never grant access.
+  const entitlements = entitlementsFor({
+    accountType: profile.accountType,
+    isPro: profile.isPro,
+    studioProSubscription: profile.studioPro,
+    foundingHostAt: profile.foundingHostAt,
+    work: workEligible,
+    now,
+  });
+
   const fixWorkGap = (gap: WorkEligibilityGap) => {
     if (gap === "identity") go("verify");
     else if (gap === "credential") go("credential");
@@ -1682,21 +1757,29 @@ export function App() {
   const renderWork = () =>
     profile.accountType === "host" ? (
       <WorkStudio
+        canPost={entitlements.canPostCoverage}
+        studioProActive={entitlements.studioProActive}
+        foundingFreeUntil={entitlements.foundingFreeUntil}
+        now={now}
         requests={coverageRequests}
         templateCount={classTemplates.length}
+        rosterCount={data.roster.length}
         hasSpaces={mySpaces.length > 0}
         onNewCoverage={() => go("coverage-post")}
         onOpenTemplates={() => go("class-templates")}
+        onOpenRoster={() => go("roster")}
         onOpenRequest={(id) => {
           setActiveCoverageId(id);
           go("coverage-detail");
         }}
+        onGoStudioPro={() => go("studio-pro")}
         onRefresh={onPullRefresh}
         onBack={back}
       />
     ) : (
       <WorkPractitioner
-        eligible={workEligible.eligible}
+        canBrowse={entitlements.canBrowseWork}
+        canApply={entitlements.canApplyToWork}
         gaps={workEligible.gaps}
         preferences={workPreferences}
         availabilityCount={workAvailability.length}
@@ -1704,6 +1787,7 @@ export function App() {
         foundingNumber={profile.foundingPractitionerNumber}
         foundingRemaining={data.foundingPractitionerRemaining}
         busyRequestId={workBusyId}
+        onGoPro={() => go("pro")}
         onToggleAvailable={() =>
           void mutate(() =>
             repo.updateWorkPreferences({
@@ -1839,6 +1923,8 @@ export function App() {
     "class-templates",
     "coverage-post",
     "coverage-detail",
+    "studio-pro",
+    "roster",
   ];
   // "work" is intentionally in neither list: both sides have a Work home, and
   // renderWork() below branches on accountType.
@@ -2484,6 +2570,36 @@ export function App() {
       return renderCoveragePost();
     case "coverage-detail":
       return renderCoverageDetail();
+    case "studio-pro":
+      return (
+        <StudioProScreen
+          active={entitlements.studioProActive}
+          foundingFreeUntil={entitlements.foundingFreeUntil}
+          foundingDiscount={entitlements.foundingStudioDiscount}
+          now={now}
+          confirming={confirmingStudioPro}
+          onBack={() => {
+            setConfirmingStudioPro(false);
+            back();
+          }}
+          onSubscribe={() => {
+            // Flags the native return path before checkout opens; the web path
+            // uses ?studiopro=. Only opens checkout — the screen turns Pro only
+            // once the server confirms studio_pro.
+            studioProCheckoutStartedRef.current = true;
+            return mutate(() => repo.startStudioProSubscription());
+          }}
+        />
+      );
+    case "roster":
+      return (
+        <RosterScreen
+          members={data.roster}
+          onRemove={(id) => void mutate(() => repo.removeFromRoster(id))}
+          onRefresh={onPullRefresh}
+          onBack={back}
+        />
+      );
   }
 }
 

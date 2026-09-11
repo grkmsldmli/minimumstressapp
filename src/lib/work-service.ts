@@ -715,9 +715,13 @@ function passesFilters(row: RequestRow & Record<string, unknown>, f: BoardFilter
 /**
  * The coverage job board: every open, future request, browseable by any Pro
  * practitioner — no matching, no availability gate, no algorithmic exclusion.
- * The practitioner's own active applications are always included for status, and
- * the optional filters only narrow the browse. Only safe previews leave the
+ * The optional filters only narrow the browse. Only safe previews leave the
  * server (area not street, no host id, coarse distance).
+ *
+ * A practitioner without Work Pro sees ONLY their own existing applications —
+ * never the open board — because managing what you already committed to is never
+ * gated, but browsing new coverage is a Pro feature. The client shows the Pro
+ * upsell in place of the board; this is the server half of that same rule.
  */
 export async function listOpportunities(
   admin: SupabaseClient,
@@ -725,7 +729,10 @@ export async function listOpportunities(
   filters: BoardFilters = {},
   now: Date = new Date(),
 ): Promise<WorkOpportunity[]> {
-  const candidate = (await loadCandidates(admin, [practitionerId], now)).get(practitionerId);
+  const [candidate, ent] = await Promise.all([
+    loadCandidates(admin, [practitionerId], now).then((m) => m.get(practitionerId)),
+    loadEntitlements(admin, practitionerId, now),
+  ]);
   const base = candidate?.facts.base ?? null;
 
   const { data: myInterest } = await admin
@@ -739,11 +746,15 @@ export async function listOpportunities(
     ]),
   );
 
-  const { data: openData } = await admin
-    .from("work_requests")
-    .select("*")
-    .eq("state", "open")
-    .gt("starts_at", now.toISOString());
+  // The open board is Pro-only; a free (or lapsed) practitioner gets an empty
+  // board and only their engaged rows below, so they can still manage them.
+  const { data: openData } = ent.canBrowseWork
+    ? await admin
+        .from("work_requests")
+        .select("*")
+        .eq("state", "open")
+        .gt("starts_at", now.toISOString())
+    : { data: [] as RequestRow[] };
   const openRows = (openData ?? []) as RequestRow[];
   const openIds = new Set(openRows.map((r) => r.id));
 

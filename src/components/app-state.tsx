@@ -53,7 +53,12 @@ export type Screen =
   | "edit-hours"
   | "edit-space"
   | "earnings"
-  | "host-profile";
+  | "host-profile"
+  | "work"
+  | "work-availability"
+  | "class-templates"
+  | "coverage-post"
+  | "coverage-detail";
 
 interface AppState {
   repo: AppRepository;
@@ -104,6 +109,10 @@ interface AppState {
   threadBookingId: string | null;
   setThreadBookingId: (id: string | null) => void;
 
+  /** Which coverage request the studio's detail screen is showing. */
+  activeCoverageId: string | null;
+  setActiveCoverageId: (id: string | null) => void;
+
   /** Bumped whenever data changes, so screens can refetch without a store. */
   revision: number;
   refresh: () => void;
@@ -135,6 +144,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [claimBookingId, setClaimBookingId] = useState<string | null>(null);
   const [threadBookingId, setThreadBookingId] = useState<string | null>(null);
   const [editingSpaceId, setEditingSpaceId] = useState<string | null>(null);
+  const [activeCoverageId, setActiveCoverageId] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);
 
   /**
@@ -205,6 +215,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     setRefundBookingId(null);
     setClaimBookingId(null);
     setThreadBookingId(null);
+    setActiveCoverageId(null);
   }, []);
 
   const refresh = useCallback(() => setRevision((r) => r + 1), []);
@@ -236,6 +247,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       setClaimBookingId,
       threadBookingId,
       setThreadBookingId,
+      activeCoverageId,
+      setActiveCoverageId,
       revision,
       refresh,
     }),
@@ -255,6 +268,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       refundBookingId,
       claimBookingId,
       threadBookingId,
+      activeCoverageId,
       revision,
       refresh,
     ],

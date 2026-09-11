@@ -5,6 +5,7 @@ import {
   ArrowLeft,
   Award,
   Bell,
+  Briefcase,
   Check,
   Copy,
   MessageCircle,
@@ -348,6 +349,7 @@ export function HostDashboard({
   onPreviewSpace,
   onOpenEarnings,
   onOpenProfile,
+  onGoWork,
   onGoNotifications,
   undeliveredCount,
   onReviewBooking,
@@ -387,6 +389,7 @@ export function HostDashboard({
   onPreviewSpace: (spaceId: string) => void;
   onOpenEarnings: () => void;
   onOpenProfile: () => void;
+  onGoWork: () => void;
   onGoNotifications: () => void;
   /** Messages that never arrived. */
   undeliveredCount: number;
@@ -501,6 +504,15 @@ export function HostDashboard({
             style={{ backgroundColor: "rgba(255,255,255,0.14)" }}
           >
             <Plus size={13} /> Add space
+          </button>
+          <button
+            type="button"
+            onClick={onGoWork}
+            aria-label="Work"
+            className="w-9 h-9 rounded-full flex items-center justify-center press"
+            style={{ backgroundColor: "rgba(255,255,255,0.14)" }}
+          >
+            <Briefcase size={15} color="#fff" />
           </button>
           <button
             type="button"

@@ -168,8 +168,10 @@ export interface Profile {
   /**
    * The practitioner-side mirror of the two above. Both null for everyone who
    * is not a Founding Practitioner, and set together the moment a practitioner
-   * finishes their first real, paid session — by the server alone (migration
-   * 0068 refuses a client write and caps the number at 1..50). See lib/founding.
+   * completes professional onboarding — a name, a chosen profession, and the
+   * three server-written verdicts (identity, insurance, credential all verified)
+   * — by the server alone (migration 0068 refuses a client write and caps the
+   * number at 1..50). Verification-based, never paid-session. See lib/founding.
    */
   foundingPractitionerAt: Date | null;
   foundingPractitionerNumber: number | null;
@@ -753,4 +755,161 @@ export interface NewSpaceInput {
   media: { file: File; kind: MediaKind }[];
   subleaseDoc: File;
   insuranceDoc: File | null;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Work — coverage between studios and practitioners (migration 0069)  */
+/* ------------------------------------------------------------------ */
+
+/** The coverage-request lifecycle. See lib/work/request-state. */
+export type WorkRequestState =
+  | "draft"
+  | "open"
+  | "filled"
+  | "completed"
+  | "cancelled"
+  | "expired";
+
+/** A practitioner's answer to a request, and the studio's decision on it. */
+export type WorkInterestState = "interested" | "confirmed" | "declined" | "withdrawn";
+
+/**
+ * A practitioner's Work opt-in and preferences, as they see them.
+ *
+ * The home point behind distance ranking is never in this shape — coordinates
+ * stay server-side and only a coarse label ever reaches a studio. `hasLocation`
+ * is enough for the practitioner to know whether distance is in play.
+ */
+export interface WorkPreferences {
+  availableForWork: boolean;
+  /** The wall-clock zone their weekly availability is written in. */
+  workTimeZone: string;
+  hasLocation: boolean;
+  basePostcode: string | null;
+  maxTravelMiles: number | null;
+  minPayCents: number | null;
+  openToOnetime: boolean;
+  openToRecurring: boolean;
+}
+
+/** What a practitioner may change about their Work settings. */
+export interface WorkPreferencesInput {
+  availableForWork?: boolean;
+  workTimeZone?: string;
+  /** Set a home point for distance ranking, or null to clear it. */
+  location?: { lat: number; lng: number } | null;
+  basePostcode?: string | null;
+  maxTravelMiles?: number | null;
+  minPayCents?: number | null;
+  openToOnetime?: boolean;
+  openToRecurring?: boolean;
+}
+
+/** A studio's reusable class definition. */
+export interface ClassTemplate {
+  id: string;
+  title: string;
+  /** The profession that can cover it — a lib/professions key, or null (any). */
+  profession: string | null;
+  level: string | null;
+  equipment: string | null;
+  durationMinutes: number;
+  maxParticipants: number | null;
+  notes: string | null;
+  arrivalNotes: string | null;
+  requiresCredential: boolean;
+  archivedAt: Date | null;
+}
+
+export interface ClassTemplateInput {
+  title: string;
+  profession: string | null;
+  level: string | null;
+  equipment: string | null;
+  durationMinutes: number;
+  maxParticipants: number | null;
+  notes: string | null;
+  arrivalNotes: string | null;
+  requiresCredential: boolean;
+}
+
+/** A coverage request as its own host sees it. */
+export interface CoverageRequest {
+  id: string;
+  classTemplateId: string | null;
+  spaceId: string | null;
+  spaceName: string | null;
+  title: string;
+  profession: string | null;
+  startsAt: Date;
+  endsAt: Date;
+  timeZone: string;
+  payCents: number;
+  notes: string | null;
+  urgent: boolean;
+  /** The stored base state; pass through effectiveRequestState for display. */
+  state: WorkRequestState;
+  /** How many practitioners are currently interested (not declined/withdrawn). */
+  interestCount: number;
+  createdAt: Date;
+}
+
+export interface CoverageRequestInput {
+  classTemplateId?: string | null;
+  spaceId: string | null;
+  title: string;
+  profession: string | null;
+  startsAt: Date;
+  durationMinutes: number;
+  payCents: number;
+  notes: string | null;
+  urgent: boolean;
+}
+
+/**
+ * A safe preview of an interested practitioner, for the host to choose from.
+ *
+ * Extends the same PractitionerTrust projection a host already sees on a booking
+ * request — never a document, number, contact detail, or exact location. The
+ * name is partial ("Sarah M.") until this interest is confirmed; only then does
+ * `fullName` arrive.
+ */
+export interface RequestInterest extends PractitionerTrust {
+  interestId: string;
+  displayName: string;
+  fullName: string | null;
+  avatarUrl: string | null;
+  craft: string;
+  foundingPractitioner: boolean;
+  distanceLabel: string | null;
+  message: string | null;
+  state: WorkInterestState;
+  createdAt: Date;
+}
+
+/**
+ * A matched coverage request as an eligible practitioner sees it.
+ *
+ * Town/area only, never the street — the exact address follows the same
+ * reveal-after-commitment rule as a booking. `interestState` is the
+ * practitioner's own standing on it: null when they have not acted yet.
+ */
+export interface WorkOpportunity {
+  requestId: string;
+  title: string;
+  profession: string | null;
+  spaceName: string | null;
+  area: string | null;
+  startsAt: Date;
+  endsAt: Date;
+  timeZone: string;
+  payCents: number;
+  notes: string | null;
+  urgent: boolean;
+  distanceLabel: string | null;
+  interestState: WorkInterestState | null;
+  /** The practitioner's own interest row id, when they have one (to withdraw). */
+  interestId: string | null;
+  /** Derived display state of the request. */
+  state: WorkRequestState;
 }

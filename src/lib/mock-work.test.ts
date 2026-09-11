@@ -1,0 +1,87 @@
+import { beforeEach, describe, expect, it } from "vitest";
+
+import { MockRepository } from "./mock-repository";
+
+/**
+ * The mock's Work surface, proving the plain business shape without a database:
+ * the opt-in persists, availability round-trips, templates CRUD, and a coverage
+ * request goes open -> filled exactly once. Timezone/matching correctness is
+ * proved in the pure and pglite tests, not here.
+ */
+describe("MockRepository — Work", () => {
+  let repo: MockRepository;
+  beforeEach(() => {
+    repo = new MockRepository();
+  });
+
+  it("the Available for Work switch and preferences persist across reads", async () => {
+    expect((await repo.getWorkPreferences()).availableForWork).toBe(false);
+    await repo.updateWorkPreferences({ availableForWork: true, maxTravelMiles: 20, minPayCents: 5000 });
+    const prefs = await repo.getWorkPreferences();
+    expect(prefs.availableForWork).toBe(true);
+    expect(prefs.maxTravelMiles).toBe(20);
+    expect(prefs.minPayCents).toBe(5000);
+  });
+
+  it("weekly availability round-trips and normalises", async () => {
+    await repo.setWorkAvailability([
+      { weekday: 1, startMinute: 540, endMinute: 780 },
+      { weekday: 1, startMinute: 780, endMinute: 900 }, // touches the previous → merged
+    ]);
+    const blocks = await repo.getWorkAvailability();
+    expect(blocks).toEqual([{ weekday: 1, startMinute: 540, endMinute: 900 }]);
+  });
+
+  it("class templates create, list, and archive", async () => {
+    const created = await repo.createClassTemplate({
+      title: "Reformer Flow 1",
+      profession: "pilates",
+      level: "Intermediate",
+      equipment: "Reformer",
+      durationMinutes: 50,
+      maxParticipants: 8,
+      notes: null,
+      arrivalNotes: null,
+      requiresCredential: false,
+    });
+    expect((await repo.listClassTemplates()).map((t) => t.id)).toContain(created.id);
+    await repo.archiveClassTemplate(created.id);
+    expect((await repo.listClassTemplates()).map((t) => t.id)).not.toContain(created.id);
+  });
+
+  it("a coverage request goes open, then filled exactly once", async () => {
+    const request = await repo.createCoverageRequest({
+      spaceId: null,
+      title: "Cover my 6pm",
+      profession: "yoga",
+      startsAt: new Date(Date.now() + 2 * 86_400_000),
+      durationMinutes: 60,
+      payCents: 6000,
+      notes: null,
+      urgent: false,
+    });
+    expect(request.state).toBe("open");
+
+    await repo.confirmRequestInterest(request.id, "someone");
+    expect((await repo.listCoverageRequests())[0].state).toBe("filled");
+
+    // A second confirm cannot re-fill it.
+    await expect(repo.confirmRequestInterest(request.id, "another")).rejects.toThrow();
+  });
+
+  it("a request can be cancelled while open, but not once filled", async () => {
+    const r = await repo.createCoverageRequest({
+      spaceId: null,
+      title: "Cover",
+      profession: null,
+      startsAt: new Date(Date.now() + 2 * 86_400_000),
+      durationMinutes: 60,
+      payCents: 5000,
+      notes: null,
+      urgent: false,
+    });
+    await repo.cancelCoverageRequest(r.id);
+    expect((await repo.listCoverageRequests())[0].state).toBe("cancelled");
+    await expect(repo.cancelCoverageRequest(r.id)).rejects.toThrow();
+  });
+});

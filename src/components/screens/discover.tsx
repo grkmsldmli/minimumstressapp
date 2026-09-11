@@ -9,6 +9,7 @@ import { RatingBadge } from "@/components/stars";
 import { summariseAggregate } from "@/lib/reviews";
 import {
   Bell,
+  Briefcase,
   Calendar,
   ChevronRight,
   List,
@@ -63,6 +64,7 @@ export function Discover({
   onOpenSpace,
   onGoPro,
   onGoBookings,
+  onGoWork,
   onGoNotifications,
   undeliveredCount,
   onGoProfile,
@@ -86,6 +88,7 @@ export function Discover({
   onOpenSpace: (id: string) => void;
   onGoPro: () => void;
   onGoBookings: () => void;
+  onGoWork: () => void;
   onGoNotifications: () => void;
   /** Messages that never arrived. The only reason to interrupt somebody. */
   undeliveredCount: number;
@@ -237,6 +240,9 @@ export function Discover({
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
+          <RoundButton label="Work" onClick={onGoWork}>
+            <Briefcase size={15} color="#fff" />
+          </RoundButton>
           <RoundButton label="Your bookings" onClick={onGoBookings}>
             <Calendar size={15} color="#fff" />
           </RoundButton>

@@ -7064,8 +7064,14 @@ grant select on space_media_public to service_role;
 -- stores who / which booking / why — never an address, a code, or a message.
 
 -- ------------------------------------------------------------------
--- 1. Blocks. A user severs the message channel with another. Their own row(s)
---    only — a client can never read or write someone else's blocks.
+-- 1. Blocks. A user severs the message channel with another.
+--
+-- Written only by the service role behind /api/messages/block, which verifies
+-- the caller is a participant and derives who to block from booking truth — the
+-- same reason messages themselves are service-role-only (0063). So no client
+-- grant and no policy: anon and authenticated can neither read nor write blocks,
+-- and RLS stays on as a second wall. The send guard below reads this table when
+-- a message is inserted, which also runs as the service role.
 -- ------------------------------------------------------------------
 create table if not exists blocked_users (
   blocker_id uuid not null references profiles(id) on delete cascade,
@@ -7077,18 +7083,16 @@ create table if not exists blocked_users (
 
 alter table blocked_users enable row level security;
 revoke all on blocked_users from anon, authenticated;
-grant select, insert, delete on blocked_users to authenticated;
-
-create policy "blocked_users: manage own blocks"
-  on blocked_users for all
-  to authenticated
-  using (blocker_id = auth.uid())
-  with check (blocker_id = auth.uid());
+grant select, insert, delete on blocked_users to service_role;
 
 -- ------------------------------------------------------------------
--- 2. Reports. A booking participant reports the other party. Staff review open
---    reports with the service role; a client only ever writes its own, and reads
---    none — so one user's report is never visible to another.
+-- 2. Reports. A booking participant reports the other party.
+--
+-- Also service-role-only, behind /api/messages/report: the route checks
+-- participation and derives the reported party, so a client never writes a
+-- report directly (which would let anyone file against anyone) and never reads
+-- one (staff review with the service role). Attempting a report client-side is
+-- refused at the grant, before RLS.
 -- ------------------------------------------------------------------
 create table if not exists message_reports (
   id uuid primary key default gen_random_uuid(),
@@ -7108,22 +7112,7 @@ create index if not exists message_reports_open_idx
 
 alter table message_reports enable row level security;
 revoke all on message_reports from anon, authenticated;
-grant insert on message_reports to authenticated;
-
--- Only a participant of the booking, filing as themselves, may write a report.
--- No select policy: staff read through the service role, never the client.
-create policy "message_reports: participant files own"
-  on message_reports for insert
-  to authenticated
-  with check (
-    reporter_id = auth.uid()
-    and exists (
-      select 1 from bookings b
-      join spaces s on s.id = b.space_id
-      where b.id = booking_id
-        and (b.practitioner_id = auth.uid() or s.host_id = auth.uid())
-    )
-  );
+grant select, insert on message_reports to service_role;
 
 -- ------------------------------------------------------------------
 -- 3. A block severs the channel. The send guard already gates on a confirmed,
@@ -7167,3 +7156,759 @@ $$;
 
 -- The trigger from 0063 already calls enforce_message_sendable(); replacing the
 -- function is enough.
+
+
+-- ===================================================================
+-- 0068_founding_practitioner.sql
+-- ===================================================================
+
+-- Founding Practitioner — the practitioner-side mirror of Founding Host (0060).
+--
+-- FOUNDING PRACTITIONER is a permanent legacy status for the first 50 unique
+-- practitioners who complete professional onboarding — a genuine, vetted early
+-- professional, not the first to run a transaction. One person is one spot, it
+-- is earned the moment onboarding is complete, and it is never taken away. Like
+-- Founding Host it carries no price or benefit; it is recognition only.
+--
+-- "Onboarding complete" is defined entirely from server-truth on the profile:
+-- a practitioner account, a completed professional profile (a name and a chosen
+-- profession), plus the three verification VERDICTS that are all server-written
+-- and client-unwritable (identity 0057, insurance 0054, credential 0058, guarded
+-- by enforce_profile_verdicts_server_only). It mirrors the app's own "ready to
+-- book" gate in lib/booking-plan: verified identity + verified insurance +
+-- verified credential. It deliberately keys on the permanent staff VERDICT
+-- ('verified'), never the insurance date-window, so the status can never flip
+-- false when cover later lapses. There is no "available for work" requirement —
+-- that product does not exist yet.
+--
+-- Authority is the founding_practitioners ledger below, not the profile: a
+-- profile can be scrubbed, so counting live profile rows would let a departed
+-- practitioner's spot re-open. The ledger never loses a row.
+-- profiles.founding_practitioner_number/_at are a projection for the read paths,
+-- written in the same transaction.
+
+alter table profiles
+  add column if not exists founding_practitioner_at timestamptz,
+  add column if not exists founding_practitioner_number integer;
+
+-- The hard cap in the schema: a unique number 1..50, present exactly when the
+-- timestamp is.
+alter table profiles
+  drop constraint if exists profiles_founding_practitioner_range;
+alter table profiles
+  add constraint profiles_founding_practitioner_range check (
+    founding_practitioner_number is null or (founding_practitioner_number between 1 and 50)
+  );
+alter table profiles
+  drop constraint if exists profiles_founding_practitioner_consistent;
+alter table profiles
+  add constraint profiles_founding_practitioner_consistent check (
+    (founding_practitioner_at is null) = (founding_practitioner_number is null)
+  );
+drop index if exists profiles_founding_practitioner_number_key;
+create unique index profiles_founding_practitioner_number_key
+  on profiles (founding_practitioner_number)
+  where founding_practitioner_number is not null;
+
+-- ------------------------------------------------------------------
+-- Founding status stays the server's to grant, never the account's.
+--
+-- Replaces the 0060 guard so the same rule now covers all four founding columns:
+-- a signed-in caller can never write founding_host_at/number OR
+-- founding_practitioner_at/number, on insert or update. Only the allocation
+-- functions (service role, no auth.uid()) set them. The existing
+-- profiles_founding_server_only trigger keeps calling this function.
+-- ------------------------------------------------------------------
+create or replace function enforce_founding_server_only()
+returns trigger
+language plpgsql
+as $$
+declare
+  ins boolean := tg_op = 'INSERT';
+begin
+  -- The award functions flip this transaction-local flag before they project a
+  -- founding number onto the profile. That nested write can run under a client's
+  -- own auth.uid() — when a practitioner completes their profile as the last
+  -- onboarding step and thereby triggers their own award — so without this
+  -- carve-out the server's write would be refused as if the client had made it.
+  -- The flag is only ever set inside the SECURITY DEFINER award functions, which
+  -- no client can call, so it cannot be forged from the outside.
+  if current_setting('app.founding_award', true) = 'on' then
+    return new;
+  end if;
+
+  if auth.uid() is not null
+     and (
+       new.founding_host_at is distinct from (case when ins then null else old.founding_host_at end)
+       or new.founding_number is distinct from (case when ins then null else old.founding_number end)
+       or new.founding_practitioner_at is distinct from (case when ins then null else old.founding_practitioner_at end)
+       or new.founding_practitioner_number is distinct from (case when ins then null else old.founding_practitioner_number end)
+     ) then
+    raise exception 'founding status is set by the server, not the client'
+      using errcode = 'check_violation';
+  end if;
+  return new;
+end;
+$$;
+
+-- ------------------------------------------------------------------
+-- The durable record of the fifty practitioners — the allocation authority.
+--
+-- Server-only, no foreign key (it must outlive the profile it names), one row
+-- per practitioner. RLS on with no policy and grants revoked, so only the
+-- definer functions below ever touch it.
+-- ------------------------------------------------------------------
+create table if not exists founding_practitioners (
+  founding_number integer primary key check (founding_number between 1 and 50),
+  practitioner_id uuid not null unique,
+  earned_at timestamptz not null default now()
+);
+
+alter table founding_practitioners enable row level security;
+revoke all on founding_practitioners from anon, authenticated;
+
+-- ------------------------------------------------------------------
+-- Allocate a Founding Practitioner spot, atomically.
+--
+-- Same shape as award_founding_host: a transaction-scoped advisory lock
+-- serialises every award so two practitioners finishing at the same instant can
+-- never both take the last spot; the ledger's primary key, unique
+-- practitioner_id and 1..50 check are the backstop. Idempotent: a practitioner
+-- already in the ledger keeps their original number and moment, and the profile
+-- projection is refreshed in case it was lost. Never re-numbers, never re-opens.
+-- ------------------------------------------------------------------
+create or replace function award_founding_practitioner(p_practitioner_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  taken integer;
+  next_num integer;
+  existing_num integer;
+  existing_at timestamptz;
+begin
+  perform pg_advisory_xact_lock(hashtext('founding_practitioner_allocation'));
+
+  -- Let enforce_founding_server_only accept the projection writes below even when
+  -- this award was triggered by a client-authored profile update (see that guard).
+  perform set_config('app.founding_award', 'on', true);
+
+  select founding_number, earned_at into existing_num, existing_at
+    from founding_practitioners where practitioner_id = p_practitioner_id;
+  if existing_num is not null then
+    update profiles
+      set founding_practitioner_number = existing_num, founding_practitioner_at = existing_at
+      where id = p_practitioner_id
+        and (founding_practitioner_number is distinct from existing_num
+             or founding_practitioner_at is distinct from existing_at);
+    return;
+  end if;
+
+  select count(*) into taken from founding_practitioners;
+  if taken >= 50 then
+    return;
+  end if;
+
+  select coalesce(max(founding_number), 0) + 1 into next_num from founding_practitioners;
+
+  insert into founding_practitioners (founding_number, practitioner_id)
+    values (next_num, p_practitioner_id);
+
+  update profiles
+    set founding_practitioner_number = next_num,
+        founding_practitioner_at =
+          (select earned_at from founding_practitioners where practitioner_id = p_practitioner_id)
+    where id = p_practitioner_id;
+end;
+$$;
+
+revoke all on function award_founding_practitioner(uuid) from public;
+grant execute on function award_founding_practitioner(uuid) to service_role;
+
+-- How many Founding Practitioner spots are left, from the durable ledger.
+-- SECURITY DEFINER so every caller gets the same real, global count.
+create or replace function founding_practitioners_remaining()
+returns integer
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select greatest(0, 50 - (select count(*) from founding_practitioners))::integer;
+$$;
+
+revoke all on function founding_practitioners_remaining() from public;
+grant execute on function founding_practitioners_remaining() to anon, authenticated, service_role;
+
+-- ------------------------------------------------------------------
+-- Who qualifies — one predicate, shared by the trigger and the backfill.
+--
+-- Takes a whole profiles row and returns whether that practitioner has
+-- completed professional onboarding. IMMUTABLE (only scalar comparisons on its
+-- argument, no table reads), so it is legal inside a trigger WHEN clause.
+--
+-- Credential and insurance are required for every practitioner here, mirroring
+-- the app's live booking gate (lib/booking-plan: requiresCredential is true for
+-- every profession today, and insurance is checked for every booking). If the
+-- product later makes either optional for some professions, this predicate — and
+-- founding-sql-sync's expectations — must move with professions.ts.
+-- ------------------------------------------------------------------
+create or replace function profile_founding_practitioner_qualified(p profiles)
+returns boolean
+language sql
+immutable
+as $$
+  select
+    p.account_type = 'practitioner'
+    and p.display_name is not null
+    and length(btrim(p.display_name)) > 0
+    and p.profession is not null
+    and p.identity_verified_at is not null
+    and p.insurance_doc_state = 'verified'
+    and p.credential_doc_state = 'verified';
+$$;
+
+-- ------------------------------------------------------------------
+-- The qualifying moment, allocated in the same transaction.
+--
+-- Earned on the profile UPDATE that first makes the predicate true — whether
+-- that update is a server verdict (identity webhook, staff insurance/credential
+-- review) or the practitioner completing their name/profession as the last step.
+-- Definer-run so allocation does not depend on the caller's role. The award's
+-- own nested projection update leaves the row already-qualified, so the WHEN is
+-- false on it and there is no recursion. No AFTER INSERT trigger is needed: a
+-- fresh profile can never be born qualified (the verdicts all start null/pending
+-- and are set only by later, separate server writes).
+-- ------------------------------------------------------------------
+create or replace function allocate_founding_practitioner_on_profile()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  perform award_founding_practitioner(new.id);
+  return null;
+end;
+$$;
+
+-- Remove the earlier paid-session trigger/function (this migration is not yet
+-- applied anywhere, but the drops keep a re-run against any partially-applied
+-- database clean).
+drop trigger if exists bookings_allocate_founding_practitioner on bookings;
+drop function if exists allocate_founding_practitioner_on_session();
+
+drop trigger if exists profiles_allocate_founding_practitioner on profiles;
+create trigger profiles_allocate_founding_practitioner
+  after update on profiles
+  for each row
+  when (
+    profile_founding_practitioner_qualified(new)
+    and not profile_founding_practitioner_qualified(old)
+  )
+  execute function allocate_founding_practitioner_on_profile();
+
+-- ------------------------------------------------------------------
+-- One-time backfill for practitioners already onboarded when this ships.
+--
+-- The trigger only fires on future profile updates, so without this every
+-- practitioner already fully verified would be passed over. This grants them
+-- their place, deterministic and derived entirely from server-truth columns.
+--
+-- Ordered by when the LAST requirement landed — greatest() of the three verdict
+-- timestamps (identity, insurance, credential), all guaranteed present when the
+-- state is 'verified' by the 0054/0058 constraints — tie-broken by id. One
+-- person takes one spot, numbers run 1..50 and stop, and a practitioner who
+-- somehow already holds a valid assignment is left untouched. Idempotent: run
+-- again and every qualifier is already numbered, the rest find no spots under
+-- fifty, and nothing changes.
+-- ------------------------------------------------------------------
+with qualified as (
+  select p.id as practitioner_id,
+         greatest(
+           p.identity_verified_at,
+           p.insurance_doc_reviewed_at,
+           p.credential_doc_reviewed_at
+         ) as qualified_at
+  from profiles p
+  where profile_founding_practitioner_qualified(p)
+),
+candidates as (
+  select q.practitioner_id, q.qualified_at
+  from qualified q
+  where not exists (
+    select 1 from founding_practitioners fp where fp.practitioner_id = q.practitioner_id
+  )
+),
+taken as (
+  select count(*)::int as n from founding_practitioners
+),
+ranked as (
+  select c.practitioner_id,
+         c.qualified_at,
+         row_number() over (order by c.qualified_at asc nulls last, c.practitioner_id asc) as rn
+  from candidates c
+)
+insert into founding_practitioners (founding_number, practitioner_id, earned_at)
+select (select n from taken) + r.rn, r.practitioner_id, coalesce(r.qualified_at, now())
+from ranked r
+where (select n from taken) + r.rn <= 50;
+
+update profiles p
+set founding_practitioner_number = fp.founding_number,
+    founding_practitioner_at = fp.earned_at
+from founding_practitioners fp
+where fp.practitioner_id = p.id
+  and p.founding_practitioner_number is null;
+
+
+-- ===================================================================
+-- 0069_work.sql
+-- ===================================================================
+
+-- Work — practitioners open themselves to coverage, studios ask for it.
+--
+-- The marketplace's second unit. Spaces let a practitioner rent a room; Work
+-- lets a studio that is short a teacher find one, and a practitioner who wants
+-- more hours be found. It reuses everything already true about a person: the
+-- same profile, the same profession, the same three verification verdicts that
+-- gate booking (identity 0057, insurance 0054, credential 0058). A practitioner
+-- who is not yet allowed to book is not yet matchable here either — the gate is
+-- read, never re-invented.
+--
+-- Five tables, one job each:
+--   work_preferences   one row per practitioner — the "available for work"
+--                      switch, their radius, pay floor, and the wall-clock zone
+--                      their availability is written in. Off by default.
+--   work_availability  the practitioner's recurring weekly windows, the exact
+--                      shape of `availability` (0001) but keyed to a person.
+--   class_templates    a studio's reusable class — Reformer Flow, 50 min, max 8
+--                      — so a coverage request is a few taps, not a form.
+--   work_requests      one "need coverage" post, with an explicit lifecycle.
+--   work_interest      a practitioner saying "I can take that", and the studio's
+--                      answer. At most one is ever confirmed per request.
+--
+-- Money is offered pay in integer cents, like everywhere else. This migration
+-- charges nothing and moves nothing: Work is free in this release, and the
+-- studio-subscription that will later meter it is a boundary drawn cleanly (a
+-- host either may post or may not), not a fee wired in here.
+
+-- ------------------------------------------------------------------
+-- Enums — DB-internal state machines.
+-- ------------------------------------------------------------------
+do $$ begin
+  create type work_request_state as enum (
+    'draft', 'open', 'filled', 'completed', 'cancelled', 'expired'
+  );
+exception when duplicate_object then null; end $$;
+
+do $$ begin
+  create type work_interest_state as enum (
+    'interested', 'confirmed', 'declined', 'withdrawn'
+  );
+exception when duplicate_object then null; end $$;
+
+-- ------------------------------------------------------------------
+-- work_preferences — the practitioner's Work opt-in and settings.
+--
+-- One row per practitioner, created the first time they open Work. The switch
+-- is off until they turn it on, and turning it off takes them out of every
+-- future match immediately (matching reads available_for_work). Existing
+-- interest and confirmed shifts are untouched — a preference is not a
+-- cancellation.
+--
+--   work_timezone   the wall-clock zone their weekly availability is written in.
+--                   Required because a 9am block is meaningless without a wall
+--                   (the 0029 lesson). Region form only — bare "EST" is refused,
+--                   because Intl silently mis-resolves it (see lib/timezone).
+--   base_lat/_lng   an optional home point for distance ranking. Private: read
+--                   only server-side by matching, never returned to another
+--                   user, and only a coarse label ever reaches a studio.
+--   max_travel_miles / min_pay_cents  soft preferences a practitioner sets; a
+--                   request outside them is ranked down or filtered, never a
+--                   hard error.
+-- ------------------------------------------------------------------
+create table if not exists work_preferences (
+  id uuid primary key default gen_random_uuid(),
+  practitioner_id uuid not null unique references profiles (id) on delete cascade,
+
+  available_for_work boolean not null default false,
+
+  -- Wall-clock zone for work_availability. Defaults to the platform zone; the
+  -- client sends the viewer's own zone on first save.
+  work_timezone text not null default 'America/Los_Angeles',
+
+  -- Optional home point for distance ranking. Both set together or both null.
+  base_lat double precision,
+  base_lng double precision,
+  -- What they typed, kept for display; never sent to a geocoder from here.
+  base_postcode text,
+
+  max_travel_miles integer check (max_travel_miles is null or max_travel_miles between 1 and 500),
+  min_pay_cents integer check (min_pay_cents is null or min_pay_cents >= 0),
+
+  open_to_onetime boolean not null default true,
+  open_to_recurring boolean not null default false,
+
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+
+  constraint work_preferences_zone_region_form
+    check (work_timezone ~ '^[A-Za-z][A-Za-z0-9+_-]*(/[A-Za-z0-9+_.-]+)+$'),
+  constraint work_preferences_point_paired
+    check ((base_lat is null) = (base_lng is null))
+);
+
+-- ------------------------------------------------------------------
+-- work_availability — the practitioner's recurring weekly windows.
+--
+-- Field-for-field the shape of `availability` (0001), keyed to a practitioner
+-- rather than a space. One row per block; a day holds any number. Minutes are
+-- wall-clock in work_preferences.work_timezone.
+-- ------------------------------------------------------------------
+create table if not exists work_availability (
+  id uuid primary key default gen_random_uuid(),
+  practitioner_id uuid not null references profiles (id) on delete cascade,
+  weekday smallint not null check (weekday between 0 and 6),
+  start_minute smallint not null check (start_minute between 0 and 1439),
+  end_minute smallint not null check (end_minute between 1 and 1440),
+  constraint work_availability_ordered check (end_minute > start_minute)
+);
+
+create index if not exists work_availability_practitioner_idx
+  on work_availability (practitioner_id, weekday);
+
+-- ------------------------------------------------------------------
+-- class_templates — a studio's reusable class definition.
+--
+-- So "need coverage" is picking a class, not re-describing one. Owned by a host,
+-- edited freely, archived rather than deleted (a past request may still name
+-- it). profession is the matching axis — the kind of professional who can cover
+-- it — mirrored to lib/professions like profiles.profession (0057).
+-- ------------------------------------------------------------------
+create table if not exists class_templates (
+  id uuid primary key default gen_random_uuid(),
+  host_id uuid not null references profiles (id) on delete cascade,
+
+  title text not null,
+  -- The professional who can cover it. Null means "any professional".
+  profession text,
+  -- Free-text descriptors a teacher reads, never matched on.
+  level text,
+  equipment text,
+  duration_minutes integer not null default 60 check (duration_minutes between 15 and 480),
+  max_participants integer check (max_participants is null or max_participants between 1 and 200),
+  notes text,
+  arrival_notes text,
+  -- A class that legally needs a verified credential to cover (e.g. hands-on).
+  -- Every practitioner already carries one to book, so this is belt-and-braces.
+  requires_credential boolean not null default false,
+
+  archived_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+
+  constraint class_templates_profession_known check (
+    profession is null or profession in (
+      'pilates', 'yoga', 'movement', 'massage', 'holistic', 'meditation', 'coaching', 'other'
+    )
+  )
+);
+
+create index if not exists class_templates_host_idx
+  on class_templates (host_id) where archived_at is null;
+
+-- ------------------------------------------------------------------
+-- work_requests — one "need coverage" post, with a lifecycle.
+--
+-- States: draft (being written) -> open (accepting interest) -> filled (a
+-- practitioner confirmed). A request can be cancelled by the host from draft or
+-- open. expired and completed are time-derived in the app (open past its start
+-- is expired; filled past its end is completed) and stored only if a job ever
+-- writes them — the enum carries them so that later transition is not a schema
+-- change. filled_interest_id / filled_at are written ONLY by
+-- confirm_work_interest (below); the client never sets them.
+--
+-- title / profession / time_zone are denormalised from the template and space
+-- at post time so the request survives the template being archived or the room
+-- being edited — a booking freezes its own money for the same reason (0001).
+-- ------------------------------------------------------------------
+create table if not exists work_requests (
+  id uuid primary key default gen_random_uuid(),
+  host_id uuid not null references profiles (id) on delete cascade,
+  -- Where it happens, and what it is. Both optional links kept loose (set null)
+  -- so archiving a template or delisting a room never deletes a live request.
+  class_template_id uuid references class_templates (id) on delete set null,
+  space_id uuid references spaces (id) on delete set null,
+
+  title text not null,
+  profession text,
+
+  starts_at timestamptz not null,
+  ends_at timestamptz not null,
+  -- The room's wall-clock zone, carried so the time reads the way the host meant
+  -- it wherever a practitioner sees it (the 0029/booking lesson).
+  time_zone text not null,
+
+  pay_cents integer not null check (pay_cents >= 0),
+  notes text,
+  urgent boolean not null default false,
+
+  state work_request_state not null default 'draft',
+  -- Server-written by confirm_work_interest only.
+  filled_interest_id uuid,
+  filled_at timestamptz,
+  cancelled_at timestamptz,
+  -- Defaults to the start; a request unanswered by then is treated as expired.
+  expires_at timestamptz,
+
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+
+  constraint work_requests_ordered check (ends_at > starts_at),
+  constraint work_requests_fill_consistent check (
+    (state = 'filled') = (filled_interest_id is not null and filled_at is not null)
+  ),
+  constraint work_requests_cancel_consistent check (
+    (state = 'cancelled') = (cancelled_at is not null)
+  ),
+  constraint work_requests_profession_known check (
+    profession is null or profession in (
+      'pilates', 'yoga', 'movement', 'massage', 'holistic', 'meditation', 'coaching', 'other'
+    )
+  ),
+  constraint work_requests_zone_region_form
+    check (time_zone ~ '^[A-Za-z][A-Za-z0-9+_-]*(/[A-Za-z0-9+_.-]+)+$')
+);
+
+create index if not exists work_requests_host_idx
+  on work_requests (host_id, created_at desc);
+-- The matcher's hot query: open requests still ahead of now.
+create index if not exists work_requests_open_idx
+  on work_requests (starts_at) where state = 'open';
+
+-- ------------------------------------------------------------------
+-- work_interest — a practitioner offering to cover, and the answer.
+--
+-- One row per (request, practitioner). state moves interested -> confirmed |
+-- declined, or the practitioner withdraws. At most one confirmed per request,
+-- guaranteed by a partial unique index and by confirm_work_interest doing the
+-- whole transition in one transaction.
+-- ------------------------------------------------------------------
+create table if not exists work_interest (
+  id uuid primary key default gen_random_uuid(),
+  request_id uuid not null references work_requests (id) on delete cascade,
+  practitioner_id uuid not null references profiles (id) on delete cascade,
+
+  state work_interest_state not null default 'interested',
+  message text,
+
+  created_at timestamptz not null default now(),
+  decided_at timestamptz,
+
+  constraint work_interest_unique unique (request_id, practitioner_id)
+);
+
+create index if not exists work_interest_request_idx
+  on work_interest (request_id, created_at);
+-- At most one confirmed practitioner per request — the schema-level backstop
+-- behind confirm_work_interest, so a double-fill is impossible even if the
+-- transaction logic were bypassed.
+create unique index if not exists work_interest_one_confirmed_per_request
+  on work_interest (request_id) where state = 'confirmed';
+
+-- The circular link, added once both tables exist: which interest filled the
+-- request. Loose FK (set null) so declining/deleting an interest never orphans.
+alter table work_requests
+  drop constraint if exists work_requests_filled_interest_fk;
+alter table work_requests
+  add constraint work_requests_filled_interest_fk
+  foreign key (filled_interest_id) references work_interest (id) on delete set null;
+
+-- ------------------------------------------------------------------
+-- Row-level security.
+--
+-- The two owner tables (preferences, availability) are the practitioner's own
+-- to read and write. class_templates are the host's own. work_requests and
+-- work_interest are readable by the parties they concern but NEVER writable from
+-- the browser: posting a request matches and notifies, expressing interest and
+-- confirming enforce eligibility and atomicity — all the route's job on the
+-- service key, so an insert policy would be a second copy of those rules
+-- drifting in another language (the 0033/0034 reasoning).
+-- ------------------------------------------------------------------
+
+-- work_preferences: the practitioner manages their own row.
+alter table work_preferences enable row level security;
+grant select, insert, update on work_preferences to authenticated;
+grant select, insert, update on work_preferences to service_role;
+
+drop policy if exists "work_preferences: practitioner reads own" on work_preferences;
+create policy "work_preferences: practitioner reads own"
+  on work_preferences for select
+  using (practitioner_id = auth.uid());
+
+drop policy if exists "work_preferences: only practitioners create own" on work_preferences;
+create policy "work_preferences: only practitioners create own"
+  on work_preferences for insert
+  with check (
+    practitioner_id = auth.uid()
+    and exists (select 1 from profiles p where p.id = auth.uid() and p.account_type = 'practitioner')
+  );
+
+drop policy if exists "work_preferences: practitioner updates own" on work_preferences;
+create policy "work_preferences: practitioner updates own"
+  on work_preferences for update
+  using (practitioner_id = auth.uid())
+  with check (practitioner_id = auth.uid());
+
+-- work_availability: the practitioner manages their own blocks.
+alter table work_availability enable row level security;
+grant select, insert, update, delete on work_availability to authenticated;
+grant select, insert, update, delete on work_availability to service_role;
+
+drop policy if exists "work_availability: practitioner reads own" on work_availability;
+create policy "work_availability: practitioner reads own"
+  on work_availability for select
+  using (practitioner_id = auth.uid());
+
+drop policy if exists "work_availability: only practitioners create own" on work_availability;
+create policy "work_availability: only practitioners create own"
+  on work_availability for insert
+  with check (
+    practitioner_id = auth.uid()
+    and exists (select 1 from profiles p where p.id = auth.uid() and p.account_type = 'practitioner')
+  );
+
+drop policy if exists "work_availability: practitioner updates own" on work_availability;
+create policy "work_availability: practitioner updates own"
+  on work_availability for update
+  using (practitioner_id = auth.uid())
+  with check (practitioner_id = auth.uid());
+
+drop policy if exists "work_availability: practitioner deletes own" on work_availability;
+create policy "work_availability: practitioner deletes own"
+  on work_availability for delete
+  using (practitioner_id = auth.uid());
+
+-- class_templates: the host manages their own templates.
+alter table class_templates enable row level security;
+grant select, insert, update, delete on class_templates to authenticated;
+grant select, insert, update, delete on class_templates to service_role;
+
+drop policy if exists "class_templates: host reads own" on class_templates;
+create policy "class_templates: host reads own"
+  on class_templates for select
+  using (host_id = auth.uid());
+
+drop policy if exists "class_templates: only hosts create own" on class_templates;
+create policy "class_templates: only hosts create own"
+  on class_templates for insert
+  with check (
+    host_id = auth.uid()
+    and exists (select 1 from profiles p where p.id = auth.uid() and p.account_type = 'host')
+  );
+
+drop policy if exists "class_templates: host updates own" on class_templates;
+create policy "class_templates: host updates own"
+  on class_templates for update
+  using (host_id = auth.uid())
+  with check (host_id = auth.uid());
+
+drop policy if exists "class_templates: host deletes own" on class_templates;
+create policy "class_templates: host deletes own"
+  on class_templates for delete
+  using (host_id = auth.uid());
+
+-- work_requests: the host reads their own; nobody writes from the browser.
+-- Practitioners never read the table directly — the matcher hands them safe
+-- previews server-side, so an open request never leaks its host or full detail
+-- to the whole marketplace.
+alter table work_requests enable row level security;
+grant select on work_requests to authenticated;
+grant select, insert, update on work_requests to service_role;
+
+drop policy if exists "work_requests: host reads own" on work_requests;
+create policy "work_requests: host reads own"
+  on work_requests for select
+  using (host_id = auth.uid());
+
+-- work_interest: the practitioner reads their own; the host reads interest on
+-- the requests they own — through the request, never by practitioner id, so a
+-- host cannot enumerate one person's whole history (the 0033 reasoning).
+alter table work_interest enable row level security;
+grant select on work_interest to authenticated;
+grant select, insert, update on work_interest to service_role;
+
+drop policy if exists "work_interest: practitioner reads own" on work_interest;
+create policy "work_interest: practitioner reads own"
+  on work_interest for select
+  using (practitioner_id = auth.uid());
+
+drop policy if exists "work_interest: host reads interest on own requests" on work_interest;
+create policy "work_interest: host reads interest on own requests"
+  on work_interest for select
+  using (
+    exists (
+      select 1 from work_requests r
+      where r.id = work_interest.request_id and r.host_id = auth.uid()
+    )
+  );
+
+-- ------------------------------------------------------------------
+-- confirm_work_interest — the studio picks one, atomically.
+--
+-- The crux of the whole feature: one practitioner is confirmed, everyone else
+-- on the request is declined, and the request flips to filled — all in one
+-- transaction, so two studios (or two clicks) racing the same request can never
+-- both win. The request row is locked FOR UPDATE (the instrument, like the
+-- advisory lock in award_founding_host), and every write is guarded on the
+-- state it expects, so a second attempt matches nothing and changes nothing.
+--
+-- Ownership is NOT checked here: this runs on the service role (auth.uid() is
+-- null on that path), and the calling route verifies the host owns the request
+-- before calling — the same discipline every admin-path write follows. Returns
+-- the confirmed interest id, or null when nothing was confirmed (already filled,
+-- expired, or a stale pick), so the route can tell the studio which happened.
+-- ------------------------------------------------------------------
+create or replace function confirm_work_interest(p_request_id uuid, p_interest_id uuid)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_state work_request_state;
+  v_starts timestamptz;
+begin
+  select state, starts_at into v_state, v_starts
+    from work_requests where id = p_request_id
+    for update;
+
+  if v_state is null then return null; end if;          -- unknown request
+  if v_state <> 'open' then return null; end if;         -- already filled/cancelled/draft
+  if v_starts <= now() then return null; end if;         -- effectively expired
+
+  -- The chosen interest must belong to this request and still be live.
+  update work_interest
+    set state = 'confirmed', decided_at = now()
+    where id = p_interest_id and request_id = p_request_id and state = 'interested';
+  if not found then return null; end if;                 -- stale pick: leave request open
+
+  update work_requests
+    set state = 'filled', filled_interest_id = p_interest_id, filled_at = now(),
+        updated_at = now()
+    where id = p_request_id and state = 'open';
+
+  -- Everyone else waiting on this request is declined in the same transaction.
+  update work_interest
+    set state = 'declined', decided_at = now()
+    where request_id = p_request_id and id <> p_interest_id and state = 'interested';
+
+  return p_interest_id;
+end;
+$$;
+
+revoke all on function confirm_work_interest(uuid, uuid) from public;
+grant execute on function confirm_work_interest(uuid, uuid) to service_role;

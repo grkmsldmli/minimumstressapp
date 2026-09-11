@@ -344,4 +344,69 @@ describe("stripe webhook", () => {
       }
     }
   });
+
+  const soon = Math.floor(Date.now() / 1000) + 30 * 86_400; // 30 days out
+  const longAgo = Math.floor(Date.now() / 1000) - 60 * 86_400;
+
+  it("does NOT forfeit when a discounted sub is cancelled DURING its trial (never converted)", async () => {
+    // Early opt-in during the free window: a trialing sub, cancelled before it
+    // ever bills. The 50% must survive for the member's real first conversion.
+    vi.stubEnv("STRIPE_WEBHOOK_SECRET", PLATFORM_SECRET);
+    await post(
+      signed(
+        PLATFORM_SECRET,
+        pro({ status: "canceled", trial_end: soon, metadata: { app_user_id: "user_1", founding_discount: "true" } }),
+      ),
+    );
+    expect(forfeiture()).toBeUndefined();
+  });
+
+  it("does NOT forfeit a still-trialing terminal event", async () => {
+    vi.stubEnv("STRIPE_WEBHOOK_SECRET", PLATFORM_SECRET);
+    await post(
+      signed(
+        PLATFORM_SECRET,
+        pro({ status: "trialing", trial_end: soon, metadata: { app_user_id: "user_1", founding_discount: "true" } }),
+      ),
+    );
+    expect(forfeiture()).toBeUndefined();
+  });
+
+  it("does NOT forfeit when the first charge never succeeded (incomplete_expired), even on a deleted event", async () => {
+    vi.stubEnv("STRIPE_WEBHOOK_SECRET", PLATFORM_SECRET);
+    // A real deleted event (terminal), so the convert-to-paid gate is exercised.
+    await post(
+      signed(PLATFORM_SECRET, {
+        id: "evt_del2",
+        type: "customer.subscription.deleted",
+        data: {
+          object: {
+            id: "sub_pro",
+            customer: "cus_1",
+            status: "incomplete_expired",
+            cancel_at_period_end: false,
+            metadata: { app_user_id: "user_1", founding_discount: "true" },
+            items: { data: [{ price: { lookup_key: "minimum_stress_pro_monthly" } }] },
+          },
+        },
+      }),
+    );
+    expect(forfeiture()).toBeUndefined();
+  });
+
+  it("DOES forfeit a discounted sub that converted (trial completed) then was cancelled", async () => {
+    vi.stubEnv("STRIPE_WEBHOOK_SECRET", PLATFORM_SECRET);
+    await post(
+      signed(
+        PLATFORM_SECRET,
+        pro({
+          status: "canceled",
+          trial_end: longAgo, // trial finished long ago…
+          ended_at: longAgo + 30 * 86_400, // …and it billed for a month before ending
+          metadata: { app_user_id: "user_1", founding_discount: "true" },
+        }),
+      ),
+    );
+    expect(forfeiture()).toHaveProperty("founding_practitioner_discount_forfeited_at");
+  });
 });

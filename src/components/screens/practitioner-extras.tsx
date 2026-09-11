@@ -636,12 +636,14 @@ export function ProScreen({
             ahead, whole terms booked in one go, and early cancellations cost you nothing.
           </p>
           {/* Founding Practitioner in the derived free window: it's already theirs,
-              free, no card. The only action is the optional opt-in to continue at
-              50% when it ends — that path collects a card, honestly. */}
+              free, no card. The only action is the optional opt-in to continue when
+              it ends — that path collects a card, honestly. The 50% is only offered
+              while the discount right stands (not forfeited by a prior lapse). */}
           {foundingFreeActive && !isPro && (
             <p className="font-body font-normal text-[13.5px] text-white/60 leading-relaxed mt-3">
-              Free for your first six months as a Founding Practitioner — no card, nothing
-              auto-charges. Continue any time at your permanent 50% rate ({formatCents(effectivePrice)}/mo).
+              {foundingDiscount
+                ? `Free for your first six months as a Founding Practitioner — no card, nothing auto-charges. Continue any time at your permanent 50% rate (${formatCents(effectivePrice)}/mo).`
+                : `Free for your first six months — no card, nothing auto-charges. Continue any time at the standard ${formatCents(PRO_PRICE_CENTS)}/mo.`}
             </p>
           )}
           {foundingFreeActive && !isPro && (
@@ -658,7 +660,7 @@ export function ProScreen({
               className="mt-6 px-8 py-3.5 rounded-full font-body font-medium text-[14.5px] text-white press disabled:opacity-60"
               style={{ backgroundColor: "#2578C2" }}
             >
-              {busy ? "One moment…" : "Continue at 50%"}
+              {busy ? "One moment…" : foundingDiscount ? "Continue at 50%" : "Continue"}
             </button>
           )}
           {failed && (

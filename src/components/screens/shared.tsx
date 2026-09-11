@@ -312,7 +312,8 @@ export function AuthEntry({
               <button
                 type="button"
                 onClick={() => onProvider("apple")}
-                className="w-full flex items-center justify-center gap-2 py-3.5 rounded-full font-body font-medium text-[15px] press"
+                disabled={busy}
+                className="w-full flex items-center justify-center gap-2 py-3.5 rounded-full font-body font-medium text-[15px] press disabled:opacity-60 disabled:pointer-events-none"
                 style={{ backgroundColor: "#fff", color: "#000" }}
               >
                 <AppleGlyph /> Continue with Apple
@@ -322,7 +323,8 @@ export function AuthEntry({
               <button
                 type="button"
                 onClick={() => onProvider("google")}
-                className="w-full flex items-center justify-center gap-2 py-3.5 rounded-full font-body font-medium text-[15px] press text-navy"
+                disabled={busy}
+                className="w-full flex items-center justify-center gap-2 py-3.5 rounded-full font-body font-medium text-[15px] press text-navy disabled:opacity-60 disabled:pointer-events-none"
                 style={{ backgroundColor: "#fff", border: "1px solid #E1E6EC" }}
               >
                 <GoogleGlyph /> Continue with Google
@@ -332,7 +334,8 @@ export function AuthEntry({
               <button
                 type="button"
                 onClick={() => onProvider("azure")}
-                className="w-full flex items-center justify-center gap-2 py-3.5 rounded-full font-body font-medium text-[15px] press text-navy"
+                disabled={busy}
+                className="w-full flex items-center justify-center gap-2 py-3.5 rounded-full font-body font-medium text-[15px] press text-navy disabled:opacity-60 disabled:pointer-events-none"
                 style={{ backgroundColor: "#fff", border: "1px solid #E1E6EC" }}
               >
                 <MicrosoftGlyph /> Continue with Microsoft

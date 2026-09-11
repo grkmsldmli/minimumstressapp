@@ -326,6 +326,9 @@ export function App() {
   const checkoutStartedRef = useRef(false);
   // The ?pro= redirect marker is acted on once per load, never replayed.
   const proReturnHandledRef = useRef(false);
+  // Held while an OAuth sign-in is being started, so a rapid double-tap on a
+  // provider button can never launch two browser flows at once.
+  const oauthInFlightRef = useRef(false);
 
   // Studio Pro checkout, confirmed the same honest way as Pro — the success
   // screen is gated on the server's studio_pro, never on "checkout opened".
@@ -1213,9 +1216,32 @@ export function App() {
   }, [data?.profile.identityVerifiedAt, confirmIdentityVerification]);
 
   /**
+   * Drop every scrap of the signed-in account from memory and return to the auth
+   * entry. `data` is the main snapshot, but sibling state holds user-specific
+   * content too — most sensitively `thread` (private message bodies), whose load
+   * effect is keyed on threadBookingId and so never clears itself once reset()
+   * nulls that id. The SPA is not reloaded on logout (nor in the Capacitor
+   * shell), so anything left here would render into the next account on the same
+   * mounted tree. Clear it all explicitly.
+   */
+  const clearSession = useCallback(() => {
+    setData(null);
+    setThread([]);
+    setDisputes([]);
+    setCoverageInterest([]);
+    setHere(null);
+    setNearbyOrder(null);
+    setDistanceLabels({});
+    reset();
+    refresh();
+  }, [reset, refresh]);
+
+  /**
    * Deletes, then resets. The order matters only in that the reset must not
    * happen first: a screen re-rendering against an account that still exists
-   * would refetch it and look like nothing happened.
+   * would refetch it and look like nothing happened. The account is gone
+   * server-side once the API returns ok, so a failed revoke afterwards is moot —
+   * clear locally regardless.
    */
   const deleteAccount = useCallback(async () => {
     const response = await apiFetch("/api/account/delete", {
@@ -1227,18 +1253,20 @@ export function App() {
     const payload = (await response.json().catch(() => ({}))) as { error?: string };
     if (!response.ok) throw new Error(payload.error ?? "Could not delete the account");
 
-    await repo.signOut();
-    reset();
-    refresh();
-  }, [repo, reset, refresh]);
+    clearSession();
+    await repo.signOut().catch(() => {});
+  }, [repo, clearSession]);
 
   const signOut = useCallback(() => {
-    void (async () => {
-      await repo.signOut();
-      reset();
-      refresh();
-    })();
-  }, [repo, reset, refresh]);
+    // Clear locally FIRST so logout is instant and user A's data can never linger
+    // on a flaky connection — the old code awaited repo.signOut() before
+    // clearing, so a network failure swallowed the whole cleanup and left A on
+    // screen with a live session. Revoke after, surfacing any failure so the
+    // person knows the sign-out did not fully complete rather than it failing
+    // silently.
+    clearSession();
+    void repo.signOut().catch((error) => setAuthError(describeAuthError(error)));
+  }, [repo, clearSession]);
 
   // Defined as functions rather than inlined: they render from above the
   // data guard, while every other screen renders from the switch below.
@@ -1320,11 +1348,24 @@ export function App() {
             // Leaves the app entirely and comes back through /auth/callback,
             // so there is no success path to handle here — only a failure to
             // start, which happens when the provider is not configured yet.
+            //
+            // Guarded against a double-tap: the ref rejects a second tap while
+            // the first is still opening the browser (the window where two
+            // Browser.open calls could race), and busy disables the buttons for
+            // that moment. Once the system browser is open the app is
+            // backgrounded, so releasing here is safe — a cancel or callback
+            // return finds the guard already clear and can retry.
+            if (oauthInFlightRef.current) return;
+            oauthInFlightRef.current = true;
+            setAuthBusy(true);
             void (async () => {
               try {
                 await signInWithProvider(provider);
               } catch (error) {
                 setAuthError(describeAuthError(error));
+              } finally {
+                oauthInFlightRef.current = false;
+                setAuthBusy(false);
               }
             })();
           }}

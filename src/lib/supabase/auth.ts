@@ -97,14 +97,21 @@ export async function signInWithPassword(email: string, password: string): Promi
  * returns to a custom-scheme deep link the app intercepts (see the appUrlOpen
  * handler in app.tsx, which calls exchangeOAuthCode). `skipBrowserRedirect`
  * keeps supabase-js from trying to navigate the WebView itself.
+ *
+ * Google only: force the account chooser with `prompt=select_account`. Our
+ * logout clears the Minimum Stress session but not Google's own browser SSO
+ * cookie, so without this Google silently re-picks the last Gmail and the user
+ * can never switch accounts after logging out. It is scoped to Google on
+ * purpose — Apple's flow does not take this parameter and must be left alone.
  */
 export async function signInWithProvider(provider: OAuthProvider): Promise<void> {
   const client = supabaseBrowser();
+  const queryParams = provider === "google" ? { prompt: "select_account" } : undefined;
 
   if (isNativeApp()) {
     const { data, error } = await client.auth.signInWithOAuth({
       provider,
-      options: { redirectTo: NATIVE_AUTH_REDIRECT, skipBrowserRedirect: true },
+      options: { redirectTo: NATIVE_AUTH_REDIRECT, skipBrowserRedirect: true, queryParams },
     });
     if (error) throw error;
     if (!data?.url) throw new Error("Could not start sign-in. Please try again.");
@@ -117,7 +124,7 @@ export async function signInWithProvider(provider: OAuthProvider): Promise<void>
 
   const { error } = await client.auth.signInWithOAuth({
     provider,
-    options: { redirectTo: `${window.location.origin}/auth/callback` },
+    options: { redirectTo: `${window.location.origin}/auth/callback`, queryParams },
   });
   if (error) throw error;
 }

@@ -248,7 +248,13 @@ export function PullToRefresh({
   return (
     <div
       ref={scrollRef}
-      className={`overflow-y-auto ${className}`}
+      // overflow-x-hidden is a deliberate width guard, not a cosmetic one: a bare
+      // `overflow-y-auto` computes overflow-x to `auto`, so any child a hair wider
+      // than the viewport turns the whole screen into a left/right pan. Every
+      // screen shares this one scroller, so clipping x here means no single screen
+      // can widen the native WebView — the offending child is still fixed at source
+      // (this only backstops it). A nested horizontal rail keeps its own scroller.
+      className={`overflow-y-auto overflow-x-hidden ${className}`}
       style={{ overscrollBehaviorY: "contain", ...style }}
     >
       {header}

@@ -51,3 +51,6 @@ next-env.d.ts
 # One-off SQL cut from a migration to hand over for pasting. The migration is
 # the copy that counts — supabase/apply.sql is generated and tracked.
 /storage-fix.sql
+
+# Supabase CLI local cache/scratch — never part of the schema.
+supabase/.temp/

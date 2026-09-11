@@ -50,16 +50,13 @@ function ActionTile({
   label: string;
   value: string;
   tone?: "default" | "on" | "off";
-  onClick: () => void;
+  /** Omit for a static stat tile (e.g. "My applications" with none to jump to) —
+   *  it renders identically but is not a pressable dead end. */
+  onClick?: () => void;
 }) {
   const valueColor = tone === "on" ? "#557255" : tone === "off" ? "#8AA0B6" : "#2670B0";
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="rounded-2xl bg-white p-3.5 text-left press flex flex-col justify-between min-h-[92px]"
-      style={{ border: "1px solid #E7EEF6" }}
-    >
+  const body = (
+    <>
       <Icon size={18} color="#8BA3BD" aria-hidden />
       <div className="mt-3">
         <p className="font-body font-medium text-[13px] text-navy leading-tight">{label}</p>
@@ -67,6 +64,20 @@ function ActionTile({
           {value}
         </p>
       </div>
+    </>
+  );
+  const className = "rounded-2xl bg-white p-3.5 text-left flex flex-col justify-between min-h-[92px]";
+  const style = { border: "1px solid #E7EEF6" } as const;
+  if (!onClick) {
+    return (
+      <div className={className} style={style}>
+        {body}
+      </div>
+    );
+  }
+  return (
+    <button type="button" onClick={onClick} className={`${className} press`} style={style}>
+      {body}
     </button>
   );
 }
@@ -358,7 +369,9 @@ export function WorkPractitioner({
             icon={ClipboardList}
             label="My applications"
             value={String(myApplications.length)}
-            onClick={() => scrollToSection("work-applications")}
+            onClick={
+              myApplications.length > 0 ? () => scrollToSection("work-applications") : undefined
+            }
           />
           <ActionTile
             icon={LayoutGrid}

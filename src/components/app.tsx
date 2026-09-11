@@ -1216,9 +1216,32 @@ export function App() {
   }, [data?.profile.identityVerifiedAt, confirmIdentityVerification]);
 
   /**
+   * Drop every scrap of the signed-in account from memory and return to the auth
+   * entry. `data` is the main snapshot, but sibling state holds user-specific
+   * content too — most sensitively `thread` (private message bodies), whose load
+   * effect is keyed on threadBookingId and so never clears itself once reset()
+   * nulls that id. The SPA is not reloaded on logout (nor in the Capacitor
+   * shell), so anything left here would render into the next account on the same
+   * mounted tree. Clear it all explicitly.
+   */
+  const clearSession = useCallback(() => {
+    setData(null);
+    setThread([]);
+    setDisputes([]);
+    setCoverageInterest([]);
+    setHere(null);
+    setNearbyOrder(null);
+    setDistanceLabels({});
+    reset();
+    refresh();
+  }, [reset, refresh]);
+
+  /**
    * Deletes, then resets. The order matters only in that the reset must not
    * happen first: a screen re-rendering against an account that still exists
-   * would refetch it and look like nothing happened.
+   * would refetch it and look like nothing happened. The account is gone
+   * server-side once the API returns ok, so a failed revoke afterwards is moot —
+   * clear locally regardless.
    */
   const deleteAccount = useCallback(async () => {
     const response = await apiFetch("/api/account/delete", {
@@ -1230,24 +1253,20 @@ export function App() {
     const payload = (await response.json().catch(() => ({}))) as { error?: string };
     if (!response.ok) throw new Error(payload.error ?? "Could not delete the account");
 
-    await repo.signOut();
-    setData(null);
-    reset();
-    refresh();
-  }, [repo, reset, refresh]);
+    clearSession();
+    await repo.signOut().catch(() => {});
+  }, [repo, clearSession]);
 
   const signOut = useCallback(() => {
-    void (async () => {
-      await repo.signOut();
-      // Drop the previous account's snapshot from memory immediately, so nothing
-      // of user A survives into the auth screen or a subsequent user B sign-in —
-      // the load effect is skipped while signed out (needsAccount), so without
-      // this the stale snapshot would otherwise linger until B's data lands.
-      setData(null);
-      reset();
-      refresh();
-    })();
-  }, [repo, reset, refresh]);
+    // Clear locally FIRST so logout is instant and user A's data can never linger
+    // on a flaky connection — the old code awaited repo.signOut() before
+    // clearing, so a network failure swallowed the whole cleanup and left A on
+    // screen with a live session. Revoke after, surfacing any failure so the
+    // person knows the sign-out did not fully complete rather than it failing
+    // silently.
+    clearSession();
+    void repo.signOut().catch((error) => setAuthError(describeAuthError(error)));
+  }, [repo, clearSession]);
 
   // Defined as functions rather than inlined: they render from above the
   // data guard, while every other screen renders from the switch below.

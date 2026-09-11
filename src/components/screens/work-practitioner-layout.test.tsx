@@ -79,4 +79,10 @@ describe("WorkPractitioner — action grid", () => {
     renderWork({ canBrowse: false });
     expect(screen.getByText("Pro")).toBeTruthy();
   });
+
+  it("the 'My applications' tile is a static (non-pressable) tile when there are none", () => {
+    renderWork({ opportunities: [] });
+    // No section to jump to, so it must not be a dead pressable button.
+    expect(screen.getByText("My applications").closest("button")).toBeNull();
+  });
 });

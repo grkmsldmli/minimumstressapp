@@ -2456,6 +2456,7 @@ export function App() {
       return (
         <ProScreen
           isPro={profile.isPro}
+          proActive={entitlements.practitionerProActive}
           celebrate={justUpgraded}
           confirming={confirmingPro}
           foundingFreeActive={entitlements.foundingProFreeUntil !== null}

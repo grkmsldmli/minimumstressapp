@@ -64,10 +64,15 @@ export async function POST(request: NextRequest): Promise<Response> {
     const foundingHostAt = profile?.founding_host_at ? new Date(profile.founding_host_at) : null;
     const now = new Date();
     // Founding host still in the free window subscribing early → charge nothing
-    // until the free period ends.
+    // until the free period ends. Clamp to Stripe's ~48h minimum trial_end so an
+    // opt-in in the final two days can't 400 the checkout.
+    const MIN_TRIAL_SECONDS = 48 * 60 * 60;
     const trialEndUnix =
       foundingHostAt && withinFoundingFreePeriod(foundingHostAt, now)
-        ? Math.floor(foundingHostFreeUntil(foundingHostAt).getTime() / 1000)
+        ? Math.max(
+            Math.floor(foundingHostFreeUntil(foundingHostAt).getTime() / 1000),
+            Math.floor(now.getTime() / 1000) + MIN_TRIAL_SECONDS,
+          )
         : undefined;
 
     const url = await startStudioProSubscription({

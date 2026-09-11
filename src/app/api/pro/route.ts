@@ -72,9 +72,17 @@ export async function POST(request: NextRequest): Promise<Response> {
     const foundingPractitionerAt = profile?.founding_practitioner_at
       ? new Date(profile.founding_practitioner_at)
       : null;
+    const now = new Date();
+    // Stripe rejects a checkout trial_end under ~48h in the future. If a founding
+    // practitioner opts in during the last two days of their window, clamp the
+    // trial to that floor (a few hours of extra free, never a hard failure).
+    const MIN_TRIAL_SECONDS = 48 * 60 * 60;
     const trialEndUnix =
-      foundingPractitionerAt && withinFoundingPractitionerFreePeriod(foundingPractitionerAt, new Date())
-        ? Math.floor(foundingPractitionerFreeUntil(foundingPractitionerAt).getTime() / 1000)
+      foundingPractitionerAt && withinFoundingPractitionerFreePeriod(foundingPractitionerAt, now)
+        ? Math.max(
+            Math.floor(foundingPractitionerFreeUntil(foundingPractitionerAt).getTime() / 1000),
+            Math.floor(now.getTime() / 1000) + MIN_TRIAL_SECONDS,
+          )
         : undefined;
 
     const url = await startSubscription({

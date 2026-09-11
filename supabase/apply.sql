@@ -8116,9 +8116,24 @@ create policy "work_roster: host removes own"
 --      founding_practitioner_at — which 0068 already stores — and the 50% is a
 --      Stripe coupon tied to the benefit. So this migration is only the cap change.
 --
--- Idempotent throughout: every function is create-or-replace, every constraint is
--- drop-if-exists then add, and each re-backfill inserts only for accounts not
--- already in its ledger and only up to the new cap.
+-- Idempotent for the way this project applies migrations — incrementally, each
+-- new migration run once (0069/0070 were applied this way): every function is
+-- create-or-replace, every constraint is drop-if-exists then add, and each
+-- re-backfill inserts only for accounts not already in its ledger and only up to
+-- the new cap, so re-running THIS migration is safe.
+--
+-- KNOWN LIMIT — re-pasting the ENTIRE apply.sql onto a populated DB after a cohort
+-- has grown past fifty: the frozen 0060/0068 run before this file and
+-- unconditionally re-add their profiles range checks at the old fifty bound (they
+-- predate the NOT VALID convention 0011 later adopted). Those re-adds would
+-- validate the 51..100 rows this migration creates and abort — a failure this
+-- migration cannot prevent from a later position, and cannot fix without editing
+-- those applied migrations. In Supabase's SQL editor a pasted script runs in one
+-- transaction, so such a re-run rolls back cleanly rather than leaving a partial
+-- schema; the incremental flow (each migration applied once) is unaffected. If
+-- full-apply re-runnability against populated DBs is ever needed, 0060/0068's
+-- profiles range checks must be widened or made NOT VALID (an edit to applied
+-- migrations, out of scope here).
 
 -- ==================================================================
 -- Founding Host → 100

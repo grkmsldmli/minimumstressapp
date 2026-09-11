@@ -41,6 +41,7 @@ import type { Standing } from "@/lib/reliability";
 import type { MilestoneKey } from "@/lib/milestones";
 import {
   BOOKING_HORIZON_DAYS,
+  FOUNDING_PRACTITIONER_DISCOUNT,
   MAX_UPCOMING_BOOKINGS_FREE,
   PRO_BOOKING_HORIZON_DAYS,
   PRO_PRICE_CENTS,
@@ -582,6 +583,7 @@ export function proView(input: {
 
 export function ProScreen({
   isPro,
+  proActive = false,
   onBack,
   onSubscribe,
   celebrate = false,
@@ -590,26 +592,35 @@ export function ProScreen({
   foundingDiscount = false,
 }: {
   isPro: boolean;
+  /** Pro is active (paid OR a Founding Practitioner's derived free period) — drives
+   *  the "You're Pro" view even before any paid subscription exists. */
+  proActive?: boolean;
   onBack: () => void;
   /** Opens checkout. Rejects only when the checkout could not be opened — it is
    *  never proof of payment, so it never shows the success screen. */
   onSubscribe: () => Promise<unknown>;
-  /** A fresh, server-confirmed upgrade. Adds the confetti, shown once. */
+  /** A fresh, server-confirmed PAID upgrade. Adds the confetti, shown once. */
   celebrate?: boolean;
   /** Returned from checkout, waiting on the webhook to confirm the payment. */
   confirming?: boolean;
-  /** This Founding Practitioner is inside their free window right now (no card). */
+  /** This Founding Practitioner is inside their free window right now. */
   foundingFreeActive?: boolean;
   /** This practitioner holds the permanent Founding 50%-off right to Pro. */
   foundingDiscount?: boolean;
 }) {
-  // The Founding Practitioner pays half the applicable list price, forever — the
-  // server applies the coupon at checkout; this only shows the right numbers.
-  const effectivePrice = foundingDiscount ? Math.round(PRO_PRICE_CENTS / 2) : PRO_PRICE_CENTS;
+  // The Founding Practitioner pays the applicable list price less their permanent
+  // discount, forever — the server applies the coupon at checkout; this only shows
+  // the right number, off the same constant so display and coupon can't drift.
+  const effectivePrice = foundingDiscount
+    ? Math.round(PRO_PRICE_CENTS * (1 - FOUNDING_PRACTITIONER_DISCOUNT))
+    : PRO_PRICE_CENTS;
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
 
-  const view = proView({ isPro, confirming, celebrate });
+  // Active covers both paid Pro and a founding free period — so a Founding
+  // Practitioner in their free window sees "You're Pro", never an offer to buy
+  // what they already have for free. Celebrate stays tied to a real paid upgrade.
+  const view = proView({ isPro: proActive || isPro, confirming, celebrate });
 
   if (view === "active" || view === "celebrate") {
     return (
@@ -624,11 +635,42 @@ export function ProScreen({
             No limit on how many sessions you hold, {PRO_BOOKING_HORIZON_DAYS} days to plan
             ahead, whole terms booked in one go, and early cancellations cost you nothing.
           </p>
+          {/* Founding Practitioner in the derived free window: it's already theirs,
+              free, no card. The only action is the optional opt-in to continue at
+              50% when it ends — that path collects a card, honestly. */}
+          {foundingFreeActive && !isPro && (
+            <p className="font-body font-normal text-[13.5px] text-white/60 leading-relaxed mt-3">
+              Free for your first six months as a Founding Practitioner — no card, nothing
+              auto-charges. Continue any time at your permanent 50% rate ({formatCents(effectivePrice)}/mo).
+            </p>
+          )}
+          {foundingFreeActive && !isPro && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                setFailed(null);
+                setBusy(true);
+                void onSubscribe()
+                  .catch((cause) => setFailed(errorMessage(cause, "Could not open checkout.")))
+                  .finally(() => setBusy(false));
+              }}
+              className="mt-6 px-8 py-3.5 rounded-full font-body font-medium text-[14.5px] text-white press disabled:opacity-60"
+              style={{ backgroundColor: "#2578C2" }}
+            >
+              {busy ? "One moment…" : "Continue at 50%"}
+            </button>
+          )}
+          {failed && (
+            <p className="font-body font-normal text-[13px] text-white/80 mt-3" role="alert">
+              {failed}
+            </p>
+          )}
           <button
             type="button"
             onClick={onBack}
-            className="mt-7 px-8 py-3.5 rounded-full font-body font-medium text-[14.5px] text-white press"
-            style={{ backgroundColor: "#2578C2" }}
+            className={`${foundingFreeActive && !isPro ? "mt-3 text-white/70 text-[14px]" : "mt-7 px-8 py-3.5 text-white text-[14.5px]"} rounded-full font-body font-medium press`}
+            style={foundingFreeActive && !isPro ? undefined : { backgroundColor: "#2578C2" }}
           >
             Done
           </button>
@@ -689,27 +731,20 @@ export function ProScreen({
           <div className="mt-2 flex justify-center">
             <Headline pre="Go" accent="Pro." size={30} light />
           </div>
-          {foundingFreeActive ? (
-            <>
-              <p className="font-display italic font-semibold text-white mt-3" style={{ fontSize: 30 }}>
-                Free for 6 months
-              </p>
-              <p className="font-body font-normal text-[13.5px] text-white/65 mt-1">
-                then {formatCents(effectivePrice)}/mo · your permanent Founding rate
-              </p>
-            </>
-          ) : (
-            <p className="font-display italic font-semibold text-white mt-3" style={{ fontSize: 38 }}>
-              {foundingDiscount && (
-                <span className="font-body font-normal text-[16px] text-white/45 line-through mr-2">
-                  {formatCents(PRO_PRICE_CENTS)}
-                </span>
-              )}
-              {formatCents(effectivePrice)}
-              <span className="font-body font-normal text-[15.5px] text-white/60">/mo</span>
-            </p>
-          )}
-          {foundingDiscount && !foundingFreeActive && (
+          {/* The offer is only reached when Pro is NOT active — so a founding
+              practitioner sees it only AFTER their free window, at their permanent
+              50% rate (list price struck through). During the free window they get
+              the active "You're Pro" view instead. */}
+          <p className="font-display italic font-semibold text-white mt-3" style={{ fontSize: 38 }}>
+            {foundingDiscount && (
+              <span className="font-body font-normal text-[16px] text-white/45 line-through mr-2">
+                {formatCents(PRO_PRICE_CENTS)}
+              </span>
+            )}
+            {formatCents(effectivePrice)}
+            <span className="font-body font-normal text-[15.5px] text-white/60">/mo</span>
+          </p>
+          {foundingDiscount && (
             <p className="font-body font-normal text-[13px] text-white/65 mt-1">
               Founding Practitioner · 50% for life
             </p>
@@ -806,16 +841,10 @@ export function ProScreen({
               .finally(() => setBusy(false));
           }}
         >
-          {busy
-            ? "One moment…"
-            : foundingFreeActive
-              ? "Start free — no card needed"
-              : `Start Pro — ${formatCents(effectivePrice)}/mo`}
+          {busy ? "One moment…" : `Start Pro — ${formatCents(effectivePrice)}/mo`}
         </PrimaryButton>
         <p className="text-center font-body font-normal text-[13.5px] mt-2.5 text-ink-faint">
-          {foundingFreeActive
-            ? "No card for your free months, and nothing auto-charges when they end."
-            : "Cancel anytime."}
+          Cancel anytime.
         </p>
       </div>
     </div>

@@ -217,7 +217,15 @@ export function Discover({
 
   const hero = (
     <div
-      className="px-6 pt-8 safe-pt-8 pb-7 relative overflow-hidden shrink-0 rounded-b-[30px]"
+      // The native top safe-area inset belongs to whichever element is topmost.
+      // When the Go Pro banner is showing (!isPro) it sits above the hero and
+      // already clears the status bar (its own calc(... + env(safe-area-inset-top))),
+      // so the hero must NOT add the inset a second time — doing so stacked a full
+      // safe-area height of empty navy between the banner and the greeting on
+      // notched / Dynamic Island phones. Only when there is no banner (isPro) is
+      // the hero itself topmost and needs safe-pt-8. Plain pt-8 stays either way,
+      // so the greeting is never cramped and web/Android (env = 0) are unchanged.
+      className={`px-6 pt-8 ${isPro ? "safe-pt-8 " : ""}pb-7 relative overflow-hidden shrink-0 rounded-b-[30px]`}
       style={{ background: NAVY }}
     >
       <Ambient />

@@ -105,3 +105,22 @@ describe("Discover header shortcuts", () => {
     ).not.toBeNull();
   });
 });
+
+describe("Discover hero — native top safe-area", () => {
+  const hero = () => document.querySelector('[class*="rounded-b-"]');
+
+  it("does NOT double the safe-area inset when the Go Pro banner is present (free user)", () => {
+    renderDiscover({ isPro: false });
+    // The banner is the topmost element and clears the status bar itself, so the
+    // hero must not add safe-pt-8 on top of it (that stacked an empty navy block).
+    expect(screen.getByText(/Unlimited sessions/i)).toBeTruthy();
+    expect(hero()?.classList.contains("safe-pt-8")).toBe(false);
+    expect(hero()?.classList.contains("pt-8")).toBe(true);
+  });
+
+  it("keeps safe-pt-8 when there is no banner (Pro user), so the hero clears the status bar", () => {
+    renderDiscover({ isPro: true });
+    expect(screen.queryByText(/Unlimited sessions/i)).toBeNull();
+    expect(hero()?.classList.contains("safe-pt-8")).toBe(true);
+  });
+});

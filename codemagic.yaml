@@ -1,0 +1,87 @@
+# Codemagic build for the Capacitor native shell.
+#
+# The app is server-driven: capacitor.config.ts points at minimumstress.app, so
+# the build does NOT compile the Next.js site — it only installs dependencies,
+# syncs Capacitor, and builds the native app.
+
+workflows:
+  android-debug:
+    name: Android debug (test build, no signing)
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    environment:
+      node: 22
+    scripts:
+      - name: Install dependencies
+        script: npm ci
+      - name: Sync Capacitor (Android)
+        script: npx cap sync android
+      - name: Build debug APK
+        script: |
+          echo "=== JDKs available on this runner ==="
+          /usr/libexec/java_home -V 2>&1 || true
+          export JAVA_HOME=$(/usr/libexec/java_home -v 21)
+          echo "Using JAVA_HOME=$JAVA_HOME"
+          "$JAVA_HOME/bin/java" -version
+          cd android
+          chmod +x ./gradlew
+          ./gradlew assembleDebug -Dorg.gradle.java.home="$JAVA_HOME" --no-daemon
+    artifacts:
+      - android/app/build/outputs/**/*.apk
+
+  ios-release:
+    name: iOS — TestFlight
+    instance_type: mac_mini_m2
+    max_build_duration: 90
+    integrations:
+      app_store_connect: minimumstress_asc
+    environment:
+      node: 22
+      xcode: latest
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.minimumstress.app
+    scripts:
+      - name: Install dependencies
+        script: npm ci
+      - name: Sync Capacitor (iOS)
+        script: npx cap sync ios
+      - name: Apply uploaded signing files
+        script: |
+          xcode-project use-profiles
+      - name: Verify Sign in with Apple provisioning
+        script: |
+          set -e
+          PROFILE_PATH="${CM_PROVISIONING_PROFILE:-}"
+          if [ -z "$PROFILE_PATH" ]; then
+            PROFILE_PATH=$(find "$HOME/Library/MobileDevice/Provisioning Profiles" -type f -name '*.mobileprovision' 2>/dev/null | head -n 1 || true)
+          fi
+          if [ -z "$PROFILE_PATH" ] || [ ! -f "$PROFILE_PATH" ]; then
+            echo "No provisioning profile was fetched by Codemagic. Upload the App Store profile for com.minimumstress.app under Code signing identities."
+            exit 1
+          fi
+          security cms -D -i "$PROFILE_PATH" > /tmp/profile.plist
+          PROFILE_NAME=$(/usr/libexec/PlistBuddy -c 'Print :Name' /tmp/profile.plist 2>/dev/null || true)
+          PROFILE_UUID=$(/usr/libexec/PlistBuddy -c 'Print :UUID' /tmp/profile.plist 2>/dev/null || true)
+          echo "Provisioning profile: $PROFILE_NAME"
+          echo "Provisioning UUID: $PROFILE_UUID"
+          /usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.developer.applesignin' /tmp/profile.plist >/dev/null 2>&1 || {
+            echo "Selected provisioning profile does not contain the Sign in with Apple entitlement."
+            exit 1
+          }
+          echo "Sign in with Apple entitlement: present"
+      - name: Unique build number
+        script: |
+          cd ios/App
+          agvtool new-version -all "$(date +%s)"
+      - name: Build the signed IPA
+        script: |
+          xcode-project build-ipa \
+            --project "ios/App/App.xcodeproj" \
+            --scheme "App"
+    artifacts:
+      - build/ios/ipa/*.ipa
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true

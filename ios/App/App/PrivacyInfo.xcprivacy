@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!--
+    Privacy manifest for the Minimum Stress app target.
+
+    The app is a Capacitor shell that loads the production web app; it runs no
+    advertising or analytics SDK, so it does not track. Data collection happens
+    server-side through the web app and is disclosed in the App Store Connect App
+    Privacy label (see docs/app-store/privacy-label.md on main), which is the
+    authoritative source; that is why NSPrivacyCollectedDataTypes is empty here.
+    Each bundled Capacitor plugin ships its own manifest.
+  -->
+  <key>NSPrivacyTracking</key>
+  <false/>
+  <key>NSPrivacyTrackingDomains</key>
+  <array/>
+  <key>NSPrivacyCollectedDataTypes</key>
+  <array/>
+  <key>NSPrivacyAccessedAPITypes</key>
+  <array>
+    <dict>
+      <key>NSPrivacyAccessedAPIType</key>
+      <string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+      <key>NSPrivacyAccessedAPITypeReasons</key>
+      <array>
+        <string>CA92.1</string>
+      </array>
+    </dict>
+  </array>
+</dict>
+</plist>

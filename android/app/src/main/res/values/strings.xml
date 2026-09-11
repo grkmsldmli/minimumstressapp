@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Minimum Stress</string>
+    <string name="title_activity_main">Minimum Stress</string>
+    <string name="package_name">com.minimumstress.app</string>
+    <string name="custom_url_scheme">com.minimumstress.app</string>
+</resources>

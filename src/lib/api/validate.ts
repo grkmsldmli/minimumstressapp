@@ -141,6 +141,52 @@ export function integer(
   return ok(value);
 }
 
+/**
+ * An optional integer inside a range: a missing/null field is a valid `null`.
+ *
+ * Distinct from `integer`, which insists on a number. A coverage listing's
+ * expected-participants is genuinely unknown for a private session, so absence
+ * is an answer, not an error.
+ */
+export function optionalInteger(
+  body: Record<string, unknown>,
+  field: string,
+  { min, max }: { min: number; max: number },
+): Validated<number | null> {
+  const value = body[field];
+  if (value === undefined || value === null) return ok(null);
+  if (typeof value !== "number" || !Number.isInteger(value)) {
+    return bad(`${field} must be a whole number`);
+  }
+  if (value < min || value > max) return bad(`${field} must be between ${min} and ${max}`);
+  return ok(value);
+}
+
+/**
+ * A list of short labels — e.g. a listing's required/preferred qualifications.
+ *
+ * Missing is an empty list, not an error. Each entry is trimmed, blanks are
+ * dropped, and both the count and each length are capped so a free-text field
+ * cannot become an unbounded write. Anything that is not an array of strings is
+ * refused rather than coerced.
+ */
+export function stringArray(
+  body: Record<string, unknown>,
+  field: string,
+  { maxItems = 20, maxLength = 120 }: { maxItems?: number; maxLength?: number } = {},
+): Validated<string[]> {
+  const value = body[field];
+  if (value === undefined || value === null) return ok([]);
+  if (!Array.isArray(value)) return bad(`${field} must be a list`);
+  if (value.some((v) => typeof v !== "string")) return bad(`${field} must be a list of text`);
+  const cleaned = (value as string[])
+    .map((v) => v.trim())
+    .filter((v) => v !== "")
+    .map((v) => (v.length > maxLength ? v.slice(0, maxLength) : v));
+  if (cleaned.length > maxItems) return bad(`${field} has too many entries`);
+  return ok(cleaned);
+}
+
 /** One of a fixed set. The set is the validation. */
 export function oneOf<T extends string>(
   body: Record<string, unknown>,

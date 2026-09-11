@@ -1,4 +1,6 @@
-import { PRO_PRICE_CENTS } from "../money";
+import type Stripe from "stripe";
+
+import { PRO_PRICE_CENTS, STUDIO_PRO_PRICE_CENTS } from "../money";
 import { stripe } from "./client";
 
 /**
@@ -122,4 +124,101 @@ export async function billingPortal(customerId: string, origin: string): Promise
  */
 export function grantsPro(status: string): boolean {
   return status === "active" || status === "trialing" || status === "past_due";
+}
+
+/* ------------------------------------------------------------------ */
+/*  Studio Pro — the host-account subscription                          */
+/*                                                                     */
+/*  Mirrors practitioner Pro above and rides the SAME Stripe customer.  */
+/*  It is disambiguated from practitioner Pro by subscription metadata  */
+/*  (kind: "studio_pro") so the webhook writes profiles.studio_pro,     */
+/*  never is_pro. Founding-Host benefits: the free six months are a     */
+/*  DERIVED entitlement (lib/entitlements) with no Stripe subscription  */
+/*  and no card — so they are NOT modelled here; only voluntary         */
+/*  continuation goes through checkout, where a founding host still in   */
+/*  their free window gets trial_end = free_until (so no charge before   */
+/*  it ends) and every founding host gets the lifetime 50% coupon.      */
+/* ------------------------------------------------------------------ */
+
+const STUDIO_PRO_PRICE_LOOKUP_KEY = "minimum_stress_studio_pro_monthly";
+
+/** A stable, forever 50%-off coupon for Founding Hosts, created once. */
+const FOUNDING_HOST_COUPON_ID = "founding_host_studio_50";
+
+export async function studioProPriceId(): Promise<string> {
+  const existing = await stripe().prices.list({
+    lookup_keys: [STUDIO_PRO_PRICE_LOOKUP_KEY],
+    active: true,
+    limit: 1,
+  });
+  if (existing.data[0]) return existing.data[0].id;
+
+  const price = await stripe().prices.create({
+    lookup_key: STUDIO_PRO_PRICE_LOOKUP_KEY,
+    currency: "usd",
+    unit_amount: STUDIO_PRO_PRICE_CENTS,
+    recurring: { interval: "month" },
+    product_data: { name: "Minimum Stress Studio Pro" },
+  });
+  return price.id;
+}
+
+/**
+ * The Founding-Host discount, as a coupon tied to the benefit rather than to one
+ * subscription — so it survives cancel and applies again on resubscribe. Created
+ * once with a fixed id; percent-based and forever, so it tracks the applicable
+ * Studio Pro list price even if that price later changes.
+ */
+async function foundingHostCouponId(): Promise<string> {
+  try {
+    return (await stripe().coupons.retrieve(FOUNDING_HOST_COUPON_ID)).id;
+  } catch {
+    const coupon = await stripe().coupons.create({
+      id: FOUNDING_HOST_COUPON_ID,
+      percent_off: 50,
+      duration: "forever",
+      name: "Founding Host — 50% off Studio Pro",
+    });
+    return coupon.id;
+  }
+}
+
+/**
+ * Start (or continue) a Studio Pro subscription via hosted Checkout.
+ *
+ * `trialEndUnix` (seconds) is set only for a founding host who subscribes while
+ * still inside their free window, so Stripe charges nothing until then. Founding
+ * hosts always carry the 50% coupon (applied to the recurring charge after any
+ * trial). No card is ever collected outside this deliberate, opted-in flow.
+ */
+export async function startStudioProSubscription(input: {
+  customerId: string;
+  userId: string;
+  origin: string;
+  foundingDiscount: boolean;
+  trialEndUnix?: number;
+}): Promise<string> {
+  const session = await stripe().checkout.sessions.create({
+    mode: "subscription",
+    customer: input.customerId,
+    line_items: [{ price: await studioProPriceId(), quantity: 1 }],
+    subscription_data: {
+      // `kind` is what the webhook branches on so this never touches is_pro.
+      metadata: { app_user_id: input.userId, kind: "studio_pro" },
+      ...(input.trialEndUnix ? { trial_end: input.trialEndUnix } : {}),
+    },
+    metadata: { app_user_id: input.userId, kind: "studio_pro" },
+    ...(input.foundingDiscount ? { discounts: [{ coupon: await foundingHostCouponId() }] } : {}),
+    success_url: `${input.origin}/?studiopro=started`,
+    cancel_url: `${input.origin}/?studiopro=cancelled`,
+  });
+
+  if (!session.url) throw new Error("Stripe returned a checkout session with no URL");
+  return session.url;
+}
+
+/** Whether a subscription is the Studio Pro one — by metadata, then price key. */
+export function isStudioProSubscription(sub: Stripe.Subscription): boolean {
+  if (sub.metadata?.kind === "studio_pro") return true;
+  return sub.items.data.some((i) => i.price?.lookup_key === STUDIO_PRO_PRICE_LOOKUP_KEY);
 }

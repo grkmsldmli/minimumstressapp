@@ -94,7 +94,8 @@ describe("migrations apply cleanly", () => {
       // +2 in 0067: blocked_users and message_reports. +1 in 0068:
       // founding_practitioners. +5 in 0069 (Work): work_preferences,
       // work_availability, class_templates, work_requests, work_interest.
-      expect(tables.rows).toHaveLength(26);
+      // +1 in 0070 (Studio Pro): work_roster.
+      expect(tables.rows).toHaveLength(27);
     } finally {
       await fresh.close();
     }
@@ -193,6 +194,9 @@ describe("migrations apply cleanly", () => {
       "work_preferences",
       // A studio's "need coverage" post, with an explicit lifecycle.
       "work_requests",
+      // A studio's trusted-substitute network — invite from it, never auto-assign
+      // (Studio Pro, 0070).
+      "work_roster",
     ]);
   });
 

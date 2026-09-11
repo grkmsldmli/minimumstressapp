@@ -72,11 +72,14 @@ import type { AccessDetails } from "./access-details";
 import { normalize, type AvailabilityBlock } from "./availability";
 import type { NotificationEntry } from "./notify/history";
 import type {
+  BoardFilters,
   ClassTemplate,
   ClassTemplateInput,
   CoverageRequest,
   CoverageRequestInput,
   RequestInterest,
+  RosterMember,
+  SessionFormat,
   WorkInterestState,
   WorkOpportunity,
   WorkPreferences,
@@ -124,6 +127,10 @@ import { type RefundReason, questionFor } from "./refunds";
 import { FALLBACK_ZONE, isKnownZone } from "./timezone";
 import { MEDIA_SIGN_MAX_BATCH, type MediaSignResponse } from "./media-sign";
 import { buildImageVariants } from "./image-variants";
+import {
+  sessionDetailsFromRow,
+  sessionDetailsToRow,
+} from "./work/session-details";
 
 /** Rows as PostgREST returns them, before mapping into domain shapes. */
 interface SpaceRow {
@@ -361,6 +368,13 @@ export class SupabaseRepository implements Repository {
         ? new Date(data.founding_practitioner_at)
         : null,
       foundingPractitionerNumber: (data?.founding_practitioner_number as number | null) ?? null,
+      // Studio Pro (host subscription), webhook-written only (migration 0070).
+      studioPro: data?.studio_pro ?? false,
+      studioProSince: data?.studio_pro_since ? new Date(data.studio_pro_since) : null,
+      studioProCurrentPeriodEnd: data?.studio_pro_current_period_end
+        ? new Date(data.studio_pro_current_period_end)
+        : null,
+      studioProCancelAtPeriodEnd: data?.studio_pro_cancel_at_period_end ?? false,
       // Read back only for its owner — this query runs as the signed-in user,
       // and no policy lets anyone select another person's profile row.
       emergencyContact: {
@@ -577,6 +591,21 @@ export class SupabaseRepository implements Repository {
 
     // The redirect ends this page (web) or hands off to Safari (native).
     // Returning the current profile keeps the signature honest for that moment.
+    return this.getProfile();
+  }
+
+  async startStudioProSubscription(): Promise<Profile> {
+    const response = await apiFetch("/api/studio-pro", { method: "POST" });
+
+    if (!response.ok) {
+      const { error } = await response.json().catch(() => ({ error: null }));
+      throw new Error(error ?? "Could not open Studio Pro");
+    }
+
+    const { url } = (await response.json()) as { url: string };
+    // Same discipline as Pro: system browser in native, webhook-granted, the app
+    // reconciles studio_pro from server truth on resume.
+    openExternal(url);
     return this.getProfile();
   }
 
@@ -2119,8 +2148,17 @@ export class SupabaseRepository implements Repository {
     return this.getWorkAvailability();
   }
 
-  async listWorkOpportunities(): Promise<WorkOpportunity[]> {
-    const response = await apiFetch("/api/work/opportunities");
+  async listWorkOpportunities(filters: BoardFilters = {}): Promise<WorkOpportunity[]> {
+    const q = new URLSearchParams();
+    if (filters.profession) q.set("profession", filters.profession);
+    if (filters.sessionFormat) q.set("sessionFormat", filters.sessionFormat);
+    if (filters.level) q.set("level", filters.level);
+    if (filters.minPayCents != null) q.set("minPayCents", String(filters.minPayCents));
+    if (filters.urgentOnly) q.set("urgentOnly", "true");
+    if (filters.onOrAfter) q.set("onOrAfter", filters.onOrAfter.toISOString());
+    if (filters.onOrBefore) q.set("onOrBefore", filters.onOrBefore.toISOString());
+    const suffix = q.toString();
+    const response = await apiFetch(`/api/work/opportunities${suffix ? `?${suffix}` : ""}`);
     const payload = (await response.json().catch(() => ({}))) as {
       opportunities?: unknown[];
       error?: string;
@@ -2239,6 +2277,9 @@ export class SupabaseRepository implements Repository {
       spaceName: r.space_id ? spaceNames.get(r.space_id as string) ?? null : null,
       title: r.title as string,
       profession: (r.profession as string | null) ?? null,
+      level: (r.level as string | null) ?? null,
+      participantsMax: (r.participants_max as number | null) ?? null,
+      equipmentNotes: (r.equipment_notes as string | null) ?? null,
       startsAt: new Date(r.starts_at as string),
       endsAt: new Date(r.ends_at as string),
       timeZone: r.time_zone as string,
@@ -2248,6 +2289,7 @@ export class SupabaseRepository implements Repository {
       state: r.state as WorkRequestState,
       interestCount: counts.get(r.id as string) ?? 0,
       createdAt: new Date(r.created_at as string),
+      ...sessionDetailsFromRow(r),
     }));
   }
 
@@ -2260,11 +2302,24 @@ export class SupabaseRepository implements Repository {
         spaceId: input.spaceId,
         title: input.title,
         profession: input.profession,
+        level: input.level,
+        participantsMax: input.participantsMax,
+        equipmentNotes: input.equipmentNotes,
         startsAt: input.startsAt.toISOString(),
         durationMinutes: input.durationMinutes,
         payCents: input.payCents,
         notes: input.notes,
         urgent: input.urgent,
+        sessionFormat: input.sessionFormat,
+        participantsExpected: input.participantsExpected,
+        audience: input.audience,
+        teachingNotes: input.teachingNotes,
+        requiredQualifications: input.requiredQualifications,
+        preferredQualifications: input.preferredQualifications,
+        sessionGoal: input.sessionGoal,
+        clientExperience: input.clientExperience,
+        accommodations: input.accommodations,
+        programming: input.programming,
       }),
     });
     const payload = (await response.json().catch(() => ({}))) as {
@@ -2318,6 +2373,75 @@ export class SupabaseRepository implements Repository {
       throw new Error(payload.error ?? `Could not confirm (${response.status})`);
     }
   }
+
+  async duplicateCoverageRequest(id: string, startsAt: Date): Promise<CoverageRequest> {
+    const response = await apiFetch(
+      `/api/work/coverage/${encodeURIComponent(id)}/duplicate`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ startsAt: startsAt.toISOString() }),
+      },
+    );
+    const payload = (await response.json().catch(() => ({}))) as {
+      requestId?: string;
+      error?: string;
+    };
+    if (!response.ok || !payload.requestId) {
+      throw new Error(payload.error ?? `Could not repost (${response.status})`);
+    }
+    const created = (await this.listCoverageRequests()).find((r) => r.id === payload.requestId);
+    if (!created) throw new Error("Reposted, but could not be read back");
+    return created;
+  }
+
+  /* ---------------- work (My Roster) ---------------- */
+
+  async listRoster(): Promise<RosterMember[]> {
+    const response = await apiFetch("/api/work/roster");
+    const payload = (await response.json().catch(() => ({}))) as {
+      roster?: unknown[];
+      error?: string;
+    };
+    if (!response.ok) {
+      throw new Error(payload.error ?? `Could not load roster (${response.status})`);
+    }
+    return (payload.roster ?? []).map(mapRosterMember);
+  }
+
+  async addToRoster(practitionerId: string, note: string | null): Promise<void> {
+    const response = await apiFetch("/api/work/roster", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ practitionerId, note }),
+    });
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => ({}))) as { error?: string };
+      throw new Error(payload.error ?? `Could not add to roster (${response.status})`);
+    }
+  }
+
+  async removeFromRoster(rosterId: string): Promise<void> {
+    const response = await apiFetch(`/api/work/roster/${encodeURIComponent(rosterId)}`, {
+      method: "DELETE",
+    });
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => ({}))) as { error?: string };
+      throw new Error(payload.error ?? `Could not remove from roster (${response.status})`);
+    }
+  }
+
+  async inviteFromRoster(requestId: string, practitionerId: string): Promise<void> {
+    const response = await apiFetch("/api/work/roster/invite", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ requestId, practitionerId }),
+    });
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => ({}))) as { error?: string };
+      throw new Error(payload.error ?? `Could not send invite (${response.status})`);
+    }
+  }
 }
 
 
@@ -2347,6 +2471,8 @@ function templateRow(input: ClassTemplateInput): Record<string, unknown> {
     notes: input.notes,
     arrival_notes: input.arrivalNotes,
     requires_credential: input.requiresCredential,
+    default_pay_cents: input.defaultPayCents,
+    ...sessionDetailsToRow(input),
   };
 }
 
@@ -2362,7 +2488,9 @@ function mapClassTemplate(row: Record<string, unknown>): ClassTemplate {
     notes: (row.notes as string | null) ?? null,
     arrivalNotes: (row.arrival_notes as string | null) ?? null,
     requiresCredential: Boolean(row.requires_credential),
+    defaultPayCents: (row.default_pay_cents as number | null) ?? null,
     archivedAt: row.archived_at ? new Date(row.archived_at as string) : null,
+    ...sessionDetailsFromRow(row),
   };
 }
 
@@ -2372,6 +2500,11 @@ function mapOpportunity(raw: unknown): WorkOpportunity {
     requestId: o.requestId as string,
     title: o.title as string,
     profession: (o.profession as string | null) ?? null,
+    sessionFormat: (o.sessionFormat as SessionFormat | null) ?? null,
+    level: (o.level as string | null) ?? null,
+    requiredQualifications: (o.requiredQualifications as string[] | null) ?? [],
+    participantsExpected: (o.participantsExpected as number | null) ?? null,
+    participantsMax: (o.participantsMax as number | null) ?? null,
     spaceName: (o.spaceName as string | null) ?? null,
     area: (o.area as string | null) ?? null,
     startsAt: new Date(o.startsAt as string),
@@ -2405,6 +2538,22 @@ function mapRequestInterest(raw: unknown): RequestInterest {
     credentialReviewed: Boolean(i.credentialReviewed),
     completedSessions: (i.completedSessions as number) ?? 0,
     goodStanding: Boolean(i.goodStanding),
+  };
+}
+
+function mapRosterMember(raw: unknown): RosterMember {
+  const m = raw as Record<string, unknown>;
+  return {
+    id: m.id as string,
+    practitionerId: m.practitionerId as string,
+    displayName: m.displayName as string,
+    avatarUrl: (m.avatarUrl as string | null) ?? null,
+    craft: m.craft as string,
+    foundingPractitioner: Boolean(m.foundingPractitioner),
+    note: (m.note as string | null) ?? null,
+    timesWorkedTogether: (m.timesWorkedTogether as number) ?? 0,
+    availableForWork: Boolean(m.availableForWork),
+    addedAt: new Date(m.addedAt as string),
   };
 }
 

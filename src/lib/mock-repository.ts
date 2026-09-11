@@ -49,11 +49,13 @@ import type { CreateBookingInput, Repository } from "./repository";
 import type { AccessDetails } from "./access-details";
 import type { MediaKind, SpaceEdit } from "./domain";
 import type {
+  BoardFilters,
   ClassTemplate,
   ClassTemplateInput,
   CoverageRequest,
   CoverageRequestInput,
   RequestInterest,
+  RosterMember,
   WorkInterestState,
   WorkOpportunity,
   WorkPreferences,
@@ -319,6 +321,10 @@ export class MockRepository implements Repository {
     foundingNumber: null,
     foundingPractitionerAt: null,
     foundingPractitionerNumber: null,
+    studioPro: false,
+    studioProSince: null,
+    studioProCurrentPeriodEnd: null,
+    studioProCancelAtPeriodEnd: false,
   };
 
   private publicSpaces: PublicSpace[] = [];
@@ -354,6 +360,7 @@ export class MockRepository implements Repository {
   private classTemplates: ClassTemplate[] = [];
   private coverageRequests: CoverageRequest[] = [];
   private myInterests = new Map<string, WorkInterestState>();
+  private roster: RosterMember[] = [];
 
   constructor() {
     this.publicSpaces = SEED_SPACES.map((seed, index) => {
@@ -491,6 +498,12 @@ export class MockRepository implements Repository {
 
   async startProSubscription(): Promise<Profile> {
     this.profile = { ...this.profile, isPro: true };
+    return { ...this.profile };
+  }
+
+  async startStudioProSubscription(): Promise<Profile> {
+    // Demo only: the real flag is webhook-written after Stripe Checkout.
+    this.profile = { ...this.profile, studioPro: true, studioProSince: new Date() };
     return { ...this.profile };
   }
 
@@ -1158,7 +1171,7 @@ export class MockRepository implements Repository {
     return this.getWorkAvailability();
   }
 
-  async listWorkOpportunities(): Promise<WorkOpportunity[]> {
+  async listWorkOpportunities(_filters: BoardFilters = {}): Promise<WorkOpportunity[]> {
     // A single-user mock has no other studios posting; the list is empty by
     // construction rather than faked.
     return [];
@@ -1211,6 +1224,9 @@ export class MockRepository implements Repository {
       spaceName: this.mySpaces.find((s) => s.id === input.spaceId)?.name ?? null,
       title: input.title,
       profession: input.profession,
+      level: input.level,
+      participantsMax: input.participantsMax,
+      equipmentNotes: input.equipmentNotes,
       startsAt,
       endsAt: new Date(startsAt.getTime() + input.durationMinutes * 60 * 1000),
       timeZone: this.mySpaces.find((s) => s.id === input.spaceId)?.timeZone ?? FALLBACK_ZONE,
@@ -1220,6 +1236,16 @@ export class MockRepository implements Repository {
       state: "open",
       interestCount: 0,
       createdAt: new Date(),
+      sessionFormat: input.sessionFormat,
+      participantsExpected: input.participantsExpected,
+      audience: input.audience,
+      teachingNotes: input.teachingNotes,
+      requiredQualifications: input.requiredQualifications,
+      preferredQualifications: input.preferredQualifications,
+      sessionGoal: input.sessionGoal,
+      clientExperience: input.clientExperience,
+      accommodations: input.accommodations,
+      programming: input.programming,
     };
     this.coverageRequests.unshift(request);
     return { ...request };
@@ -1243,5 +1269,67 @@ export class MockRepository implements Repository {
     if (!request) throw new Error(`no such request: ${requestId}`);
     if (request.state !== "open") throw new Error("This request is no longer open.");
     request.state = "filled";
+  }
+
+  async duplicateCoverageRequest(id: string, startsAt: Date): Promise<CoverageRequest> {
+    const src = this.coverageRequests.find((r) => r.id === id);
+    if (!src) throw new Error(`no such request: ${id}`);
+    const durationMinutes = Math.round((src.endsAt.getTime() - src.startsAt.getTime()) / 60000);
+    return this.createCoverageRequest({
+      spaceId: src.spaceId,
+      classTemplateId: src.classTemplateId,
+      title: src.title,
+      profession: src.profession,
+      level: src.level,
+      participantsMax: src.participantsMax,
+      equipmentNotes: src.equipmentNotes,
+      startsAt,
+      durationMinutes: durationMinutes >= 15 ? durationMinutes : 60,
+      payCents: src.payCents,
+      notes: src.notes,
+      urgent: src.urgent,
+      sessionFormat: src.sessionFormat,
+      participantsExpected: src.participantsExpected,
+      audience: src.audience,
+      teachingNotes: src.teachingNotes,
+      requiredQualifications: src.requiredQualifications,
+      preferredQualifications: src.preferredQualifications,
+      sessionGoal: src.sessionGoal,
+      clientExperience: src.clientExperience,
+      accommodations: src.accommodations,
+      programming: src.programming,
+    });
+  }
+
+  /* ---------------- work (My Roster) ---------------- */
+
+  // A single-user mock has no confirmed cross-account relationships, so the
+  // roster is simply an in-memory list that round-trips.
+  async listRoster(): Promise<RosterMember[]> {
+    return this.roster.map((m) => ({ ...m }));
+  }
+
+  async addToRoster(practitionerId: string, note: string | null): Promise<void> {
+    if (this.roster.some((m) => m.practitionerId === practitionerId)) return;
+    this.roster.unshift({
+      id: id("ros"),
+      practitionerId,
+      displayName: "A professional",
+      avatarUrl: null,
+      craft: "Wellness professional",
+      foundingPractitioner: false,
+      note,
+      timesWorkedTogether: 1,
+      availableForWork: true,
+      addedAt: new Date(),
+    });
+  }
+
+  async removeFromRoster(rosterId: string): Promise<void> {
+    this.roster = this.roster.filter((m) => m.id !== rosterId);
+  }
+
+  async inviteFromRoster(_requestId: string, _practitionerId: string): Promise<void> {
+    // Notification-only; nothing to persist in the mock.
   }
 }

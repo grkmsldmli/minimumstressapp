@@ -1,22 +1,51 @@
 "use client";
 
-import { useState } from "react";
-import { ArrowLeft, Award, CalendarClock, Check, Clock, MapPin } from "lucide-react";
+import { useRef, useState } from "react";
+import { ArrowLeft, Award, CalendarClock, Check, Clock, Copy, Lock, MapPin, Users } from "lucide-react";
 
 import { Ambient, Headline } from "@/components/brand";
 import { PawLoader } from "@/components/paw-loader";
 import { PrimaryButton, Toggle } from "@/components/primitives";
-import type { ClassTemplate, CoverageRequest, CoverageRequestInput, RequestInterest } from "@/lib/domain";
+import type {
+  ClassTemplate,
+  CoverageRequest,
+  CoverageRequestInput,
+  ProgrammingMode,
+  RequestInterest,
+  SessionFormat,
+} from "@/lib/domain";
 import { formatCents } from "@/lib/money";
 import { PRACTITIONER_PROFESSIONS } from "@/lib/professions";
 import { type CivilDate, instantFrom } from "@/lib/timezone";
 import { sessionDayLong, sessionTime, sessionZoneLabel } from "@/lib/when";
+import { repostPrefill } from "@/lib/work/repost";
 import { effectiveRequestState, requestStateLabel } from "@/lib/work/request-state";
 import { GroupLabel } from "./practitioner-extras";
 
 const NAVY = "radial-gradient(140% 120% at 15% 0%, #1E4066 0%, #16304E 85%)";
 const INPUT = "w-full px-4 py-3 rounded-xl font-body text-[15px] text-navy outline-none";
 const INPUT_STYLE = { border: "1px solid #DCE7F2" } as const;
+
+const SESSION_FORMATS: { key: SessionFormat; label: string; hint: string }[] = [
+  { key: "group", label: "Group class", hint: "One cover, many participants" },
+  { key: "private", label: "Private 1:1", hint: "One client, by name after you confirm" },
+  { key: "semiprivate", label: "Semi-private", hint: "A small handful of clients" },
+  { key: "workshop", label: "Workshop", hint: "A one-off themed session" },
+];
+
+const PROGRAMMING_MODES: { key: ProgrammingMode; label: string; hint: string }[] = [
+  { key: "continue", label: "Continue the plan", hint: "Pick up the existing programming" },
+  { key: "studio", label: "Studio's format", hint: "Teach it the studio's way" },
+  { key: "design", label: "Design the session", hint: "Bring your own plan" },
+];
+
+/** A comma / newline separated field ↔ a clean list of labels. */
+function splitList(raw: string): string[] {
+  return raw
+    .split(/[,\n]/)
+    .map((s) => s.trim())
+    .filter((s) => s !== "");
+}
 
 function parseCivil(dateStr: string): CivilDate | null {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
@@ -30,41 +59,96 @@ function parseMinutes(timeStr: string): number | null {
   return Number(m[1]) * 60 + Number(m[2]);
 }
 
+function numOrNull(raw: string): number | null {
+  const t = raw.trim();
+  if (t === "") return null;
+  const n = Math.round(Number(t));
+  return Number.isFinite(n) ? n : null;
+}
+
 /* ================================ Post ================================ */
 
 export function CoveragePost({
   spaces,
   templates,
   saving,
+  duplicateFrom = null,
   onSubmit,
   onBack,
 }: {
   spaces: { id: string; name: string; timeZone: string }[];
   templates: ClassTemplate[];
   saving: boolean;
-  onSubmit: (input: CoverageRequestInput) => void;
+  /** When reposting, the source request to prefill the reusable class shape from
+   *  — never its date/time or private-session context (see repostPrefill). */
+  duplicateFrom?: CoverageRequest | null;
+  onSubmit: (input: CoverageRequestInput) => void | Promise<unknown>;
   onBack: () => void;
 }) {
-  const [spaceId, setSpaceId] = useState(spaces[0]?.id ?? "");
+  // A repost prefills the reusable class shape; the date and the private-session
+  // context are deliberately left empty to be re-entered fresh.
+  const prefill = duplicateFrom ? repostPrefill(duplicateFrom) : null;
+  const duplicating = prefill !== null;
+  const initialSpace =
+    prefill?.spaceId && spaces.some((s) => s.id === prefill.spaceId)
+      ? prefill.spaceId
+      : spaces[0]?.id ?? "";
+
+  const [spaceId, setSpaceId] = useState(initialSpace);
   const [templateId, setTemplateId] = useState("");
-  const [title, setTitle] = useState("");
-  const [profession, setProfession] = useState("");
+  const [sessionFormat, setSessionFormat] = useState<SessionFormat>(prefill?.sessionFormat ?? "group");
+  const [title, setTitle] = useState(prefill?.title ?? "");
+  const [profession, setProfession] = useState(prefill?.profession ?? "");
   const [dateStr, setDateStr] = useState("");
   const [timeStr, setTimeStr] = useState("09:00");
-  const [duration, setDuration] = useState("60");
-  const [pay, setPay] = useState("");
+  const [duration, setDuration] = useState(prefill?.duration ?? "60");
+  const [pay, setPay] = useState(prefill?.pay ?? "");
   const [notes, setNotes] = useState("");
-  const [urgent, setUrgent] = useState(false);
+  const [urgent, setUrgent] = useState(prefill?.urgent ?? false);
+  // Group / workshop details
+  const [level, setLevel] = useState(prefill?.level ?? "");
+  const [participantsExpected, setParticipantsExpected] = useState(prefill?.participantsExpected ?? "");
+  const [participantsMax, setParticipantsMax] = useState(prefill?.participantsMax ?? "");
+  const [audience, setAudience] = useState(prefill?.audience ?? "");
+  const [teachingNotes, setTeachingNotes] = useState(prefill?.teachingNotes ?? "");
+  const [equipmentNotes, setEquipmentNotes] = useState(prefill?.equipmentNotes ?? "");
+  // Private / semi-private details — never prefilled on a repost (stale/sensitive).
+  const [sessionGoal, setSessionGoal] = useState("");
+  const [clientExperience, setClientExperience] = useState("");
+  const [accommodations, setAccommodations] = useState("");
+  const [programming, setProgramming] = useState<ProgrammingMode | "">("");
+  // Qualifications — required vs preferred, kept apart on purpose
+  const [requiredQuals, setRequiredQuals] = useState(prefill?.requiredQuals ?? "");
+  const [preferredQuals, setPreferredQuals] = useState(prefill?.preferredQuals ?? "");
   const [error, setError] = useState<string | null>(null);
+  // A synchronous latch so a double-tap can never fire two posts, independent of
+  // when the parent's `saving` prop re-renders the disabled button.
+  const submittingRef = useRef(false);
+
+  const showGroup = sessionFormat === "group" || sessionFormat === "semiprivate" || sessionFormat === "workshop";
+  const showPrivate = sessionFormat === "private" || sessionFormat === "semiprivate";
 
   const applyTemplate = (id: string) => {
     setTemplateId(id);
     const t = templates.find((x) => x.id === id);
-    if (t) {
-      setTitle(t.title);
-      setProfession(t.profession ?? "");
-      setDuration(String(t.durationMinutes));
-    }
+    if (!t) return;
+    setTitle(t.title);
+    setProfession(t.profession ?? "");
+    setDuration(String(t.durationMinutes));
+    if (t.sessionFormat) setSessionFormat(t.sessionFormat);
+    if (t.level != null) setLevel(t.level);
+    if (t.participantsExpected != null) setParticipantsExpected(String(t.participantsExpected));
+    if (t.maxParticipants != null) setParticipantsMax(String(t.maxParticipants));
+    if (t.audience != null) setAudience(t.audience);
+    if (t.teachingNotes != null) setTeachingNotes(t.teachingNotes);
+    if (t.equipment != null) setEquipmentNotes(t.equipment);
+    if (t.sessionGoal != null) setSessionGoal(t.sessionGoal);
+    if (t.clientExperience != null) setClientExperience(t.clientExperience);
+    if (t.accommodations != null) setAccommodations(t.accommodations);
+    if (t.programming != null) setProgramming(t.programming);
+    if (t.requiredQualifications.length) setRequiredQuals(t.requiredQualifications.join(", "));
+    if (t.preferredQualifications.length) setPreferredQuals(t.preferredQualifications.join(", "));
+    if (t.defaultPayCents != null) setPay(String(Math.round(t.defaultPayCents / 100)));
   };
 
   const space = spaces.find((s) => s.id === spaceId);
@@ -81,6 +165,10 @@ export function CoveragePost({
     payNum >= 0;
 
   const submit = () => {
+    // The synchronous latch: a second tap in the same frame is dropped before it
+    // can start a second post. Released only if this attempt fails validation or
+    // the submit rejects — a successful post navigates away, so it stays latched.
+    if (submittingRef.current) return;
     setError(null);
     if (!space) {
       setError("Choose which space needs coverage.");
@@ -98,19 +186,37 @@ export function CoveragePost({
       return;
     }
     if (startsAt.getTime() <= Date.now()) {
-      setError("Pick a time in the future.");
+      setError(duplicating ? "A repost needs a new future date and time." : "Pick a time in the future.");
       return;
     }
-    onSubmit({
+    submittingRef.current = true;
+    const result = onSubmit({
       spaceId,
       classTemplateId: templateId || null,
       title: title.trim(),
       profession: profession || null,
+      level: showGroup ? level.trim() || null : null,
+      participantsMax: showGroup ? numOrNull(participantsMax) : null,
+      equipmentNotes: showGroup ? equipmentNotes.trim() || null : null,
       startsAt,
       durationMinutes: durationNum,
       payCents: payNum,
       notes: notes.trim() || null,
       urgent,
+      sessionFormat,
+      participantsExpected: showGroup ? numOrNull(participantsExpected) : null,
+      audience: showGroup ? audience.trim() || null : null,
+      teachingNotes: showGroup ? teachingNotes.trim() || null : null,
+      requiredQualifications: splitList(requiredQuals),
+      preferredQualifications: splitList(preferredQuals),
+      sessionGoal: showPrivate ? sessionGoal.trim() || null : null,
+      clientExperience: showPrivate ? clientExperience.trim() || null : null,
+      accommodations: showPrivate ? accommodations.trim() || null : null,
+      programming: showPrivate && programming ? programming : null,
+    });
+    // Release the latch only if the post failed; a success unmounts this screen.
+    Promise.resolve(result).catch(() => {
+      submittingRef.current = false;
     });
   };
 
@@ -131,12 +237,28 @@ export function CoveragePost({
           <ArrowLeft size={17} color="#fff" />
         </button>
         <div className="mt-5 relative z-10">
-          <Headline pre="Need" accent="coverage." size={24} light />
+          {duplicating ? (
+            <Headline pre="Post" accent="again." size={24} light />
+          ) : (
+            <Headline pre="Need" accent="coverage." size={24} light />
+          )}
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 pt-5 pb-8 safe-pb-8 space-y-3">
-        {templates.length > 0 && (
+        {duplicating && (
+          <div
+            className="flex items-start gap-2 p-3 rounded-xl"
+            style={{ backgroundColor: "#F4F8FC", border: "1px solid #E7EEF6" }}
+          >
+            <Copy size={14} color="#5B7A99" style={{ marginTop: 2 }} />
+            <p className="font-body font-normal text-[12px] text-ink-soft">
+              Reposting a past class. We&apos;ve carried over the details — set a new date and time,
+              and add any private-session context fresh.
+            </p>
+          </div>
+        )}
+        {templates.length > 0 && !duplicating && (
           <div>
             <label className="font-body font-medium text-[13.5px] text-navy">Start from a template</label>
             <select
@@ -171,6 +293,31 @@ export function CoveragePost({
               </option>
             ))}
           </select>
+        </div>
+
+        <div>
+          <label className="font-body font-medium text-[13.5px] text-navy">Session format</label>
+          <div className="grid grid-cols-2 gap-2 mt-1.5">
+            {SESSION_FORMATS.map((f) => {
+              const on = sessionFormat === f.key;
+              return (
+                <button
+                  key={f.key}
+                  type="button"
+                  onClick={() => setSessionFormat(f.key)}
+                  aria-pressed={on}
+                  className="text-left px-3 py-2.5 rounded-xl press"
+                  style={{
+                    border: on ? "1.5px solid #2578C2" : "1px solid #DCE7F2",
+                    backgroundColor: on ? "#EDF6FE" : "#fff",
+                  }}
+                >
+                  <p className="font-body font-medium text-[13.5px] text-navy">{f.label}</p>
+                  <p className="font-body font-normal text-[11.5px] text-ink-faint mt-0.5">{f.hint}</p>
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         <div>
@@ -254,6 +401,207 @@ export function CoveragePost({
           </div>
         </div>
 
+        {showGroup && (
+          <div className="space-y-3 pt-1">
+            <GroupLabel>Group details</GroupLabel>
+            <div>
+              <label className="font-body font-medium text-[13.5px] text-navy">
+                Level <span className="font-normal text-ink-faint">(optional)</span>
+              </label>
+              <input
+                value={level}
+                onChange={(e) => setLevel(e.target.value)}
+                placeholder="e.g. All levels, Intermediate"
+                aria-label="Level"
+                className={`${INPUT} mt-1.5`}
+                style={INPUT_STYLE}
+              />
+            </div>
+            <div className="flex gap-3">
+              <div className="flex-1">
+                <label className="font-body font-medium text-[13.5px] text-navy">Expected</label>
+                <input
+                  value={participantsExpected}
+                  onChange={(e) => setParticipantsExpected(e.target.value.replace(/[^0-9]/g, ""))}
+                  inputMode="numeric"
+                  placeholder="e.g. 12"
+                  aria-label="Expected participants"
+                  className={`${INPUT} mt-1.5`}
+                  style={INPUT_STYLE}
+                />
+              </div>
+              <div className="flex-1">
+                <label className="font-body font-medium text-[13.5px] text-navy">Max</label>
+                <input
+                  value={participantsMax}
+                  onChange={(e) => setParticipantsMax(e.target.value.replace(/[^0-9]/g, ""))}
+                  inputMode="numeric"
+                  placeholder="e.g. 16"
+                  aria-label="Maximum participants"
+                  className={`${INPUT} mt-1.5`}
+                  style={INPUT_STYLE}
+                />
+              </div>
+            </div>
+            <div>
+              <label className="font-body font-medium text-[13.5px] text-navy">
+                Who it&apos;s for <span className="font-normal text-ink-faint">(optional)</span>
+              </label>
+              <input
+                value={audience}
+                onChange={(e) => setAudience(e.target.value)}
+                placeholder="e.g. Prenatal-friendly, drop-in regulars"
+                aria-label="Audience"
+                className={`${INPUT} mt-1.5`}
+                style={INPUT_STYLE}
+              />
+            </div>
+            <div>
+              <label className="font-body font-medium text-[13.5px] text-navy">
+                Teaching notes <span className="font-normal text-ink-faint">(optional)</span>
+              </label>
+              <textarea
+                value={teachingNotes}
+                onChange={(e) => setTeachingNotes(e.target.value)}
+                rows={2}
+                placeholder="How this class usually runs"
+                aria-label="Teaching notes"
+                className={`${INPUT} mt-1.5 resize-none`}
+                style={INPUT_STYLE}
+              />
+            </div>
+            <div>
+              <label className="font-body font-medium text-[13.5px] text-navy">
+                Equipment <span className="font-normal text-ink-faint">(optional)</span>
+              </label>
+              <input
+                value={equipmentNotes}
+                onChange={(e) => setEquipmentNotes(e.target.value)}
+                placeholder="e.g. Reformers, blocks provided"
+                aria-label="Equipment"
+                className={`${INPUT} mt-1.5`}
+                style={INPUT_STYLE}
+              />
+            </div>
+          </div>
+        )}
+
+        {showPrivate && (
+          <div className="space-y-3 pt-1">
+            <GroupLabel>Private details</GroupLabel>
+            <div
+              className="flex items-start gap-2 p-3 rounded-xl"
+              style={{ backgroundColor: "#F4F8FC", border: "1px solid #E7EEF6" }}
+            >
+              <Lock size={14} color="#5B7A99" style={{ marginTop: 2 }} />
+              <p className="font-body font-normal text-[12px] text-ink-soft">
+                Describe the session, never the client. No names, contact details, address, or medical
+                information — those are shared only with the professional you confirm.
+              </p>
+            </div>
+            <div>
+              <label className="font-body font-medium text-[13.5px] text-navy">
+                Session goal <span className="font-normal text-ink-faint">(optional)</span>
+              </label>
+              <textarea
+                value={sessionGoal}
+                onChange={(e) => setSessionGoal(e.target.value)}
+                rows={2}
+                placeholder="What this session should accomplish"
+                aria-label="Session goal"
+                className={`${INPUT} mt-1.5 resize-none`}
+                style={INPUT_STYLE}
+              />
+            </div>
+            <div>
+              <label className="font-body font-medium text-[13.5px] text-navy">
+                Client experience <span className="font-normal text-ink-faint">(optional)</span>
+              </label>
+              <input
+                value={clientExperience}
+                onChange={(e) => setClientExperience(e.target.value)}
+                placeholder="e.g. New to reformer, 6 months practising"
+                aria-label="Client experience"
+                className={`${INPUT} mt-1.5`}
+                style={INPUT_STYLE}
+              />
+            </div>
+            <div>
+              <label className="font-body font-medium text-[13.5px] text-navy">
+                Accommodations <span className="font-normal text-ink-faint">(optional)</span>
+              </label>
+              <input
+                value={accommodations}
+                onChange={(e) => setAccommodations(e.target.value)}
+                placeholder="e.g. Prefers low-impact, wrist-sensitive"
+                aria-label="Accommodations"
+                className={`${INPUT} mt-1.5`}
+                style={INPUT_STYLE}
+              />
+            </div>
+            <div>
+              <label className="font-body font-medium text-[13.5px] text-navy">Programming</label>
+              <div className="space-y-2 mt-1.5">
+                {PROGRAMMING_MODES.map((p) => {
+                  const on = programming === p.key;
+                  return (
+                    <button
+                      key={p.key}
+                      type="button"
+                      onClick={() => setProgramming(on ? "" : p.key)}
+                      aria-pressed={on}
+                      className="w-full text-left px-3 py-2.5 rounded-xl press"
+                      style={{
+                        border: on ? "1.5px solid #2578C2" : "1px solid #DCE7F2",
+                        backgroundColor: on ? "#EDF6FE" : "#fff",
+                      }}
+                    >
+                      <p className="font-body font-medium text-[13.5px] text-navy">{p.label}</p>
+                      <p className="font-body font-normal text-[11.5px] text-ink-faint mt-0.5">{p.hint}</p>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="space-y-3 pt-1">
+          <GroupLabel>Qualifications</GroupLabel>
+          <div>
+            <label className="font-body font-medium text-[13.5px] text-navy">
+              Required <span className="font-normal text-ink-faint">(comma separated)</span>
+            </label>
+            <p className="font-body font-normal text-[11.5px] text-ink-faint mt-0.5">
+              Must-haves to apply — e.g. current insurance, reformer certification.
+            </p>
+            <input
+              value={requiredQuals}
+              onChange={(e) => setRequiredQuals(e.target.value)}
+              placeholder="e.g. Reformer cert, current insurance"
+              aria-label="Required qualifications"
+              className={`${INPUT} mt-1.5`}
+              style={INPUT_STYLE}
+            />
+          </div>
+          <div>
+            <label className="font-body font-medium text-[13.5px] text-navy">
+              Preferred <span className="font-normal text-ink-faint">(comma separated)</span>
+            </label>
+            <p className="font-body font-normal text-[11.5px] text-ink-faint mt-0.5">
+              Nice-to-haves. Shown to everyone — never used to hide the listing.
+            </p>
+            <input
+              value={preferredQuals}
+              onChange={(e) => setPreferredQuals(e.target.value)}
+              placeholder="e.g. Prenatal experience"
+              aria-label="Preferred qualifications"
+              className={`${INPUT} mt-1.5`}
+              style={INPUT_STYLE}
+            />
+          </div>
+        </div>
+
         <div>
           <label className="font-body font-medium text-[13.5px] text-navy">
             Notes <span className="font-normal text-ink-faint">(optional)</span>
@@ -291,7 +639,7 @@ export function CoveragePost({
 
       <div className="px-6 pt-3 pb-6 safe-pb-6 shrink-0" style={{ borderTop: "1px solid #F0ECE0" }}>
         <PrimaryButton onClick={submit} disabled={!canSubmit || saving}>
-          {saving ? "Posting…" : "Post coverage request"}
+          {saving ? "Posting…" : duplicating ? "Post again" : "Post coverage request"}
         </PrimaryButton>
       </div>
     </div>
@@ -394,8 +742,13 @@ export function CoverageDetail({
   loadingInterest,
   busyInterestId,
   cancelling,
+  canInvite,
+  rosterCount,
+  canRepost,
   onConfirm,
   onCancel,
+  onInviteFromRoster,
+  onDuplicate,
   onBack,
 }: {
   request: CoverageRequest;
@@ -403,12 +756,24 @@ export function CoverageDetail({
   loadingInterest: boolean;
   busyInterestId: string | null;
   cancelling: boolean;
+  /** Studio Pro roster access — gates the "invite from roster" entry point. */
+  canInvite: boolean;
+  /** How many people are on the host's roster (0 → no invite entry point). */
+  rosterCount: number;
+  /** Studio Pro posting — gates "Post again" on a past request. */
+  canRepost: boolean;
   onConfirm: (interestId: string) => void;
   onCancel: () => void;
+  onInviteFromRoster: () => void;
+  onDuplicate: () => void;
   onBack: () => void;
 }) {
   const state = effectiveRequestState(request);
   const open = state === "open";
+  const isPast = state === "completed" || state === "cancelled" || state === "expired";
+  const canCancel = state === "open" || state === "draft";
+  const showInvite = open && canInvite && rosterCount > 0;
+  const showRepost = isPast && canRepost;
   const zone = sessionZoneLabel(request.startsAt, request.timeZone);
 
   return (
@@ -476,9 +841,9 @@ export function CoverageDetail({
               className="rounded-2xl p-6 text-center"
               style={{ backgroundColor: "#F4F8FC", border: "1px solid #E7EEF6" }}
             >
-              <p className="font-display italic text-[16px] text-navy">No interest yet.</p>
+              <p className="font-display italic text-[16px] text-navy">No applicants yet.</p>
               <p className="font-body font-normal text-[13.5px] text-ink-soft mt-1.5">
-                Available professionals who match will appear here as they respond.
+                Professionals who apply from the board will appear here for you to choose from.
               </p>
             </div>
           ) : (
@@ -495,17 +860,39 @@ export function CoverageDetail({
         </div>
       </div>
 
-      {(state === "open" || state === "draft") && (
-        <div className="px-6 pt-3 pb-6 safe-pb-6 shrink-0" style={{ borderTop: "1px solid #F0ECE0" }}>
-          <button
-            type="button"
-            onClick={onCancel}
-            disabled={cancelling}
-            className="w-full py-3 rounded-full font-body font-medium text-[15px] press disabled:opacity-60"
-            style={{ backgroundColor: "#FEF2F0", color: "#B45143" }}
-          >
-            {cancelling ? "Cancelling…" : "Cancel this request"}
-          </button>
+      {(canCancel || showRepost) && (
+        <div
+          className="px-6 pt-3 pb-6 safe-pb-6 shrink-0 space-y-2.5"
+          style={{ borderTop: "1px solid #F0ECE0" }}
+        >
+          {showInvite && (
+            <button
+              type="button"
+              onClick={onInviteFromRoster}
+              className="w-full py-3 rounded-full font-body font-medium text-[15px] press inline-flex items-center justify-center gap-1.5"
+              style={{ backgroundColor: "#EDF6FE", color: "#2578C2" }}
+            >
+              <Users size={16} /> Invite from your roster
+            </button>
+          )}
+          {showRepost && (
+            <PrimaryButton onClick={onDuplicate}>
+              <span className="inline-flex items-center gap-1.5">
+                <Copy size={15} /> Post again
+              </span>
+            </PrimaryButton>
+          )}
+          {canCancel && (
+            <button
+              type="button"
+              onClick={onCancel}
+              disabled={cancelling}
+              className="w-full py-3 rounded-full font-body font-medium text-[15px] press disabled:opacity-60"
+              style={{ backgroundColor: "#FEF2F0", color: "#B45143" }}
+            >
+              {cancelling ? "Cancelling…" : "Cancel this request"}
+            </button>
+          )}
         </div>
       )}
     </div>

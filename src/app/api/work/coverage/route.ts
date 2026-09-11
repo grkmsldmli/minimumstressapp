@@ -2,10 +2,25 @@ import type { NextRequest } from "next/server";
 
 import { LIMITS, check, identify, tooManyRequests } from "@/lib/api/rate-limit";
 import { handled, jsonError, requireUser } from "@/lib/api/session";
-import { flag, integer, jsonObject, optionalString, requiredString, timestamp, uuid } from "@/lib/api/validate";
+import {
+  flag,
+  integer,
+  jsonObject,
+  oneOf,
+  optionalInteger,
+  optionalString,
+  requiredString,
+  stringArray,
+  timestamp,
+  uuid,
+} from "@/lib/api/validate";
+import type { ProgrammingMode, SessionFormat } from "@/lib/domain";
 import { isKnownProfession } from "@/lib/professions";
 import { supabaseAdmin } from "@/lib/supabase/server";
 import { explainWorkFailure, postCoverage } from "@/lib/work-service";
+
+const SESSION_FORMATS: readonly SessionFormat[] = ["group", "private", "semiprivate", "workshop"];
+const PROGRAMMING_MODES: readonly ProgrammingMode[] = ["continue", "studio", "design"];
 
 /**
  * Post a "need coverage" request.
@@ -56,16 +71,75 @@ export async function POST(request: NextRequest): Promise<Response> {
       classTemplateId = t.value;
     }
 
+    // Structured listing fields (migration 0070). Every one is optional so a
+    // minimal request still posts; the session format, when given, drives which
+    // details a listing carries.
+    const sessionFormat = body.value.sessionFormat == null
+      ? null
+      : oneOf<SessionFormat>(body.value, "sessionFormat", SESSION_FORMATS);
+    if (sessionFormat && !sessionFormat.ok) return jsonError(sessionFormat.reason, 400);
+
+    const programming = body.value.programming == null
+      ? null
+      : oneOf<ProgrammingMode>(body.value, "programming", PROGRAMMING_MODES);
+    if (programming && !programming.ok) return jsonError(programming.reason, 400);
+
+    const level = optionalString(body.value, "level", { max: 80 });
+    if (!level.ok) return jsonError(level.reason, 400);
+
+    const equipmentNotes = optionalString(body.value, "equipmentNotes", { max: 2000 });
+    if (!equipmentNotes.ok) return jsonError(equipmentNotes.reason, 400);
+
+    const audience = optionalString(body.value, "audience", { max: 500 });
+    if (!audience.ok) return jsonError(audience.reason, 400);
+
+    const teachingNotes = optionalString(body.value, "teachingNotes", { max: 2000 });
+    if (!teachingNotes.ok) return jsonError(teachingNotes.reason, 400);
+
+    const sessionGoal = optionalString(body.value, "sessionGoal", { max: 2000 });
+    if (!sessionGoal.ok) return jsonError(sessionGoal.reason, 400);
+
+    const clientExperience = optionalString(body.value, "clientExperience", { max: 2000 });
+    if (!clientExperience.ok) return jsonError(clientExperience.reason, 400);
+
+    const accommodations = optionalString(body.value, "accommodations", { max: 2000 });
+    if (!accommodations.ok) return jsonError(accommodations.reason, 400);
+
+    const participantsExpected = optionalInteger(body.value, "participantsExpected", { min: 0, max: 1000 });
+    if (!participantsExpected.ok) return jsonError(participantsExpected.reason, 400);
+
+    const participantsMax = optionalInteger(body.value, "participantsMax", { min: 0, max: 1000 });
+    if (!participantsMax.ok) return jsonError(participantsMax.reason, 400);
+
+    const requiredQualifications = stringArray(body.value, "requiredQualifications");
+    if (!requiredQualifications.ok) return jsonError(requiredQualifications.reason, 400);
+
+    const preferredQualifications = stringArray(body.value, "preferredQualifications");
+    if (!preferredQualifications.ok) return jsonError(preferredQualifications.reason, 400);
+
     const result = await postCoverage(supabaseAdmin(), auth.user.id, {
       spaceId: spaceId.value,
       classTemplateId,
       title: title.value,
       profession,
+      level: level.value || null,
+      participantsMax: participantsMax.value,
+      equipmentNotes: equipmentNotes.value || null,
       startsAt: startsAt.value,
       durationMinutes: durationMinutes.value,
       payCents: payCents.value,
       notes: notes.value || null,
       urgent: flag(body.value, "urgent"),
+      sessionFormat: sessionFormat ? sessionFormat.value : null,
+      participantsExpected: participantsExpected.value,
+      audience: audience.value || null,
+      teachingNotes: teachingNotes.value || null,
+      requiredQualifications: requiredQualifications.value,
+      preferredQualifications: preferredQualifications.value,
+      sessionGoal: sessionGoal.value || null,
+      clientExperience: clientExperience.value || null,
+      accommodations: accommodations.value || null,
+      programming: programming ? programming.value : null,
     });
     if (!result.ok) {
       const e = explainWorkFailure(result.reason);

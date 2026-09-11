@@ -58,7 +58,10 @@ export type Screen =
   | "work-availability"
   | "class-templates"
   | "coverage-post"
-  | "coverage-detail";
+  | "coverage-detail"
+  | "studio-pro"
+  | "roster"
+  | "roster-invite";
 
 interface AppState {
   repo: AppRepository;

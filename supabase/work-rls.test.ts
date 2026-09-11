@@ -228,3 +228,66 @@ describe("confirm_work_interest — atomic single fill", () => {
     ).rejects.toThrow(/unique|duplicate/i);
   });
 });
+
+describe("work_roster — host manages own, practitioner never reads (0070)", () => {
+  it("a host adds to and reads only their own roster; a rival sees none", async () => {
+    await asUser(HOST, `insert into work_roster (host_id, practitioner_id) values ('${HOST}','${P1}')`);
+    await asUser(RIVAL, `insert into work_roster (host_id, practitioner_id) values ('${RIVAL}','${P2}')`);
+    const mine = await asUser<{ practitioner_id: string }>(
+      HOST,
+      `select practitioner_id from work_roster`,
+    );
+    expect(mine.map((r) => r.practitioner_id)).toEqual([P1]);
+  });
+
+  it("a host cannot add to another host's roster", async () => {
+    await expect(
+      asUser(HOST, `insert into work_roster (host_id, practitioner_id) values ('${RIVAL}','${P1}')`),
+    ).rejects.toThrow(/row-level security/i);
+  });
+
+  it("a practitioner account cannot create a roster row at all", async () => {
+    await expect(
+      asUser(P1, `insert into work_roster (host_id, practitioner_id) values ('${P1}','${P2}')`),
+    ).rejects.toThrow(/row-level security/i);
+  });
+
+  it("a practitioner cannot read who has rostered them (no back-channel)", async () => {
+    await asUser(HOST, `insert into work_roster (host_id, practitioner_id) values ('${HOST}','${P1}')`);
+    expect(await asUser(P1, `select * from work_roster`)).toEqual([]);
+  });
+
+  it("only the owning host can remove one of their roster rows", async () => {
+    await asUser(HOST, `insert into work_roster (host_id, practitioner_id) values ('${HOST}','${P1}')`);
+    // A rival's delete matches nothing under RLS, so the row survives.
+    await asUser(RIVAL, `delete from work_roster where host_id = '${HOST}'`);
+    expect(await asUser(HOST, `select practitioner_id from work_roster`)).toHaveLength(1);
+    await asUser(HOST, `delete from work_roster where practitioner_id = '${P1}'`);
+    expect(await asUser(HOST, `select practitioner_id from work_roster`)).toEqual([]);
+  });
+});
+
+describe("studio_pro — server-only, like is_pro's stricter cousin (0070)", () => {
+  it("a host cannot set their own studio_pro from the client", async () => {
+    await expect(
+      asUser(HOST, `update profiles set studio_pro = true where id = '${HOST}'`),
+    ).rejects.toThrow(/studio pro is set by the server/i);
+  });
+
+  it("the guard does not block an unrelated profile update by the same user", async () => {
+    await asUser(HOST, `update profiles set display_name = 'Renamed Studio' where id = '${HOST}'`);
+    const [row] = await asUser<{ display_name: string }>(
+      HOST,
+      `select display_name from profiles where id = '${HOST}'`,
+    );
+    expect(row.display_name).toBe("Renamed Studio");
+  });
+
+  it("the server (superuser) can grant studio_pro — the webhook's path", async () => {
+    await db.exec(`update profiles set studio_pro = true where id = '${HOST}'`);
+    const [row] = await rows<{ studio_pro: boolean }>(
+      `select studio_pro from profiles where id = '${HOST}'`,
+    );
+    expect(row.studio_pro).toBe(true);
+  });
+});

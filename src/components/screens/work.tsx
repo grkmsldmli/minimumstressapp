@@ -9,6 +9,7 @@ import {
   LayoutGrid,
   MapPin,
   Plus,
+  Users,
 } from "lucide-react";
 
 import { AccountBadge } from "@/components/account-badge";
@@ -58,24 +59,36 @@ function StatePill({ label, tone }: { label: string; tone: "sky" | "positive" | 
 function OpportunityCard({
   opportunity,
   busy,
+  canApply,
   onExpressInterest,
   onWithdrawInterest,
 }: {
   opportunity: WorkOpportunity;
   busy: boolean;
+  canApply: boolean;
   onExpressInterest: (requestId: string) => void;
   onWithdrawInterest: (interestId: string) => void;
 }) {
   const o = opportunity;
   const live = o.state === "open" || o.state === "filled";
   const craft = professionLabel(o.profession);
+  const formatLabel: Record<string, string> = {
+    group: "Group",
+    private: "Private 1:1",
+    semiprivate: "Semi-private",
+    workshop: "Workshop",
+  };
 
   return (
     <div className="rounded-2xl bg-white p-4 mb-3" style={{ border: "1px solid #E7EEF6" }}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="font-body font-semibold text-[15.5px] text-navy truncate">{o.title}</p>
-          {craft && <p className="font-body font-normal text-[13px] text-ink-faint mt-0.5">{craft}</p>}
+          <p className="font-body font-normal text-[13px] text-ink-faint mt-0.5">
+            {[o.sessionFormat ? formatLabel[o.sessionFormat] : null, craft, o.level]
+              .filter(Boolean)
+              .join(" · ") || "Coverage"}
+          </p>
         </div>
         {o.urgent && live && <StatePill label="Urgent" tone="coral" />}
         {o.interestState === "confirmed" && <StatePill label="Confirmed" tone="positive" />}
@@ -103,13 +116,27 @@ function OpportunityCard({
         )}
       </div>
 
+      {o.requiredQualifications.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mt-3">
+          {o.requiredQualifications.map((q) => (
+            <span
+              key={q}
+              className="px-2 py-0.5 rounded-full font-body font-medium text-[11.5px]"
+              style={{ backgroundColor: "#F4F8FC", color: "#566D85" }}
+            >
+              {q}
+            </span>
+          ))}
+        </div>
+      )}
+
       {o.notes && <p className="font-body font-normal text-[13.5px] text-ink-soft mt-3">{o.notes}</p>}
 
       <div className="flex items-center justify-between mt-3.5">
         <span className="font-display italic text-[17px] text-navy">
           {formatCents(o.payCents)}
         </span>
-        {live && !o.interestState && (
+        {live && !o.interestState && canApply && (
           <button
             type="button"
             disabled={busy}
@@ -117,8 +144,11 @@ function OpportunityCard({
             className="px-4 py-2 rounded-full font-body font-medium text-[14px] text-white press disabled:opacity-60"
             style={{ backgroundColor: "#2578C2" }}
           >
-            {busy ? "…" : "I'm available"}
+            {busy ? "…" : "Apply"}
           </button>
+        )}
+        {live && !o.interestState && !canApply && (
+          <span className="font-body font-normal text-[12.5px] text-ink-faint">Verify to apply</span>
         )}
         {live && (o.interestState === "interested" || o.interestState === "confirmed") && o.interestId && (
           <button
@@ -137,7 +167,8 @@ function OpportunityCard({
 }
 
 export function WorkPractitioner({
-  eligible,
+  canBrowse,
+  canApply,
   gaps,
   preferences,
   availabilityCount,
@@ -150,10 +181,14 @@ export function WorkPractitioner({
   onExpressInterest,
   onWithdrawInterest,
   onFixGap,
+  onGoPro,
   onRefresh,
   onBack,
 }: {
-  eligible: boolean;
+  /** Work Pro: may browse the whole open board (else only their own applications). */
+  canBrowse: boolean;
+  /** Pro AND a complete, verified profile: may apply to new coverage. */
+  canApply: boolean;
   gaps: WorkEligibilityGap[];
   preferences: WorkPreferences;
   availabilityCount: number;
@@ -166,9 +201,18 @@ export function WorkPractitioner({
   onExpressInterest: (requestId: string) => void;
   onWithdrawInterest: (interestId: string) => void;
   onFixGap: (gap: WorkEligibilityGap) => void;
+  onGoPro: () => void;
   onRefresh: () => Promise<unknown> | unknown;
   onBack: () => void;
 }) {
+  // Rows the practitioner is engaged with are always theirs to manage, even
+  // without Pro. Everything else on the list is the open board (Pro only).
+  const myApplications = opportunities.filter(
+    (o) => o.interestState === "interested" || o.interestState === "confirmed",
+  );
+  const boardOnly = opportunities.filter(
+    (o) => !(o.interestState === "interested" || o.interestState === "confirmed"),
+  );
   const hero = (
     <div
       className="-mx-6 px-6 pt-8 safe-pt-8 pb-7 rounded-b-[30px] relative overflow-hidden shrink-0"
@@ -225,22 +269,22 @@ export function WorkPractitioner({
 
         <SettingToggle
           label="Available for work"
-          sub="Studios can find you for coverage that fits"
+          sub="Show studios you're open to covering classes"
           on={preferences.availableForWork}
           onToggle={onToggleAvailable}
         />
 
-        {!eligible && preferences.availableForWork && (
+        {/* Pro is what unlocks the board; verification is what unlocks applying.
+            Two distinct gates, shown separately so neither reads as the other. */}
+        {canBrowse && !canApply && (
           <div
             className="rounded-2xl p-4 mt-3"
             style={{ backgroundColor: "#FFF8F1", border: "1px solid #F5DFC4" }}
           >
-            <p className="font-body font-medium text-[14px] text-navy">
-              You&apos;re not matchable yet
-            </p>
+            <p className="font-body font-medium text-[14px] text-navy">Finish your profile to apply</p>
             <p className="font-body font-normal text-[13px] text-ink-soft mt-1 mb-2.5">
-              Studios only see professionals with a complete, verified profile. Finish these and
-              you&apos;ll start appearing.
+              You can browse everything below. To apply, a studio needs to see a complete, verified
+              profile — finish these and you&apos;re ready.
             </p>
             {gaps.map((gap) => {
               const g = describeWorkGap(gap);
@@ -273,23 +317,64 @@ export function WorkPractitioner({
           />
         </div>
 
+        {/* Existing applications are always the practitioner's to manage — shown
+            whether or not they currently have Pro. */}
+        {myApplications.length > 0 && (
+          <div className="mt-6">
+            <GroupLabel>Your applications</GroupLabel>
+            {myApplications.map((o) => (
+              <OpportunityCard
+                key={o.requestId}
+                opportunity={o}
+                canApply={canApply}
+                busy={busyRequestId === o.requestId || (o.interestId != null && busyRequestId === o.interestId)}
+                onExpressInterest={onExpressInterest}
+                onWithdrawInterest={onWithdrawInterest}
+              />
+            ))}
+          </div>
+        )}
+
         <div className="mt-6">
-          <GroupLabel>Opportunities</GroupLabel>
-          {opportunities.length === 0 ? (
+          <GroupLabel>Coverage board</GroupLabel>
+          {!canBrowse ? (
+            <div
+              className="rounded-2xl p-5"
+              style={{ backgroundColor: "#F1F7FD", border: "1px solid #DCEAF7" }}
+            >
+              <div className="flex items-center gap-2">
+                <span
+                  className="px-2 py-0.5 rounded-full font-body font-bold text-[11px] tracking-wide text-white"
+                  style={{ backgroundColor: "#2578C2" }}
+                >
+                  PRO
+                </span>
+                <p className="font-body font-semibold text-[15px] text-navy">Browse coverage with Pro</p>
+              </div>
+              <p className="font-body font-normal text-[13.5px] text-ink-soft mt-2">
+                Work Pro opens the coverage board — every open class studios near you need covered.
+                Browse, filter, and apply on your terms. No ranking, no gatekeeping.
+              </p>
+              <div className="mt-3.5">
+                <PrimaryButton onClick={onGoPro}>Go Pro</PrimaryButton>
+              </div>
+            </div>
+          ) : boardOnly.length === 0 ? (
             <div
               className="rounded-2xl p-6 text-center"
               style={{ backgroundColor: "#F4F8FC", border: "1px solid #E7EEF6" }}
             >
-              <p className="font-display italic text-[16px] text-navy">No opportunities yet.</p>
+              <p className="font-display italic text-[16px] text-navy">Nothing open right now.</p>
               <p className="font-body font-normal text-[13.5px] text-ink-soft mt-1.5">
-                Keep Available for Work on and we&apos;ll surface relevant requests here.
+                New coverage shows up here as studios post it. Check back soon.
               </p>
             </div>
           ) : (
-            opportunities.map((o) => (
+            boardOnly.map((o) => (
               <OpportunityCard
                 key={o.requestId}
                 opportunity={o}
+                canApply={canApply}
                 busy={busyRequestId === o.requestId || (o.interestId != null && busyRequestId === o.interestId)}
                 onExpressInterest={onExpressInterest}
                 onWithdrawInterest={onWithdrawInterest}
@@ -346,21 +431,37 @@ function CoverageRow({
 }
 
 export function WorkStudio({
+  canPost,
+  studioProActive,
+  foundingFreeUntil,
+  now,
   requests,
   templateCount,
+  rosterCount,
   hasSpaces,
   onNewCoverage,
   onOpenTemplates,
+  onOpenRoster,
   onOpenRequest,
+  onGoStudioPro,
   onRefresh,
   onBack,
 }: {
+  /** Active Studio Pro (paid) or inside the Founding free period. */
+  canPost: boolean;
+  studioProActive: boolean;
+  foundingFreeUntil: Date | null;
+  /** The render's clock, passed in so this stays a pure component. */
+  now: Date;
   requests: CoverageRequest[];
   templateCount: number;
+  rosterCount: number;
   hasSpaces: boolean;
   onNewCoverage: () => void;
   onOpenTemplates: () => void;
+  onOpenRoster: () => void;
   onOpenRequest: (id: string) => void;
+  onGoStudioPro: () => void;
   onRefresh: () => Promise<unknown> | unknown;
   onBack: () => void;
 }) {
@@ -372,6 +473,10 @@ export function WorkStudio({
     const s = effectiveRequestState(r);
     return s === "completed" || s === "cancelled" || s === "expired";
   });
+  const freeDaysLeft =
+    foundingFreeUntil != null
+      ? Math.max(0, Math.ceil((foundingFreeUntil.getTime() - now.getTime()) / 86_400_000))
+      : null;
 
   const hero = (
     <div
@@ -389,7 +494,17 @@ export function WorkStudio({
         >
           <ArrowLeft size={17} color="#fff" />
         </button>
-        <AccountBadge accountType="host" tone="dark" />
+        <div className="flex items-center gap-2">
+          {studioProActive && (
+            <span
+              className="px-2 py-0.5 rounded-full font-body font-bold text-[11px] tracking-wide"
+              style={{ backgroundColor: "rgba(255,255,255,0.16)", color: "#fff" }}
+            >
+              STUDIO PRO
+            </span>
+          )}
+          <AccountBadge accountType="host" tone="dark" />
+        </div>
       </div>
       <div className="mt-6 relative z-10">
         <p className="font-body font-semibold text-[12px] uppercase tracking-[0.2em] text-sky-soft">
@@ -419,12 +534,69 @@ export function WorkStudio({
           </div>
         )}
 
-        <GroupLabel>Class templates</GroupLabel>
+        {/* Studio Pro upsell for a host who cannot post — but their existing
+            coverage history stays visible and read-only below. */}
+        {!canPost && (
+          <div
+            className="rounded-2xl p-5 mb-4"
+            style={{ backgroundColor: "#F1F7FD", border: "1px solid #DCEAF7" }}
+          >
+            <div className="flex items-center gap-2">
+              <span
+                className="px-2 py-0.5 rounded-full font-body font-bold text-[11px] tracking-wide text-white"
+                style={{ backgroundColor: "#2578C2" }}
+              >
+                STUDIO PRO
+              </span>
+              <p className="font-body font-semibold text-[15px] text-navy">Post coverage with Studio Pro</p>
+            </div>
+            <p className="font-body font-normal text-[13.5px] text-ink-soft mt-2">
+              One subscription covers every space you run. Post coverage, view applicants, confirm,
+              keep class templates and a trusted roster.
+            </p>
+            <div className="mt-3.5">
+              <PrimaryButton onClick={onGoStudioPro}>Get Studio Pro</PrimaryButton>
+            </div>
+          </div>
+        )}
+
+        {/* A Founding Host inside the free window — a gentle reminder, no card on
+            file, nothing auto-charges. */}
+        {canPost && !studioProActive && null}
+        {studioProActive && freeDaysLeft != null && (
+          <div
+            className="rounded-2xl p-4 mb-4"
+            style={{ backgroundColor: "#F4F8FC", border: "1px solid #E7EEF6" }}
+          >
+            <p className="font-body font-medium text-[13.5px] text-navy">
+              Studio Pro is free for you — {freeDaysLeft} {freeDaysLeft === 1 ? "day" : "days"} left
+            </p>
+            <p className="font-body font-normal text-[12.5px] text-ink-soft mt-1">
+              As a Founding Host your first six months are on us. Nothing is charged, and it only
+              continues if you choose to — at your permanent 50% rate.
+            </p>
+            <button
+              type="button"
+              onClick={onGoStudioPro}
+              className="mt-2 font-body font-medium text-[13px] text-sky-text press"
+            >
+              Continue at 50% →
+            </button>
+          </div>
+        )}
+
+        <GroupLabel>Studio Pro tools</GroupLabel>
         <ProfileRow
           icon={LayoutGrid}
-          label="Manage templates"
+          label="Class templates"
           value={templateCount > 0 ? `${templateCount}` : "None yet"}
           onClick={onOpenTemplates}
+        />
+        <ProfileRow
+          icon={Users}
+          label="My Roster"
+          value={rosterCount > 0 ? `${rosterCount}` : "Empty"}
+          onClick={onOpenRoster}
         />
 
         <div className="mt-6">
@@ -446,7 +618,7 @@ export function WorkStudio({
 
         {past.length > 0 && (
           <div className="mt-6">
-            <GroupLabel>Past &amp; closed</GroupLabel>
+            <GroupLabel>Coverage history</GroupLabel>
             {past.map((r) => (
               <CoverageRow key={r.id} request={r} onOpen={onOpenRequest} />
             ))}
@@ -458,9 +630,15 @@ export function WorkStudio({
         className="px-6 pt-3 pb-6 safe-pb-6 shrink-0"
         style={{ borderTop: "1px solid #F0ECE0" }}
       >
-        <PrimaryButton onClick={onNewCoverage} disabled={!hasSpaces}>
+        <PrimaryButton onClick={canPost ? onNewCoverage : onGoStudioPro} disabled={!hasSpaces}>
           <span className="inline-flex items-center gap-1.5">
-            <Plus size={15} /> Post a coverage request
+            {canPost ? (
+              <>
+                <Plus size={15} /> Post a coverage request
+              </>
+            ) : (
+              "Get Studio Pro to post"
+            )}
           </span>
         </PrimaryButton>
       </div>

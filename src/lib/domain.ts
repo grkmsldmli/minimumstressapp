@@ -175,6 +175,18 @@ export interface Profile {
    */
   foundingPractitionerAt: Date | null;
   foundingPractitionerNumber: number | null;
+
+  /**
+   * Studio Pro — the host-account subscription (migration 0070). Written only by
+   * the Stripe webhook (a DB trigger refuses a client write), and deliberately
+   * separate from `isPro`, which is practitioner Pro. `studioPro` reflects a
+   * live Stripe subscription; the Founding-Host free six months is NOT stored
+   * here — it is derived from `foundingHostAt` in lib/entitlements.
+   */
+  studioPro: boolean;
+  studioProSince: Date | null;
+  studioProCurrentPeriodEnd: Date | null;
+  studioProCancelAtPeriodEnd: boolean;
 }
 
 /**
@@ -773,6 +785,33 @@ export type WorkRequestState =
 /** A practitioner's answer to a request, and the studio's decision on it. */
 export type WorkInterestState = "interested" | "confirmed" | "declined" | "withdrawn";
 
+/** What kind of session a coverage listing is (migration 0070). */
+export type SessionFormat = "group" | "private" | "semiprivate" | "workshop";
+
+/** For a private session: whether the cover continues, follows, or designs it. */
+export type ProgrammingMode = "continue" | "studio" | "design";
+
+/**
+ * The teaching/session context that distinguishes a real coverage listing —
+ * carried on templates and snapshotted onto requests. Every field is optional
+ * so a legacy request (posted before 0070) is still valid. `required` and
+ * `preferred` are kept separate on purpose: a preference must never become a
+ * hidden hard filter — the board is browse-all and the practitioner decides.
+ */
+export interface SessionDetails {
+  sessionFormat: SessionFormat | null;
+  participantsExpected: number | null;
+  audience: string | null;
+  teachingNotes: string | null;
+  requiredQualifications: string[];
+  preferredQualifications: string[];
+  /** Private / semi-private context. */
+  sessionGoal: string | null;
+  clientExperience: string | null;
+  accommodations: string | null;
+  programming: ProgrammingMode | null;
+}
+
 /**
  * A practitioner's Work opt-in and preferences, as they see them.
  *
@@ -806,7 +845,7 @@ export interface WorkPreferencesInput {
 }
 
 /** A studio's reusable class definition. */
-export interface ClassTemplate {
+export interface ClassTemplate extends SessionDetails {
   id: string;
   title: string;
   /** The profession that can cover it — a lib/professions key, or null (any). */
@@ -818,10 +857,12 @@ export interface ClassTemplate {
   notes: string | null;
   arrivalNotes: string | null;
   requiresCredential: boolean;
+  /** The usual coverage pay for this class, prefilled onto a request. */
+  defaultPayCents: number | null;
   archivedAt: Date | null;
 }
 
-export interface ClassTemplateInput {
+export interface ClassTemplateInput extends SessionDetails {
   title: string;
   profession: string | null;
   level: string | null;
@@ -831,16 +872,20 @@ export interface ClassTemplateInput {
   notes: string | null;
   arrivalNotes: string | null;
   requiresCredential: boolean;
+  defaultPayCents: number | null;
 }
 
 /** A coverage request as its own host sees it. */
-export interface CoverageRequest {
+export interface CoverageRequest extends SessionDetails {
   id: string;
   classTemplateId: string | null;
   spaceId: string | null;
   spaceName: string | null;
   title: string;
   profession: string | null;
+  level: string | null;
+  participantsMax: number | null;
+  equipmentNotes: string | null;
   startsAt: Date;
   endsAt: Date;
   timeZone: string;
@@ -854,11 +899,14 @@ export interface CoverageRequest {
   createdAt: Date;
 }
 
-export interface CoverageRequestInput {
+export interface CoverageRequestInput extends SessionDetails {
   classTemplateId?: string | null;
   spaceId: string | null;
   title: string;
   profession: string | null;
+  level: string | null;
+  participantsMax: number | null;
+  equipmentNotes: string | null;
   startsAt: Date;
   durationMinutes: number;
   payCents: number;
@@ -888,16 +936,58 @@ export interface RequestInterest extends PractitionerTrust {
 }
 
 /**
- * A matched coverage request as an eligible practitioner sees it.
+ * A coverage listing as a practitioner browsing the board sees it.
  *
  * Town/area only, never the street — the exact address follows the same
- * reveal-after-commitment rule as a booking. `interestState` is the
- * practitioner's own standing on it: null when they have not acted yet.
+ * reveal-after-commitment rule as a booking, and no host_id or client identity
+ * is ever included. `interestState` is the practitioner's own standing on it:
+ * null when they have not acted yet.
  */
+/**
+ * Board filters a practitioner chooses. They narrow the browse; they never
+ * exclude a listing the practitioner did not filter out. No algorithm decides
+ * visibility — a preference is a filter the practitioner sets and can clear.
+ */
+export interface BoardFilters {
+  profession?: string | null;
+  sessionFormat?: string | null;
+  minPayCents?: number | null;
+  level?: string | null;
+  urgentOnly?: boolean;
+  onOrAfter?: Date | null;
+  onOrBefore?: Date | null;
+}
+
+/**
+ * A member of a studio's own trusted-substitute network (My Roster).
+ *
+ * A host earns a roster entry from a real confirmed relationship, so the name is
+ * the full name, not the masked preview a fresh applicant shows. `timesWorked`
+ * is derived from confirmed covers at read time — never stored, so it can't
+ * drift. Being on a roster is never an assignment: an invite is a notification.
+ */
+export interface RosterMember {
+  id: string;
+  practitionerId: string;
+  displayName: string;
+  avatarUrl: string | null;
+  craft: string;
+  foundingPractitioner: boolean;
+  note: string | null;
+  timesWorkedTogether: number;
+  availableForWork: boolean;
+  addedAt: Date;
+}
+
 export interface WorkOpportunity {
   requestId: string;
   title: string;
   profession: string | null;
+  sessionFormat: SessionFormat | null;
+  level: string | null;
+  requiredQualifications: string[];
+  participantsExpected: number | null;
+  participantsMax: number | null;
   spaceName: string | null;
   area: string | null;
   startsAt: Date;

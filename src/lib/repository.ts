@@ -11,6 +11,7 @@
 
 import type {
   Booking,
+  BoardFilters,
   CreatedBooking,
   BookingRequest,
   ClassTemplate,
@@ -28,6 +29,7 @@ import type {
   PublicSpace,
   ReferralSummary,
   RequestInterest,
+  RosterMember,
   SpaceAccessDetails,
   SpaceEdit,
   WorkOpportunity,
@@ -301,6 +303,15 @@ export interface Repository {
   startProSubscription(): Promise<Profile>;
 
   /**
+   * Start or manage Studio Pro — the host-account subscription that unlocks the
+   * Work coverage board's host side. Opens hosted Stripe Checkout (or the billing
+   * portal if already subscribed) in the system browser; studio_pro is granted
+   * only by the webhook. The Founding-Host free period needs no call at all — it
+   * is derived server-side from founding status.
+   */
+  startStudioProSubscription(): Promise<Profile>;
+
+  /**
    * Begin the one-time identity check. Against Stripe this opens a hosted
    * Identity session — a government ID and a selfie, which we never see — and
    * hands the practitioner to it. The verified state is written only by the
@@ -344,11 +355,13 @@ export interface Repository {
   setWorkAvailability(blocks: AvailabilityBlock[]): Promise<AvailabilityBlock[]>;
 
   /**
-   * Coverage requests this practitioner has been matched to, plus any they have
-   * already expressed interest in — server-matched, so an ineligible or
-   * far-away request never appears. Never the marketplace's whole open list.
+   * The coverage job board: every open, future request, browseable by a Pro
+   * practitioner, plus any the practitioner has already engaged with (for
+   * status). No matching decides visibility — the optional filters only narrow
+   * the browse, and only safe previews leave the server. Requires Work Pro
+   * server-side (a free practitioner gets a 403, not an empty list).
    */
-  listWorkOpportunities(): Promise<WorkOpportunity[]>;
+  listWorkOpportunities(filters?: BoardFilters): Promise<WorkOpportunity[]>;
   /** Say "I can cover that." No practitioner id — the server derives it. */
   expressWorkInterest(requestId: string, message: string | null): Promise<void>;
   /** Take back an interest, or step out of a shift already confirmed. */
@@ -367,6 +380,11 @@ export interface Repository {
   listCoverageRequests(): Promise<CoverageRequest[]>;
   createCoverageRequest(input: CoverageRequestInput): Promise<CoverageRequest>;
   cancelCoverageRequest(id: string): Promise<void>;
+  /**
+   * Repost an existing request as a fresh open one at a new time — the whole
+   * session context is copied, no applicants carry over. Requires Studio Pro.
+   */
+  duplicateCoverageRequest(id: string, startsAt: Date): Promise<CoverageRequest>;
 
   /**
    * The practitioners interested in one of the host's requests, as safe previews
@@ -380,6 +398,25 @@ export interface Repository {
    * confirmed and the rest are declined, so a second confirm cannot double-fill.
    */
   confirmRequestInterest(requestId: string, interestId: string): Promise<void>;
+
+  /* ---------------- work (My Roster — Studio Pro) ---------------- */
+
+  /**
+   * The host's trusted-substitute network, newest first. Requires Studio Pro.
+   * "Times worked together" is derived from confirmed covers, never stored.
+   */
+  listRoster(): Promise<RosterMember[]>;
+  /**
+   * Keep a practitioner on the roster. Only allowed after the host has confirmed
+   * them for at least one class — no cold-adding a stranger.
+   */
+  addToRoster(practitionerId: string, note: string | null): Promise<void>;
+  removeFromRoster(rosterId: string): Promise<void>;
+  /**
+   * Invite a roster member to a specific open request. Notifies only — never an
+   * assignment; the practitioner still applies and is confirmed the normal way.
+   */
+  inviteFromRoster(requestId: string, practitionerId: string): Promise<void>;
 
   /** Ends the session. */
   signOut(): Promise<void>;

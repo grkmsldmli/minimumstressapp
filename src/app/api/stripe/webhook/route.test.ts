@@ -9,8 +9,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  */
 
 const updateChain = {
-  update: vi.fn(() => updateChain),
-  eq: vi.fn(() => updateChain),
+  update: vi.fn((_patch?: Record<string, unknown>) => updateChain),
+  eq: vi.fn((_col?: string, _val?: unknown) => updateChain),
   is: vi.fn(() => Promise.resolve({ error: null })),
 };
 
@@ -130,5 +130,102 @@ describe("stripe webhook", () => {
     );
 
     expect(updateChain.update).toHaveBeenCalledWith({ stripe_connect_charges_enabled: false });
+  });
+
+  /**
+   * The two products ride one customer, so the subscription's own identity — not
+   * the customer — decides which column moves. A Studio Pro event must never
+   * touch a practitioner's is_pro, and a practitioner event must never touch
+   * studio_pro. This is the whole reason isStudioProSubscription exists.
+   */
+  const subEvent = (object: Record<string, unknown>) => ({
+    id: "evt_sub",
+    type: "customer.subscription.updated",
+    data: { object: { customer: "cus_1", cancel_at_period_end: false, ...object } },
+  });
+
+  it("routes a Studio Pro subscription event to studio_pro, never is_pro", async () => {
+    vi.stubEnv("STRIPE_WEBHOOK_SECRET", PLATFORM_SECRET);
+
+    await post(
+      signed(
+        PLATFORM_SECRET,
+        subEvent({
+          id: "sub_studio",
+          status: "active",
+          metadata: { app_user_id: "user_1", kind: "studio_pro" },
+          current_period_end: 1_893_456_000,
+          items: { data: [] },
+        }),
+      ),
+    );
+
+    const patch = updateChain.update.mock.calls[0][0] as Record<string, unknown>;
+    expect(patch.studio_pro).toBe(true);
+    expect(patch).not.toHaveProperty("is_pro");
+    expect(updateChain.eq).toHaveBeenCalledWith("id", "user_1");
+  });
+
+  it("routes a practitioner Pro subscription event to is_pro, never studio_pro", async () => {
+    vi.stubEnv("STRIPE_WEBHOOK_SECRET", PLATFORM_SECRET);
+
+    await post(
+      signed(
+        PLATFORM_SECRET,
+        subEvent({
+          id: "sub_pro",
+          status: "active",
+          metadata: { app_user_id: "user_1" },
+          items: { data: [{ price: { lookup_key: "minimum_stress_pro_monthly" } }] },
+        }),
+      ),
+    );
+
+    const patch = updateChain.update.mock.calls[0][0] as Record<string, unknown>;
+    expect(patch.is_pro).toBe(true);
+    expect(patch).not.toHaveProperty("studio_pro");
+  });
+
+  it("a cancelled Studio Pro subscription clears studio_pro (downgrade)", async () => {
+    vi.stubEnv("STRIPE_WEBHOOK_SECRET", PLATFORM_SECRET);
+
+    await post(
+      signed(
+        PLATFORM_SECRET,
+        subEvent({
+          id: "sub_studio",
+          type: "customer.subscription.deleted",
+          status: "canceled",
+          metadata: { app_user_id: "user_1", kind: "studio_pro" },
+          items: { data: [] },
+        }),
+      ),
+    );
+
+    const patch = updateChain.update.mock.calls[0][0] as Record<string, unknown>;
+    expect(patch.studio_pro).toBe(false);
+    expect(patch.studio_pro_since).toBeNull();
+  });
+
+  it("falls back to the customer id when a hand-made subscription has no metadata", async () => {
+    vi.stubEnv("STRIPE_WEBHOOK_SECRET", PLATFORM_SECRET);
+
+    await post(
+      signed(
+        PLATFORM_SECRET,
+        subEvent({
+          id: "sub_studio",
+          status: "active",
+          metadata: {},
+          items: { data: [{ price: { lookup_key: "minimum_stress_studio_pro_monthly" } }] },
+        }),
+      ),
+    );
+
+    // No app_user_id, but the price lookup_key still routes it to studio_pro,
+    // matched by the customer id.
+    const patch = updateChain.update.mock.calls[0][0] as Record<string, unknown>;
+    expect(patch.studio_pro).toBe(true);
+    expect(updateChain.eq).toHaveBeenCalledWith("stripe_customer_id", "cus_1");
   });
 });

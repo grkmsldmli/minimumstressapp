@@ -28,6 +28,7 @@ import { professionLabel } from "./professions";
 import { standingFor, toCancellationEvents } from "./reliability";
 import { FALLBACK_ZONE, isKnownZone } from "./timezone";
 import type { CandidateFacts } from "./work/matching";
+import { type BoardRow, passesFilters } from "./work/board-filters";
 import { acceptsInterest, effectiveRequestState } from "./work/request-state";
 import { sessionDetailsFromRow, sessionDetailsToRow } from "./work/session-details";
 
@@ -700,18 +701,6 @@ export async function confirmInterest(
 /*  Reads: opportunities (practitioner) and interest (host)            */
 /* ------------------------------------------------------------------ */
 
-function passesFilters(row: RequestRow & Record<string, unknown>, f: BoardFilters): boolean {
-  if (f.profession && row.profession !== f.profession) return false;
-  if (f.sessionFormat && (row as { session_format?: string }).session_format !== f.sessionFormat) return false;
-  if (f.level && (row as { level?: string }).level !== f.level) return false;
-  if (f.urgentOnly && !row.urgent) return false;
-  if (f.minPayCents != null && row.pay_cents < f.minPayCents) return false;
-  const start = new Date(row.starts_at).getTime();
-  if (f.onOrAfter && start < f.onOrAfter.getTime()) return false;
-  if (f.onOrBefore && start > f.onOrBefore.getTime()) return false;
-  return true;
-}
-
 /**
  * The coverage job board: every open, future request, browseable by any Pro
  * practitioner — no matching, no availability gate, no algorithmic exclusion.
@@ -777,7 +766,7 @@ export async function listOpportunities(
     const engaged = mine?.state === "interested" || mine?.state === "confirmed";
     // Filters narrow the browse; a request the practitioner is actively engaged
     // with is always kept so they never lose track of an application.
-    if (!engaged && !passesFilters(row as RequestRow & Record<string, unknown>, filters)) continue;
+    if (!engaged && !passesFilters(row as unknown as BoardRow, filters)) continue;
 
     const space = spaces.get(row.space_id as string);
     const details = sessionDetailsFromRow(row as unknown as Record<string, unknown>);

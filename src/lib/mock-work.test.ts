@@ -76,6 +76,56 @@ describe("MockRepository — Work", () => {
     await expect(repo.confirmRequestInterest(request.id, "another")).rejects.toThrow();
   });
 
+  it("duplicating a request copies its session context into a fresh open one", async () => {
+    const original = await repo.createCoverageRequest({
+      spaceId: null,
+      title: "Reformer Flow",
+      profession: "pilates",
+      level: "Intermediate",
+      participantsMax: 8,
+      equipmentNotes: "Reformers provided",
+      startsAt: new Date(Date.now() + 2 * 86_400_000),
+      durationMinutes: 50,
+      payCents: 6000,
+      notes: "Bring the playlist",
+      urgent: true,
+      ...emptySessionDetails(),
+      sessionFormat: "group",
+      requiredQualifications: ["Reformer cert"],
+    });
+
+    const newStart = new Date(Date.now() + 9 * 86_400_000);
+    const copy = await repo.duplicateCoverageRequest(original.id, newStart);
+
+    expect(copy.id).not.toBe(original.id);
+    expect(copy.state).toBe("open");
+    expect(copy.startsAt.getTime()).toBe(newStart.getTime());
+    // The session context is carried over verbatim…
+    expect(copy.title).toBe("Reformer Flow");
+    expect(copy.sessionFormat).toBe("group");
+    expect(copy.level).toBe("Intermediate");
+    expect(copy.participantsMax).toBe(8);
+    expect(copy.equipmentNotes).toBe("Reformers provided");
+    expect(copy.requiredQualifications).toEqual(["Reformer cert"]);
+    // …but the duration (and so the derived end) matches the original.
+    expect(copy.endsAt.getTime() - copy.startsAt.getTime()).toBe(50 * 60 * 1000);
+    // A repost carries no applicants — it is a brand-new request.
+    expect(copy.interestCount).toBe(0);
+  });
+
+  it("the roster adds, lists, and removes", async () => {
+    expect(await repo.listRoster()).toEqual([]);
+    await repo.addToRoster("prac-1", "Great with beginners");
+    const roster = await repo.listRoster();
+    expect(roster).toHaveLength(1);
+    expect(roster[0].note).toBe("Great with beginners");
+    // Adding the same practitioner again does not duplicate them.
+    await repo.addToRoster("prac-1", "again");
+    expect(await repo.listRoster()).toHaveLength(1);
+    await repo.removeFromRoster(roster[0].id);
+    expect(await repo.listRoster()).toEqual([]);
+  });
+
   it("a request can be cancelled while open, but not once filled", async () => {
     const r = await repo.createCoverageRequest({
       spaceId: null,

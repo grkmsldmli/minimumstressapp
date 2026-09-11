@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { ArrowLeft, Award, CalendarClock, Check, Clock, Lock, MapPin } from "lucide-react";
+import { useRef, useState } from "react";
+import { ArrowLeft, Award, CalendarClock, Check, Clock, Copy, Lock, MapPin, Users } from "lucide-react";
 
 import { Ambient, Headline } from "@/components/brand";
 import { PawLoader } from "@/components/paw-loader";
@@ -18,6 +18,7 @@ import { formatCents } from "@/lib/money";
 import { PRACTITIONER_PROFESSIONS } from "@/lib/professions";
 import { type CivilDate, instantFrom } from "@/lib/timezone";
 import { sessionDayLong, sessionTime, sessionZoneLabel } from "@/lib/when";
+import { repostPrefill } from "@/lib/work/repost";
 import { effectiveRequestState, requestStateLabel } from "@/lib/work/request-state";
 import { GroupLabel } from "./practitioner-extras";
 
@@ -71,42 +72,58 @@ export function CoveragePost({
   spaces,
   templates,
   saving,
+  duplicateFrom = null,
   onSubmit,
   onBack,
 }: {
   spaces: { id: string; name: string; timeZone: string }[];
   templates: ClassTemplate[];
   saving: boolean;
-  onSubmit: (input: CoverageRequestInput) => void;
+  /** When reposting, the source request to prefill the reusable class shape from
+   *  — never its date/time or private-session context (see repostPrefill). */
+  duplicateFrom?: CoverageRequest | null;
+  onSubmit: (input: CoverageRequestInput) => void | Promise<unknown>;
   onBack: () => void;
 }) {
-  const [spaceId, setSpaceId] = useState(spaces[0]?.id ?? "");
+  // A repost prefills the reusable class shape; the date and the private-session
+  // context are deliberately left empty to be re-entered fresh.
+  const prefill = duplicateFrom ? repostPrefill(duplicateFrom) : null;
+  const duplicating = prefill !== null;
+  const initialSpace =
+    prefill?.spaceId && spaces.some((s) => s.id === prefill.spaceId)
+      ? prefill.spaceId
+      : spaces[0]?.id ?? "";
+
+  const [spaceId, setSpaceId] = useState(initialSpace);
   const [templateId, setTemplateId] = useState("");
-  const [sessionFormat, setSessionFormat] = useState<SessionFormat>("group");
-  const [title, setTitle] = useState("");
-  const [profession, setProfession] = useState("");
+  const [sessionFormat, setSessionFormat] = useState<SessionFormat>(prefill?.sessionFormat ?? "group");
+  const [title, setTitle] = useState(prefill?.title ?? "");
+  const [profession, setProfession] = useState(prefill?.profession ?? "");
   const [dateStr, setDateStr] = useState("");
   const [timeStr, setTimeStr] = useState("09:00");
-  const [duration, setDuration] = useState("60");
-  const [pay, setPay] = useState("");
+  const [duration, setDuration] = useState(prefill?.duration ?? "60");
+  const [pay, setPay] = useState(prefill?.pay ?? "");
   const [notes, setNotes] = useState("");
-  const [urgent, setUrgent] = useState(false);
+  const [urgent, setUrgent] = useState(prefill?.urgent ?? false);
   // Group / workshop details
-  const [level, setLevel] = useState("");
-  const [participantsExpected, setParticipantsExpected] = useState("");
-  const [participantsMax, setParticipantsMax] = useState("");
-  const [audience, setAudience] = useState("");
-  const [teachingNotes, setTeachingNotes] = useState("");
-  const [equipmentNotes, setEquipmentNotes] = useState("");
-  // Private / semi-private details
+  const [level, setLevel] = useState(prefill?.level ?? "");
+  const [participantsExpected, setParticipantsExpected] = useState(prefill?.participantsExpected ?? "");
+  const [participantsMax, setParticipantsMax] = useState(prefill?.participantsMax ?? "");
+  const [audience, setAudience] = useState(prefill?.audience ?? "");
+  const [teachingNotes, setTeachingNotes] = useState(prefill?.teachingNotes ?? "");
+  const [equipmentNotes, setEquipmentNotes] = useState(prefill?.equipmentNotes ?? "");
+  // Private / semi-private details — never prefilled on a repost (stale/sensitive).
   const [sessionGoal, setSessionGoal] = useState("");
   const [clientExperience, setClientExperience] = useState("");
   const [accommodations, setAccommodations] = useState("");
   const [programming, setProgramming] = useState<ProgrammingMode | "">("");
   // Qualifications — required vs preferred, kept apart on purpose
-  const [requiredQuals, setRequiredQuals] = useState("");
-  const [preferredQuals, setPreferredQuals] = useState("");
+  const [requiredQuals, setRequiredQuals] = useState(prefill?.requiredQuals ?? "");
+  const [preferredQuals, setPreferredQuals] = useState(prefill?.preferredQuals ?? "");
   const [error, setError] = useState<string | null>(null);
+  // A synchronous latch so a double-tap can never fire two posts, independent of
+  // when the parent's `saving` prop re-renders the disabled button.
+  const submittingRef = useRef(false);
 
   const showGroup = sessionFormat === "group" || sessionFormat === "semiprivate" || sessionFormat === "workshop";
   const showPrivate = sessionFormat === "private" || sessionFormat === "semiprivate";
@@ -148,6 +165,10 @@ export function CoveragePost({
     payNum >= 0;
 
   const submit = () => {
+    // The synchronous latch: a second tap in the same frame is dropped before it
+    // can start a second post. Released only if this attempt fails validation or
+    // the submit rejects — a successful post navigates away, so it stays latched.
+    if (submittingRef.current) return;
     setError(null);
     if (!space) {
       setError("Choose which space needs coverage.");
@@ -165,10 +186,11 @@ export function CoveragePost({
       return;
     }
     if (startsAt.getTime() <= Date.now()) {
-      setError("Pick a time in the future.");
+      setError(duplicating ? "A repost needs a new future date and time." : "Pick a time in the future.");
       return;
     }
-    onSubmit({
+    submittingRef.current = true;
+    const result = onSubmit({
       spaceId,
       classTemplateId: templateId || null,
       title: title.trim(),
@@ -192,6 +214,10 @@ export function CoveragePost({
       accommodations: showPrivate ? accommodations.trim() || null : null,
       programming: showPrivate && programming ? programming : null,
     });
+    // Release the latch only if the post failed; a success unmounts this screen.
+    Promise.resolve(result).catch(() => {
+      submittingRef.current = false;
+    });
   };
 
   return (
@@ -211,12 +237,28 @@ export function CoveragePost({
           <ArrowLeft size={17} color="#fff" />
         </button>
         <div className="mt-5 relative z-10">
-          <Headline pre="Need" accent="coverage." size={24} light />
+          {duplicating ? (
+            <Headline pre="Post" accent="again." size={24} light />
+          ) : (
+            <Headline pre="Need" accent="coverage." size={24} light />
+          )}
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 pt-5 pb-8 safe-pb-8 space-y-3">
-        {templates.length > 0 && (
+        {duplicating && (
+          <div
+            className="flex items-start gap-2 p-3 rounded-xl"
+            style={{ backgroundColor: "#F4F8FC", border: "1px solid #E7EEF6" }}
+          >
+            <Copy size={14} color="#5B7A99" style={{ marginTop: 2 }} />
+            <p className="font-body font-normal text-[12px] text-ink-soft">
+              Reposting a past class. We&apos;ve carried over the details — set a new date and time,
+              and add any private-session context fresh.
+            </p>
+          </div>
+        )}
+        {templates.length > 0 && !duplicating && (
           <div>
             <label className="font-body font-medium text-[13.5px] text-navy">Start from a template</label>
             <select
@@ -597,7 +639,7 @@ export function CoveragePost({
 
       <div className="px-6 pt-3 pb-6 safe-pb-6 shrink-0" style={{ borderTop: "1px solid #F0ECE0" }}>
         <PrimaryButton onClick={submit} disabled={!canSubmit || saving}>
-          {saving ? "Posting…" : "Post coverage request"}
+          {saving ? "Posting…" : duplicating ? "Post again" : "Post coverage request"}
         </PrimaryButton>
       </div>
     </div>
@@ -700,8 +742,13 @@ export function CoverageDetail({
   loadingInterest,
   busyInterestId,
   cancelling,
+  canInvite,
+  rosterCount,
+  canRepost,
   onConfirm,
   onCancel,
+  onInviteFromRoster,
+  onDuplicate,
   onBack,
 }: {
   request: CoverageRequest;
@@ -709,12 +756,24 @@ export function CoverageDetail({
   loadingInterest: boolean;
   busyInterestId: string | null;
   cancelling: boolean;
+  /** Studio Pro roster access — gates the "invite from roster" entry point. */
+  canInvite: boolean;
+  /** How many people are on the host's roster (0 → no invite entry point). */
+  rosterCount: number;
+  /** Studio Pro posting — gates "Post again" on a past request. */
+  canRepost: boolean;
   onConfirm: (interestId: string) => void;
   onCancel: () => void;
+  onInviteFromRoster: () => void;
+  onDuplicate: () => void;
   onBack: () => void;
 }) {
   const state = effectiveRequestState(request);
   const open = state === "open";
+  const isPast = state === "completed" || state === "cancelled" || state === "expired";
+  const canCancel = state === "open" || state === "draft";
+  const showInvite = open && canInvite && rosterCount > 0;
+  const showRepost = isPast && canRepost;
   const zone = sessionZoneLabel(request.startsAt, request.timeZone);
 
   return (
@@ -801,17 +860,39 @@ export function CoverageDetail({
         </div>
       </div>
 
-      {(state === "open" || state === "draft") && (
-        <div className="px-6 pt-3 pb-6 safe-pb-6 shrink-0" style={{ borderTop: "1px solid #F0ECE0" }}>
-          <button
-            type="button"
-            onClick={onCancel}
-            disabled={cancelling}
-            className="w-full py-3 rounded-full font-body font-medium text-[15px] press disabled:opacity-60"
-            style={{ backgroundColor: "#FEF2F0", color: "#B45143" }}
-          >
-            {cancelling ? "Cancelling…" : "Cancel this request"}
-          </button>
+      {(canCancel || showRepost) && (
+        <div
+          className="px-6 pt-3 pb-6 safe-pb-6 shrink-0 space-y-2.5"
+          style={{ borderTop: "1px solid #F0ECE0" }}
+        >
+          {showInvite && (
+            <button
+              type="button"
+              onClick={onInviteFromRoster}
+              className="w-full py-3 rounded-full font-body font-medium text-[15px] press inline-flex items-center justify-center gap-1.5"
+              style={{ backgroundColor: "#EDF6FE", color: "#2578C2" }}
+            >
+              <Users size={16} /> Invite from your roster
+            </button>
+          )}
+          {showRepost && (
+            <PrimaryButton onClick={onDuplicate}>
+              <span className="inline-flex items-center gap-1.5">
+                <Copy size={15} /> Post again
+              </span>
+            </PrimaryButton>
+          )}
+          {canCancel && (
+            <button
+              type="button"
+              onClick={onCancel}
+              disabled={cancelling}
+              className="w-full py-3 rounded-full font-body font-medium text-[15px] press disabled:opacity-60"
+              style={{ backgroundColor: "#FEF2F0", color: "#B45143" }}
+            >
+              {cancelling ? "Cancelling…" : "Cancel this request"}
+            </button>
+          )}
         </div>
       )}
     </div>

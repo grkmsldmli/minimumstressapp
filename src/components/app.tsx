@@ -24,6 +24,7 @@ import type { AvailabilityBlock } from "@/lib/availability";
 import { viewerZone } from "@/lib/timezone";
 import { type WorkEligibilityGap, workEligibility } from "@/lib/work/eligibility";
 import { entitlementsFor } from "@/lib/entitlements";
+import { canSendInvite, inviteControlState } from "@/lib/work/roster-invite";
 import { apiFetch } from "@/lib/api-fetch";
 import {
   SPACE_DEEP_LINK_PARAM,
@@ -271,6 +272,14 @@ export function App() {
   const [loadingInterest, setLoadingInterest] = useState(false);
   const [workBusyId, setWorkBusyId] = useState<string | null>(null);
   const [workSaving, setWorkSaving] = useState(false);
+  // The past request being reposted (prefills the post form), if any.
+  const [duplicateSource, setDuplicateSource] = useState<CoverageRequest | null>(null);
+  // Roster invites already sent this session, keyed `${requestId}:${practitionerId}`
+  // so a member shows "Invited" and a repeat tap is prevented across navigation.
+  const [invitedInviteKeys, setInvitedInviteKeys] = useState<Set<string>>(() => new Set());
+  // Invites in flight, by practitioner id — a set so inviting a second member
+  // never releases the first member's lock.
+  const [invitingRosterIds, setInvitingRosterIds] = useState<Set<string>>(() => new Set());
   const [loadError, setLoadError] = useState<string | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
   const [roleError, setRoleError] = useState<string | null>(null);
@@ -1765,7 +1774,10 @@ export function App() {
         templateCount={classTemplates.length}
         rosterCount={data.roster.length}
         hasSpaces={mySpaces.length > 0}
-        onNewCoverage={() => go("coverage-post")}
+        onNewCoverage={() => {
+          setDuplicateSource(null);
+          go("coverage-post");
+        }}
         onOpenTemplates={() => go("class-templates")}
         onOpenRoster={() => go("roster")}
         onOpenRequest={(id) => {
@@ -1855,10 +1867,16 @@ export function App() {
       spaces={mySpaces.map((s) => ({ id: s.id, name: s.name, timeZone: s.timeZone }))}
       templates={classTemplates}
       saving={workSaving}
+      duplicateFrom={duplicateSource}
       onSubmit={(input) => {
         setWorkSaving(true);
-        void mutate(() => repo.createCoverageRequest(input))
-          .then(() => back())
+        // Return the promise so the form can release its double-tap latch on
+        // failure; a success navigates away and clears the repost source.
+        return mutate(() => repo.createCoverageRequest(input))
+          .then(() => {
+            setDuplicateSource(null);
+            back();
+          })
           .finally(() => setWorkSaving(false));
       }}
       onBack={back}
@@ -1874,6 +1892,9 @@ export function App() {
         loadingInterest={loadingInterest}
         busyInterestId={workBusyId}
         cancelling={workSaving}
+        canInvite={entitlements.canUseRoster}
+        rosterCount={data.roster.length}
+        canRepost={entitlements.canPostCoverage}
         onConfirm={(interestId) => {
           if (!activeCoverageId) return;
           setWorkBusyId(interestId);
@@ -1887,6 +1908,11 @@ export function App() {
           void mutate(() => repo.cancelCoverageRequest(activeCoverageId))
             .then(() => back())
             .finally(() => setWorkSaving(false));
+        }}
+        onInviteFromRoster={() => go("roster-invite")}
+        onDuplicate={() => {
+          setDuplicateSource(activeCoverage);
+          go("coverage-post");
         }}
         onBack={back}
       />
@@ -1925,6 +1951,7 @@ export function App() {
     "coverage-detail",
     "studio-pro",
     "roster",
+    "roster-invite",
   ];
   // "work" is intentionally in neither list: both sides have a Work home, and
   // renderWork() below branches on accountType.
@@ -2595,11 +2622,58 @@ export function App() {
       return (
         <RosterScreen
           members={data.roster}
-          onRemove={(id) => void mutate(() => repo.removeFromRoster(id))}
+          onRemove={(id) => mutate(() => repo.removeFromRoster(id))}
           onRefresh={onPullRefresh}
           onBack={back}
         />
       );
+    case "roster-invite": {
+      // Invites are for the coverage request the host came from. Without one,
+      // there is nothing to invite to — fall back to the board.
+      if (!activeCoverageId) return renderWork();
+      const reqId = activeCoverageId;
+      const invitedForRequest = new Set(
+        [...invitedInviteKeys]
+          .filter((k) => k.startsWith(`${reqId}:`))
+          .map((k) => k.slice(reqId.length + 1)),
+      );
+      return (
+        <RosterScreen
+          members={data.roster}
+          invite={{
+            invitedIds: invitedForRequest,
+            busyIds: invitingRosterIds,
+            onInvite: (practitionerId) => {
+              // Guard with the same pure rule the control renders from: never
+              // invite someone already invited, in flight, or unavailable — so a
+              // tap that slips through a stale button state still sends nothing.
+              const member = data.roster.find((r) => r.practitionerId === practitionerId);
+              if (!member) return;
+              const control = inviteControlState(
+                member,
+                invitedForRequest.has(practitionerId),
+                invitingRosterIds.has(practitionerId),
+              );
+              if (!canSendInvite(control)) return;
+              setInvitingRosterIds((prev) => new Set(prev).add(practitionerId));
+              void mutate(() => repo.inviteFromRoster(reqId, practitionerId))
+                .then(() =>
+                  setInvitedInviteKeys((prev) => new Set(prev).add(`${reqId}:${practitionerId}`)),
+                )
+                .finally(() =>
+                  setInvitingRosterIds((prev) => {
+                    const next = new Set(prev);
+                    next.delete(practitionerId);
+                    return next;
+                  }),
+                );
+            },
+          }}
+          onRefresh={onPullRefresh}
+          onBack={back}
+        />
+      );
+    }
   }
 }
 

@@ -6,20 +6,68 @@ import { ArrowLeft, Award, Check, Trash2 } from "lucide-react";
 import { Ambient, Headline } from "@/components/brand";
 import { PullToRefresh } from "@/components/pull-to-refresh";
 import type { RosterMember } from "@/lib/domain";
+import { type InviteControl, inviteControlState } from "@/lib/work/roster-invite";
 import { GroupLabel } from "./practitioner-extras";
 
-const NAVY = "radial-gradient(140% 120% at 15% 0%, #1E4066 0%, #16304E 85%)";
+/** Invite mode: everything the card needs to show an invite control and act. */
+export interface RosterInviteMode {
+  /** Practitioner ids already invited to the current request (persisted state). */
+  invitedIds: Set<string>;
+  /** Practitioner ids whose invite is in flight — a set, so inviting a second
+   *  member never releases the first member's lock. */
+  busyIds: Set<string>;
+  onInvite: (practitionerId: string) => void;
+}
+
+function InviteButton({ control, onInvite }: { control: InviteControl; onInvite: () => void }) {
+  if (control === "invited") {
+    return (
+      <span
+        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full font-body font-medium text-[12.5px] shrink-0"
+        style={{ backgroundColor: "#EFF4EC", color: "#557255" }}
+      >
+        <Check size={12} /> Invited
+      </span>
+    );
+  }
+  if (control === "unavailable") {
+    return (
+      <span
+        className="px-3 py-1.5 rounded-full font-body font-medium text-[12.5px] shrink-0"
+        style={{ backgroundColor: "#F4F8FC", color: "#8AA0B6" }}
+      >
+        Unavailable
+      </span>
+    );
+  }
+  return (
+    <button
+      type="button"
+      disabled={control === "inviting"}
+      onClick={onInvite}
+      className="px-4 py-1.5 rounded-full font-body font-medium text-[12.5px] text-white press disabled:opacity-60 shrink-0"
+      style={{ backgroundColor: "#2578C2" }}
+    >
+      {control === "inviting" ? "Inviting…" : "Invite"}
+    </button>
+  );
+}
 
 function MemberCard({
   member,
-  busy,
+  invite,
+  removing = false,
   onRemove,
 }: {
   member: RosterMember;
-  busy: boolean;
-  onRemove: (id: string) => void;
+  invite?: RosterInviteMode;
+  removing?: boolean;
+  onRemove?: (id: string) => void;
 }) {
   const m = member;
+  const control = invite
+    ? inviteControlState(m, invite.invitedIds.has(m.practitionerId), invite.busyIds.has(m.practitionerId))
+    : null;
   return (
     <div className="rounded-2xl bg-white p-4 mb-3 flex items-start gap-3" style={{ border: "1px solid #E7EEF6" }}>
       {m.avatarUrl ? (
@@ -51,16 +99,20 @@ function MemberCard({
         </div>
         {m.note && <p className="font-body font-normal text-[13px] text-ink-soft mt-2">{m.note}</p>}
       </div>
-      <button
-        type="button"
-        onClick={() => onRemove(m.id)}
-        disabled={busy}
-        aria-label={`Remove ${m.displayName}`}
-        className="w-8 h-8 rounded-full flex items-center justify-center press shrink-0 disabled:opacity-50"
-        style={{ backgroundColor: "#FEF2F0" }}
-      >
-        <Trash2 size={14} color="#B45143" />
-      </button>
+      {invite && control ? (
+        <InviteButton control={control} onInvite={() => invite.onInvite(m.practitionerId)} />
+      ) : (
+        <button
+          type="button"
+          onClick={() => onRemove?.(m.id)}
+          disabled={removing}
+          aria-label={`Remove ${m.displayName}`}
+          className="w-8 h-8 rounded-full flex items-center justify-center press shrink-0 disabled:opacity-50"
+          style={{ backgroundColor: "#FEF2F0" }}
+        >
+          <Trash2 size={14} color="#B45143" />
+        </button>
+      )}
     </div>
   );
 }
@@ -68,20 +120,27 @@ function MemberCard({
 export function RosterScreen({
   members,
   onRemove,
+  invite,
   onRefresh,
   onBack,
 }: {
   members: RosterMember[];
-  onRemove: (id: string) => void;
+  /** Management mode: remove a member. Return the promise so the row can stay
+   *  disabled until it settles. Ignored in invite mode. */
+  onRemove?: (id: string) => void | Promise<unknown>;
+  /** When set, the screen invites members to a request instead of managing them. */
+  invite?: RosterInviteMode;
   onRefresh: () => Promise<unknown> | unknown;
   onBack: () => void;
 }) {
-  const [busyId, setBusyId] = useState<string | null>(null);
+  // In management mode, disable a member's Remove while its removal is in flight
+  // so a double-tap can't fire two deletes.
+  const [removingId, setRemovingId] = useState<string | null>(null);
 
   const hero = (
     <div
       className="-mx-6 px-6 pt-8 safe-pt-8 pb-7 rounded-b-[30px] relative overflow-hidden shrink-0"
-      style={{ background: NAVY }}
+      style={{ background: "radial-gradient(140% 120% at 15% 0%, #1E4066 0%, #16304E 85%)" }}
     >
       <Ambient />
       <button
@@ -94,7 +153,11 @@ export function RosterScreen({
         <ArrowLeft size={17} color="#fff" />
       </button>
       <div className="mt-5 relative z-10">
-        <Headline pre="My" accent="roster." size={24} light />
+        {invite ? (
+          <Headline pre="Invite to" accent="cover." size={24} light />
+        ) : (
+          <Headline pre="My" accent="roster." size={24} light />
+        )}
       </div>
     </div>
   );
@@ -103,7 +166,13 @@ export function RosterScreen({
     <div className="h-full flex flex-col screen-in bg-white">
       <PullToRefresh header={hero} className="flex-1 px-6 pb-8 safe-pb-8" onRefresh={onRefresh}>
         <div className="mt-4" />
-        <GroupLabel>Trusted substitutes</GroupLabel>
+        <GroupLabel>{invite ? "Your trusted substitutes" : "Trusted substitutes"}</GroupLabel>
+        {invite && (
+          <p className="font-body font-normal text-[12.5px] text-ink-soft mb-3 -mt-1">
+            An invite only lets them know — they still apply, and you still confirm. No one is
+            auto-assigned.
+          </p>
+        )}
         {members.length === 0 ? (
           <div
             className="rounded-2xl p-6 text-center"
@@ -120,11 +189,17 @@ export function RosterScreen({
             <MemberCard
               key={m.id}
               member={m}
-              busy={busyId === m.id}
-              onRemove={(id) => {
-                setBusyId(id);
-                Promise.resolve(onRemove(id)).finally(() => setBusyId(null));
-              }}
+              invite={invite}
+              removing={removingId === m.id}
+              onRemove={
+                onRemove
+                  ? (id) => {
+                      if (removingId) return;
+                      setRemovingId(id);
+                      Promise.resolve(onRemove(id)).finally(() => setRemovingId(null));
+                    }
+                  : undefined
+              }
             />
           ))
         )}

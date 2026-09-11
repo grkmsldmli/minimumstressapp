@@ -60,7 +60,8 @@ export type Screen =
   | "coverage-post"
   | "coverage-detail"
   | "studio-pro"
-  | "roster";
+  | "roster"
+  | "roster-invite";
 
 interface AppState {
   repo: AppRepository;

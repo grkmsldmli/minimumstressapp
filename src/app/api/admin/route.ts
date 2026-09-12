@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 
 import { recordAdminAction } from "@/lib/admin/audit";
 import { staffOrRefusal } from "@/lib/admin/guard";
-import { loadQueue } from "@/lib/admin/queue";
+import { loadReportingQueue } from "@/lib/admin/reporting-truth";
 import { handled, jsonError } from "@/lib/api/session";
 import { dateOnly, integer, jsonObject, oneOf, optionalString, uuid } from "@/lib/api/validate";
 import { ClaimError, decideClaim } from "@/lib/claim-service";
@@ -12,18 +12,6 @@ import { notifyInsuranceReviewed } from "@/lib/notify/for-insurance";
 import { RefundError, decideRefund } from "@/lib/refund-service";
 import { supabaseAdmin } from "@/lib/supabase/server";
 
-/**
- * The staff queue, and the decisions taken on it.
- *
- * The allowlist is checked on every request rather than once at sign-in. A
- * session that was staff yesterday is not staff today if the setting changed,
- * and the thing behind this route is every lease document in the database.
- *
- * The failure is a 404, not a 403. A 403 confirms the route exists and that
- * somebody is on the other side of it; a 404 says nothing at all, which is what
- * an address nobody should have found deserves.
- */
-/** Which entity each action touches — for the audit log's target_type. */
 const AUDIT_TARGET: Record<string, string> = {
   approve_listing: "listing",
   reject_listing: "listing",
@@ -46,7 +34,10 @@ export async function GET(): Promise<Response> {
     const staff = await staffOrRefusal();
     if (staff instanceof Response) return staff;
 
-    return Response.json(await loadQueue(supabaseAdmin()), {
+    // The legacy Operations surface must read through the same reporting
+    // boundary as Command/Money/Growth/System. Raw checkout-hold rows are
+    // implementation details, not bookings or cancellations.
+    return Response.json(await loadReportingQueue(supabaseAdmin()), {
       headers: { "Cache-Control": "no-store" },
     });
   });
@@ -86,9 +77,6 @@ export async function POST(request: NextRequest): Promise<Response> {
 
     const admin = supabaseAdmin();
 
-    // Every successful state change records one audit row, attributed to the
-    // acting staff account, before the response is returned — so nothing mutates
-    // production silently. Called only on success (failures return/throw above).
     const done = async (
       extra: Record<string, unknown> = {},
       metadata: Record<string, unknown> = {},
@@ -107,22 +95,6 @@ export async function POST(request: NextRequest): Promise<Response> {
 
     switch (action.value) {
       case "approve_listing": {
-        /**
-         * The database refuses this without a sublease document — see the
-         * check constraint in 0010. So a listing whose paperwork never
-         * uploaded cannot be approved by clicking quickly, which is the whole
-         * reason that constraint is on the row rather than in a comment.
-         */
-        /*
-         * The document is marked read at the same moment the listing goes
-         * live, in one write, because 0018 refuses an active listing whose
-         * lease is not verified. Two updates could leave the pair disagreeing
-         * if the second one failed; one cannot.
-         *
-         * This is also the only place the host learns anything. Until now the
-         * app went quiet after an upload and "pending" covered three different
-         * answers — not looked at, looked at and fine, looked at and wrong.
-         */
         const reviewedAt = new Date().toISOString();
         const { error } = await admin
           .from("spaces")
@@ -143,30 +115,16 @@ export async function POST(request: NextRequest): Promise<Response> {
             400,
           );
         }
-
-        /*
-         * Founding Host is not awarded here. This one write — a listing going
-         * from pending to active — is the qualifying moment, and a database
-         * trigger (migration 0060) allocates the spot inside the very same
-         * transaction. So a qualifying host can never end up live but skipped:
-         * if allocation genuinely fails, this UPDATE rolls back with it and the
-         * approval can be retried; if all fifty spots are already taken, that is
-         * a normal outcome, not an error, and the listing goes live regardless.
-         */
         return done();
       }
 
       case "reject_listing": {
-        // Delisted rather than deleted: the host's own record of what they
-        // submitted survives, and so does ours of what we decided.
         const { error } = await admin
           .from("spaces")
           .update({
             status: "delisted",
             sublease_doc_state: "rejected",
             sublease_doc_reviewed_at: new Date().toISOString(),
-            // Shown to the host verbatim, so a rejection can say "the second
-            // page is cut off" rather than leaving them to guess.
             doc_review_note: note.value || null,
           })
           .eq("id", id.value);
@@ -180,9 +138,6 @@ export async function POST(request: NextRequest): Promise<Response> {
           .update({
             state: "resolved",
             resolved_at: new Date().toISOString(),
-            // The note is what makes a resolution auditable. An escalation
-            // closed with nothing written is indistinguishable from one nobody
-            // read.
             note: note.value || "Reviewed, no action needed.",
           })
           .eq("id", id.value);
@@ -200,9 +155,6 @@ export async function POST(request: NextRequest): Promise<Response> {
         if (readError) throw readError;
         if (!request_) return jsonError("No such request", 404);
 
-        // The service role is exempt from the trigger that otherwise makes
-        // account_type write-once — which is exactly the exemption that lets a
-        // genuine mistake be corrected without making the rule meaningless.
         const { error } = await admin
           .from("profiles")
           .update({ account_type: request_.requested_type })
@@ -217,19 +169,9 @@ export async function POST(request: NextRequest): Promise<Response> {
         return done();
       }
 
-      /**
-       * The end of a refund request, and the only place money moves for one.
-       *
-       * A note is required rather than optional. It is quoted back to the
-       * person who asked, and a refusal that explains itself is one they can
-       * argue with — an unexplained one is a wall, and the person on the other
-       * side of it writes to their bank instead, which costs everyone more
-       * than the refund would have.
-       */
       case "decide_refund": {
         const outcome = oneOf(body.value, "outcome", ["full", "our_fee", "none"] as const);
         if (!outcome.ok) return jsonError(outcome.reason, 400);
-
         if (!note.value || note.value.trim().length < 15) {
           return jsonError("Say why — it is quoted back to them", 400);
         }
@@ -244,30 +186,14 @@ export async function POST(request: NextRequest): Promise<Response> {
           );
           return done({ refundedCents }, { outcome: outcome.value, refundedCents });
         } catch (failure) {
-          if (failure instanceof RefundError) {
-            return jsonError(failure.message, failure.status);
-          }
+          if (failure instanceof RefundError) return jsonError(failure.message, failure.status);
           throw failure;
         }
       }
 
-      /**
-       * The end of a studio's claim, and the only place a practitioner's kept
-       * card is charged for one.
-       *
-       * `amountCents` is what staff settled on and matters only for damage —
-       * the fixed kinds are recomputed server-side, so a host cannot inflate a
-       * published flat rate by editing a payload.
-       *
-       * An upheld claim whose card refuses comes back as `uncollectable`
-       * rather than as an error. That is a real outcome with a real meaning
-       * for the host: we agreed with you and still could not collect, which is
-       * where your own insurer comes in.
-       */
       case "decide_claim": {
         const verdict = oneOf(body.value, "verdict", ["uphold", "reject"] as const);
         if (!verdict.ok) return jsonError(verdict.reason, 400);
-
         if (!note.value || note.value.trim().length < 15) {
           return jsonError("Say why — both sides are told", 400);
         }
@@ -289,38 +215,18 @@ export async function POST(request: NextRequest): Promise<Response> {
           );
           return done(result, { verdict: verdict.value, amountCents: amount.value, ...result });
         } catch (failure) {
-          if (failure instanceof ClaimError) {
-            return jsonError(failure.message, failure.status);
-          }
+          if (failure instanceof ClaimError) return jsonError(failure.message, failure.status);
           throw failure;
         }
       }
 
-      /**
-       * Taking a listing off the marketplace, from the directory rather than
-       * the review queue. `reject_listing` above is the review decision, which
-       * also stamps the paperwork; this is the plain operator action for a
-       * listing that should not be live — spam, a test, a room a host asked us
-       * to remove — and leaves the documents alone.
-       */
       case "delist_listing": {
-        const { error } = await admin
-          .from("spaces")
-          .update({ status: "delisted" })
-          .eq("id", id.value);
+        const { error } = await admin.from("spaces").update({ status: "delisted" }).eq("id", id.value);
         if (error) throw error;
         return done();
       }
 
-      /**
-       * Putting one back. The 0018 constraint refuses an active listing whose
-       * sublease is not verified, so a listing that was never approved cannot be
-       * forced live here — that has to go back through the review queue, and the
-       * error says so rather than failing quietly.
-       */
       case "relist_listing": {
-        // Back on the site, and no longer archived — putting a room back is the
-        // one thing that undoes a close, so archived_at is cleared with it.
         const { error } = await admin
           .from("spaces")
           .update({ status: "active", archived_at: null })
@@ -336,13 +242,6 @@ export async function POST(request: NextRequest): Promise<Response> {
         return done();
       }
 
-      /**
-       * Closing one for good, keeping the record. It comes off the site and
-       * takes no more bookings — the same delisted status a hold uses, so the
-       * search exclusion and the new-booking gate need nothing new — but
-       * archived_at marks it as a permanent close rather than a pause, and
-       * nothing here touches the bookings, earnings or reviews behind it.
-       */
       case "archive_listing": {
         const { error } = await admin
           .from("spaces")
@@ -352,13 +251,6 @@ export async function POST(request: NextRequest): Promise<Response> {
         return done();
       }
 
-      /**
-       * Erasing one for good. space_media and availability cascade with it;
-       * bookings are ON DELETE RESTRICT, so a listing that anyone has ever
-       * booked cannot be deleted — that record is two people's money and is not
-       * this button's to destroy. The foreign-key refusal is turned into the
-       * plain answer: delist it instead.
-       */
       case "delete_listing": {
         const { error } = await admin.from("spaces").delete().eq("id", id.value);
         if (error) {
@@ -372,35 +264,17 @@ export async function POST(request: NextRequest): Promise<Response> {
         return done();
       }
 
-      /**
-       * Verifying a professional's liability certificate, and the only place a
-       * booking's insurance gate is ever satisfied.
-       *
-       * The two dates are the whole point of the decision: an uploaded file
-       * proves nothing until a person has read the window off it, and the
-       * booking gate refuses a verified row that carries none. Written together
-       * with the state in one update, because 0054 refuses a 'verified' row
-       * without both dates and with an expiry before the start — so a slip is a
-       * 400 here rather than a certificate that reads valid and covers nothing.
-       *
-       * Scoped to a practitioner: only the professional side carries this cover,
-       * and a stray id for a host should change nothing rather than stamp a
-       * column that means nothing on their account.
-       */
       case "verify_insurance": {
         const effective = dateOnly(body.value, "effectiveDate");
         if (!effective.ok) return jsonError(effective.reason, 400);
-
         const expires = dateOnly(body.value, "expiresAt");
         if (!expires.ok) return jsonError(expires.reason, 400);
-
         if (expires.value < effective.value) {
           return jsonError("The expiry cannot come before the effective date", 400);
         }
 
         const insurer = optionalString(body.value, "insurer", { max: 200 });
         if (!insurer.ok) return jsonError(insurer.reason, 400);
-
         const policyNumber = optionalString(body.value, "policyNumber", { max: 200 });
         if (!policyNumber.ok) return jsonError(policyNumber.reason, 400);
 
@@ -413,7 +287,6 @@ export async function POST(request: NextRequest): Promise<Response> {
             insurance_expires_at: expires.value,
             insurance_insurer: insurer.value || null,
             insurance_policy_number: policyNumber.value || null,
-            // A clean slate: whatever a previous rejection said no longer holds.
             insurance_review_note: null,
           })
           .eq("id", id.value)
@@ -429,9 +302,6 @@ export async function POST(request: NextRequest): Promise<Response> {
           );
         }
 
-        // Tell them, but only for a row that actually changed — a stray id that
-        // matched no practitioner is a no-op, not a verification. The email
-        // comes after the write and cannot fail it: see notifyInsuranceReviewed.
         const verified = data?.[0];
         if (verified?.insurance_doc_path) {
           await notifyInsuranceReviewed(admin, id.value, {
@@ -440,18 +310,9 @@ export async function POST(request: NextRequest): Promise<Response> {
             expiresLabel: formatCoverageDate(expires.value),
           });
         }
-
         return done();
       }
 
-      /**
-       * Turning a certificate down. The reason is required and shown to the
-       * professional verbatim, so "the second page is cut off" reaches them
-       * rather than a bare "rejected" they can only guess at. The window is
-       * cleared with it — a rejected certificate has no valid dates, and leaving
-       * stale ones behind is exactly the kind of row the booking gate must never
-       * read as cover.
-       */
       case "reject_insurance": {
         if (!note.value || note.value.trim().length < 15) {
           return jsonError("Say why — it is shown to them", 400);
@@ -471,8 +332,6 @@ export async function POST(request: NextRequest): Promise<Response> {
           .select("insurance_doc_path");
         if (error) throw error;
 
-        // Same shape as verify: notify only a row that changed, after the
-        // write, in a call that cannot fail the decision it follows.
         const rejected = data?.[0];
         if (rejected?.insurance_doc_path) {
           await notifyInsuranceReviewed(admin, id.value, {
@@ -481,17 +340,9 @@ export async function POST(request: NextRequest): Promise<Response> {
             note: note.value,
           });
         }
-
         return done();
       }
 
-      /**
-       * A professional credential, reviewed by hand. No dates — a license is
-       * valid-or-not rather than windowed like insurance — so this only records
-       * the verdict. Setting the state on a row whose document is unchanged
-       * passes the credential trigger because the service role has no auth.uid();
-       * a stray id that matches no practitioner changes nothing.
-       */
       case "verify_credential": {
         const { error } = await admin
           .from("profiles")
@@ -507,10 +358,6 @@ export async function POST(request: NextRequest): Promise<Response> {
         return done();
       }
 
-      /**
-       * Turning a credential down. The reason is required and shown to the
-       * practitioner verbatim, the same as a rejected certificate.
-       */
       case "reject_credential": {
         if (!note.value || note.value.trim().length < 15) {
           return jsonError("Say why — it is shown to them", 400);
@@ -530,8 +377,6 @@ export async function POST(request: NextRequest): Promise<Response> {
       }
 
       default:
-        // Unreachable: `oneOf` already rejected anything else. Present so the
-        // function has a return type rather than a maybe.
         return jsonError("Unknown action", 400);
     }
   });

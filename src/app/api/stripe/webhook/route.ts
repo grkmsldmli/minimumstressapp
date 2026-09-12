@@ -186,18 +186,27 @@ async function handle(event: Stripe.Event): Promise<void> {
        * the webhook. No amounts or PII — a booking id and the approval shape only.
        */
       if (booking) {
-        await recordEvent(admin, {
-          name: "payment_succeeded",
-          userId: (booking.practitioner_id as string | null) ?? null,
-          surface: "stripe_webhook",
-          properties: { bookingId: booking.id },
-        });
-        await recordEvent(admin, {
-          name: "booking_confirmed",
-          userId: (booking.practitioner_id as string | null) ?? null,
-          surface: "stripe_webhook",
-          properties: { bookingId: booking.id, approvalState: booking.approval_state },
-        });
+        // Trusted server emitter — opt in to the server-only business facts.
+        await recordEvent(
+          admin,
+          {
+            name: "payment_succeeded",
+            userId: (booking.practitioner_id as string | null) ?? null,
+            surface: "stripe_webhook",
+            properties: { bookingId: booking.id },
+          },
+          true,
+        );
+        await recordEvent(
+          admin,
+          {
+            name: "booking_confirmed",
+            userId: (booking.practitioner_id as string | null) ?? null,
+            surface: "stripe_webhook",
+            properties: { bookingId: booking.id, approvalState: booking.approval_state },
+          },
+          true,
+        );
       }
       /*
        * Except when the host has just approved it.

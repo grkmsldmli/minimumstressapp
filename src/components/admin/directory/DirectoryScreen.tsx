@@ -68,7 +68,7 @@ export function DirectoryScreen<T>({
     return qs ? `${path}?${qs}` : path;
   }, [path, debouncedQ, filterValues, page]);
 
-  const { data, error, loading } = useAdminData<Page<T> & { query?: unknown }>(fullPath);
+  const { data, error } = useAdminData<Page<T> & { query?: unknown }>(fullPath);
 
   return (
     <div className="flex flex-col gap-3">
@@ -162,7 +162,7 @@ export function DirectoryScreen<T>({
 
           <div className="flex items-center justify-between">
             <span className="font-body text-[12px]" style={{ color: MUTED }}>
-              {data.total.toLocaleString()} total{loading ? " · updating…" : ""}
+              {data.total.toLocaleString()} total
             </span>
             {data.pages > 1 && (
               <div className="flex items-center gap-2">

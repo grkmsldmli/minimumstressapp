@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 
-import type { SearchResults } from "@/lib/admin/projections";
+import { effectiveSpaceStatus, type SearchResults } from "@/lib/admin/projections";
 
 import { CORAL, dateTime, LINE, MUTED, Muted, PANEL2, Panel, Pill, shortDate, statusColor, TEXT, usd, useAdminData } from "../kit";
 
@@ -66,7 +66,7 @@ export function SearchScreen() {
                     href={`/admin/spaces/${s.id}`}
                     title={s.name}
                     subtitle={s.hostEmail ?? s.addressLine ?? undefined}
-                    trailing={<Pill color={statusColor(s.status)}>{s.status}</Pill>}
+                    trailing={<Pill color={statusColor(effectiveSpaceStatus(s))}>{effectiveSpaceStatus(s)}</Pill>}
                   />
                 ))}
               </div>

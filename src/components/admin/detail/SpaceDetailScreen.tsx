@@ -1,6 +1,6 @@
 "use client";
 
-import type { SpaceDetail } from "@/lib/admin/projections";
+import { effectiveSpaceStatus, type SpaceDetail } from "@/lib/admin/projections";
 
 import { CORAL, MUTED, Muted, Panel, Pill, shortDate, Stat, statusColor, TEXT, usd, useAdminData } from "../kit";
 import { BackLink, EntityLinkRow, MiniBookingList } from "./bits";
@@ -29,7 +29,7 @@ export function SpaceDetailScreen({ id }: { id: string }) {
         <BackLink href="/admin/spaces" label="Spaces" />
         <div className="flex items-center gap-3 flex-wrap">
           <h1 className="font-display italic font-semibold text-[22px]" style={{ color: TEXT }}>{space.name}</h1>
-          <Pill color={statusColor(space.status)}>{space.status}</Pill>
+          <Pill color={statusColor(effectiveSpaceStatus(space))}>{effectiveSpaceStatus(space)}</Pill>
         </div>
         <Muted className="text-[12.5px]">{space.addressLine ?? "no address"} · listed {shortDate(space.createdAt)}</Muted>
       </div>

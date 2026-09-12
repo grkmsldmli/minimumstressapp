@@ -8,14 +8,16 @@ import { type AnalyticsEventInput, validateEvent } from "./events";
  * Record one analytics event, server-side, best-effort.
  *
  * Never throws into the caller: an analytics hiccup must never break the payment,
- * booking, or subscription flow it rides alongside. Server emitters pass
- * `allowServerOnly` (the default here) so they may write the business-fact events
- * the public ingestion route forbids. Writes go through the service-role client.
+ * booking, or subscription flow it rides alongside. The default is the SAFE one —
+ * `allowServerOnly = false`, matching validateEvent — so a future public ingest
+ * that forwards a body here cannot forge business facts by omission. The trusted
+ * server emitters (capture, cancellation, webhooks) opt in with `true`
+ * explicitly. Writes go through the service-role client.
  */
 export async function recordEvent(
   admin: SupabaseClient,
   input: AnalyticsEventInput,
-  allowServerOnly = true,
+  allowServerOnly = false,
 ): Promise<void> {
   const v = validateEvent(input, allowServerOnly);
   if (!v.ok) {

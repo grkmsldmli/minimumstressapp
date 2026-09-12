@@ -1,6 +1,7 @@
 "use client";
 
 import type { DirSpace } from "@/lib/admin/directory";
+import { effectiveSpaceStatus } from "@/lib/admin/projections";
 
 import { Muted, Pill, shortDate, statusColor, TEXT, usd } from "../kit";
 import { type Column, DirectoryScreen } from "./DirectoryScreen";
@@ -16,7 +17,14 @@ const columns: Column<DirSpace>[] = [
       </div>
     ),
   },
-  { key: "status", header: "Status", render: (s) => <Pill color={statusColor(s.status)}>{s.status}</Pill> },
+  {
+    key: "status",
+    header: "Status",
+    render: (s) => {
+      const st = effectiveSpaceStatus(s);
+      return <Pill color={statusColor(st)}>{st}</Pill>;
+    },
+  },
   {
     key: "host",
     header: "Host",

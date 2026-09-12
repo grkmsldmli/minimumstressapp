@@ -31,4 +31,15 @@ describe("growthView", () => {
     // Sorted by count, descending.
     expect(v.events.byName[0]).toEqual({ name: "booking_confirmed", count: 2 });
   });
+
+  it("counts a logged-out visitor (anonymous_id, no session) as a distinct session", () => {
+    const events: RawEvent[] = [
+      { event_name: "space_viewed", occurred_at: "2026-09-01", session_id: null, anonymous_id: "anon-1", user_id: null },
+      { event_name: "space_viewed", occurred_at: "2026-09-01", session_id: null, anonymous_id: "anon-1", user_id: null },
+      { event_name: "space_viewed", occurred_at: "2026-09-01", session_id: null, anonymous_id: "anon-2", user_id: null },
+    ];
+    const v = growthView(funnel, events);
+    expect(v.events.total).toBe(3);
+    expect(v.events.distinctSessions).toBe(2);
+  });
 });

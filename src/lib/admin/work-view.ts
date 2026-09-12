@@ -63,9 +63,14 @@ export function workView(
 
   const interestByRequest = new Map<string, number>();
   let confirmed = 0;
+  // Live offers only. When a request is filled, the losing applicants are set to
+  // `declined` (0069 confirm_work_interest), so counting every row would inflate
+  // the headline with offers that are no longer standing.
+  let live = 0;
   for (const row of interest) {
     if (row.state === "confirmed") confirmed += 1;
     if (row.state === "interested" || row.state === "confirmed") {
+      live += 1;
       interestByRequest.set(row.request_id, (interestByRequest.get(row.request_id) ?? 0) + 1);
     }
   }
@@ -95,5 +100,5 @@ export function workView(
     }))
     .sort((a, b) => a.startsAt.localeCompare(b.startsAt));
 
-  return { counts, interest: { total: interest.length, confirmed }, openRequests };
+  return { counts, interest: { total: live, confirmed }, openRequests };
 }

@@ -712,12 +712,16 @@ export async function cancelBooking(
    * throws into the cancellation), and carrying only the shape — who cancelled
    * and whether money moved — never amounts or contents.
    */
-  await recordEvent(admin, {
-    name: "booking_cancelled",
-    userId: (booking.practitioner_id as string | null) ?? null,
-    surface: "booking_service",
-    properties: { bookingId, actor, refunded: refundedCents > 0 },
-  });
+  await recordEvent(
+    admin,
+    {
+      name: "booking_cancelled",
+      userId: (booking.practitioner_id as string | null) ?? null,
+      surface: "booking_service",
+      properties: { bookingId, actor, refunded: refundedCents > 0 },
+    },
+    true,
+  );
 
   /*
    * Last, so the figures quoted are the ones that actually landed — and taken

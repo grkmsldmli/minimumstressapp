@@ -1,6 +1,6 @@
 "use client";
 
-import type { DirPerson } from "@/lib/admin/directory";
+import type { PersonListItem } from "@/lib/admin/projections";
 
 import { MUTED, Muted, Pill, shortDate, TEXT, usd } from "../kit";
 import { type Column, DirectoryScreen } from "./DirectoryScreen";
@@ -10,7 +10,7 @@ const typeColor: Record<string, string> = {
   practitioner: "#3B9BE8",
 };
 
-const columns: Column<DirPerson>[] = [
+const columns: Column<PersonListItem>[] = [
   {
     key: "who",
     header: "Person",
@@ -60,7 +60,7 @@ const columns: Column<DirPerson>[] = [
 
 export function PeopleScreen() {
   return (
-    <DirectoryScreen<DirPerson>
+    <DirectoryScreen<PersonListItem>
       path="/api/admin/people"
       columns={columns}
       rowKey={(p) => p.id}

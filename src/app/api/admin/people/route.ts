@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 
 import { loadDirectory } from "@/lib/admin/directory";
 import { adminGet } from "@/lib/admin/guard";
-import { filterPeople, paginate } from "@/lib/admin/projections";
+import { filterPeople, paginate, toListPerson } from "@/lib/admin/projections";
 
 /**
  * The people directory: every account, searchable by name/email/id and
@@ -17,6 +17,8 @@ export function GET(request: NextRequest): Promise<Response> {
     const page = Number(searchParams.get("page") ?? "1");
     const dir = await loadDirectory(admin);
     const filtered = filterPeople(dir.people, { q, type });
-    return { ...paginate(filtered, page), query: { q, type } };
+    const listed = paginate(filtered, page);
+    // Emergency contact is never sent in a list — only the detail route carries it.
+    return { ...listed, items: listed.items.map(toListPerson), query: { q, type } };
   });
 }

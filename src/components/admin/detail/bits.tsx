@@ -4,6 +4,7 @@ import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 
 import type { DirBooking, DirSpace } from "@/lib/admin/directory";
+import { effectiveSpaceStatus } from "@/lib/admin/projections";
 
 import { dateTime, LINE, MUTED, PANEL2, Pill, shortDate, statusColor, TEXT, usd } from "../kit";
 
@@ -97,7 +98,7 @@ export function MiniSpaceList({ spaces, empty }: { spaces: DirSpace[]; empty: st
         >
           <span className="font-body text-[12.5px] min-w-0 truncate" style={{ color: TEXT }}>{s.name}</span>
           <span className="flex items-center gap-2 shrink-0">
-            <Pill color={statusColor(s.status)}>{s.status}</Pill>
+            <Pill color={statusColor(effectiveSpaceStatus(s))}>{effectiveSpaceStatus(s)}</Pill>
             <span className="font-body text-[12px]" style={{ color: MUTED }}>{s.sessions} sess · {shortDate(s.createdAt)}</span>
           </span>
         </Link>

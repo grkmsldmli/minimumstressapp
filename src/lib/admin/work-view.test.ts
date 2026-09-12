@@ -42,7 +42,8 @@ describe("workView", () => {
     expect(v.counts.filled).toBe(1);
     expect(v.counts.expired).toBe(1);
     expect(v.counts.urgentOpen).toBe(1);
-    expect(v.interest.total).toBe(4);
+    // Live offers only (2 interested + 1 confirmed); the declined row is excluded.
+    expect(v.interest.total).toBe(3);
     expect(v.interest.confirmed).toBe(1);
 
     expect(v.openRequests).toHaveLength(1);

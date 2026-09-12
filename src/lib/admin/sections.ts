@@ -1,5 +1,5 @@
 import { deriveHealth, type HealthItem } from "./command";
-import type { AdminQueue, DayCount, DayMoney, FailedNotification, UnpayableHost } from "./queue";
+import type { AdminQueue, DayMoney, FailedNotification, UnpayableHost } from "./queue";
 
 /**
  * The Money and System section projections, pure over the one queue read.
@@ -14,7 +14,6 @@ export interface MoneyView {
   month: { platformCents: number; hostCents: number; grossCents: number };
   allTime: { platformCents: number };
   byDay: DayMoney[];
-  bookingsByDay: DayCount[];
   unpayableHosts: UnpayableHost[];
   hostsUnpaid: number;
 }
@@ -28,7 +27,6 @@ export function moneyView(q: AdminQueue): MoneyView {
     },
     allTime: { platformCents: q.money.platformAllTimeCents },
     byDay: q.moneyByDay,
-    bookingsByDay: q.bookingsByDay,
     unpayableHosts: q.unpayableHosts,
     hostsUnpaid: q.counts.hostsUnpaid,
   };

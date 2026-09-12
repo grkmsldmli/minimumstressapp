@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { Directory } from "./directory";
 import {
   bookingDetail,
+  effectiveSpaceStatus,
   filterBookings,
   filterPeople,
   filterSpaces,
@@ -10,6 +11,7 @@ import {
   personDetail,
   searchDirectory,
   spaceDetail,
+  toListPerson,
 } from "./projections";
 
 /**
@@ -96,6 +98,36 @@ const dir: Directory = {
       sessions: 0,
       earnedCents: 0,
       createdAt: "2026-04-01T00:00:00Z",
+      archivedAt: null,
+    },
+    {
+      id: "space-3",
+      name: "Retired Room",
+      status: "delisted",
+      category: "yoga",
+      hourlyRateCents: 6000,
+      hostId: "host-1",
+      hostEmail: "hana@example.com",
+      hostName: "Hana Host",
+      addressLine: null,
+      sessions: 0,
+      earnedCents: 0,
+      createdAt: "2026-02-01T00:00:00Z",
+      archivedAt: "2026-05-01T00:00:00Z",
+    },
+    {
+      id: "space-4",
+      name: "Paused Room",
+      status: "delisted",
+      category: "yoga",
+      hourlyRateCents: 6000,
+      hostId: "host-1",
+      hostEmail: "hana@example.com",
+      hostName: "Hana Host",
+      addressLine: null,
+      sessions: 0,
+      earnedCents: 0,
+      createdAt: "2026-02-05T00:00:00Z",
       archivedAt: null,
     },
   ],
@@ -191,7 +223,16 @@ describe("filterSpaces & filterBookings", () => {
   it("filters spaces by status and searches address/host", () => {
     expect(filterSpaces(dir.spaces, { status: "pending" }).map((s) => s.id)).toEqual(["space-2"]);
     expect(filterSpaces(dir.spaces, { q: "bright lane" }).map((s) => s.id)).toEqual(["space-1"]);
-    expect(filterSpaces(dir.spaces, { q: "hana" })).toHaveLength(2);
+    expect(filterSpaces(dir.spaces, { q: "hana" })).toHaveLength(4);
+  });
+
+  it("distinguishes archived from merely delisted (archived = delisted + archived_at)", () => {
+    // space-3 is delisted WITH archived_at; space-4 is delisted with none.
+    expect(filterSpaces(dir.spaces, { status: "archived" }).map((s) => s.id)).toEqual(["space-3"]);
+    expect(filterSpaces(dir.spaces, { status: "delisted" }).map((s) => s.id)).toEqual(["space-4"]);
+    expect(effectiveSpaceStatus(dir.spaces[2])).toBe("archived");
+    expect(effectiveSpaceStatus(dir.spaces[3])).toBe("delisted");
+    expect(effectiveSpaceStatus(dir.spaces[0])).toBe("active");
   });
 
   it("filters bookings by status and searches parties", () => {
@@ -230,7 +271,7 @@ describe("searchDirectory", () => {
   it("finds across all three entity kinds", () => {
     const r = searchDirectory(dir, "hana");
     expect(r.totalPeople).toBe(1);
-    expect(r.totalSpaces).toBe(2);
+    expect(r.totalSpaces).toBe(4);
     expect(r.totalBookings).toBe(3);
   });
 
@@ -244,7 +285,7 @@ describe("searchDirectory", () => {
 describe("detail selectors", () => {
   it("builds a person's listings and both booking sides", () => {
     const d = personDetail(dir, "host-1")!;
-    expect(d.listings.map((s) => s.id)).toEqual(["space-1", "space-2"]);
+    expect(d.listings.map((s) => s.id)).toEqual(["space-1", "space-2", "space-3", "space-4"]);
     expect(d.asHost.map((b) => b.id)).toEqual(["book-1", "book-2", "book-3"]);
     expect(d.asPractitioner).toEqual([]);
 
@@ -272,6 +313,17 @@ describe("privacy", () => {
       expect(b).not.toHaveProperty("messages");
       expect(b).not.toHaveProperty("body");
       expect(b).not.toHaveProperty("accessCode");
+    }
+  });
+
+  it("strips the emergency contact from list/search rows but keeps identity", () => {
+    const row = toListPerson(dir.people[1]);
+    expect(row).not.toHaveProperty("emergency");
+    expect(row.id).toBe("prac-1");
+    expect(row.email).toBe("pip@example.com");
+    // Search results go through the same stripping.
+    for (const p of searchDirectory(dir, "example.com").people) {
+      expect(p).not.toHaveProperty("emergency");
     }
   });
 });

@@ -1,6 +1,29 @@
 import type { DirBooking, DirPerson, DirSpace, Directory } from "./directory";
 
 /**
+ * A person as a directory/search row — everything the tables and result lists
+ * render, but WITHOUT the emergency contact. That field is genuinely sensitive
+ * and is only ever shown on the person detail page, so it is never transmitted
+ * in a list of 25+ people; the detail route carries the full DirPerson.
+ */
+export type PersonListItem = Omit<DirPerson, "emergency">;
+
+export function toListPerson({ emergency: _emergency, ...rest }: DirPerson): PersonListItem {
+  return rest;
+}
+
+/**
+ * The status an operator thinks in. The `space_status` enum has no "archived"
+ * value — an archived listing is `delisted` with `archived_at` set (migration
+ * 0053) — so "archived" is derived here, and a plain "delisted" is one that was
+ * paused but never archived. Filtering and the status pill both go through this
+ * so the two never disagree.
+ */
+export function effectiveSpaceStatus(s: { status: string; archivedAt: string | null }): string {
+  return s.archivedAt ? "archived" : s.status;
+}
+
+/**
  * Pure views over the directory: search, filter, paginate, and the three detail
  * selectors. Kept separate from the read so they can be tested directly, and so
  * every section route shapes the same graph the same way.
@@ -55,7 +78,7 @@ export function filterSpaces(
 ): DirSpace[] {
   const term = (opts.q ?? "").trim().toLowerCase();
   return spaces.filter((s) => {
-    if (opts.status && opts.status !== "all" && s.status !== opts.status) return false;
+    if (opts.status && opts.status !== "all" && effectiveSpaceStatus(s) !== opts.status) return false;
     if (!term) return true;
     return (
       has(s.name, term) ||
@@ -88,7 +111,7 @@ export function filterBookings(
 
 export interface SearchResults {
   term: string;
-  people: DirPerson[];
+  people: PersonListItem[];
   spaces: DirSpace[];
   bookings: DirBooking[];
   totalPeople: number;
@@ -115,7 +138,7 @@ export function searchDirectory(dir: Directory, term: string, limit = 8): Search
   const bookings = filterBookings(dir.bookings, { q: trimmed });
   return {
     term: trimmed,
-    people: people.slice(0, limit),
+    people: people.slice(0, limit).map(toListPerson),
     spaces: spaces.slice(0, limit),
     bookings: bookings.slice(0, limit),
     totalPeople: people.length,

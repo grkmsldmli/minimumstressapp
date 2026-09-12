@@ -88,19 +88,24 @@ export function useAdminData<T>(path: string, pollMs?: number): AdminData<T> {
 
   useEffect(() => {
     let cancelled = false;
+    // Each run claims a generation; only the newest one may apply its result, so
+    // a slow poll landing after a newer one cannot overwrite fresher data.
+    let generation = 0;
     const run = async () => {
+      const mine = ++generation;
+      const fresh = () => !cancelled && mine === generation;
       try {
         const res = await fetch(path, { headers: { Accept: "application/json" } });
         if (!res.ok) throw new Error(res.status === 404 ? "Not found" : `Request failed (${res.status})`);
         const json = (await res.json()) as T;
-        if (cancelled) return;
+        if (!fresh()) return;
         setData(json);
         setError(null);
         setUpdatedAt(new Date());
       } catch (cause) {
-        if (!cancelled) setError(cause instanceof Error ? cause.message : "Something went wrong");
+        if (fresh()) setError(cause instanceof Error ? cause.message : "Something went wrong");
       } finally {
-        if (!cancelled) setLoading(false);
+        if (fresh()) setLoading(false);
       }
     };
     void run();

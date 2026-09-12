@@ -44,7 +44,10 @@ export function growthView(funnel: FunnelStep[], events: RawEvent[], windowDays 
   const users = new Set<string>();
   for (const e of events) {
     byName.set(e.event_name, (byName.get(e.event_name) ?? 0) + 1);
-    if (e.session_id) sessions.add(e.session_id);
+    // A logged-out visitor has an anonymous_id and no session/user id; count it
+    // as a session so those events read as activity from someone, not nobody.
+    const session = e.session_id ?? e.anonymous_id;
+    if (session) sessions.add(session);
     if (e.user_id) users.add(e.user_id);
   }
 

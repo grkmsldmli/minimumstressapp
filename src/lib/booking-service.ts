@@ -5,6 +5,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { DeclaredUse } from "./booking-use";
 
 import { abandonedBefore } from "./abandoned";
+import { recordEvent } from "./analytics/record";
 import { type HeldBookingRow, isHeldBooking } from "./booking-visibility";
 import {
   explainRejection,
@@ -704,6 +705,19 @@ export async function cancelBooking(
 
   // Nothing to award: a host's cancellation refunds in full and that is the
   // whole compensation.
+
+  /*
+   * A real, server-confirmed cancellation for the Growth stream. Emitted after
+   * the row is written so it reflects what actually happened, best-effort (never
+   * throws into the cancellation), and carrying only the shape — who cancelled
+   * and whether money moved — never amounts or contents.
+   */
+  await recordEvent(admin, {
+    name: "booking_cancelled",
+    userId: (booking.practitioner_id as string | null) ?? null,
+    surface: "booking_service",
+    properties: { bookingId, actor, refunded: refundedCents > 0 },
+  });
 
   /*
    * Last, so the figures quoted are the ones that actually landed — and taken

@@ -26,6 +26,10 @@ vi.mock("@/lib/stripe/client", () => ({
   stripe: () => stripeForSigning,
 }));
 
+// The route now emits best-effort analytics on capture; that module is
+// server-only and irrelevant to the signature/notification behavior under test.
+vi.mock("@/lib/analytics/record", () => ({ recordEvent: vi.fn() }));
+
 const { POST } = await import("./route");
 
 const PLATFORM_SECRET = "whsec_platform_endpoint_secret";

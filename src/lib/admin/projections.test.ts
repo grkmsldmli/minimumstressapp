@@ -148,6 +148,9 @@ const dir: Directory = {
       totalCents: 10000,
       hostRateCents: 8000,
       platformCents: 2000,
+      chargedCents: 10000,
+      refundedCents: 0,
+      hostRateRefunded: false,
       paid: true,
       capturedAt: "2026-04-30T10:00:00Z",
       cancelledAt: null,
@@ -170,6 +173,9 @@ const dir: Directory = {
       totalCents: 10000,
       hostRateCents: 8000,
       platformCents: 2000,
+      chargedCents: 10000,
+      refundedCents: 0,
+      hostRateRefunded: false,
       paid: false,
       capturedAt: null,
       cancelledAt: "2026-05-02T10:00:00Z",
@@ -192,6 +198,9 @@ const dir: Directory = {
       totalCents: 10000,
       hostRateCents: 8000,
       platformCents: 2000,
+      chargedCents: 10000,
+      refundedCents: 0,
+      hostRateRefunded: false,
       paid: true,
       capturedAt: "2026-05-30T10:00:00Z",
       cancelledAt: null,
@@ -227,7 +236,6 @@ describe("filterSpaces & filterBookings", () => {
   });
 
   it("distinguishes archived from merely delisted (archived = delisted + archived_at)", () => {
-    // space-3 is delisted WITH archived_at; space-4 is delisted with none.
     expect(filterSpaces(dir.spaces, { status: "archived" }).map((s) => s.id)).toEqual(["space-3"]);
     expect(filterSpaces(dir.spaces, { status: "delisted" }).map((s) => s.id)).toEqual(["space-4"]);
     expect(effectiveSpaceStatus(dir.spaces[2])).toBe("archived");
@@ -321,7 +329,6 @@ describe("privacy", () => {
     expect(row).not.toHaveProperty("emergency");
     expect(row.id).toBe("prac-1");
     expect(row.email).toBe("pip@example.com");
-    // Search results go through the same stripping.
     for (const p of searchDirectory(dir, "example.com").people) {
       expect(p).not.toHaveProperty("emergency");
     }

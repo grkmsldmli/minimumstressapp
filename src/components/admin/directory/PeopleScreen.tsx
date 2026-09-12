@@ -31,10 +31,10 @@ const columns: Column<PersonListItem>[] = [
         <Muted className="text-[11px]">undecided</Muted>
       ),
   },
-  { key: "sessions", header: "Sessions", align: "right", render: (p) => p.sessions.toLocaleString() },
+  { key: "sessions", header: "Captured bookings", align: "right", render: (p) => p.sessions.toLocaleString() },
   {
     key: "money",
-    header: "Earned / spent",
+    header: "Net earned / spent",
     align: "right",
     render: (p) => (
       <span>

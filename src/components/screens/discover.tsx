@@ -461,7 +461,7 @@ export function Discover({
               Already answered. What replaces the prompt is the answer itself,
               because a setting somebody cannot see is one they cannot change —
               and this one decides the order of everything below it.
-            */}
+            */
             <div className="px-6 mb-4 flex items-center gap-2">
               <MapPin size={13} className="shrink-0 text-sky-text" />
               <p className="font-body font-normal text-[14px] text-ink-soft">
@@ -508,7 +508,7 @@ export function Discover({
               says this particular search found nothing — and reading the first
               when the second is true tells somebody there is nothing here and
               sends them away.
-            */}
+            */
             <div className="px-6">
               <p className="font-body font-normal text-[15px] text-ink-soft">
                 {query.trim()

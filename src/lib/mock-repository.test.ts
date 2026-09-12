@@ -565,14 +565,29 @@ describe("adding or replacing a listing's documents after it exists", () => {
     expect(edited.insuranceReview.state).toBe("pending");
   });
 
-  it("does not change the listing's visibility when insurance is added", async () => {
+  it("does not take a LIVE listing off search when insurance is added", async () => {
     const space = await makeListing({ insurance: null });
+    // Approve it first so the assertion guards the real invariant — a live
+    // listing staying live — rather than pending===pending.
+    await repo.approveSpace(space.id);
     const edited = await repo.editSpace(space.id, {
       insuranceDoc: testFile("cert.pdf", "application/pdf"),
     });
     // Insurance never gated the listing going live, so adding it must not move
     // the status — unlike the sublease, which does.
-    expect(edited.status).toBe(space.status);
+    expect(edited.status).toBe("active");
+    expect(edited.insuranceReview.state).toBe("pending");
+  });
+
+  it("replaces an existing certificate on a live listing without hiding it", async () => {
+    const space = await makeListing({ insurance: testFile("old.pdf", "application/pdf") });
+    await repo.approveSpace(space.id);
+    const edited = await repo.editSpace(space.id, {
+      insuranceDoc: testFile("renewed.pdf", "application/pdf"),
+    });
+    expect(edited.insuranceDocName).toBe("renewed.pdf");
+    expect(edited.insuranceReview.state).toBe("pending");
+    expect(edited.status).toBe("active");
   });
 
   it("returns the sublease to pending and sends the listing back for review on re-upload", async () => {
@@ -594,6 +609,16 @@ describe("adding or replacing a listing's documents after it exists", () => {
     });
     expect((edited as unknown as Record<string, unknown>).insuranceDoc).toBeUndefined();
     expect((edited as unknown as Record<string, unknown>).subleaseDoc).toBeUndefined();
+  });
+
+  it("rejects a document of the wrong type without mutating the listing", async () => {
+    const space = await makeListing({ insurance: null });
+    await expect(
+      repo.editSpace(space.id, { insuranceDoc: testFile("notes.txt", "text/plain") }),
+    ).rejects.toThrow();
+    // Nothing changed — the bad file did not slip a name onto the row.
+    const [after] = (await repo.listMySpaces()).filter((s) => s.id === space.id);
+    expect(after.insuranceDocName).toBeNull();
   });
 });
 

@@ -127,10 +127,15 @@ export function EditSpace({
    * when it was rejected — replacing it sends the listing back for review, so it
    * is not offered on a listing that is fine. Insurance can be added or replaced
    * any time; it never gated the listing going live.
+   *
+   * Neither is offered on an archived listing. Archiving is staff permanently
+   * closing a listing, and a replaced document would force it back to pending —
+   * a silent reopen the database also refuses (0081).
    */
   const [subleaseDoc, setSubleaseDoc] = useState<File | null>(null);
   const [insuranceDoc, setInsuranceDoc] = useState<File | null>(null);
-  const subleaseRejected = space.subleaseReview.state === "rejected";
+  const archived = space.archivedAt != null;
+  const subleaseRejected = space.subleaseReview.state === "rejected" && !archived;
 
   const rateCents = Math.round(Number(rate) * 100);
   const rateIsNumber = rate.trim() !== "" && Number.isFinite(rateCents) && rateCents > 0;
@@ -189,8 +194,8 @@ export function EditSpace({
     try {
       await onSave({
         name: name.trim(),
-        // Only sent when actually picked; the repository resets that document's
-        // review to pending on any new path (0019 trigger).
+        // Only sent when actually picked; the spaces edit trigger resets that
+        // document's review to pending on any new path.
         ...(subleaseDoc ? { subleaseDoc } : {}),
         ...(insuranceDoc ? { insuranceDoc } : {}),
         hourlyRateCents: rateCents,
@@ -577,17 +582,20 @@ export function EditSpace({
             optional
           />
           {/*
-            Space insurance can be added or replaced whenever. It is optional and
-            never gated the listing going live, so a new certificate is checked
-            without taking the room off search.
+            Space insurance can be added or replaced whenever (but not on an
+            archived listing). It is optional and never gated the listing going
+            live, so a new certificate is checked without taking the room off
+            search.
           */}
-          <DocumentUpload
-            label={space.insuranceDocName ? "Replace space insurance" : "Add space insurance"}
-            hint="PDF or photo"
-            file={insuranceDoc}
-            onPick={setInsuranceDoc}
-            onRemove={() => setInsuranceDoc(null)}
-          />
+          {!archived && (
+            <DocumentUpload
+              label={space.insuranceDocName ? "Replace space insurance" : "Add space insurance"}
+              hint="PDF or photo"
+              file={insuranceDoc}
+              onPick={setInsuranceDoc}
+              onRemove={() => setInsuranceDoc(null)}
+            />
+          )}
         </div>
 
         <div className="h-px my-7" style={{ backgroundColor: "#E7EEF6" }} />

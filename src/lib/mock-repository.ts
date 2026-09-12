@@ -848,6 +848,26 @@ export class MockRepository implements Repository {
     if (!space) throw new Error("No such space");
 
     /*
+     * Parity with the real repository, before any mutation: a replacement
+     * document is validated (the mock's other upload paths do this too), and it
+     * is refused on an archived listing — the trigger's forced return-to-pending
+     * would otherwise silently reopen a listing staff permanently closed (0081).
+     */
+    if (edit.subleaseDoc || edit.insuranceDoc) {
+      if (space.archivedAt) {
+        throw new Error(
+          "This listing is archived. Contact support to restore it before changing its documents.",
+        );
+      }
+      for (const doc of [edit.subleaseDoc, edit.insuranceDoc]) {
+        if (doc) {
+          const reason = rejectionReason(doc, "document");
+          if (reason) throw new Error(reason);
+        }
+      }
+    }
+
+    /*
      * Coordinates count as a move, the same as the address text does. The
      * trigger in 0019 compares lat and lng too, so a mock that only watched
      * the string would let a nudged pin through here and be refused against

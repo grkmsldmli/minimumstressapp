@@ -8497,3 +8497,1305 @@ create index if not exists admin_audit_log_admin_idx on admin_audit_log (admin_u
 alter table admin_audit_log enable row level security;
 revoke all on admin_audit_log from anon, authenticated;
 grant select, insert on admin_audit_log to service_role;
+
+
+-- ===================================================================
+-- 0074_security_invoker_facades.sql
+-- ===================================================================
+
+-- Supabase Security Advisor hardening for intentionally public/read-only views.
+--
+-- These views were SECURITY DEFINER on purpose: each one exposes a narrow,
+-- curated projection or aggregate over tables whose base RLS is stricter than
+-- the product's read surface. Flipping them directly to SECURITY INVOKER would
+-- make ordinary practitioner reads disappear (or error) because the caller is
+-- not allowed to select the underlying host/private rows directly.
+--
+-- Keep the existing, audited projection logic unchanged, but move the
+-- privileged implementation view out of PostgREST's exposed `public` schema.
+-- A tiny SECURITY INVOKER facade keeps the stable public API name. The caller
+-- may select only the private implementation view explicitly granted below;
+-- no base-table privilege is widened and no new column is exposed.
+--
+-- Supabase's security_definer_view advisor only flags SECURITY DEFINER views
+-- that are reachable in an exposed PostgREST schema. This is the same boundary
+-- Supabase recommends for privileged helpers: privileged object private,
+-- internet-facing object invoker.
+
+create schema if not exists private;
+
+-- Nobody may create objects in the helper schema. The three runtime roles get
+-- only USAGE so the public invoker facades can resolve their backing views.
+revoke all on schema private from public;
+grant usage on schema private to anon, authenticated, service_role;
+
+do $$
+declare
+  spec record;
+  internal_name text;
+  public_is_invoker boolean;
+begin
+  for spec in
+    select * from (values
+      -- view name                 anon?   service_role?
+      ('public_reviews',            false,  true),
+      ('space_ratings',             false,  true),
+      ('availability_public',       false,  true),
+      ('spaces_public',             false,  true),
+      ('public_host_profiles',      false,  true),
+      ('space_media_public',        false,  true),
+      ('city_inventory',            true,   true),
+      ('city_type_inventory',       true,   true),
+      ('city_category_inventory',   true,   true),
+      ('space_demand',              true,   true),
+      ('session_counts',            false,  false)
+    ) as t(view_name, allow_anon, allow_service)
+  loop
+    internal_name := '_ms_' || spec.view_name || '_definer';
+
+    select coalesce(
+      c.reloptions && array[
+        'security_invoker=1',
+        'security_invoker=true',
+        'security_invoker=yes',
+        'security_invoker=on'
+      ],
+      false
+    )
+      into public_is_invoker
+    from pg_class c
+    join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public'
+      and c.relname = spec.view_name
+      and c.relkind = 'v';
+
+    if not found then
+      raise exception '0074 expected public view % to exist', spec.view_name;
+    end if;
+
+    -- Standalone re-runs stop here: the public facade and private backing view
+    -- already exist. A full apply.sql re-run is different: earlier migrations
+    -- recreate the original public SECURITY DEFINER view, so public_is_invoker
+    -- is false and we refresh the private implementation from that latest DDL.
+    if not public_is_invoker then
+      if to_regclass(format('private.%I', internal_name)) is not null then
+        execute format('drop view private.%I cascade', internal_name);
+      end if;
+
+      execute format('alter view public.%I set schema private', spec.view_name);
+      execute format(
+        'alter view private.%I rename to %I',
+        spec.view_name,
+        internal_name
+      );
+      execute format(
+        'create view public.%I with (security_invoker = true) as select * from private.%I',
+        spec.view_name,
+        internal_name
+      );
+    elsif to_regclass(format('private.%I', internal_name)) is null then
+      raise exception
+        '0074 found invoker facade public.% without backing view private.%',
+        spec.view_name,
+        internal_name;
+    end if;
+
+    -- Moving a view preserves its old ACL. Reset both layers deliberately so
+    -- an old anon grant cannot survive on the private implementation by
+    -- accident, then restore exactly the product access that existed before.
+    execute format(
+      'revoke all on private.%I from public, anon, authenticated, service_role',
+      internal_name
+    );
+    execute format(
+      'revoke all on public.%I from public, anon, authenticated, service_role',
+      spec.view_name
+    );
+
+    execute format('grant select on private.%I to authenticated', internal_name);
+    execute format('grant select on public.%I to authenticated', spec.view_name);
+
+    if spec.allow_anon then
+      execute format('grant select on private.%I to anon', internal_name);
+      execute format('grant select on public.%I to anon', spec.view_name);
+    end if;
+
+    if spec.allow_service then
+      execute format('grant select on private.%I to service_role', internal_name);
+      execute format('grant select on public.%I to service_role', spec.view_name);
+    end if;
+  end loop;
+end $$;
+
+
+-- ===================================================================
+-- 0075_rls_initplan.sql
+-- ===================================================================
+
+-- Supabase Security Advisor: Auth RLS Initialization Plan
+--
+-- auth.uid()/auth.jwt()/auth.role() are stable for the duration of one query.
+-- Calling them directly inside an RLS predicate can make Postgres re-evaluate
+-- them for every candidate row. Wrapping them in a scalar SELECT turns them
+-- into an InitPlan: once per statement, same authorization semantics.
+--
+-- This migration rewrites the policies that actually exist in the database,
+-- rather than copying their business rules into yet another migration. It
+-- changes only USING/WITH CHECK expressions; policy name, command, roles and
+-- permissive/restrictive mode stay untouched.
+--
+-- Re-runnable: once an auth helper is already behind SELECT, that helper is
+-- skipped on later runs.
+
+do $$
+declare
+  p record;
+  new_using text;
+  new_check text;
+  stmt text;
+begin
+  for p in
+    select schemaname, tablename, policyname, qual, with_check
+    from pg_policies
+    where schemaname in ('public', 'storage')
+  loop
+    new_using := p.qual;
+    new_check := p.with_check;
+
+    -- pg_policies deparses an InitPlan as SELECT auth.uid()/jwt()/role().
+    -- Only replace a helper while this expression has no existing SELECT for
+    -- that helper, which makes the migration idempotent under the schema test's
+    -- deliberate second pass.
+    if new_using is not null then
+      if new_using like '%auth.uid()%' and new_using !~* 'select\s+auth\.uid\(\)' then
+        new_using := replace(new_using, 'auth.uid()', '(select auth.uid())');
+      end if;
+      if new_using like '%auth.jwt()%' and new_using !~* 'select\s+auth\.jwt\(\)' then
+        new_using := replace(new_using, 'auth.jwt()', '(select auth.jwt())');
+      end if;
+      if new_using like '%auth.role()%' and new_using !~* 'select\s+auth\.role\(\)' then
+        new_using := replace(new_using, 'auth.role()', '(select auth.role())');
+      end if;
+    end if;
+
+    if new_check is not null then
+      if new_check like '%auth.uid()%' and new_check !~* 'select\s+auth\.uid\(\)' then
+        new_check := replace(new_check, 'auth.uid()', '(select auth.uid())');
+      end if;
+      if new_check like '%auth.jwt()%' and new_check !~* 'select\s+auth\.jwt\(\)' then
+        new_check := replace(new_check, 'auth.jwt()', '(select auth.jwt())');
+      end if;
+      if new_check like '%auth.role()%' and new_check !~* 'select\s+auth\.role\(\)' then
+        new_check := replace(new_check, 'auth.role()', '(select auth.role())');
+      end if;
+    end if;
+
+    if new_using is distinct from p.qual or new_check is distinct from p.with_check then
+      stmt := format('alter policy %I on %I.%I', p.policyname, p.schemaname, p.tablename);
+
+      if new_using is distinct from p.qual then
+        stmt := stmt || format(' using (%s)', new_using);
+      end if;
+      if new_check is distinct from p.with_check then
+        stmt := stmt || format(' with check (%s)', new_check);
+      end if;
+
+      execute stmt;
+    end if;
+  end loop;
+end $$;
+
+
+-- ===================================================================
+-- 0076_function_search_path.sql
+-- ===================================================================
+
+-- Supabase Security Advisor: Function Search Path Mutable
+--
+-- Every user-owned routine in the exposed public schema should execute with a
+-- deterministic search_path. Leaving it mutable allows an invoker to influence
+-- name resolution inside routines that use unqualified objects.
+--
+-- Keep the path deliberately small:
+--   public      — app tables, types and helper routines
+--   extensions  — Supabase-installed extension functions (PostGIS, etc.)
+--   pg_temp     — last, so temporary objects cannot shadow trusted names
+--
+-- pg_catalog is searched implicitly by PostgreSQL. Extension-owned routines are
+-- skipped; they are managed by their extension. Routines that already declare
+-- search_path are left untouched.
+--
+-- Re-runnable/idempotent.
+
+do $$
+declare
+  r record;
+  ddl text;
+begin
+  for r in
+    select
+      p.oid,
+      p.proname,
+      p.prokind,
+      pg_get_function_identity_arguments(p.oid) as identity_args
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public'
+      and p.prokind in ('f', 'p')
+      and not exists (
+        select 1
+        from unnest(coalesce(p.proconfig, array[]::text[])) as cfg
+        where cfg like 'search_path=%'
+      )
+      and not exists (
+        select 1
+        from pg_depend d
+        join pg_extension e on e.oid = d.refobjid
+        where d.classid = 'pg_proc'::regclass
+          and d.objid = p.oid
+          and d.refclassid = 'pg_extension'::regclass
+          and d.deptype = 'e'
+      )
+  loop
+    ddl := format(
+      'alter %s public.%I(%s) set search_path = public, extensions, pg_temp',
+      case when r.prokind = 'p' then 'procedure' else 'function' end,
+      r.proname,
+      r.identity_args
+    );
+    execute ddl;
+  end loop;
+end $$;
+
+
+-- ===================================================================
+-- 0077_security_advisor_final.sql
+-- ===================================================================
+
+-- Supabase Security Advisor — remaining warning cleanup.
+--
+-- One migration for the remaining warning classes:
+--   * no unconditional public intake RLS policy;
+--   * no broad object-listing policy on public media buckets;
+--   * no client-facing SECURITY DEFINER routine in the exposed public schema.
+--
+-- Client RPC names stay stable. Privileged implementations move to the private
+-- schema and small SECURITY INVOKER public facades call them with only the
+-- execute grants each surface already had. Trigger/service helpers stay in
+-- public but lose direct client EXECUTE. Re-runnable, including after a full
+-- migration replay.
+
+create schema if not exists private;
+revoke all on schema private from public;
+grant usage on schema private to anon, authenticated, service_role;
+
+-- Public bucket bytes remain governed by the bucket's public/private setting;
+-- these broad SELECT policies only make storage.objects enumerable.
+drop policy if exists "avatars: public read" on storage.objects;
+drop policy if exists "space-media: public read" on storage.objects;
+
+-- Anonymous demand intake is still allowed, but the row must be a real shape
+-- the product accepts instead of satisfying an unconditional WITH CHECK (true).
+drop policy if exists "space_requests: anyone may say what they need" on space_requests;
+create policy "space_requests: anyone may say what they need"
+  on space_requests
+  for insert
+  to anon, authenticated
+  with check (
+    length(looking_in) between 1 and 80
+    and (
+      space_type is null
+      or space_type in (
+        'pilates-studio',
+        'yoga-studio',
+        'movement-studio',
+        'massage-room',
+        'treatment-room',
+        'acupuncture-room',
+        'esthetician-room',
+        'consultation-room',
+        'meditation-room',
+        'reiki-room'
+      )
+    )
+    and (email is null or length(email) <= 320)
+    and created_at >= now() - interval '5 minutes'
+    and created_at <= now() + interval '1 minute'
+  );
+
+-- Client-facing privileged readers/actions. type_args contains only the input
+-- types so to_regprocedure() resolves the routine regardless of SQL argument
+-- names (p_code, p_booking_id, ...).
+do $$
+declare
+  spec record;
+  public_sig text;
+  private_sig text;
+  public_oid oid;
+  private_oid oid;
+  backing_oid oid;
+  public_is_definer boolean;
+  arg_defs text;
+  result_def text;
+  call_args text;
+  volatility text;
+  returns_set boolean;
+  create_sql text;
+begin
+  for spec in
+    select * from (values
+      -- public name                       input types  private backing                         anon?
+      ('attribute_referral',               'text',      '_ms_attribute_referral_definer',       false),
+      ('founding_hosts_remaining',         '',          '_ms_founding_hosts_remaining_definer', true),
+      ('founding_practitioners_remaining', '',          '_ms_founding_practitioners_remaining_definer', true),
+      ('host_bookings',                    '',          '_ms_host_bookings_definer',            false),
+      ('host_requests',                    '',          '_ms_host_requests_definer',            false),
+      ('is_booking_participant',           'uuid',      '_ms_is_booking_participant_definer',   false),
+      ('mark_messages_read',               'uuid',      '_ms_mark_messages_read_definer',       false),
+      ('my_referral_code',                 '',          '_ms_my_referral_code_definer',         false),
+      ('my_referral_rewards',              '',          '_ms_my_referral_rewards_definer',      false),
+      ('my_referrals',                     '',          '_ms_my_referrals_definer',             false),
+      ('space_access_details',             'uuid',      '_ms_space_access_details_definer',     false)
+    ) as t(routine_name, type_args, backing_name, allow_anon)
+  loop
+    public_sig := format('public.%I(%s)', spec.routine_name, spec.type_args);
+    private_sig := format('private.%I(%s)', spec.backing_name, spec.type_args);
+    public_oid := to_regprocedure(public_sig);
+    private_oid := to_regprocedure(private_sig);
+
+    public_is_definer := false;
+    if public_oid is not null then
+      select p.prosecdef into public_is_definer
+      from pg_proc p where p.oid = public_oid;
+    end if;
+
+    -- First run, or a full replay where an earlier migration recreated the
+    -- original public definer: refresh the private implementation from it.
+    if public_oid is not null and public_is_definer then
+      if private_oid is not null then
+        execute format('drop function %s', private_sig);
+      end if;
+
+      execute format('alter function %s set schema private', public_sig);
+      execute format(
+        'alter function private.%I(%s) rename to %I',
+        spec.routine_name,
+        spec.type_args,
+        spec.backing_name
+      );
+      backing_oid := to_regprocedure(private_sig);
+    else
+      backing_oid := private_oid;
+    end if;
+
+    if backing_oid is null then
+      raise exception '0077 expected % or % to exist', public_sig, private_sig;
+    end if;
+
+    -- Rebuild/refresh the unprivileged public facade from the backing routine's
+    -- own catalog metadata so TABLE return shapes and argument names never drift.
+    select
+      pg_get_function_identity_arguments(p.oid),
+      pg_get_function_result(p.oid),
+      p.proretset,
+      case p.provolatile
+        when 'i' then 'immutable'
+        when 's' then 'stable'
+        else 'volatile'
+      end,
+      case
+        when p.pronargs = 0 then ''
+        else (
+          select string_agg(format('$%s', i), ', ' order by i)
+          from generate_series(1, p.pronargs) as g(i)
+        )
+      end
+    into arg_defs, result_def, returns_set, volatility, call_args
+    from pg_proc p
+    where p.oid = backing_oid;
+
+    execute format(
+      'revoke all on function %s from public, anon, authenticated, service_role',
+      private_sig
+    );
+    if spec.allow_anon then
+      execute format('grant execute on function %s to anon', private_sig);
+    end if;
+    execute format('grant execute on function %s to authenticated, service_role', private_sig);
+
+    create_sql := format(
+      'create or replace function public.%I(%s) returns %s language sql %s security invoker set search_path = pg_catalog as %L',
+      spec.routine_name,
+      arg_defs,
+      result_def,
+      volatility,
+      case
+        when returns_set or result_def like 'TABLE(%' then
+          format('select * from private.%I(%s)', spec.backing_name, call_args)
+        else
+          format('select private.%I(%s)', spec.backing_name, call_args)
+      end
+    );
+    execute create_sql;
+
+    execute format(
+      'revoke all on function %s from public, anon, authenticated, service_role',
+      public_sig
+    );
+    if spec.allow_anon then
+      execute format('grant execute on function %s to anon', public_sig);
+    end if;
+    execute format('grant execute on function %s to authenticated, service_role', public_sig);
+  end loop;
+end $$;
+
+-- Everything still SECURITY DEFINER in public after the facade pass is an
+-- internal trigger/service helper, not a browser RPC. Remove default PUBLIC and
+-- explicit browser grants. Trigger execution itself does not require callers to
+-- hold EXECUTE on the trigger function. This also catches production-local
+-- helpers such as rls_auto_enable() when present.
+do $$
+declare
+  r record;
+  sig text;
+begin
+  for r in
+    select p.proname, pg_get_function_identity_arguments(p.oid) as identity_args
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public'
+      and p.prosecdef
+  loop
+    sig := format('public.%I(%s)', r.proname, r.identity_args);
+    execute format('revoke all on function %s from public', sig);
+    execute format('revoke execute on function %s from anon, authenticated', sig);
+  end loop;
+end $$;
+
+
+-- ===================================================================
+-- 0078_host_listing_lifecycle.sql
+-- ===================================================================
+
+-- Host listing lifecycle: hide and ask to relist without granting self-approval.
+--
+-- 0019 deliberately removed blanket UPDATE on spaces and granted editable
+-- columns one by one. That was correct for review-controlled fields, but the
+-- app's separate "Hide it / Show it again" control later tried to update
+-- `status` directly. Because `status` was never granted, PostgREST rejected the
+-- action with "permission denied for table spaces" before RLS even ran.
+--
+-- Give an authenticated host UPDATE privilege on status, but keep the review
+-- boundary in the existing listing-edit trigger:
+--   active/pending -> delisted   host hides or withdraws the listing
+--   delisted       -> pending    host asks to show it again; staff re-approves
+--   anything       -> active     never allowed from a client
+-- Owner RLS still limits the row to the signed-in host.
+--
+-- IMPORTANT: this function intentionally carries forward the review provenance
+-- added in 0040 (review_reason / previous_address_line). Replacing the trigger
+-- with the older 0019 body would silently erase the operator's reason-for-review
+-- trail whenever a host edits an address, room type, pin or lease.
+
+create or replace function enforce_listing_edit_rules()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  moved boolean;
+  booked integer;
+  reasons text[] := '{}';
+begin
+  -- Status is a separate lifecycle control, not a free-form editable field.
+  -- This trigger runs only for browser-authenticated hosts (the trigger's WHEN
+  -- clause is auth.uid() is not null), so service-role admin actions are not
+  -- constrained by this host-only state machine.
+  if new.status is distinct from old.status then
+    if not (
+      (old.status in ('active', 'pending') and new.status = 'delisted')
+      or (old.status = 'delisted' and new.status = 'pending')
+    ) then
+      -- Keep "permission denied" in the message because callers and existing
+      -- regression tests treat self-approval as an authorization failure.
+      raise exception 'permission denied: that listing status change is not allowed. A host may hide a listing or send a hidden listing back for review.'
+        using errcode = 'insufficient_privilege';
+    end if;
+
+    -- archived_at is an operator state layered on top of delisted. A host must
+    -- not silently reopen a listing staff deliberately archived.
+    if old.archived_at is not null and new.status = 'pending' then
+      raise exception 'permission denied: this listing is archived. Contact support to restore it.'
+        using errcode = 'insufficient_privilege';
+    end if;
+  end if;
+
+  moved := new.address_line is distinct from old.address_line
+        or new.category is distinct from old.category
+        or new.lat is distinct from old.lat
+        or new.lng is distinct from old.lng;
+
+  if moved then
+    select count(*) into booked
+    from bookings
+    where space_id = old.id
+      and status = 'upcoming'
+      and starts_at > now();
+
+    if booked > 0 then
+      raise exception
+        'This space has % upcoming %. Its address and room type cannot change until those sessions are done or cancelled.',
+        booked, case when booked = 1 then 'session' else 'sessions' end
+        using errcode = 'check_violation';
+    end if;
+  end if;
+
+  -- Preserve 0040's operator-facing explanation of what sent the listing back
+  -- to review. Coordinates are intentionally described as an address change.
+  if new.address_line is distinct from old.address_line
+     or new.lat is distinct from old.lat
+     or new.lng is distinct from old.lng then
+    reasons := array_append(reasons, 'address');
+  end if;
+
+  if new.category is distinct from old.category then
+    reasons := array_append(reasons, 'room type');
+  end if;
+
+  if new.sublease_doc_path is distinct from old.sublease_doc_path then
+    reasons := array_append(reasons, 'sublease document');
+  end if;
+
+  -- Moving the room or replacing the lease invalidates the prior review.
+  if moved or new.sublease_doc_path is distinct from old.sublease_doc_path then
+    new.status := 'pending';
+    new.sublease_doc_state := 'pending';
+    new.sublease_doc_reviewed_at := null;
+    new.doc_review_note := null;
+    new.review_reason := array_to_string(reasons, ', ');
+
+    if new.address_line is distinct from old.address_line then
+      new.previous_address_line := old.address_line;
+    end if;
+  end if;
+
+  -- Preserve the original insurance-document re-review rule from 0019. 0040
+  -- extended the same trigger for review provenance; it did not change the
+  -- business meaning of replacing a space-insurance document.
+  if new.insurance_doc_path is distinct from old.insurance_doc_path then
+    new.insurance_doc_state := 'pending';
+    new.insurance_doc_reviewed_at := null;
+  end if;
+
+  -- Clear review provenance if an authenticated path ever returns a row live.
+  -- Normal staff approval uses service_role and also clears these fields in the
+  -- admin action itself; this keeps the trigger internally complete.
+  if new.status = 'active' and old.status is distinct from 'active' then
+    new.review_reason := null;
+    new.previous_address_line := null;
+  end if;
+
+  new.updated_at := now();
+  return new;
+end;
+$$;
+
+-- Owner UPDATE RLS remains in force. This is only column privilege; the trigger
+-- above constrains the allowed transitions and prevents host self-approval.
+grant update (status) on spaces to authenticated;
+
+
+-- ===================================================================
+-- 0079_listing_closure_hardening.sql
+-- ===================================================================
+
+-- A listing can be hidden in one tap, but closing it for good is a request.
+--
+-- This keeps three different intentions separate:
+--   * temporary hold       spaces.status = 'delisted', reversible by the host
+--   * replace the listing  the old row is held while the host creates another
+--   * permanent closure    a durable request, reviewed and archived by staff
+--
+-- A permanent closure never deletes booking or payment history. Hard delete is
+-- reserved for staff cleanup of a listing that has no booking history and no
+-- closure request. Every staff listing mutation and its audit row are written
+-- by one database function, so either both commit or neither does.
+
+create table if not exists listing_closure_requests (
+  id uuid primary key default gen_random_uuid(),
+  space_id uuid not null references spaces (id) on delete restrict,
+  host_id uuid references profiles (id) on delete set null,
+  reason text not null check (
+    reason in ('no_longer_available', 'lease_ended', 'business_closed', 'space_changed', 'other')
+  ),
+  detail text,
+  state text not null default 'open' check (state in ('open', 'approved', 'rejected')),
+  requested_at timestamptz not null default now(),
+  resolved_at timestamptz,
+  resolved_by uuid,
+  resolution_note text,
+  check (detail is null or char_length(detail) <= 1000),
+  check (resolution_note is null or char_length(resolution_note) <= 2000),
+  check (
+    (state = 'open' and resolved_at is null and resolved_by is null)
+    or (state <> 'open' and resolved_at is not null and resolved_by is not null)
+  )
+);
+
+create unique index if not exists listing_closure_requests_one_open_idx
+  on listing_closure_requests (space_id)
+  where state = 'open';
+
+create index if not exists listing_closure_requests_queue_idx
+  on listing_closure_requests (state, requested_at);
+
+alter table listing_closure_requests enable row level security;
+
+-- Hosts may see only their own request. All writes go through the narrowly
+-- scoped function below, so a browser cannot approve, reject or forge one.
+revoke all on listing_closure_requests from public, anon, authenticated;
+grant select on listing_closure_requests to authenticated;
+grant select, insert, update, delete on listing_closure_requests to service_role;
+
+drop policy if exists "listing closure: host reads own requests" on listing_closure_requests;
+create policy "listing closure: host reads own requests"
+  on listing_closure_requests for select
+  using (host_id = (select auth.uid()));
+
+-- A host can no longer bypass the permanent-closure review by deleting the row
+-- directly. Media can still be managed independently through its own policies.
+revoke delete on spaces from authenticated;
+drop policy if exists "spaces: host deletes own rows" on spaces;
+
+-- Distinguish the short storage-upload window from a real pending listing.
+-- Existing rows are complete by definition; only rows inserted after this
+-- migration start null and are finalized once every required write succeeds.
+do $$
+begin
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'spaces'
+      and column_name = 'creation_completed_at'
+  ) then
+    alter table spaces add column creation_completed_at timestamptz;
+    update spaces set creation_completed_at = created_at;
+  end if;
+end $$;
+
+create or replace function mark_browser_listing_creation_incomplete()
+returns trigger
+language plpgsql
+security invoker
+set search_path = public, pg_temp
+as $$
+begin
+  if auth.uid() is not null then new.creation_completed_at := null; end if;
+  return new;
+end;
+$$;
+
+revoke all on function mark_browser_listing_creation_incomplete()
+  from public, anon, authenticated;
+
+drop trigger if exists spaces_mark_browser_creation_incomplete on spaces;
+create trigger spaces_mark_browser_creation_incomplete
+  before insert on spaces
+  for each row
+  execute function mark_browser_listing_creation_incomplete();
+
+create schema if not exists private;
+
+create or replace function private.request_listing_closure(
+  p_space_id uuid,
+  p_reason text,
+  p_detail text default null
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  caller uuid := auth.uid();
+  owner_id uuid;
+  archived timestamptz;
+  existing_id uuid;
+  request_id uuid;
+  clean_detail text := nullif(btrim(p_detail), '');
+begin
+  if caller is null then
+    raise exception 'authentication required' using errcode = 'insufficient_privilege';
+  end if;
+
+  if p_reason is null or p_reason not in (
+    'no_longer_available', 'lease_ended', 'business_closed', 'space_changed', 'other'
+  ) then
+    raise exception 'choose a valid closure reason' using errcode = 'check_violation';
+  end if;
+
+  if clean_detail is not null and char_length(clean_detail) > 1000 then
+    raise exception 'closure detail is too long' using errcode = 'check_violation';
+  end if;
+
+  if p_reason = 'other' and coalesce(char_length(clean_detail), 0) < 3 then
+    raise exception 'add a short explanation for the closure' using errcode = 'check_violation';
+  end if;
+
+  select host_id, archived_at
+    into owner_id, archived
+  from spaces
+  where id = p_space_id
+  for update;
+
+  if not found then
+    raise exception 'no such listing' using errcode = 'no_data_found';
+  end if;
+
+  if owner_id is distinct from caller then
+    raise exception 'permission denied: that listing belongs to another host'
+      using errcode = 'insufficient_privilege';
+  end if;
+
+  if archived is not null then
+    raise exception 'this listing is already permanently closed'
+      using errcode = 'object_not_in_prerequisite_state';
+  end if;
+
+  -- Hiding and recording the request are one transaction. Existing bookings
+  -- remain untouched and continue through their normal lifecycle.
+  update spaces
+    set status = 'delisted', updated_at = now()
+  where id = p_space_id;
+
+  select id into existing_id
+  from listing_closure_requests
+  where space_id = p_space_id and state = 'open'
+  for update;
+
+  if existing_id is not null then
+    update listing_closure_requests
+      set reason = p_reason,
+          detail = clean_detail,
+          requested_at = now()
+    where id = existing_id
+    returning id into request_id;
+  else
+    insert into listing_closure_requests (space_id, host_id, reason, detail)
+    values (p_space_id, caller, p_reason, clean_detail)
+    returning id into request_id;
+  end if;
+
+  return request_id;
+end;
+$$;
+
+revoke all on function private.request_listing_closure(uuid, text, text)
+  from public, anon, authenticated, service_role;
+grant execute on function private.request_listing_closure(uuid, text, text)
+  to authenticated, service_role;
+
+-- Client-facing facade stays SECURITY INVOKER. The privileged implementation
+-- is in the private schema, following the same boundary as migration 0077.
+create or replace function public.request_listing_closure(
+  p_space_id uuid,
+  p_reason text,
+  p_detail text default null
+)
+returns uuid
+language sql
+volatile
+security invoker
+set search_path = pg_catalog
+as $$
+  select private.request_listing_closure(p_space_id, p_reason, p_detail)
+$$;
+
+revoke all on function public.request_listing_closure(uuid, text, text)
+  from public, anon, authenticated, service_role;
+grant execute on function public.request_listing_closure(uuid, text, text)
+  to authenticated, service_role;
+
+-- Internal rollback for the create-listing upload sequence. Storage requires a
+-- space row to exist before its files can be accepted, so a failed upload has
+-- one narrowly defined cleanup path. This is not an operational delete: only a
+-- newly created, never-reviewed pending row with no bookings or closure history
+-- qualifies, and there is no UI button for it.
+create or replace function private.discard_incomplete_listing(p_space_id uuid)
+returns boolean
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  listing spaces%rowtype;
+begin
+  if auth.uid() is null then
+    raise exception 'authentication required' using errcode = 'insufficient_privilege';
+  end if;
+
+  select * into listing from spaces where id = p_space_id for update;
+  if not found then return false; end if;
+
+  if listing.host_id is distinct from auth.uid() then
+    raise exception 'permission denied: that listing belongs to another host'
+      using errcode = 'insufficient_privilege';
+  end if;
+
+  if listing.status <> 'pending'
+     or listing.creation_completed_at is not null
+     or listing.archived_at is not null
+     or listing.sublease_doc_reviewed_at is not null
+     or listing.created_at < now() - interval '30 minutes'
+     or exists (select 1 from bookings where space_id = p_space_id)
+     or exists (select 1 from listing_closure_requests where space_id = p_space_id) then
+    raise exception 'only a newly created incomplete listing can be discarded'
+      using errcode = 'object_not_in_prerequisite_state';
+  end if;
+
+  delete from spaces where id = p_space_id;
+  return true;
+end;
+$$;
+
+revoke all on function private.discard_incomplete_listing(uuid)
+  from public, anon, authenticated, service_role;
+grant execute on function private.discard_incomplete_listing(uuid)
+  to authenticated, service_role;
+
+create or replace function public.discard_incomplete_listing(p_space_id uuid)
+returns boolean
+language sql
+volatile
+security invoker
+set search_path = pg_catalog
+as $$
+  select private.discard_incomplete_listing(p_space_id)
+$$;
+
+revoke all on function public.discard_incomplete_listing(uuid)
+  from public, anon, authenticated, service_role;
+grant execute on function public.discard_incomplete_listing(uuid)
+  to authenticated, service_role;
+
+create or replace function private.finalize_listing_creation(p_space_id uuid)
+returns boolean
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  listing spaces%rowtype;
+begin
+  if auth.uid() is null then
+    raise exception 'authentication required' using errcode = 'insufficient_privilege';
+  end if;
+
+  select * into listing from spaces where id = p_space_id for update;
+  if not found then
+    raise exception 'no such listing' using errcode = 'no_data_found';
+  end if;
+  if listing.host_id is distinct from auth.uid() then
+    raise exception 'permission denied: that listing belongs to another host'
+      using errcode = 'insufficient_privilege';
+  end if;
+  if listing.status <> 'pending'
+     or listing.creation_completed_at is not null
+     or listing.created_at < now() - interval '30 minutes' then
+    raise exception 'this listing is not an in-progress creation'
+      using errcode = 'object_not_in_prerequisite_state';
+  end if;
+
+  update spaces set creation_completed_at = now(), updated_at = now()
+  where id = p_space_id;
+  return true;
+end;
+$$;
+
+revoke all on function private.finalize_listing_creation(uuid)
+  from public, anon, authenticated, service_role;
+grant execute on function private.finalize_listing_creation(uuid)
+  to authenticated, service_role;
+
+create or replace function public.finalize_listing_creation(p_space_id uuid)
+returns boolean
+language sql
+volatile
+security invoker
+set search_path = pg_catalog
+as $$
+  select private.finalize_listing_creation(p_space_id)
+$$;
+
+revoke all on function public.finalize_listing_creation(uuid)
+  from public, anon, authenticated, service_role;
+grant execute on function public.finalize_listing_creation(uuid)
+  to authenticated, service_role;
+
+-- A host cannot reopen a listing while its permanent-closure request is on the
+-- operator's desk. A rejection releases the listing back to the normal
+-- delisted -> pending review path; an approval archives it, which 0078 already
+-- prevents a host from reopening.
+create or replace function block_reopen_with_open_closure_request()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  if auth.uid() is not null
+     and old.status = 'delisted'
+     and new.status = 'pending'
+     and exists (
+       select 1 from listing_closure_requests
+       where space_id = old.id and state = 'open'
+     ) then
+    raise exception 'permission denied: permanent closure is waiting for review'
+      using errcode = 'insufficient_privilege';
+  end if;
+
+  return new;
+end;
+$$;
+
+revoke all on function block_reopen_with_open_closure_request() from public, anon, authenticated;
+
+drop trigger if exists spaces_block_reopen_with_open_closure_request on spaces;
+create trigger spaces_block_reopen_with_open_closure_request
+  before update on spaces
+  for each row
+  when (old.status = 'delisted' and new.status = 'pending')
+  execute function block_reopen_with_open_closure_request();
+
+-- The only write path for Command Center listing operations. This function is
+-- deliberately service-role-only; the Next route still authenticates and
+-- allow-lists staff before calling it, then supplies the actor for the audit.
+-- PostgreSQL functions run in one transaction, so a failed audit insert rolls
+-- back the listing/request mutation, including a hard delete.
+create or replace function admin_apply_listing_action(
+  p_space_id uuid,
+  p_action text,
+  p_admin_user_id uuid,
+  p_admin_email text default null,
+  p_reason text default null
+)
+returns jsonb
+language plpgsql
+security invoker
+set search_path = public, pg_temp
+as $$
+declare
+  listing spaces%rowtype;
+  closure listing_closure_requests%rowtype;
+  clean_reason text := nullif(btrim(p_reason), '');
+  archived timestamptz;
+  result jsonb;
+begin
+  if p_action not in (
+    'approve', 'reject', 'send_to_review', 'hide', 'restore_live',
+    'archive', 'delete', 'approve_closure', 'reject_closure'
+  ) then
+    raise exception 'unknown listing action' using errcode = 'check_violation';
+  end if;
+
+  if p_action in (
+    'reject', 'send_to_review', 'hide', 'restore_live', 'archive', 'delete',
+    'approve_closure', 'reject_closure'
+  ) and coalesce(char_length(clean_reason), 0) < 3 then
+    raise exception 'add a short reason so the intervention is auditable'
+      using errcode = 'check_violation';
+  end if;
+
+  select * into listing from spaces where id = p_space_id for update;
+  if not found then
+    raise exception 'no such listing' using errcode = 'no_data_found';
+  end if;
+
+  if p_admin_user_id is null then
+    raise exception 'the acting staff account is required' using errcode = 'not_null_violation';
+  end if;
+
+  if p_action not in ('approve_closure', 'reject_closure')
+     and exists (
+       select 1 from listing_closure_requests
+       where space_id = p_space_id and state = 'open'
+     ) then
+    raise exception 'this listing has a permanent-closure request; approve or reject that request first'
+      using errcode = 'object_not_in_prerequisite_state';
+  end if;
+
+  case p_action
+    when 'approve' then
+      if listing.status <> 'pending' then
+        raise exception 'only a pending listing can be approved'
+          using errcode = 'object_not_in_prerequisite_state';
+      end if;
+      if listing.creation_completed_at is null then
+        raise exception 'listing creation is incomplete and cannot be approved'
+          using errcode = 'object_not_in_prerequisite_state';
+      end if;
+      update spaces set
+        status = 'active',
+        archived_at = null,
+        sublease_doc_state = 'verified',
+        sublease_doc_reviewed_at = now(),
+        doc_review_note = null,
+        review_reason = null,
+        previous_address_line = null
+      where id = p_space_id;
+      result := jsonb_build_object('toStatus', 'active');
+
+    when 'reject' then
+      if listing.status <> 'pending' then
+        raise exception 'only a pending listing can be rejected'
+          using errcode = 'object_not_in_prerequisite_state';
+      end if;
+      update spaces set
+        status = 'delisted',
+        archived_at = null,
+        sublease_doc_state = 'rejected',
+        sublease_doc_reviewed_at = now(),
+        doc_review_note = clean_reason
+      where id = p_space_id;
+      result := jsonb_build_object('toStatus', 'delisted');
+
+    when 'send_to_review' then
+      update spaces set status = 'pending', archived_at = null where id = p_space_id;
+      result := jsonb_build_object('toStatus', 'pending');
+
+    when 'hide' then
+      update spaces set status = 'delisted', archived_at = null where id = p_space_id;
+      result := jsonb_build_object('toStatus', 'delisted');
+
+    when 'restore_live' then
+      if listing.sublease_doc_state <> 'verified' then
+        raise exception 'the listing is not verified; send it to review instead'
+          using errcode = 'object_not_in_prerequisite_state';
+      end if;
+      update spaces set status = 'active', archived_at = null where id = p_space_id;
+      result := jsonb_build_object('toStatus', 'active');
+
+    when 'archive' then
+      archived := now();
+      update spaces set status = 'delisted', archived_at = archived where id = p_space_id;
+      result := jsonb_build_object('toStatus', 'delisted', 'archivedAt', archived);
+
+    when 'delete' then
+      if listing.status = 'active' then
+        raise exception 'hide the live listing before deleting it'
+          using errcode = 'object_not_in_prerequisite_state';
+      end if;
+      if listing.archived_at is not null then
+        raise exception 'an archived listing is a durable record and cannot be deleted'
+          using errcode = 'object_not_in_prerequisite_state';
+      end if;
+      if exists (select 1 from bookings where space_id = p_space_id) then
+        raise exception 'this listing has booking history and cannot be deleted'
+          using errcode = 'foreign_key_violation';
+      end if;
+      if exists (select 1 from listing_closure_requests where space_id = p_space_id) then
+        raise exception 'this listing has closure history and cannot be deleted; archive it instead'
+          using errcode = 'foreign_key_violation';
+      end if;
+      delete from spaces where id = p_space_id;
+      result := jsonb_build_object('deleted', true);
+
+    when 'approve_closure' then
+      select * into closure
+      from listing_closure_requests
+      where space_id = p_space_id and state = 'open'
+      for update;
+      if not found then
+        raise exception 'no open permanent-closure request'
+          using errcode = 'object_not_in_prerequisite_state';
+      end if;
+      archived := now();
+      update spaces set status = 'delisted', archived_at = archived where id = p_space_id;
+      update listing_closure_requests set
+        state = 'approved',
+        resolved_at = now(),
+        resolved_by = p_admin_user_id,
+        resolution_note = clean_reason
+      where id = closure.id;
+      result := jsonb_build_object(
+        'toStatus', 'delisted', 'archivedAt', archived, 'closureRequestId', closure.id
+      );
+
+    when 'reject_closure' then
+      select * into closure
+      from listing_closure_requests
+      where space_id = p_space_id and state = 'open'
+      for update;
+      if not found then
+        raise exception 'no open permanent-closure request'
+          using errcode = 'object_not_in_prerequisite_state';
+      end if;
+      update listing_closure_requests set
+        state = 'rejected',
+        resolved_at = now(),
+        resolved_by = p_admin_user_id,
+        resolution_note = clean_reason
+      where id = closure.id;
+      -- Rejection does not silently republish the room. The host may choose to
+      -- send the still-hidden listing back through review afterwards.
+      result := jsonb_build_object('toStatus', listing.status, 'closureRequestId', closure.id);
+  end case;
+
+  insert into admin_audit_log (
+    admin_user_id, admin_email, action, target_type, target_id, reason, metadata
+  ) values (
+    p_admin_user_id,
+    p_admin_email,
+    'listing_' || p_action,
+    'listing',
+    p_space_id::text,
+    clean_reason,
+    jsonb_build_object(
+      'fromStatus', listing.status,
+      'fromArchivedAt', listing.archived_at
+    ) || coalesce(result, '{}'::jsonb)
+  );
+
+  return coalesce(result, '{}'::jsonb);
+end;
+$$;
+
+revoke all on function admin_apply_listing_action(uuid, text, uuid, text, text)
+  from public, anon, authenticated;
+grant execute on function admin_apply_listing_action(uuid, text, uuid, text, text)
+  to service_role;
+
+
+-- ===================================================================
+-- 0080_listing_closure_host_index.sql
+-- ===================================================================
+
+-- Cover the host foreign key used by ownership checks and host closure history.
+create index if not exists listing_closure_requests_host_idx
+  on listing_closure_requests (host_id);
+
+
+-- ===================================================================
+-- 0081_archived_reopen_via_docs_guard.sql
+-- ===================================================================
+
+-- Close a reopen hole in the listing-edit trigger.
+--
+-- 0078's enforce_listing_edit_rules guards against a host reopening a
+-- staff-archived listing — but only inside `if new.status is distinct from
+-- old.status`, i.e. when the client changes status directly (the "Show it
+-- again" control). A host editing a *document* or the *address* never sends
+-- status, so that block is skipped; execution then reaches the review-reset
+-- rule, which forces `new.status := 'pending'` on a replaced sublease or a
+-- move. The archived guard was already behind us, so an archived listing was
+-- silently reopened — the exact thing the guard forbids, reached by a path it
+-- did not cover.
+--
+-- This became reachable from the app when the edit screen gained a way to
+-- re-upload a rejected sublease document; the address-move path could reach it
+-- before that. The fix belongs in the trigger, which is the only boundary that
+-- also covers a direct PostgREST write (sublease_doc_path has been column-
+-- granted to hosts since 0019, and owner RLS gates only on host_id).
+--
+-- Redefine the function identically to 0078 but refuse the forced transition
+-- to pending when the listing is archived. Staff actions run as service_role
+-- (auth.uid() is null) and are unaffected — the trigger's WHEN clause already
+-- limits it to browser-authenticated hosts.
+
+create or replace function enforce_listing_edit_rules()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  moved boolean;
+  booked integer;
+  reasons text[] := '{}';
+begin
+  if new.status is distinct from old.status then
+    if not (
+      (old.status in ('active', 'pending') and new.status = 'delisted')
+      or (old.status = 'delisted' and new.status = 'pending')
+    ) then
+      raise exception 'permission denied: that listing status change is not allowed. A host may hide a listing or send a hidden listing back for review.'
+        using errcode = 'insufficient_privilege';
+    end if;
+
+    if old.archived_at is not null and new.status = 'pending' then
+      raise exception 'permission denied: this listing is archived. Contact support to restore it.'
+        using errcode = 'insufficient_privilege';
+    end if;
+  end if;
+
+  moved := new.address_line is distinct from old.address_line
+        or new.category is distinct from old.category
+        or new.lat is distinct from old.lat
+        or new.lng is distinct from old.lng;
+
+  if moved then
+    select count(*) into booked
+    from bookings
+    where space_id = old.id
+      and status = 'upcoming'
+      and starts_at > now();
+
+    if booked > 0 then
+      raise exception
+        'This space has % upcoming %. Its address and room type cannot change until those sessions are done or cancelled.',
+        booked, case when booked = 1 then 'session' else 'sessions' end
+        using errcode = 'check_violation';
+    end if;
+  end if;
+
+  if new.address_line is distinct from old.address_line
+     or new.lat is distinct from old.lat
+     or new.lng is distinct from old.lng then
+    reasons := array_append(reasons, 'address');
+  end if;
+
+  if new.category is distinct from old.category then
+    reasons := array_append(reasons, 'room type');
+  end if;
+
+  if new.sublease_doc_path is distinct from old.sublease_doc_path then
+    reasons := array_append(reasons, 'sublease document');
+  end if;
+
+  -- Moving the room or replacing the lease invalidates the prior review and
+  -- sends the listing back to pending. If the listing was archived by staff,
+  -- that forced transition would silently reopen a permanently-closed listing
+  -- — the same reopen the status guard above refuses, reached here without the
+  -- client ever setting status. Refuse it the same way.
+  if moved or new.sublease_doc_path is distinct from old.sublease_doc_path then
+    if old.archived_at is not null then
+      raise exception 'permission denied: this listing is archived. Contact support to restore it.'
+        using errcode = 'insufficient_privilege';
+    end if;
+
+    new.status := 'pending';
+    new.sublease_doc_state := 'pending';
+    new.sublease_doc_reviewed_at := null;
+    new.doc_review_note := null;
+    new.review_reason := array_to_string(reasons, ', ');
+
+    if new.address_line is distinct from old.address_line then
+      new.previous_address_line := old.address_line;
+    end if;
+  end if;
+
+  if new.insurance_doc_path is distinct from old.insurance_doc_path then
+    new.insurance_doc_state := 'pending';
+    new.insurance_doc_reviewed_at := null;
+  end if;
+
+  if new.status = 'active' and old.status is distinct from 'active' then
+    new.review_reason := null;
+    new.previous_address_line := null;
+  end if;
+
+  new.updated_at := now();
+  return new;
+end;
+$$;

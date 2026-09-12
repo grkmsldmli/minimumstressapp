@@ -552,9 +552,10 @@ export interface SpaceEdit {
    * insurance is optional at creation, so a host who skipped it — or whose
    * sublease proof was rejected — had a "Not added" / "Not accepted" row and
    * nowhere to act on it. Re-uploading resets that document's review to pending
-   * (the spaces trigger in 0019 does this on any path change); a new sublease
-   * also sends the listing back to pending and off search until it is checked
-   * again, which is why the screen only offers that one when it was rejected.
+   * (the spaces edit trigger does this on any path change); a new sublease also
+   * sends the listing back to pending and off search until it is checked again,
+   * which is why the screen only offers that one when it was rejected. Neither is
+   * accepted on an archived listing (0081).
    */
   subleaseDoc?: File;
   insuranceDoc?: File;

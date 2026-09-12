@@ -154,3 +154,65 @@ describe("re-uploading a rejected sublease proof", () => {
     expect(edit.subleaseDoc!.name).toBe("new-lease.pdf");
   });
 });
+
+describe("documents are not editable on an archived listing", () => {
+  it("offers no uploaders when the listing is archived, even if the proof was rejected", async () => {
+    const base = await aSpace();
+    const archived: HostSpace = {
+      ...base,
+      archivedAt: new Date(),
+      subleaseReview: { state: "rejected", reviewedAt: new Date() },
+      reviewNote: "The lease was too blurry to read.",
+    };
+    open(archived);
+    // Neither uploader appears — an archived listing is staff-closed, and a
+    // replaced document would silently reopen it.
+    expect(screen.queryByText(/Add space insurance/i)).toBeNull();
+    expect(screen.queryByText(/Replace space insurance/i)).toBeNull();
+    expect(screen.queryByText(/Replace this document/i)).toBeNull();
+  });
+});
+
+describe("a picked document can be undone, and a failed save surfaces", () => {
+  it("reverts the save button when the picked insurance is removed", async () => {
+    const space = await aSpace();
+    open(space);
+
+    const file = new File(["cert"], "cert.pdf", { type: "application/pdf" });
+    fireEvent.change(fileInputByHint("PDF or photo"), { target: { files: [file] } });
+    expect(screen.getByRole("button", { name: /^Save changes$/i })).toBeDefined();
+
+    fireEvent.click(screen.getByRole("button", { name: /Remove Add space insurance/i }));
+    expect(screen.getByRole("button", { name: /^Nothing changed$/i })).toBeDefined();
+  });
+
+  it("keeps the picked file and shows an error when saving fails", async () => {
+    const space = await aSpace();
+    const onSave = vi.fn().mockRejectedValue(new Error("The upload could not be saved."));
+    const onBack = vi.fn();
+    render(
+      <EditSpace
+        space={space}
+        bookedSessions={0}
+        onSave={onSave}
+        onAddMedia={vi.fn()}
+        onRemoveMedia={vi.fn()}
+        onSetListed={vi.fn()}
+        onRequestClosure={vi.fn()}
+        onReplaceSpace={vi.fn()}
+        onEditHours={vi.fn()}
+        onBack={onBack}
+      />,
+    );
+
+    const file = new File(["cert"], "cert.pdf", { type: "application/pdf" });
+    fireEvent.change(fileInputByHint("PDF or photo"), { target: { files: [file] } });
+    fireEvent.click(screen.getByRole("button", { name: /^Save changes$/i }));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByText(/could not be saved/i)).toBeDefined());
+    expect(onBack).not.toHaveBeenCalled();
+    // The file is retained so the host can retry rather than re-pick.
+    expect(screen.getByRole("button", { name: /^Save changes$/i })).toBeDefined();
+  });
+});

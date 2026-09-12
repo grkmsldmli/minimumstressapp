@@ -1,8 +1,9 @@
 import type { NextRequest } from "next/server";
 
-import { isStaff } from "@/lib/admin/access";
+import { recordAdminAction } from "@/lib/admin/audit";
+import { staffOrRefusal } from "@/lib/admin/guard";
 import { loadQueue } from "@/lib/admin/queue";
-import { handled, jsonError, requireUser } from "@/lib/api/session";
+import { handled, jsonError } from "@/lib/api/session";
 import { dateOnly, integer, jsonObject, oneOf, optionalString, uuid } from "@/lib/api/validate";
 import { ClaimError, decideClaim } from "@/lib/claim-service";
 import { CLAIM_CAP_CENTS } from "@/lib/claims";
@@ -22,26 +23,23 @@ import { supabaseAdmin } from "@/lib/supabase/server";
  * somebody is on the other side of it; a 404 says nothing at all, which is what
  * an address nobody should have found deserves.
  */
-/**
- * Who is asking, when they are staff; a 404 when they are not.
- *
- * It used to return null on success, which was enough while every action was
- * anonymous. A refund decision is not: it is written down with a name against
- * it, because "somebody approved this" is not an answer anyone can follow up.
- */
-async function staffOrRefusal(): Promise<Response | { staffId: string }> {
-  const auth = await requireUser();
-  if ("response" in auth) return new Response("Not found", { status: 404 });
-
-  if (!isStaff(auth.user.email)) {
-    // Logged, because somebody reaching this is either a mistake worth knowing
-    // about or an attempt worth knowing about, and both look identical here.
-    console.warn(`Non-staff account reached /api/admin: ${auth.user.id}`);
-    return new Response("Not found", { status: 404 });
-  }
-
-  return { staffId: auth.user.id };
-}
+/** Which entity each action touches — for the audit log's target_type. */
+const AUDIT_TARGET: Record<string, string> = {
+  approve_listing: "listing",
+  reject_listing: "listing",
+  delist_listing: "listing",
+  relist_listing: "listing",
+  archive_listing: "listing",
+  delete_listing: "listing",
+  resolve_escalation: "escalation",
+  approve_account_change: "account_change_request",
+  decide_refund: "refund_request",
+  decide_claim: "studio_claim",
+  verify_insurance: "profile",
+  reject_insurance: "profile",
+  verify_credential: "profile",
+  reject_credential: "profile",
+};
 
 export async function GET(): Promise<Response> {
   return handled(async () => {
@@ -87,6 +85,25 @@ export async function POST(request: NextRequest): Promise<Response> {
     if (!note.ok) return jsonError(note.reason, 400);
 
     const admin = supabaseAdmin();
+
+    // Every successful state change records one audit row, attributed to the
+    // acting staff account, before the response is returned — so nothing mutates
+    // production silently. Called only on success (failures return/throw above).
+    const done = async (
+      extra: Record<string, unknown> = {},
+      metadata: Record<string, unknown> = {},
+    ): Promise<Response> => {
+      await recordAdminAction(admin, {
+        adminUserId: staff.staffId,
+        adminEmail: staff.staffEmail,
+        action: action.value,
+        targetType: AUDIT_TARGET[action.value] ?? null,
+        targetId: id.value,
+        reason: note.value || null,
+        metadata,
+      });
+      return Response.json({ ok: true, ...extra });
+    };
 
     switch (action.value) {
       case "approve_listing": {
@@ -136,7 +153,7 @@ export async function POST(request: NextRequest): Promise<Response> {
          * approval can be retried; if all fifty spots are already taken, that is
          * a normal outcome, not an error, and the listing goes live regardless.
          */
-        return Response.json({ ok: true });
+        return done();
       }
 
       case "reject_listing": {
@@ -154,7 +171,7 @@ export async function POST(request: NextRequest): Promise<Response> {
           })
           .eq("id", id.value);
         if (error) throw error;
-        return Response.json({ ok: true });
+        return done();
       }
 
       case "resolve_escalation": {
@@ -170,7 +187,7 @@ export async function POST(request: NextRequest): Promise<Response> {
           })
           .eq("id", id.value);
         if (error) throw error;
-        return Response.json({ ok: true });
+        return done();
       }
 
       case "approve_account_change": {
@@ -197,7 +214,7 @@ export async function POST(request: NextRequest): Promise<Response> {
           .update({ state: "approved", resolved_at: new Date().toISOString() })
           .eq("id", id.value);
 
-        return Response.json({ ok: true });
+        return done();
       }
 
       /**
@@ -225,7 +242,7 @@ export async function POST(request: NextRequest): Promise<Response> {
             outcome.value,
             note.value,
           );
-          return Response.json({ ok: true, refundedCents });
+          return done({ refundedCents }, { outcome: outcome.value, refundedCents });
         } catch (failure) {
           if (failure instanceof RefundError) {
             return jsonError(failure.message, failure.status);
@@ -270,7 +287,7 @@ export async function POST(request: NextRequest): Promise<Response> {
             amount.value,
             note.value,
           );
-          return Response.json({ ok: true, ...result });
+          return done(result, { verdict: verdict.value, amountCents: amount.value, ...result });
         } catch (failure) {
           if (failure instanceof ClaimError) {
             return jsonError(failure.message, failure.status);
@@ -292,7 +309,7 @@ export async function POST(request: NextRequest): Promise<Response> {
           .update({ status: "delisted" })
           .eq("id", id.value);
         if (error) throw error;
-        return Response.json({ ok: true });
+        return done();
       }
 
       /**
@@ -316,7 +333,7 @@ export async function POST(request: NextRequest): Promise<Response> {
             400,
           );
         }
-        return Response.json({ ok: true });
+        return done();
       }
 
       /**
@@ -332,7 +349,7 @@ export async function POST(request: NextRequest): Promise<Response> {
           .update({ status: "delisted", archived_at: new Date().toISOString() })
           .eq("id", id.value);
         if (error) throw error;
-        return Response.json({ ok: true });
+        return done();
       }
 
       /**
@@ -352,7 +369,7 @@ export async function POST(request: NextRequest): Promise<Response> {
             400,
           );
         }
-        return Response.json({ ok: true });
+        return done();
       }
 
       /**
@@ -424,7 +441,7 @@ export async function POST(request: NextRequest): Promise<Response> {
           });
         }
 
-        return Response.json({ ok: true });
+        return done();
       }
 
       /**
@@ -465,7 +482,7 @@ export async function POST(request: NextRequest): Promise<Response> {
           });
         }
 
-        return Response.json({ ok: true });
+        return done();
       }
 
       /**
@@ -487,7 +504,7 @@ export async function POST(request: NextRequest): Promise<Response> {
           .eq("account_type", "practitioner")
           .not("credential_doc_path", "is", null);
         if (error) throw error;
-        return Response.json({ ok: true });
+        return done();
       }
 
       /**
@@ -509,7 +526,7 @@ export async function POST(request: NextRequest): Promise<Response> {
           .eq("account_type", "practitioner")
           .not("credential_doc_path", "is", null);
         if (error) throw error;
-        return Response.json({ ok: true });
+        return done();
       }
 
       default:

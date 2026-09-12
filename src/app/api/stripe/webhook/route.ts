@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import type Stripe from "stripe";
 
+import { recordEvent } from "@/lib/analytics/record";
 import { notifyBookingCreated, notifyRequestMade, recipientFor } from "@/lib/notify/for-booking";
 import { notify } from "@/lib/notify/send";
 import { stripe } from "@/lib/stripe/client";
@@ -162,7 +163,7 @@ async function handle(event: Stripe.Event): Promise<void> {
         .eq("stripe_payment_intent_id", intent.id)
         // Guarded so a replayed event cannot overwrite a time already recorded.
         .is("captured_at", null)
-        .select("id, approval_state");
+        .select("id, approval_state, practitioner_id");
 
       /*
        * And this is where the host finds out.
@@ -177,6 +178,36 @@ async function handle(event: Stripe.Event): Promise<void> {
        * subject in any case.
        */
       const booking = paid?.[0];
+      /*
+       * The one place money is truly captured, and so the honest source for the
+       * revenue events the Growth dashboard reads. The update guard means this
+       * runs once per booking however many times Stripe redelivers, so the count
+       * cannot inflate on a replay. Best-effort: recordEvent never throws into
+       * the webhook. No amounts or PII — a booking id and the approval shape only.
+       */
+      if (booking) {
+        // Trusted server emitter — opt in to the server-only business facts.
+        await recordEvent(
+          admin,
+          {
+            name: "payment_succeeded",
+            userId: (booking.practitioner_id as string | null) ?? null,
+            surface: "stripe_webhook",
+            properties: { bookingId: booking.id },
+          },
+          true,
+        );
+        await recordEvent(
+          admin,
+          {
+            name: "booking_confirmed",
+            userId: (booking.practitioner_id as string | null) ?? null,
+            surface: "stripe_webhook",
+            properties: { bookingId: booking.id, approvalState: booking.approval_state },
+          },
+          true,
+        );
+      }
       /*
        * Except when the host has just approved it.
        *

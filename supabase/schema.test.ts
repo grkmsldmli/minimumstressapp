@@ -95,7 +95,8 @@ describe("migrations apply cleanly", () => {
       // founding_practitioners. +5 in 0069 (Work): work_preferences,
       // work_availability, class_templates, work_requests, work_interest.
       // +1 in 0070 (Studio Pro): work_roster.
-      expect(tables.rows).toHaveLength(27);
+      // +2 in 0073 (admin ops): analytics_events, admin_audit_log.
+      expect(tables.rows).toHaveLength(29);
     } finally {
       await fresh.close();
     }
@@ -152,6 +153,10 @@ describe("migrations apply cleanly", () => {
 
     expect(found.map((r) => r.table_name)).toEqual([
       "account_type_change_requests",
+      // Durable record of every state-changing admin action (0073).
+      "admin_audit_log",
+      // First-party product event stream, server-only (0073).
+      "analytics_events",
       "availability",
       // A user severs the message channel with another (App Store 1.2, 0067).
       "blocked_users",

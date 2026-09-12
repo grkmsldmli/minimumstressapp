@@ -410,28 +410,15 @@ describe("private columns stay out of the public views", () => {
     ]);
   });
 
-  it("runs per-user views as the caller and public views as the definer", async () => {
-    // Both halves matter. A per-user view without security_invoker bypasses
-    // RLS and hands every practitioner's balance to whoever asks. A public
-    // subset view *with* it errors instead, because anon holds no grant on
-    // the base table — safety there comes from the column list, not from RLS.
-    //
-    // "Public" here means definer, not anonymously readable. Migration 0064
-    // closed the per-listing definer views (spaces_public, public_host_profiles,
-    // availability_public, space_media_public, public_reviews, space_ratings) to
-    // anon while leaving the aggregate ones open; who may read each is asserted
-    // by role in rls.test.ts. This test is only about definer vs invoker.
+  it("runs every exposed view as the caller", async () => {
+    // 0074 moves privileged implementations into the unexposed private schema.
+    // Every stable public.* API name is now a SECURITY INVOKER facade, which
+    // satisfies Security Advisor without granting callers the base tables.
+    // The private backing views retain the curated definer projections.
     const PER_USER = [
       "credit_balances",
       "bookings_with_access_code",
       "messages_visible",
-      /*
-       * Notification history. Invoker, so the row policy scopes it to the
-       * recipient — and the grant behind it is column-level, because a
-       * blanket select would have let somebody skip the view and read
-       * last_error, attempts and dedupe_key straight off the table. The view
-       * is the presentation; the grant is the boundary.
-       */
       "my_notifications",
     ];
     const PUBLIC = [
@@ -439,48 +426,13 @@ describe("private columns stay out of the public views", () => {
       "public_host_profiles",
       "availability_public",
       "space_media_public",
-      // Reviews are shown to everyone, so the same rule applies: the safety
-      // of a definer view is its column list, and the author's identity, the
-      // booking and the safety flag are absent from both of these.
       "public_reviews",
       "space_ratings",
-      /*
-       * How many rooms are bookable in each town, and what they cost.
-       *
-       * Public because the pages built on them are: a search engine reaches
-       * those signed out, which is the whole reason they exist. They aggregate
-       * the same rows spaces_public shows, under the same `status = 'active'`
-       * filter, so they can reveal nothing a listing does not already publish
-       * on its own page — a count, a range, and a median of prices that are
-       * public one at a time.
-       */
       "city_inventory",
       "city_type_inventory",
-      // The category-level aggregate (0064), so the public directory's category
-      // filter never has to read a per-listing view. A room has one category, so
-      // the count is exact and still reveals nothing about an individual room.
       "city_category_inventory",
-      /*
-       * The demand counts. Public because a host is shown them, and safe to
-       * be public because it is counts: no email, no id, no row. The table
-       * underneath is readable by nobody, which is the point of the view
-       * existing at all.
-       */
       "space_demand",
     ];
-
-    /**
-     * A third kind, and the one easiest to get wrong.
-     *
-     * Definer, like the public views, so it can read base tables the caller
-     * has no grant on — but its rows are not public. It filters itself down to
-     * auth.uid() in the view body, because a definer view applies no row
-     * policy and a missing filter would hand every signed-in account everyone
-     * else's total. That total divides straight back into how many sessions
-     * somebody has had.
-     *
-     * Listed separately so the filter is asserted rather than assumed.
-     */
     const SELF_FILTERED = ["session_counts"];
 
     const views = await rows<{ viewname: string; options: string[] | null }>(
@@ -492,17 +444,11 @@ describe("private columns stay out of the public views", () => {
     const optionsFor = (name: string) =>
       views.find((v) => v.viewname === name)?.options ?? [];
 
-    expect(views.map((v) => v.viewname).sort()).toEqual(
-      [...PER_USER, ...PUBLIC, ...SELF_FILTERED].sort(),
-    );
+    const exposed = [...PER_USER, ...PUBLIC, ...SELF_FILTERED];
+    expect(views.map((v) => v.viewname).sort()).toEqual(exposed.sort());
 
-    for (const name of PER_USER) {
+    for (const name of exposed) {
       expect(optionsFor(name), `${name} must be security_invoker`).toContain(
-        "security_invoker=true",
-      );
-    }
-    for (const name of [...PUBLIC, ...SELF_FILTERED]) {
-      expect(optionsFor(name), `${name} must not be security_invoker`).not.toContain(
         "security_invoker=true",
       );
     }

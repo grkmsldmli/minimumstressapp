@@ -1,0 +1,36 @@
+/*
+ * Discover header shortcuts must respond to the width of the app itself, not
+ * to the outer browser viewport.
+ *
+ * On desktop web the app is intentionally rendered inside a 385px phone frame.
+ * A viewport breakpoint such as `sm:grid-cols-4` sees the wide desktop browser,
+ * not that narrow frame, and forces the four shortcuts into one row — squeezing
+ * the greeting and Practitioner badge. The app frame is therefore the sizing
+ * container for this one layout decision.
+ */
+.app-frame {
+  container-type: inline-size;
+}
+
+/* Phone-sized app frame: compact 2×2 cluster. This rule intentionally wins over
+ * Tailwind's viewport-based `sm:grid-cols-4` utility when the browser itself is
+ * wide but the rendered app frame is still phone-sized. */
+.app-frame
+  [class~="grid-cols-2"][class~="sm:grid-cols-4"]:has(> button[aria-label="Work"]):has(
+    > button[aria-label="Your bookings"]
+  ) {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+/* Tablet-sized app frame: open the same four controls back into a single row.
+ * 520px is deliberately above every supported phone frame and below the native
+ * tablet column, so desktop phone previews stay 2×2 while iPad/tablet layouts
+ * use one balanced row. */
+@container (min-width: 520px) {
+  .app-frame
+    [class~="grid-cols-2"][class~="sm:grid-cols-4"]:has(> button[aria-label="Work"]):has(
+      > button[aria-label="Your bookings"]
+    ) {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}

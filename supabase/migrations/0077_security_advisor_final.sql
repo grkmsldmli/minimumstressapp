@@ -40,7 +40,18 @@ create policy "space_requests: anyone may say what they need"
     length(looking_in) between 1 and 80
     and (
       space_type is null
-      or space_type in ('pilates', 'yoga', 'massage', 'movement', 'meditation', 'coaching', 'other')
+      or space_type in (
+        'pilates-studio',
+        'yoga-studio',
+        'movement-studio',
+        'massage-room',
+        'treatment-room',
+        'acupuncture-room',
+        'esthetician-room',
+        'consultation-room',
+        'meditation-room',
+        'reiki-room'
+      )
     )
     and (email is null or length(email) <= 320)
     and created_at >= now() - interval '5 minutes'

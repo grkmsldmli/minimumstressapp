@@ -47,6 +47,32 @@ export interface CommandView {
   activity: ActivityEntry[];
 }
 
+/**
+ * System health, only where it can actually be measured.
+ *
+ * The queue read having succeeded is real evidence the database and the
+ * service-role auth admin are reachable; the notification outbox is real
+ * evidence of delivery. Everything else — Stripe, web analytics — has no probe
+ * yet, so it is "unknown", never a reassuring green we cannot back up. Shared by
+ * Command and System so the two never disagree about whether anything is on fire.
+ */
+export function deriveHealth(q: AdminQueue): HealthItem[] {
+  const failedGivenUp = q.failedNotifications.filter((n) => n.givenUp).length;
+  return [
+    { key: "database", label: "Database", state: "healthy" },
+    { key: "auth", label: "Auth", state: "healthy" },
+    {
+      key: "notifications",
+      label: "Notifications",
+      state: failedGivenUp > 0 ? "attention" : "healthy",
+      note: failedGivenUp > 0 ? `${failedGivenUp} gave up` : undefined,
+    },
+    { key: "stripe_payments", label: "Stripe payments", state: "unknown" },
+    { key: "stripe_payouts", label: "Stripe Connect payouts", state: "unknown" },
+    { key: "web_analytics", label: "Web analytics", state: "unknown", note: "not instrumented yet" },
+  ];
+}
+
 export function commandView(q: AdminQueue): CommandView {
   const disputesOnUs = q.openDisputes.filter((d) => d.waitingOn === "us").length;
   const failedGivenUp = q.failedNotifications.filter((n) => n.givenUp).length;
@@ -84,27 +110,10 @@ export function commandView(q: AdminQueue): CommandView {
     { key: "app_opens_today", label: "App opens · today", value: null, format: "count" },
   ];
 
-  const health: HealthItem[] = [
-    // Derived: the queue read itself succeeded, so the DB and the service-role
-    // auth admin (used to resolve emails) are both reachable.
-    { key: "database", label: "Database", state: "healthy" },
-    { key: "auth", label: "Auth", state: "healthy" },
-    {
-      key: "notifications",
-      label: "Notifications",
-      state: failedGivenUp > 0 ? "attention" : "healthy",
-      note: failedGivenUp > 0 ? `${failedGivenUp} gave up` : undefined,
-    },
-    // No measurable probe yet — shown as unknown rather than a fake green.
-    { key: "stripe_payments", label: "Stripe payments", state: "unknown" },
-    { key: "stripe_payouts", label: "Stripe Connect payouts", state: "unknown" },
-    { key: "web_analytics", label: "Web analytics", state: "unknown", note: "not instrumented yet" },
-  ];
-
   return {
     urgentCount,
     kpis,
-    health,
+    health: deriveHealth(q),
     needsAttention,
     queuesTotal: candidates.length,
     queuesClear: needsAttention.length === 0,

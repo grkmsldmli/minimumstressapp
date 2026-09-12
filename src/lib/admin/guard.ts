@@ -35,6 +35,9 @@ export async function staffOrRefusal(): Promise<Response | StaffContext> {
  * A GET admin route in one line: wrap in handled(), gate on staff, build the
  * JSON with the service-role client, and never cache. Keeps every read route
  * identically authorized so a new section can't accidentally ship ungated.
+ *
+ * A builder that returns a Response (e.g. notFoundJson for a missing entity)
+ * has that returned verbatim; anything else is JSON with no-store.
  */
 export function adminGet(
   build: (admin: SupabaseClient, staff: StaffContext) => Promise<unknown>,
@@ -43,6 +46,12 @@ export function adminGet(
     const staff = await staffOrRefusal();
     if (staff instanceof Response) return staff;
     const payload = await build(supabaseAdmin(), staff);
+    if (payload instanceof Response) return payload;
     return Response.json(payload, { headers: { "Cache-Control": "no-store" } });
   });
+}
+
+/** A 404 an entity route can return when the id matches nothing. */
+export function notFoundJson(): Response {
+  return Response.json({ error: "Not found" }, { status: 404, headers: { "Cache-Control": "no-store" } });
 }

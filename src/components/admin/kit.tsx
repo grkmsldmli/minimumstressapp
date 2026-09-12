@@ -239,3 +239,35 @@ export function NotInstrumented() {
 export function usd(cents: number): string {
   return `$${(cents / 100).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 }
+
+/** A compact date, or an em dash for a missing one. */
+export function shortDate(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
+
+/** Date and time together, for a single record where the hour matters. */
+export function dateTime(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+/** The colour a booking or listing status reads as at a glance. */
+export function statusColor(status: string): string {
+  if (status.startsWith("cancelled")) return CORAL;
+  if (status === "active" || status === "completed") return GREEN;
+  if (status === "pending") return AMBER;
+  if (status === "upcoming") return SKY;
+  if (status === "archived" || status === "delisted") return MUTED;
+  return MUTED;
+}

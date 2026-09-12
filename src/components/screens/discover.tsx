@@ -69,7 +69,6 @@ export function Discover({
   undeliveredCount,
   onGoProfile,
   onGoLegal,
-  greetingName,
   you,
   rebookable,
   onRebook,
@@ -238,7 +237,7 @@ export function Discover({
             <div className="flex items-center gap-1.5">
               <GreetIcon size={11} color="#8FC6F5" className="shrink-0" />
               <p className="font-body font-normal text-[13.5px] tracking-wide text-white/70 truncate">
-                {greetingName ? `${greeting}, ${greetingName}` : greeting}
+                {greeting}
               </p>
             </div>
             {/* Which side they are on, on the screen they spend most time on. */}

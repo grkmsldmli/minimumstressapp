@@ -9,6 +9,7 @@ import {
   rollUp,
   standingByPerson,
 } from "./queue";
+import { netBookingAmounts } from "./reporting-truth";
 
 /**
  * The cross-linked business graph, in one read.
@@ -73,10 +74,14 @@ export interface DirBooking {
   startsAt: string;
   endsAt: string | null;
   status: string;
-  /** Kept distinct on purpose: gross ≠ host earnings ≠ platform revenue. */
+  /** Current net figures after any recorded refund. */
   totalCents: number;
   hostRateCents: number;
   platformCents: number;
+  /** Original card charge, before refunds, for lifecycle/support context. */
+  chargedCents: number;
+  refundedCents: number;
+  hostRateRefunded: boolean;
   /** A charged booking. An authorized request awaiting host approval is held but not paid yet. */
   paid: boolean;
   capturedAt: string | null;
@@ -121,7 +126,7 @@ export async function loadDirectory(admin: SupabaseClient): Promise<Directory> {
     admin
       .from("bookings")
       .select(
-        "id, space_id, practitioner_id, starts_at, ends_at, status, captured_at, approval_state, authorized_at, refunded_at, host_rate_refunded, host_paid_at, cancelled_at, total_cents, host_rate_cents, platform_cents",
+        "id, space_id, practitioner_id, starts_at, ends_at, status, captured_at, approval_state, authorized_at, refunded_at, refunded_cents, host_rate_refunded, host_paid_at, cancelled_at, total_cents, host_rate_cents, platform_cents",
       )
       .order("starts_at", { ascending: false }),
     allEmails(admin),
@@ -154,16 +159,33 @@ export async function loadDirectory(admin: SupabaseClient): Promise<Directory> {
     }),
   );
 
-  // The same money split the queue and the badges use — one row credits the host
-  // their rate and the practitioner what they paid; the difference is our fee and
-  // the two are never summed.
+  // Lifetime account/listing money is net of refunds, not the historical card
+  // charge. A full refund leaves no host earning; a platform-fee refund leaves
+  // the host's earning intact and our revenue at zero.
   const { perPerson, perListing } = rollUp(
-    paid.map((b) => ({
-      spaceId: b.space_id as string,
-      practitionerId: (b.practitioner_id as string | null) ?? null,
-      hostRateCents: (b.host_rate_cents as number) ?? 0,
-      totalCents: (b.total_cents as number) ?? 0,
-    })),
+    paid.map((b) => {
+      const net = netBookingAmounts({
+        id: b.id as string,
+        space_id: b.space_id as string,
+        practitioner_id: (b.practitioner_id as string | null) ?? null,
+        starts_at: b.starts_at as string,
+        status: b.status as string,
+        captured_at: (b.captured_at as string | null) ?? null,
+        cancelled_at: (b.cancelled_at as string | null) ?? null,
+        refunded_cents: (b.refunded_cents as number | null) ?? null,
+        host_rate_refunded: (b.host_rate_refunded as boolean | null) ?? null,
+        host_paid_at: (b.host_paid_at as string | null) ?? null,
+        total_cents: (b.total_cents as number | null) ?? null,
+        host_rate_cents: (b.host_rate_cents as number | null) ?? null,
+        platform_cents: (b.platform_cents as number | null) ?? null,
+      });
+      return {
+        spaceId: b.space_id as string,
+        practitionerId: (b.practitioner_id as string | null) ?? null,
+        hostRateCents: net.hostCents,
+        totalCents: net.grossCents,
+      };
+    }),
     spaceHost,
   );
 
@@ -249,6 +271,24 @@ export async function loadDirectory(admin: SupabaseClient): Promise<Directory> {
     const practitionerId = (row.practitioner_id as string | null) ?? null;
     const awaitingHostApproval =
       row.captured_at === null && row.approval_state === "pending" && row.authorized_at !== null;
+    const chargedCents = (row.total_cents as number) ?? 0;
+    const refundedCents = (row.refunded_cents as number) ?? 0;
+    const hostRateRefunded = row.host_rate_refunded === true;
+    const net = netBookingAmounts({
+      id: row.id as string,
+      space_id: spaceId,
+      practitioner_id: practitionerId,
+      starts_at: row.starts_at as string,
+      status: row.status as string,
+      captured_at: (row.captured_at as string | null) ?? null,
+      cancelled_at: (row.cancelled_at as string | null) ?? null,
+      refunded_cents: refundedCents,
+      host_rate_refunded: hostRateRefunded,
+      host_paid_at: (row.host_paid_at as string | null) ?? null,
+      total_cents: chargedCents,
+      host_rate_cents: (row.host_rate_cents as number) ?? 0,
+      platform_cents: (row.platform_cents as number) ?? 0,
+    });
     return {
       id: row.id as string,
       spaceId,
@@ -262,9 +302,12 @@ export async function loadDirectory(admin: SupabaseClient): Promise<Directory> {
       startsAt: row.starts_at as string,
       endsAt: (row.ends_at as string) ?? null,
       status: awaitingHostApproval ? "awaiting_host_approval" : (row.status as string),
-      totalCents: (row.total_cents as number) ?? 0,
-      hostRateCents: (row.host_rate_cents as number) ?? 0,
-      platformCents: (row.platform_cents as number) ?? 0,
+      totalCents: net.grossCents,
+      hostRateCents: net.hostCents,
+      platformCents: net.platformCents,
+      chargedCents,
+      refundedCents,
+      hostRateRefunded,
       paid: row.captured_at !== null,
       capturedAt: (row.captured_at as string) ?? null,
       cancelledAt: (row.cancelled_at as string) ?? null,

@@ -36,8 +36,8 @@ export function SpaceDetailScreen({ id }: { id: string }) {
 
       <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))" }}>
         <Stat label="Rate" value={`${usd(space.hourlyRateCents)}/hr`} />
-        <Stat label="Sessions" value={space.sessions.toLocaleString()} />
-        <Stat label="Host earned" value={space.earnedCents > 0 ? usd(space.earnedCents) : "—"} strong />
+        <Stat label="Captured bookings" value={space.sessions.toLocaleString()} />
+        <Stat label="Host net earned" value={space.earnedCents > 0 ? usd(space.earnedCents) : "—"} strong />
         <Stat label="Category" value={space.category || "—"} />
       </div>
 
@@ -54,8 +54,8 @@ export function SpaceDetailScreen({ id }: { id: string }) {
         )}
       </Panel>
 
-      <Panel title="Bookings" count={bookings.length}>
-        <MiniBookingList bookings={bookings} empty="No bookings for this space yet." />
+      <Panel title="Booking history" count={bookings.length}>
+        <MiniBookingList bookings={bookings} empty="No captured bookings for this space yet." />
       </Panel>
     </div>
   );

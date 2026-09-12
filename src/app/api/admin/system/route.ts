@@ -1,12 +1,12 @@
 import { adminGet } from "@/lib/admin/guard";
-import { loadQueue } from "@/lib/admin/queue";
+import { loadReportingQueue } from "@/lib/admin/reporting-truth";
 import { systemView } from "@/lib/admin/sections";
 
 /**
- * System: measurable health only (unknown where there is no probe), the account
- * and listing counts, terms acceptance outstanding, and the notification outbox
- * failures. Nothing invented — a metric we cannot measure is not shown green.
+ * System: measurable health only (unknown where there is no probe), the audited
+ * account/booking/listing counts, terms acceptance outstanding, and notification
+ * outbox failures. Nothing invented — a metric we cannot measure is not green.
  */
 export function GET(): Promise<Response> {
-  return adminGet(async (admin) => systemView(await loadQueue(admin)));
+  return adminGet(async (admin) => systemView(await loadReportingQueue(admin)));
 }

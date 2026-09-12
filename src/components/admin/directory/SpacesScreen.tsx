@@ -36,8 +36,8 @@ const columns: Column<DirSpace>[] = [
     ),
   },
   { key: "rate", header: "Rate", align: "right", render: (s) => `${usd(s.hourlyRateCents)}/hr` },
-  { key: "sessions", header: "Sessions", align: "right", render: (s) => s.sessions.toLocaleString() },
-  { key: "earned", header: "Host earned", align: "right", render: (s) => (s.earnedCents > 0 ? usd(s.earnedCents) : "—") },
+  { key: "sessions", header: "Captured bookings", align: "right", render: (s) => s.sessions.toLocaleString() },
+  { key: "earned", header: "Host net earned", align: "right", render: (s) => (s.earnedCents > 0 ? usd(s.earnedCents) : "—") },
   { key: "created", header: "Listed", align: "right", render: (s) => <Muted className="text-[11px]">{shortDate(s.createdAt)}</Muted> },
 ];
 

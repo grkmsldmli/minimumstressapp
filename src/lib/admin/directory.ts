@@ -2,12 +2,14 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { isHeldBooking } from "@/lib/booking-visibility";
 import {
   type AdminCancellationRow,
   EMPTY_TOTALS,
   rollUp,
   standingByPerson,
 } from "./queue";
+import { netBookingAmounts } from "./reporting-truth";
 
 /**
  * The cross-linked business graph, in one read.
@@ -72,11 +74,15 @@ export interface DirBooking {
   startsAt: string;
   endsAt: string | null;
   status: string;
-  /** Kept distinct on purpose: gross ≠ host earnings ≠ platform revenue. */
+  /** Current net figures after any recorded refund. */
   totalCents: number;
   hostRateCents: number;
   platformCents: number;
-  /** A charged booking. An abandoned checkout has no captured_at and is not one. */
+  /** Original card charge, before refunds, for lifecycle/support context. */
+  chargedCents: number;
+  refundedCents: number;
+  hostRateRefunded: boolean;
+  /** A charged booking. An authorized request awaiting host approval is held but not paid yet. */
   paid: boolean;
   capturedAt: string | null;
   cancelledAt: string | null;
@@ -120,7 +126,7 @@ export async function loadDirectory(admin: SupabaseClient): Promise<Directory> {
     admin
       .from("bookings")
       .select(
-        "id, space_id, practitioner_id, starts_at, ends_at, status, captured_at, refunded_at, host_rate_refunded, host_paid_at, cancelled_at, total_cents, host_rate_cents, platform_cents",
+        "id, space_id, practitioner_id, starts_at, ends_at, status, captured_at, approval_state, authorized_at, refunded_at, refunded_cents, host_rate_refunded, host_paid_at, cancelled_at, total_cents, host_rate_cents, platform_cents",
       )
       .order("starts_at", { ascending: false }),
     allEmails(admin),
@@ -141,20 +147,51 @@ export async function loadDirectory(admin: SupabaseClient): Promise<Directory> {
 
   const paid = bookingRows.filter((b) => b.captured_at !== null);
 
-  // The same money split the queue and the badges use — one row credits the host
-  // their rate and the practitioner what they paid; the difference is our fee and
-  // the two are never summed.
+  // A booking row is created as checkout starts so the slot can be held. That
+  // provisional infrastructure row is not a booking. Keep only rows the shared
+  // booking-visibility rule considers real: captured sessions, plus an
+  // authorized request that is genuinely waiting for host approval.
+  const heldBookingRows = bookingRows.filter((row) =>
+    isHeldBooking({
+      captured_at: (row.captured_at as string | null) ?? null,
+      approval_state: (row.approval_state as string | null) ?? null,
+      authorized_at: (row.authorized_at as string | null) ?? null,
+    }),
+  );
+
+  // Lifetime account/listing money is net of refunds, not the historical card
+  // charge. A full refund leaves no host earning; a platform-fee refund leaves
+  // the host's earning intact and our revenue at zero.
   const { perPerson, perListing } = rollUp(
-    paid.map((b) => ({
-      spaceId: b.space_id as string,
-      practitionerId: (b.practitioner_id as string | null) ?? null,
-      hostRateCents: (b.host_rate_cents as number) ?? 0,
-      totalCents: (b.total_cents as number) ?? 0,
-    })),
+    paid.map((b) => {
+      const net = netBookingAmounts({
+        id: b.id as string,
+        space_id: b.space_id as string,
+        practitioner_id: (b.practitioner_id as string | null) ?? null,
+        starts_at: b.starts_at as string,
+        status: b.status as string,
+        captured_at: (b.captured_at as string | null) ?? null,
+        cancelled_at: (b.cancelled_at as string | null) ?? null,
+        refunded_cents: (b.refunded_cents as number | null) ?? null,
+        host_rate_refunded: (b.host_rate_refunded as boolean | null) ?? null,
+        host_paid_at: (b.host_paid_at as string | null) ?? null,
+        total_cents: (b.total_cents as number | null) ?? null,
+        host_rate_cents: (b.host_rate_cents as number | null) ?? null,
+        platform_cents: (b.platform_cents as number | null) ?? null,
+      });
+      return {
+        spaceId: b.space_id as string,
+        practitionerId: (b.practitioner_id as string | null) ?? null,
+        hostRateCents: net.hostCents,
+        totalCents: net.grossCents,
+      };
+    }),
     spaceHost,
   );
 
-  // The published standing rule, not a second copy of it.
+  // The published standing rule, not a second copy of it. It deliberately sees
+  // every raw row because standingByPerson already knows provisional checkout
+  // cleanup is not a real cancellation and must not count against anybody.
   const standings = standingByPerson(
     bookingRows.map(
       (r): AdminCancellationRow => ({
@@ -228,10 +265,30 @@ export async function loadDirectory(admin: SupabaseClient): Promise<Directory> {
     })
     .sort((a, b) => b.sessions - a.sessions || (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
 
-  const bookings: DirBooking[] = bookingRows.map((row) => {
+  const bookings: DirBooking[] = heldBookingRows.map((row) => {
     const spaceId = row.space_id as string;
     const hostId = spaceHost.get(spaceId) ?? null;
     const practitionerId = (row.practitioner_id as string | null) ?? null;
+    const awaitingHostApproval =
+      row.captured_at === null && row.approval_state === "pending" && row.authorized_at !== null;
+    const chargedCents = (row.total_cents as number) ?? 0;
+    const refundedCents = (row.refunded_cents as number) ?? 0;
+    const hostRateRefunded = row.host_rate_refunded === true;
+    const net = netBookingAmounts({
+      id: row.id as string,
+      space_id: spaceId,
+      practitioner_id: practitionerId,
+      starts_at: row.starts_at as string,
+      status: row.status as string,
+      captured_at: (row.captured_at as string | null) ?? null,
+      cancelled_at: (row.cancelled_at as string | null) ?? null,
+      refunded_cents: refundedCents,
+      host_rate_refunded: hostRateRefunded,
+      host_paid_at: (row.host_paid_at as string | null) ?? null,
+      total_cents: chargedCents,
+      host_rate_cents: (row.host_rate_cents as number) ?? 0,
+      platform_cents: (row.platform_cents as number) ?? 0,
+    });
     return {
       id: row.id as string,
       spaceId,
@@ -244,10 +301,13 @@ export async function loadDirectory(admin: SupabaseClient): Promise<Directory> {
       hostEmail: hostId ? emails.get(hostId) ?? null : null,
       startsAt: row.starts_at as string,
       endsAt: (row.ends_at as string) ?? null,
-      status: row.status as string,
-      totalCents: (row.total_cents as number) ?? 0,
-      hostRateCents: (row.host_rate_cents as number) ?? 0,
-      platformCents: (row.platform_cents as number) ?? 0,
+      status: awaitingHostApproval ? "awaiting_host_approval" : (row.status as string),
+      totalCents: net.grossCents,
+      hostRateCents: net.hostCents,
+      platformCents: net.platformCents,
+      chargedCents,
+      refundedCents,
+      hostRateRefunded,
       paid: row.captured_at !== null,
       capturedAt: (row.captured_at as string) ?? null,
       cancelledAt: (row.cancelled_at as string) ?? null,

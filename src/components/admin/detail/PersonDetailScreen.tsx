@@ -45,19 +45,19 @@ export function PersonDetailScreen({ id }: { id: string }) {
       </div>
 
       <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))" }}>
-        <Stat label="Sessions" value={person.sessions.toLocaleString()} />
+        <Stat label="Captured bookings" value={person.sessions.toLocaleString()} />
         {isHost ? (
           <>
-            <Stat label="Earned (host)" value={person.earnedCents > 0 ? usd(person.earnedCents) : "—"} strong />
+            <Stat label="Net earned (host)" value={person.earnedCents > 0 ? usd(person.earnedCents) : "—"} strong />
             <Stat label="Listings" value={person.listings.toLocaleString()} />
             <Stat
-              label="Payouts"
+              label="Payout setup"
               value={person.payoutsReady ? "Ready" : "Not set up"}
               tone={person.payoutsReady ? undefined : "muted"}
             />
           </>
         ) : (
-          <Stat label="Spent (practitioner)" value={person.spentCents > 0 ? usd(person.spentCents) : "—"} strong />
+          <Stat label="Net spent (practitioner)" value={person.spentCents > 0 ? usd(person.spentCents) : "—"} strong />
         )}
       </div>
 
@@ -83,13 +83,13 @@ export function PersonDetailScreen({ id }: { id: string }) {
         </Panel>
       )}
 
-      <Panel title="Sessions booked" count={asPractitioner.length}>
-        <MiniBookingList bookings={asPractitioner} empty="No sessions booked." />
+      <Panel title="Booking history as practitioner" count={asPractitioner.length}>
+        <MiniBookingList bookings={asPractitioner} empty="No captured bookings." />
       </Panel>
 
       {isHost && (
-        <Panel title="Sessions in their rooms" count={asHost.length}>
-          <MiniBookingList bookings={asHost} empty="No sessions run in their rooms yet." />
+        <Panel title="Booking history in their spaces" count={asHost.length}>
+          <MiniBookingList bookings={asHost} empty="No captured bookings in their spaces yet." />
         </Panel>
       )}
     </div>

@@ -1,12 +1,10 @@
 /**
- * The Command home, projected from the one queue read.
+ * The Command home, projected from the audited admin queue.
  *
- * Pure so it is testable and cannot drift: it takes the AdminQueue that
- * loadQueue already builds and shapes the founder's first screen — the KPIs that
- * answer "what is happening", the health bar (only states we can actually
- * derive), the ranked "needs attention" list (safety and money first), and the
- * live/activity slices. Nothing here invents a number: a metric we do not yet
- * track is marked absent (null) rather than shown as a misleading zero.
+ * Pure so it is testable and cannot drift: it takes the AdminQueue and shapes
+ * the founder's first screen — KPIs, health, ranked attention, and live/activity
+ * slices. Nothing here invents a number: a metric we do not yet track is absent
+ * (null), never shown as a reassuring zero.
  */
 
 import type { ActivityEntry, AdminQueue, LiveSession } from "./queue";
@@ -95,16 +93,16 @@ export function commandView(q: AdminQueue): CommandView {
   const urgentCount = q.escalations.length + disputesOnUs + q.unpayableHosts.length + failedGivenUp;
 
   const kpis: Kpi[] = [
-    { key: "platform_month", label: "Our revenue · this month", value: q.money.platformCents, format: "money", strong: true },
-    { key: "gmv_month", label: "Booking volume · this month", value: q.money.grossCents, format: "money", sub: "what practitioners paid (not our revenue)" },
-    { key: "host_month", label: "Paid to hosts · this month", value: q.money.hostCents, format: "money" },
-    { key: "platform_all", label: "Our revenue · all time", value: q.money.platformAllTimeCents, format: "money" },
-    { key: "sessions_month", label: "Sessions · this month", value: q.counts.sessionsThisMonth, format: "count" },
-    { key: "upcoming", label: "Upcoming sessions", value: q.counts.upcomingSessions, format: "count" },
+    { key: "platform_month", label: "Our net revenue · this month", value: q.money.platformCents, format: "money", strong: true },
+    { key: "gmv_month", label: "Net booking volume · this month", value: q.money.grossCents, format: "money", sub: "practitioner payments after refunds" },
+    { key: "host_month", label: "Host earnings · this month", value: q.money.hostCents, format: "money", sub: "earned — not necessarily paid out yet" },
+    { key: "platform_all", label: "Our net revenue · all time", value: q.money.platformAllTimeCents, format: "money" },
+    { key: "sessions_month", label: "Bookings · this month", value: q.counts.sessionsThisMonth, format: "count", sub: "captured bookings" },
+    { key: "upcoming", label: "Upcoming bookings", value: q.counts.upcomingSessions, format: "count" },
     { key: "live_listings", label: "Live listings", value: q.counts.activeListings, format: "count" },
     { key: "practitioners", label: "Practitioners", value: q.counts.practitioners, format: "count" },
     { key: "hosts", label: "Hosts", value: q.counts.hosts, format: "count" },
-    { key: "hosts_unpaid", label: "Hosts awaiting payout", value: q.counts.hostsUnpaid, format: "count" },
+    { key: "hosts_unpaid", label: "Unpaid host sessions", value: q.counts.hostsUnpaid, format: "count", sub: "completed/due, payout not recorded" },
     // Not derivable from the DB alone — needs the analytics stream, which is new.
     { key: "visitors_today", label: "Website visitors · today", value: null, format: "count" },
     { key: "app_opens_today", label: "App opens · today", value: null, format: "count" },

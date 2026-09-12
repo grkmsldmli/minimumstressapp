@@ -96,7 +96,8 @@ describe("migrations apply cleanly", () => {
       // work_availability, class_templates, work_requests, work_interest.
       // +1 in 0070 (Studio Pro): work_roster.
       // +2 in 0073 (admin ops): analytics_events, admin_audit_log.
-      expect(tables.rows).toHaveLength(29);
+      // +1 in 0079: listing_closure_requests.
+      expect(tables.rows).toHaveLength(30);
     } finally {
       await fresh.close();
     }
@@ -170,6 +171,8 @@ describe("migrations apply cleanly", () => {
       // Its practitioner-side twin — the first fifty to complete professional
       // onboarding (verification-based), server-only and equally permanent (0068).
       "founding_practitioners",
+      // Host-requested permanent closures, resolved by Command Center (0079).
+      "listing_closure_requests",
       // Booking-chat abuse reports for staff review (App Store 1.2, 0067).
       "message_reports",
       "messages",

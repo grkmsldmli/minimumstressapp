@@ -39,7 +39,7 @@ export function SpaceDetailScreen({ id }: { id: string }) {
     );
   if (!data) return null;
 
-  const { space, bookings } = data;
+  const { space, bookings, closureRequests } = data;
   const status = effectiveSpaceStatus(space);
 
   return (
@@ -72,7 +72,12 @@ export function SpaceDetailScreen({ id }: { id: string }) {
       </div>
 
       <Panel title="Listing controls">
-        <ListingControls id={space.id} status={status} onChanged={reload} />
+        <ListingControls
+          id={space.id}
+          status={status}
+          closureRequests={closureRequests}
+          onChanged={reload}
+        />
       </Panel>
 
       <Panel title="Host">

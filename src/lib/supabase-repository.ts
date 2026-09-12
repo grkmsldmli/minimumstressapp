@@ -126,6 +126,7 @@ import { type ClaimKind, claimType, overstayCents } from "./claims";
 import { type RefundReason, questionFor } from "./refunds";
 import { FALLBACK_ZONE, isKnownZone } from "./timezone";
 import { MEDIA_SIGN_MAX_BATCH, type MediaSignResponse } from "./media-sign";
+import type { ListingClosureReason } from "./listing-closure";
 import { buildImageVariants } from "./image-variants";
 import {
   sessionDetailsFromRow,
@@ -149,6 +150,7 @@ interface SpaceRow {
   parking?: string[] | null;
   parking_limit_minutes?: number | null;
   status?: "pending" | "active" | "delisted";
+  archived_at?: string | null;
   description?: string;
   amenities?: string[];
   requirements?: string[];
@@ -1405,10 +1407,24 @@ export class SupabaseRepository implements Repository {
     if (!spaces?.length) return [];
 
     const ids = spaces.map((s: SpaceRow) => s.id);
-    const [{ data: blocks }, { data: media }] = await Promise.all([
+    const [
+      { data: blocks },
+      { data: media },
+      { data: closureRequests, error: closureError },
+    ] = await Promise.all([
       this.db.from("availability").select("*").in("space_id", ids),
       this.db.from("space_media").select("*").in("space_id", ids).order("position"),
+      this.db
+        .from("listing_closure_requests")
+        .select("id, space_id, reason, detail, state, requested_at")
+        .in("space_id", ids)
+        .eq("state", "open"),
     ]);
+    if (closureError) throw asError(closureError);
+
+    const closureBySpace = new Map(
+      (closureRequests ?? []).map((request) => [request.space_id as string, request]),
+    );
 
     // The host reads their own media from the private bucket (0064); the owner
     // branch of the storage policy lets them sign it at any listing status.
@@ -1425,9 +1441,20 @@ export class SupabaseRepository implements Repository {
         (media ?? []).filter((m: MediaRow) => m.space_id === row.id),
         (path) => mediaUrls.get(path) ?? "",
       );
+      const closure = closureBySpace.get(row.id);
       return {
         ...base,
         status: row.status ?? "pending",
+        archivedAt: row.archived_at ? new Date(row.archived_at) : null,
+        closureRequest: closure
+          ? {
+              id: closure.id as string,
+              reason: closure.reason as ListingClosureReason,
+              detail: (closure.detail as string | null) ?? null,
+              state: "open",
+              requestedAt: new Date(closure.requested_at as string),
+            }
+          : null,
         addressLine: row.address_line ?? "",
         lat: row.lat ?? null,
         lng: row.lng ?? null,
@@ -1728,6 +1755,23 @@ export class SupabaseRepository implements Repository {
     return updated;
   }
 
+  async requestSpaceClosure(
+    spaceId: string,
+    reason: ListingClosureReason,
+    detail = "",
+  ): Promise<HostSpace> {
+    const { error } = await this.db.rpc("request_listing_closure", {
+      p_space_id: spaceId,
+      p_reason: reason,
+      p_detail: detail.trim() || null,
+    });
+    if (error) throw asError(error);
+
+    const [updated] = (await this.listMySpaces()).filter((space) => space.id === spaceId);
+    if (!updated) throw new Error("That listing is no longer available.");
+    return updated;
+  }
+
   async createSpace(input: NewSpaceInput): Promise<HostSpace> {
     const hostId = await this.userId();
 
@@ -1786,7 +1830,8 @@ export class SupabaseRepository implements Repository {
     if (error) throw asError(error);
 
     /**
-     * Files go up after the row exists, and the row is removed if they fail.
+     * Files go up after the row exists, and a narrowly scoped rollback removes
+     * a newly created, never-reviewed row if they fail.
      *
      * The order is forced: every storage policy for these buckets asks whether
      * the first path segment is a space this host owns, which cannot be true
@@ -1809,10 +1854,15 @@ export class SupabaseRepository implements Repository {
         );
         if (blockError) throw blockError;
       }
+
+      const { error: finalizeError } = await this.db.rpc("finalize_listing_creation", {
+        p_space_id: data.id,
+      });
+      if (finalizeError) throw asError(finalizeError);
     } catch (failure) {
-      // Best effort: if this also fails the listing is orphaned, which is
-      // recoverable by staff, whereas leaving it silently is not.
-      await this.db.from("spaces").delete().eq("id", data.id);
+      // Not a general host DELETE. Migration 0079's RPC accepts only this
+      // short-lived, pending, never-reviewed creation row and nothing else.
+      await this.db.rpc("discard_incomplete_listing", { p_space_id: data.id });
       throw failure;
     }
 

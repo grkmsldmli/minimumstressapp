@@ -1524,8 +1524,10 @@ describe("two studios on the same platform", () => {
     expect(space.hourly_rate_cents).not.toBe(100);
   });
 
-  it("refuses to let a host take somebody else's listing down", async () => {
-    await asUser(RIVAL_HOST, `delete from spaces where id = '${SPACE}'`);
+  it("refuses every direct host delete, including somebody else's listing", async () => {
+    await expect(
+      asUser(RIVAL_HOST, `delete from spaces where id = '${SPACE}'`),
+    ).rejects.toThrow(/permission denied/i);
 
     const [still] = await asUser(HOST, `select id from spaces where id = '${SPACE}'`);
     expect(still).toBeDefined();

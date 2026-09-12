@@ -2537,6 +2537,9 @@ export function App() {
             go("edit-space");
           }}
           onSetListed={(spaceId, listed) => mutate(() => repo.setSpaceListed(spaceId, listed))}
+          onRequestClosure={(spaceId, reason, detail) =>
+            mutate(() => repo.requestSpaceClosure(spaceId, reason, detail))
+          }
         />
       );
 
@@ -2606,6 +2609,10 @@ export function App() {
             mutate(() => repo.removeSpaceMedia(editingSpace.id, mediaId))
           }
           onSetListed={(listed) => mutate(() => repo.setSpaceListed(editingSpace.id, listed))}
+          onRequestClosure={(reason, detail) =>
+            mutate(() => repo.requestSpaceClosure(editingSpace.id, reason, detail))
+          }
+          onReplaceSpace={() => go("addspace")}
           onEditHours={() => go("edit-hours")}
         />
       );

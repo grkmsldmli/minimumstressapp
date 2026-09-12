@@ -2,6 +2,9 @@
 
 import { useState } from "react";
 
+import type { AdminListingClosureRequest } from "@/lib/admin/projections";
+import { listingClosureReasonLabel } from "@/lib/listing-closure";
+
 import { AMBER, CORAL, GREEN, LINE, MUTED, PANEL2, SKY, TEXT } from "../kit";
 
 type ListingAction =
@@ -10,7 +13,9 @@ type ListingAction =
   | "hide"
   | "restore_live"
   | "archive"
-  | "delete";
+  | "delete"
+  | "approve_closure"
+  | "reject_closure";
 
 function Button({
   children,
@@ -40,14 +45,17 @@ function Button({
 export function ListingControls({
   id,
   status,
+  closureRequests,
   onChanged,
 }: {
   id: string;
   status: string;
+  closureRequests: AdminListingClosureRequest[];
   onChanged: () => void;
 }) {
   const [busy, setBusy] = useState<ListingAction | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const openClosure = closureRequests.find((request) => request.state === "open") ?? null;
 
   const run = async (
     action: ListingAction,
@@ -106,8 +114,51 @@ export function ListingControls({
         </span>
       </div>
 
+      {openClosure && (
+        <div className="rounded-lg p-3 mt-3" style={{ border: `1px solid ${AMBER}66`, backgroundColor: `${AMBER}12` }}>
+          <p className="font-body font-semibold text-[12.5px]" style={{ color: AMBER }}>
+            Permanent closure requested
+          </p>
+          <p className="font-body text-[11.5px] mt-1" style={{ color: TEXT }}>
+            {listingClosureReasonLabel(openClosure.reason)}
+          </p>
+          {openClosure.detail && (
+            <p className="font-body text-[11.5px] mt-1 leading-relaxed" style={{ color: MUTED }}>
+              {openClosure.detail}
+            </p>
+          )}
+          <p className="font-body text-[10.5px] mt-2" style={{ color: MUTED }}>
+            Requested {new Date(openClosure.requestedAt).toLocaleString("en-US")}. Existing bookings and money remain unchanged whichever decision you make.
+          </p>
+        </div>
+      )}
+
       <div className="flex flex-wrap gap-2 mt-3">
-        {status === "pending" && (
+        {openClosure ? (
+          <>
+            <Button
+              tone="warn"
+              disabled={Boolean(busy)}
+              onClick={() => void run("approve_closure", {
+                reason: true,
+                confirm: "Approve this permanent closure? The listing will be archived; bookings and payment history will remain.",
+                success: "Permanent closure approved and listing archived.",
+              })}
+            >
+              {busy === "approve_closure" ? "Approving…" : "Approve permanent closure"}
+            </Button>
+            <Button
+              disabled={Boolean(busy)}
+              onClick={() => void run("reject_closure", {
+                reason: true,
+                confirm: "Reject this closure request? The listing will stay hidden until the host submits it for review again.",
+                success: "Closure request rejected; listing remains hidden.",
+              })}
+            >
+              {busy === "reject_closure" ? "Rejecting…" : "Reject closure request"}
+            </Button>
+          </>
+        ) : status === "pending" ? (
           <Button
             tone="good"
             disabled={Boolean(busy)}
@@ -115,19 +166,19 @@ export function ListingControls({
           >
             {busy === "approve" ? "Approving…" : "Approve & go live"}
           </Button>
-        )}
+        ) : null}
 
-        {(status === "delisted" || status === "archived") && (
+        {!openClosure && (status === "delisted" || status === "archived") && (
           <Button
             tone="good"
             disabled={Boolean(busy)}
-            onClick={() => void run("restore_live", { confirm: "Restore this verified listing to search now?", success: "Listing restored live." })}
+            onClick={() => void run("restore_live", { reason: true, confirm: "Restore this verified listing to search now?", success: "Listing restored live." })}
           >
             {busy === "restore_live" ? "Restoring…" : "Restore live"}
           </Button>
         )}
 
-        {status !== "pending" && (
+        {!openClosure && status !== "pending" && (
           <Button
             tone="warn"
             disabled={Boolean(busy)}
@@ -137,7 +188,7 @@ export function ListingControls({
           </Button>
         )}
 
-        {(status === "active" || status === "pending") && (
+        {!openClosure && (status === "active" || status === "pending") && (
           <Button
             tone="warn"
             disabled={Boolean(busy)}
@@ -147,7 +198,7 @@ export function ListingControls({
           </Button>
         )}
 
-        {status !== "archived" && (
+        {!openClosure && status !== "archived" && (
           <Button
             disabled={Boolean(busy)}
             onClick={() => void run("archive", { reason: true, success: "Listing archived." })}
@@ -156,14 +207,25 @@ export function ListingControls({
           </Button>
         )}
 
-        <Button
-          tone="danger"
-          disabled={Boolean(busy)}
-          onClick={() => void run("delete", { reason: true, destructive: true, success: "Listing deleted." })}
-        >
-          {busy === "delete" ? "Deleting…" : "Delete permanently"}
-        </Button>
+        {!openClosure &&
+          closureRequests.length === 0 &&
+          status !== "active" &&
+          status !== "archived" && (
+          <Button
+            tone="danger"
+            disabled={Boolean(busy)}
+            onClick={() => void run("delete", { reason: true, destructive: true, success: "Listing deleted." })}
+          >
+            {busy === "delete" ? "Deleting…" : "Delete permanently"}
+          </Button>
+        )}
       </div>
+
+      {!openClosure && closureRequests.length > 0 && (
+        <p className="font-body text-[10.5px] mt-3" style={{ color: MUTED }}>
+          Hard delete is unavailable because this listing has closure history. Archive preserves the operational record.
+        </p>
+      )}
 
       {message && (
         <p className="font-body text-[12px] mt-3" style={{ color: message.toLowerCase().includes("failed") || message.toLowerCase().includes("cannot") || message.toLowerCase().includes("not ") ? CORAL : SKY }}>

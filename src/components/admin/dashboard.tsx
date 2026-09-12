@@ -2,17 +2,13 @@
 
 import {
   AlertTriangle,
-  Archive,
   Building2,
   CalendarClock,
   Check,
   ChevronRight,
-  Eye,
-  EyeOff,
   FileText,
   Phone,
   Search,
-  Trash2,
   Users,
   X,
 } from "lucide-react";
@@ -29,6 +25,7 @@ import type {
   SessionParty,
 } from "@/lib/admin/queue";
 import { formatCents } from "@/lib/money";
+import { listingClosureReasonLabel } from "@/lib/listing-closure";
 import { isVerificationDocPath } from "@/lib/verification-docs";
 
 import { DisputeQueue } from "./disputes";
@@ -194,6 +191,7 @@ export function AdminDashboard() {
   const nothingWaiting =
     urgent.length === 0 &&
     queue.escalations.length === 0 &&
+    queue.listingClosureRequests.length === 0 &&
     queue.pendingListings.length === 0 &&
     queue.pendingInsurance.length === 0 &&
     queue.pendingCredentials.length === 0 &&
@@ -262,7 +260,7 @@ export function AdminDashboard() {
 
         <InTheRoom sessions={queue.liveSessions} />
 
-        <Directory people={queue.people} listings={queue.listings} act={act} busy={busy} />
+        <Directory people={queue.people} listings={queue.listings} />
 
         <div
           className="grid gap-4 mt-6"
@@ -374,6 +372,40 @@ export function AdminDashboard() {
           </div>
 
           <div className="flex flex-col gap-4">
+            <Panel
+              title="Permanent closure requests"
+              count={queue.listingClosureRequests.length}
+            >
+              {queue.listingClosureRequests.map((request) => (
+                <Card key={request.id} tone={request.upcomingBookings > 0 ? "warn" : "plain"}>
+                  <p className="font-body font-medium text-[12.5px]" style={{ color: "#fff" }}>
+                    {request.spaceName}
+                  </p>
+                  <p className="font-body font-light text-[11px] mt-1" style={{ color: MUTED }}>
+                    {request.hostEmail ?? "unknown host"} · {listingClosureReasonLabel(request.reason)}
+                  </p>
+                  {request.detail && (
+                    <p className="font-body font-light text-[11.5px] mt-2" style={{ color: "#C7D6E6" }}>
+                      {request.detail}
+                    </p>
+                  )}
+                  {request.upcomingBookings > 0 && (
+                    <p className="font-body text-[11px] mt-2" style={{ color: "#E8A33D" }}>
+                      {request.upcomingBookings} upcoming booking{request.upcomingBookings === 1 ? "" : "s"} —
+                      do not change booking or payment status here
+                    </p>
+                  )}
+                  <a
+                    href={`/admin/spaces/${request.spaceId}`}
+                    className="inline-flex items-center gap-1 mt-3 font-body font-medium text-[11px] press"
+                    style={{ color: "#9CCBF3" }}
+                  >
+                    Review request <ChevronRight size={12} />
+                  </a>
+                </Card>
+              ))}
+            </Panel>
+
             <Panel title="Why each listing is waiting" count={queue.reviewReasons.length}>
               {queue.reviewReasons.map((item) => (
                 <Card key={item.id} tone={item.subleaseState === "rejected" ? "bad" : "plain"}>
@@ -500,7 +532,10 @@ export function AdminDashboard() {
                     </Action>
                     <Action
                       disabled={busy === listing.id}
-                      onClick={() => void act("reject_listing", listing.id)}
+                      onClick={() => {
+                        const reason = window.prompt("Why is this listing being rejected? The host will see this note.");
+                        if (reason?.trim()) void act("reject_listing", listing.id, reason.trim());
+                      }}
                     >
                       <X size={12} /> Reject
                     </Action>
@@ -733,21 +768,13 @@ function Party({ role, party }: { role: string; party: SessionParty }) {
 function Directory({
   people,
   listings,
-  act,
-  busy,
 }: {
   people: Person[];
   listings: ListingRow[];
-  act: (action: string, id: string) => void | Promise<void>;
-  busy: string | null;
 }) {
   const [tab, setTab] = useState<"people" | "listings">("people");
   const [query, setQuery] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
-  // Arms a two-click action: the first click sets this to the listing's id, the
-  // second confirms. Reset whenever a row is toggled, so neither can linger.
-  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
-  const [confirmArchive, setConfirmArchive] = useState<string | null>(null);
 
   const term = query.trim().toLowerCase();
   const match = (...fields: (string | null)[]) =>
@@ -862,8 +889,6 @@ function Directory({
                   open={openId === listing.id}
                   onToggle={() => {
                     setOpenId(openId === listing.id ? null : listing.id);
-                    setConfirmDelete(null);
-                    setConfirmArchive(null);
                   }}
                   title={listing.name}
                   subtitle={listing.hostEmail}
@@ -888,67 +913,13 @@ function Directory({
                   ]}
                   actions={
                     <div className="flex flex-wrap gap-2 pb-3 pl-6">
-                      {/* Hold / resume — the reversible pair, not offered once a
-                          listing has been closed for good. */}
-                      {!listing.archivedAt &&
-                        (listing.status === "delisted" ? (
-                          <Action
-                            disabled={busy === listing.id}
-                            onClick={() => void act("relist_listing", listing.id)}
-                          >
-                            <Eye size={12} /> Put back on the site
-                          </Action>
-                        ) : (
-                          <Action
-                            disabled={busy === listing.id}
-                            onClick={() => void act("delist_listing", listing.id)}
-                          >
-                            <EyeOff size={12} /> Hold — take off the site
-                          </Action>
-                        ))}
-
-                      {/* Close for good — off the site, no new bookings, record
-                          kept. Two-click, and gone once it is already archived. */}
-                      {!listing.archivedAt &&
-                        (confirmArchive === listing.id ? (
-                          <Action
-                            disabled={busy === listing.id}
-                            onClick={() => void act("archive_listing", listing.id)}
-                          >
-                            <Archive size={12} /> Confirm — close for good
-                          </Action>
-                        ) : (
-                          <Action onClick={() => setConfirmArchive(listing.id)}>
-                            <Archive size={12} /> Close permanently
-                          </Action>
-                        ))}
-
-                      {/* Hard delete — cleanup, only for a listing nobody ever
-                          booked. The bookings FK refuses the rest at the database. */}
-                      {listing.sessions === 0 ? (
-                        confirmDelete === listing.id ? (
-                          <Action
-                            danger
-                            disabled={busy === listing.id}
-                            onClick={() => void act("delete_listing", listing.id)}
-                          >
-                            <Trash2 size={12} /> Confirm — delete for good
-                          </Action>
-                        ) : (
-                          <Action danger onClick={() => setConfirmDelete(listing.id)}>
-                            <Trash2 size={12} /> Delete permanently
-                          </Action>
-                        )
-                      ) : (
-                        !listing.archivedAt && (
-                          <span
-                            className="font-body text-[10.5px] self-center"
-                            style={{ color: MUTED }}
-                          >
-                            Has bookings — hold or close it, it cannot be deleted
-                          </span>
-                        )
-                      )}
+                      <a
+                        href={`/admin/spaces/${listing.id}`}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-body text-[11px] press"
+                        style={{ color: "#9CCBF3", border: "1px solid rgba(59,155,232,0.4)" }}
+                      >
+                        Open controlled operations <ChevronRight size={12} />
+                      </a>
                     </div>
                   }
                 />

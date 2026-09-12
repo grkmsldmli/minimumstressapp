@@ -17,6 +17,7 @@ function baseQueue(overrides: Partial<AdminQueue> = {}): AdminQueue {
     pendingInsurance: [],
     pendingCredentials: [],
     accountChangeRequests: [],
+    listingClosureRequests: [],
     unpayableHosts: [],
     money: { platformCents: 12000, hostCents: 80000, grossCents: 100000, platformAllTimeCents: 50000 },
     counts: {
@@ -51,6 +52,16 @@ describe("commandView", () => {
     expect(v.needsAttention).toEqual([]);
     expect(v.queuesClear).toBe(true);
     expect(v.queuesTotal).toBeGreaterThan(0);
+  });
+
+  it("surfaces permanent closure requests in Command", () => {
+    const view = commandView(
+      baseQueue({ listingClosureRequests: [{ id: "close-1" } as never] }),
+    );
+    expect(view.needsAttention).toContainEqual(
+      expect.objectContaining({ key: "listing_closures", count: 1 }),
+    );
+    expect(view.queuesClear).toBe(false);
   });
 
   it("counts urgent as the safety+money slice and lists what is waiting", () => {

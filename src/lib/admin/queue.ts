@@ -88,6 +88,19 @@ export interface AccountChangeRequest {
   createdAt: string;
 }
 
+/** A host asking staff to turn a hidden listing into a durable archive. */
+export interface ListingClosureQueueItem {
+  id: string;
+  spaceId: string;
+  spaceName: string;
+  hostId: string | null;
+  hostEmail: string | null;
+  reason: string;
+  detail: string | null;
+  requestedAt: string;
+  upcomingBookings: number;
+}
+
 /** A host earning money that cannot reach them. */
 export interface UnpayableHost {
   id: string;
@@ -436,6 +449,7 @@ export interface AdminQueue {
   pendingInsurance: PendingInsurance[];
   pendingCredentials: PendingCredential[];
   accountChangeRequests: AccountChangeRequest[];
+  listingClosureRequests: ListingClosureQueueItem[];
   unpayableHosts: UnpayableHost[];
 
   /* --- the business --- */
@@ -508,6 +522,7 @@ export async function loadQueue(admin: SupabaseClient): Promise<AdminQueue> {
         "id, name, category, hourly_rate_cents, address_line, sublease_doc_path, insurance_doc_path, created_at, host_id, sublease_doc_state, insurance_doc_state, doc_review_note, updated_at",
       )
       .eq("status", "pending")
+      .not("creation_completed_at", "is", null)
       .order("created_at"),
 
     admin
@@ -586,6 +601,13 @@ export async function loadQueue(admin: SupabaseClient): Promise<AdminQueue> {
       .limit(15),
   ]);
 
+  const { data: closureRequestRows, error: closureRequestError } = await admin
+    .from("listing_closure_requests")
+    .select("id, space_id, host_id, reason, detail, requested_at")
+    .eq("state", "open")
+    .order("requested_at");
+  if (closureRequestError) throw closureRequestError;
+
   const spaceName = new Map<string, string>(
     (spaces.data ?? []).map((s) => [s.id as string, s.name as string]),
   );
@@ -602,6 +624,9 @@ export async function loadQueue(admin: SupabaseClient): Promise<AdminQueue> {
   const userIds = new Set<string>([
     ...(listings.data ?? []).map((row) => row.host_id as string),
     ...(changes.data ?? []).map((row) => row.user_id as string),
+    ...(closureRequestRows ?? []).flatMap((row) =>
+      row.host_id ? [row.host_id as string] : [],
+    ),
   ]);
 
   const rows = bookings.data ?? [];
@@ -1018,6 +1043,24 @@ export async function loadQueue(admin: SupabaseClient): Promise<AdminQueue> {
       subleaseDocPath: (row.sublease_doc_path as string) ?? null,
       insuranceDocPath: (row.insurance_doc_path as string) ?? null,
       createdAt: row.created_at as string,
+    })),
+
+    listingClosureRequests: (closureRequestRows ?? []).map((row) => ({
+      id: row.id as string,
+      spaceId: row.space_id as string,
+      spaceName: spaceName.get(row.space_id as string) ?? "Unknown listing",
+      hostId: (row.host_id as string | null) ?? null,
+      hostEmail: row.host_id ? emails.get(row.host_id as string) ?? null : null,
+      reason: row.reason as string,
+      detail: (row.detail as string | null) ?? null,
+      requestedAt: row.requested_at as string,
+      upcomingBookings: rows.filter(
+        (booking) =>
+          booking.space_id === row.space_id &&
+          booking.captured_at !== null &&
+          booking.status === "upcoming" &&
+          new Date(booking.starts_at as string) > now,
+      ).length,
     })),
 
     // A professional carries their own certificate, so this reads the profile

@@ -4,9 +4,10 @@ import { useState } from "react";
 import { ArrowLeft, Eye, EyeOff, Plus } from "lucide-react";
 
 import { Ambient, Headline } from "@/components/brand";
+import { ListingVisibilitySheet } from "@/components/listing-visibility-sheet";
 import { PullToRefresh } from "@/components/pull-to-refresh";
 import type { HostBooking, HostSpace } from "@/lib/domain";
-import { errorMessage } from "@/lib/error-message";
+import type { ListingClosureReason } from "@/lib/listing-closure";
 import { formatCents } from "@/lib/money";
 
 /**
@@ -30,6 +31,7 @@ export function HostSpaces({
   onOpenSpace,
   onAddSpace,
   onSetListed,
+  onRequestClosure,
 }: {
   spaces: HostSpace[];
   bookings: HostBooking[];
@@ -40,6 +42,11 @@ export function HostSpaces({
   onAddSpace: () => void;
   /** Rejects when the change does not save, so the row can say so. */
   onSetListed: (spaceId: string, listed: boolean) => Promise<unknown>;
+  onRequestClosure: (
+    spaceId: string,
+    reason: ListingClosureReason,
+    detail: string,
+  ) => Promise<unknown>;
 }) {
   const now = new Date();
 
@@ -80,6 +87,8 @@ export function HostSpaces({
               }
               onOpen={() => onOpenSpace(space.id)}
               onSetListed={(listed) => onSetListed(space.id, listed)}
+              onRequestClosure={(reason, detail) => onRequestClosure(space.id, reason, detail)}
+              onReplaceSpace={onAddSpace}
             />
           ))}
         </div>
@@ -102,27 +111,21 @@ function SpaceRow({
   upcoming,
   onOpen,
   onSetListed,
+  onRequestClosure,
+  onReplaceSpace,
 }: {
   space: HostSpace;
   upcoming: number;
   onOpen: () => void;
   onSetListed: (listed: boolean) => Promise<unknown>;
+  onRequestClosure: (reason: ListingClosureReason, detail: string) => Promise<unknown>;
+  onReplaceSpace: () => void;
 }) {
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [sheetOpen, setSheetOpen] = useState(false);
 
   const hidden = space.status === "delisted";
+  const archived = Boolean(space.archivedAt);
   const pending = space.status === "pending";
-
-  const toggle = () => {
-    setError(null);
-    setBusy(true);
-    void onSetListed(hidden)
-      .catch((cause) =>
-        setError(errorMessage(cause, hidden ? "Could not show it again." : "Could not hide it.")),
-      )
-      .finally(() => setBusy(false));
-  };
 
   return (
     <div className="rounded-2xl p-4" style={{ border: "1px solid #F0ECE0" }}>
@@ -135,7 +138,7 @@ function SpaceRow({
 
           <div className="flex flex-wrap items-center gap-2 mt-2">
             <Badge
-              label={hidden ? "Hidden" : pending ? "In review" : "Live"}
+              label={archived ? "Closed" : hidden ? "Hidden" : pending ? "In review" : "Live"}
               tone={hidden ? "muted" : pending ? "warn" : "good"}
             />
             <span className="font-body font-normal text-[13px] text-ink-faint">
@@ -154,27 +157,45 @@ function SpaceRow({
 
         <button
           type="button"
-          onClick={toggle}
-          disabled={busy || pending}
-          aria-label={hidden ? `Show ${space.name} again` : `Hide ${space.name}`}
-          className="shrink-0 w-10 h-10 rounded-full flex items-center justify-center press disabled:opacity-40"
+          onClick={() => setSheetOpen(true)}
+          aria-label={archived ? `View closed listing ${space.name}` : hidden ? `Manage hidden listing ${space.name}` : `Manage listing ${space.name}`}
+          className="shrink-0 w-10 h-10 rounded-full flex items-center justify-center press"
           style={{ border: "1px solid #E7EEF6" }}
         >
           {hidden ? <Eye size={16} color="#2578C2" /> : <EyeOff size={16} color="#7A8AA0" />}
         </button>
       </div>
 
-      {hidden && (
+      {archived ? (
+        <p className="font-body font-normal text-[13px] leading-relaxed mt-2.5 text-ink-soft">
+          Permanently closed. Booking and payment history is preserved.
+        </p>
+      ) : space.closureRequest ? (
+        <p className="font-body font-normal text-[13px] leading-relaxed mt-2.5 text-ink-soft">
+          Permanent closure is waiting for Minimum Stress review.
+        </p>
+      ) : hidden ? (
         <p className="font-body font-normal text-[13px] leading-relaxed mt-2.5 text-ink-soft">
           Nobody can find or book this.
         </p>
-      )}
+      ) : null}
 
-      {error && (
-        <p className="font-body font-normal text-[13px] mt-2 text-danger" role="alert">
-          {error}
-        </p>
-      )}
+      <ListingVisibilitySheet
+        open={sheetOpen}
+        spaceName={space.name}
+        hidden={hidden}
+        archived={archived}
+        upcoming={upcoming}
+        closureRequest={space.closureRequest}
+        onClose={() => setSheetOpen(false)}
+        onHide={() => onSetListed(false)}
+        onShowAgain={() => onSetListed(true)}
+        onReplace={async () => {
+          await onSetListed(false);
+          onReplaceSpace();
+        }}
+        onRequestClosure={onRequestClosure}
+      />
     </div>
   );
 }

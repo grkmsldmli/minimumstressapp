@@ -272,6 +272,13 @@ export interface Repository {
    * tidy up a listing lands the harm on somebody who did nothing.
    */
   setSpaceListed(spaceId: string, listed: boolean): Promise<HostSpace>;
+
+  /** Hide immediately and ask staff to archive the listing permanently. */
+  requestSpaceClosure(
+    spaceId: string,
+    reason: import("./listing-closure").ListingClosureReason,
+    detail?: string,
+  ): Promise<HostSpace>;
   updateSpaceAvailability(spaceId: string, blocks: HostSpace["availability"]): Promise<HostSpace>;
   listHostBookings(): Promise<HostBooking[]>;
 

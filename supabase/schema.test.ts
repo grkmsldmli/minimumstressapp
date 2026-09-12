@@ -454,17 +454,22 @@ describe("private columns stay out of the public views", () => {
     }
   });
 
-  it("exposes the address only through a security definer function", async () => {
-    const [fn] = await rows<{ prosecdef: boolean; proconfig: string[] | null }>(
+  it("exposes access details through an invoker facade backed by a pinned private definer", async () => {
+    const [facade] = await rows<{ prosecdef: boolean; proconfig: string[] | null }>(
       `select p.prosecdef, p.proconfig
        from pg_proc p join pg_namespace n on n.oid = p.pronamespace
        where n.nspname = 'public' and p.proname = 'space_access_details'`,
     );
+    const [backing] = await rows<{ prosecdef: boolean; proconfig: string[] | null }>(
+      `select p.prosecdef, p.proconfig
+       from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'private' and p.proname = '_ms_space_access_details_definer'`,
+    );
 
-    expect(fn.prosecdef).toBe(true);
-    // A definer function without a pinned search_path is a privilege
-    // escalation waiting to happen.
-    expect(fn.proconfig ?? []).toContain("search_path=public");
+    expect(facade.prosecdef).toBe(false);
+    expect(facade.proconfig ?? []).toContain("search_path=pg_catalog");
+    expect(backing.prosecdef).toBe(true);
+    expect(backing.proconfig ?? []).toContain("search_path=public");
   });
 });
 

@@ -5,6 +5,7 @@ import { BRAND } from "@/lib/company";
 import { siteUrl } from "@/lib/site-url";
 
 import "./globals.css";
+import "./discover-shortcuts.css";
 
 /**
  * Self-hosted by next/font. The prototype pulled these through an `@import`

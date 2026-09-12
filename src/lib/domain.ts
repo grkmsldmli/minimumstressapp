@@ -10,6 +10,7 @@ import type { AccessDetails } from "./access-details";
 import type { ApprovalState } from "./booking-approval";
 import type { Parking } from "./parking";
 import type { AvailabilityBlock } from "./availability";
+import type { ListingClosureRequest } from "./listing-closure";
 import type { AccessTypeKey, CategoryKey, RestroomOption, RoomSetupKey } from "./taxonomy";
 
 export type SpaceStatus = "pending" | "active" | "delisted";
@@ -449,6 +450,10 @@ export interface DocumentReview {
 
 export interface HostSpace extends PublicSpace {
   status: SpaceStatus;
+  /** Permanent archive state, distinct from a reversible delist. */
+  archivedAt?: Date | null;
+  /** An operator-reviewed permanent-close request. Separate from visibility. */
+  closureRequest?: ListingClosureRequest | null;
   addressLine: string;
   /** Alongside the address, and just as private. */
   lat: number | null;

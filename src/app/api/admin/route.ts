@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 
 import { recordAdminAction } from "@/lib/admin/audit";
 import { staffOrRefusal } from "@/lib/admin/guard";
+import { applyAdminListingAction } from "@/lib/admin/listing-actions";
 import { loadReportingQueue } from "@/lib/admin/reporting-truth";
 import { handled, jsonError } from "@/lib/api/session";
 import { dateOnly, integer, jsonObject, oneOf, optionalString, uuid } from "@/lib/api/validate";
@@ -15,10 +16,6 @@ import { supabaseAdmin } from "@/lib/supabase/server";
 const AUDIT_TARGET: Record<string, string> = {
   approve_listing: "listing",
   reject_listing: "listing",
-  delist_listing: "listing",
-  relist_listing: "listing",
-  archive_listing: "listing",
-  delete_listing: "listing",
   resolve_escalation: "escalation",
   approve_account_change: "account_change_request",
   decide_refund: "refund_request",
@@ -58,10 +55,6 @@ export async function POST(request: NextRequest): Promise<Response> {
       "approve_account_change",
       "decide_refund",
       "decide_claim",
-      "delist_listing",
-      "relist_listing",
-      "archive_listing",
-      "delete_listing",
       "verify_insurance",
       "reject_insurance",
       "verify_credential",
@@ -95,41 +88,33 @@ export async function POST(request: NextRequest): Promise<Response> {
 
     switch (action.value) {
       case "approve_listing": {
-        const reviewedAt = new Date().toISOString();
-        const { error } = await admin
-          .from("spaces")
-          .update({
-            status: "active",
-            sublease_doc_state: "verified",
-            sublease_doc_reviewed_at: reviewedAt,
-            doc_review_note: null,
-          })
-          .eq("id", id.value)
-          .eq("status", "pending");
-
-        if (error) {
-          return jsonError(
-            error.message.includes("sublease")
-              ? "That listing has no sublease document — it cannot go live."
-              : error.message,
-            400,
-          );
+        try {
+          await applyAdminListingAction(admin, {
+            spaceId: id.value,
+            action: "approve",
+            adminUserId: staff.staffId,
+            adminEmail: staff.staffEmail,
+          });
+          return Response.json({ ok: true });
+        } catch (cause) {
+          return jsonError(cause instanceof Error ? cause.message : "Approval failed.", 409);
         }
-        return done();
       }
 
       case "reject_listing": {
-        const { error } = await admin
-          .from("spaces")
-          .update({
-            status: "delisted",
-            sublease_doc_state: "rejected",
-            sublease_doc_reviewed_at: new Date().toISOString(),
-            doc_review_note: note.value || null,
-          })
-          .eq("id", id.value);
-        if (error) throw error;
-        return done();
+        if (note.value.trim().length < 3) return jsonError("Add a reason for the host.", 400);
+        try {
+          await applyAdminListingAction(admin, {
+            spaceId: id.value,
+            action: "reject",
+            adminUserId: staff.staffId,
+            adminEmail: staff.staffEmail,
+            reason: note.value,
+          });
+          return Response.json({ ok: true });
+        } catch (cause) {
+          return jsonError(cause instanceof Error ? cause.message : "Rejection failed.", 409);
+        }
       }
 
       case "resolve_escalation": {
@@ -218,50 +203,6 @@ export async function POST(request: NextRequest): Promise<Response> {
           if (failure instanceof ClaimError) return jsonError(failure.message, failure.status);
           throw failure;
         }
-      }
-
-      case "delist_listing": {
-        const { error } = await admin.from("spaces").update({ status: "delisted" }).eq("id", id.value);
-        if (error) throw error;
-        return done();
-      }
-
-      case "relist_listing": {
-        const { error } = await admin
-          .from("spaces")
-          .update({ status: "active", archived_at: null })
-          .eq("id", id.value);
-        if (error) {
-          return jsonError(
-            /sublease|verified/i.test(error.message)
-              ? "This listing was never verified, so it cannot be forced live. Approve it from the review queue instead."
-              : error.message,
-            400,
-          );
-        }
-        return done();
-      }
-
-      case "archive_listing": {
-        const { error } = await admin
-          .from("spaces")
-          .update({ status: "delisted", archived_at: new Date().toISOString() })
-          .eq("id", id.value);
-        if (error) throw error;
-        return done();
-      }
-
-      case "delete_listing": {
-        const { error } = await admin.from("spaces").delete().eq("id", id.value);
-        if (error) {
-          return jsonError(
-            /foreign key|violates|constraint/i.test(error.message)
-              ? "This listing has bookings, so it cannot be deleted. Delist it instead."
-              : error.message,
-            400,
-          );
-        }
-        return done();
       }
 
       case "verify_insurance": {

@@ -69,6 +69,7 @@ import { type CategoryKey, type RoomSetupKey, roomTypeFor } from "./taxonomy";
 import { SESSION_MINUTES } from "./session";
 import { FALLBACK_ZONE, addDays, civilIn } from "./timezone";
 import { rejectionReason } from "./uploads";
+import type { ListingClosureReason } from "./listing-closure";
 
 const ME = "me";
 const ACCESS_CODE_LEAD_MS = 30 * 60 * 1000;
@@ -931,6 +932,25 @@ export class MockRepository implements Repository {
     if (!space) throw new Error("No such space");
 
     space.status = listed ? "pending" : "delisted";
+    return { ...space };
+  }
+
+  async requestSpaceClosure(
+    spaceId: string,
+    reason: ListingClosureReason,
+    detail = "",
+  ): Promise<HostSpace> {
+    const space = this.mySpaces.find((item) => item.id === spaceId);
+    if (!space) throw new Error("No such space");
+
+    space.status = "delisted";
+    space.closureRequest = {
+      id: id("closure"),
+      reason,
+      detail: detail.trim() || null,
+      state: "open",
+      requestedAt: new Date(),
+    };
     return { ...space };
   }
 

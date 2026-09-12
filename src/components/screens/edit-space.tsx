@@ -7,12 +7,14 @@ import { AccessEditor } from "@/components/access-editor";
 import { AddressAutocomplete } from "@/components/address-autocomplete";
 import { DocumentStatus } from "@/components/document-status";
 import { LocationMap } from "@/components/location-map";
+import { ListingVisibilitySheet } from "@/components/listing-visibility-sheet";
 import { PrimaryButton } from "@/components/primitives";
 import { SpaceMediaManager } from "@/components/space-media-manager";
 import { errorMessage } from "@/lib/error-message";
 import type { HostSpace, SpaceEdit } from "@/lib/domain";
 import { type LatLng, toBrowsePosition } from "@/lib/geo";
 import { MIN_DESCRIPTION_CHARS, describesTheRoom } from "@/lib/listing-quality";
+import type { ListingClosureReason } from "@/lib/listing-closure";
 import { PARKING_LIMIT_OPTIONS, PARKING_OPTIONS, limitOutlastsSession } from "@/lib/parking";
 import { formatCents, quote } from "@/lib/money";
 import { spaceTypesFor } from "@/lib/space-types";
@@ -44,6 +46,8 @@ export function EditSpace({
   onAddMedia,
   onRemoveMedia,
   onSetListed,
+  onRequestClosure,
+  onReplaceSpace,
   onEditHours,
   onBack,
 }: {
@@ -54,6 +58,8 @@ export function EditSpace({
   onAddMedia: (files: { file: File; kind: "image" | "video" }[]) => Promise<unknown>;
   onRemoveMedia: (mediaId: string) => Promise<unknown>;
   onSetListed: (listed: boolean) => Promise<unknown>;
+  onRequestClosure: (reason: ListingClosureReason, detail: string) => Promise<unknown>;
+  onReplaceSpace: () => void;
   onEditHours: () => void;
   onBack: () => void;
 }) {
@@ -111,6 +117,7 @@ export function EditSpace({
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [visibilityOpen, setVisibilityOpen] = useState(false);
 
   const rateCents = Math.round(Number(rate) * 100);
   const rateIsNumber = rate.trim() !== "" && Number.isFinite(rateCents) && rateCents > 0;
@@ -145,15 +152,6 @@ export function EditSpace({
     parkingLimit !== space.parking.limitMinutes ||
     suitableFor.join() !== space.suitableFor.join() ||
     roomSetup !== space.roomSetup;
-
-  const toggleListed = async () => {
-    setError(null);
-    try {
-      await onSetListed(space.status === "delisted");
-    } catch (cause) {
-      setError(errorMessage(cause, "That did not change."));
-    }
-  };
 
   const save = async () => {
     if (!rateIsNumber) {
@@ -565,21 +563,36 @@ export function EditSpace({
             value={
               space.status === "active"
                 ? "Live — available for booking"
+                : space.archivedAt
+                  ? "Permanently closed — history preserved"
                 : space.status === "pending"
                   ? "Waiting on review"
                   : "Hidden — nobody can book it"
             }
-            action={space.status === "delisted" ? "Show it again" : "Hide it"}
-            onAction={() => void toggleListed()}
+            action={
+              space.archivedAt
+                ? "View status"
+                : space.closureRequest
+                ? "View request"
+                : space.status === "delisted"
+                  ? "Show it again"
+                  : "Manage"
+            }
+            onAction={() => setVisibilityOpen(true)}
           />
         </div>
 
-        {space.status !== "delisted" && (
+        {space.closureRequest ? (
+          <Note>
+            Permanent closure is waiting for Minimum Stress review. The listing is hidden and
+            existing sessions stay on the calendar.
+          </Note>
+        ) : space.status !== "delisted" ? (
           <Note>
             Hiding a listing takes it out of search and stops new bookings. Nothing is deleted, and
-            you can show it again whenever you like.
+            you can submit it for review again later.
           </Note>
-        )}
+        ) : null}
 
         {/*
           Delisting is not deletion, and it never touches a booking that
@@ -613,6 +626,23 @@ export function EditSpace({
             {saving ? "Saving…" : changed ? "Save changes" : "Nothing changed"}
           </PrimaryButton>
         </div>
+
+        <ListingVisibilitySheet
+          open={visibilityOpen}
+          spaceName={space.name}
+          hidden={space.status === "delisted"}
+          archived={Boolean(space.archivedAt)}
+          upcoming={bookedSessions}
+          closureRequest={space.closureRequest}
+          onClose={() => setVisibilityOpen(false)}
+          onHide={() => onSetListed(false)}
+          onShowAgain={() => onSetListed(true)}
+          onReplace={async () => {
+            await onSetListed(false);
+            onReplaceSpace();
+          }}
+          onRequestClosure={onRequestClosure}
+        />
       </div>
     </div>
   );

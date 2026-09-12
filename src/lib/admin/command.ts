@@ -83,6 +83,7 @@ export function commandView(q: AdminQueue): CommandView {
     { key: "failed", label: "Messages that failed for good", count: failedGivenUp, href: "/admin/trust", tone: "bad" },
     { key: "insurance", label: "Insurance waiting for review", count: q.pendingInsurance.length, href: "/admin/trust", tone: "warn" },
     { key: "credentials", label: "Credentials waiting for review", count: q.pendingCredentials.length, href: "/admin/trust", tone: "warn" },
+    { key: "listing_closures", label: "Permanent listing closures", count: q.listingClosureRequests.length, href: "/admin/spaces", tone: "warn" },
     { key: "listings", label: "Listings waiting for review", count: q.pendingListings.length, href: "/admin/trust", tone: "warn" },
     { key: "account_changes", label: "Account change requests", count: q.accountChangeRequests.length, href: "/admin/trust", tone: "warn" },
     { key: "at_risk", label: "Accounts at risk", count: q.atRisk.length, href: "/admin/trust", tone: "warn" },

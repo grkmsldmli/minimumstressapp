@@ -171,12 +171,23 @@ export function personDetail(dir: Directory, id: string): PersonDetail | null {
 export interface SpaceDetail {
   space: DirSpace;
   bookings: DirBooking[];
+  closureRequests: AdminListingClosureRequest[];
+}
+
+export interface AdminListingClosureRequest {
+  id: string;
+  reason: string;
+  detail: string | null;
+  state: "open" | "approved" | "rejected";
+  requestedAt: string;
+  resolvedAt: string | null;
+  resolutionNote: string | null;
 }
 
 export function spaceDetail(dir: Directory, id: string): SpaceDetail | null {
   const space = dir.spaces.find((s) => s.id === id);
   if (!space) return null;
-  return { space, bookings: dir.bookings.filter((b) => b.spaceId === id) };
+  return { space, bookings: dir.bookings.filter((b) => b.spaceId === id), closureRequests: [] };
 }
 
 export function bookingDetail(dir: Directory, id: string): DirBooking | null {

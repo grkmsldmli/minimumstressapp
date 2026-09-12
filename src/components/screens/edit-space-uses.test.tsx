@@ -83,6 +83,8 @@ function open(space: HostSpace, bookedSessions = 0) {
       onAddMedia={vi.fn()}
       onRemoveMedia={vi.fn()}
       onSetListed={vi.fn()}
+      onRequestClosure={vi.fn()}
+      onReplaceSpace={vi.fn()}
       onEditHours={vi.fn()}
       onBack={vi.fn()}
     />,

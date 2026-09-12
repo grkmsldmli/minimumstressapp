@@ -1,5 +1,3 @@
-import "server-only";
-
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { rollUp, type AdminQueue, loadQueue } from "./queue";
@@ -202,7 +200,10 @@ export function enforceReportingTruth(
       // actual host count is unpayableHosts.length and is labelled that way.
       hostsUnpaid: dueUnpaid.length,
     },
-    moneyByDay: queue.moneyByDay.map((day) => ({ day: day.day, ...(byDay.get(day.day) ?? { platformCents: 0, grossCents: 0 }) })),
+    moneyByDay: queue.moneyByDay.map((day) => ({
+      day: day.day,
+      ...(byDay.get(day.day) ?? { platformCents: 0, grossCents: 0 }),
+    })),
     funnel,
     activity,
     liveSessions,

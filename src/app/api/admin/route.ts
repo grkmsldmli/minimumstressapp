@@ -1,9 +1,9 @@
 import type { NextRequest } from "next/server";
 
-import { isStaff } from "@/lib/admin/access";
 import { recordAdminAction } from "@/lib/admin/audit";
+import { staffOrRefusal } from "@/lib/admin/guard";
 import { loadQueue } from "@/lib/admin/queue";
-import { handled, jsonError, requireUser } from "@/lib/api/session";
+import { handled, jsonError } from "@/lib/api/session";
 import { dateOnly, integer, jsonObject, oneOf, optionalString, uuid } from "@/lib/api/validate";
 import { ClaimError, decideClaim } from "@/lib/claim-service";
 import { CLAIM_CAP_CENTS } from "@/lib/claims";
@@ -23,28 +23,6 @@ import { supabaseAdmin } from "@/lib/supabase/server";
  * somebody is on the other side of it; a 404 says nothing at all, which is what
  * an address nobody should have found deserves.
  */
-/**
- * Who is asking, when they are staff; a 404 when they are not.
- *
- * It used to return null on success, which was enough while every action was
- * anonymous. A refund decision is not: it is written down with a name against
- * it, because "somebody approved this" is not an answer anyone can follow up.
- */
-async function staffOrRefusal(): Promise<Response | { staffId: string; staffEmail: string | null }> {
-  const auth = await requireUser();
-  if ("response" in auth) return new Response("Not found", { status: 404 });
-
-  if (!isStaff(auth.user.email)) {
-    // Logged, because somebody reaching this is either a mistake worth knowing
-    // about or an attempt worth knowing about, and both look identical here.
-    console.warn(`Non-staff account reached /api/admin: ${auth.user.id}`);
-    return new Response("Not found", { status: 404 });
-  }
-
-  // The email travels with the id so an audit row reads as a name, not a uuid.
-  return { staffId: auth.user.id, staffEmail: auth.user.email ?? null };
-}
-
 /** Which entity each action touches — for the audit log's target_type. */
 const AUDIT_TARGET: Record<string, string> = {
   approve_listing: "listing",

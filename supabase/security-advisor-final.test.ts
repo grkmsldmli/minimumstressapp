@@ -93,7 +93,7 @@ describe("remaining Supabase Security Advisor warnings", () => {
         await tx.exec(`set local role anon`);
         await tx.exec(`insert into space_requests (looking_in) values ('San Mateo')`);
       }),
-    ).resolves.toBeDefined();
+    ).resolves.toBeUndefined();
 
     await expect(
       db.transaction(async (tx) => {
@@ -106,7 +106,7 @@ describe("remaining Supabase Security Advisor warnings", () => {
     ).rejects.toThrow(/row-level security|policy/i);
   });
 
-  it("keeps public media buckets but removes object-listing SELECT policies", async () => {
+  it("keeps avatar delivery public without exposing storage object listing", async () => {
     const buckets = await db.query<{ id: string; public: boolean }>(`
       select id, public
       from storage.buckets
@@ -115,7 +115,7 @@ describe("remaining Supabase Security Advisor warnings", () => {
     `);
     expect(buckets.rows).toEqual([
       { id: "avatars", public: true },
-      { id: "space-media", public: true },
+      { id: "space-media", public: false },
     ]);
 
     const policies = await db.query<{ policyname: string }>(`

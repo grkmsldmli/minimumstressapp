@@ -79,6 +79,12 @@ describe("Discover header shortcuts", () => {
     expect(screen.getByRole("button", { name: "Show map" })).toBeTruthy();
   });
 
+  it("keeps the greeting generic instead of squeezing a display name into the header", () => {
+    renderDiscover({ greetingName: "A Very Long Display Name" });
+    expect(screen.getByText(/Good (morning|afternoon|evening)/)).toBeTruthy();
+    expect(screen.queryByText(/A Very Long Display Name/)).toBeNull();
+  });
+
   it("keeps each action wired to its screen", () => {
     const props = renderDiscover();
     fireEvent.click(screen.getByRole("button", { name: "Work" }));

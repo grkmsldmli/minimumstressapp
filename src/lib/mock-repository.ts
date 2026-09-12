@@ -878,12 +878,33 @@ export class MockRepository implements Repository {
       }
     }
 
-    Object.assign(space, edit);
+    // The two document files are not columns on the space — pull them out so
+    // Object.assign does not smear File objects across the row, and apply them
+    // the way the 0019 trigger does below.
+    const { subleaseDoc, insuranceDoc, ...fields } = edit;
+    Object.assign(space, fields);
 
     // Filtered the same way the real repository filters it, so a use that has
     // since been renamed is dropped here too rather than only failing against
     // the check constraint in 0043.
     if (edit.suitableFor !== undefined) space.suitableFor = knownSpaceTypes(edit.suitableFor);
+
+    /*
+     * A replaced document returns to pending, mirroring the spaces trigger
+     * (0019): any new path is unreviewed by definition. A new sublease also
+     * sends the whole listing back for review and off search; new insurance
+     * does not, since it never gated the listing going live.
+     */
+    if (insuranceDoc) {
+      space.insuranceDocName = insuranceDoc.name;
+      space.insuranceReview = { state: "pending", reviewedAt: null };
+    }
+    if (subleaseDoc) {
+      space.subleaseDocName = subleaseDoc.name;
+      space.subleaseReview = { state: "pending", reviewedAt: null };
+      space.reviewNote = null;
+      space.status = "pending";
+    }
 
     // What was verified is no longer what is listed.
     if (moved) {

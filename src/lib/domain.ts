@@ -545,6 +545,19 @@ export interface SpaceEdit {
   mapY?: number;
   parking?: Parking;
   floorAreaSqft?: number | null;
+  /**
+   * A replacement verification document, uploaded from the edit screen.
+   *
+   * There was no way to add either of these once a listing existed: space
+   * insurance is optional at creation, so a host who skipped it — or whose
+   * sublease proof was rejected — had a "Not added" / "Not accepted" row and
+   * nowhere to act on it. Re-uploading resets that document's review to pending
+   * (the spaces trigger in 0019 does this on any path change); a new sublease
+   * also sends the listing back to pending and off search until it is checked
+   * again, which is why the screen only offers that one when it was rejected.
+   */
+  subleaseDoc?: File;
+  insuranceDoc?: File;
 }
 
 /** The money frozen onto the booking at creation. Mirrors bookings' columns. */

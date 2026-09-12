@@ -1637,6 +1637,38 @@ export class SupabaseRepository implements Repository {
     if (edit.mapX !== undefined) patch.map_x = edit.mapX;
     if (edit.mapY !== undefined) patch.map_y = edit.mapY;
 
+    /*
+     * Replacement verification documents.
+     *
+     * The bytes go to the private bucket first, so the path in the row always
+     * points at a file that is already there — the same order create and the
+     * profile documents use. The review reset is not done here: writing the
+     * path column trips the 0019 trigger, which returns that document to
+     * pending (and, for the sublease, sends the whole listing back to pending
+     * and off search) exactly as it does for a staff-side change. The host may
+     * write these two columns — 0019 grants them — so this needs no new policy.
+     */
+    if (edit.subleaseDoc) {
+      const reason = rejectionReason(edit.subleaseDoc, "document");
+      if (reason) throw new Error(reason);
+      const path = spaceDocPath(hostId, spaceId, edit.subleaseDoc.type, crypto.randomUUID());
+      const { error } = await this.db.storage
+        .from("verification-docs")
+        .upload(path, edit.subleaseDoc, { contentType: edit.subleaseDoc.type, upsert: false });
+      if (error) throw asError(error);
+      patch.sublease_doc_path = path;
+    }
+    if (edit.insuranceDoc) {
+      const reason = rejectionReason(edit.insuranceDoc, "document");
+      if (reason) throw new Error(reason);
+      const path = spaceDocPath(hostId, spaceId, edit.insuranceDoc.type, crypto.randomUUID());
+      const { error } = await this.db.storage
+        .from("verification-docs")
+        .upload(path, edit.insuranceDoc, { contentType: edit.insuranceDoc.type, upsert: false });
+      if (error) throw asError(error);
+      patch.insurance_doc_path = path;
+    }
+
     if (Object.keys(patch).length === 0) {
       const [unchanged] = (await this.listMySpaces()).filter((s) => s.id === spaceId);
       return unchanged;

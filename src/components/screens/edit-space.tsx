@@ -10,6 +10,7 @@ import { LocationMap } from "@/components/location-map";
 import { ListingVisibilitySheet } from "@/components/listing-visibility-sheet";
 import { PrimaryButton } from "@/components/primitives";
 import { SpaceMediaManager } from "@/components/space-media-manager";
+import { DocumentUpload } from "@/components/uploads";
 import { errorMessage } from "@/lib/error-message";
 import type { HostSpace, SpaceEdit } from "@/lib/domain";
 import { type LatLng, toBrowsePosition } from "@/lib/geo";
@@ -119,6 +120,18 @@ export function EditSpace({
   const [error, setError] = useState<string | null>(null);
   const [visibilityOpen, setVisibilityOpen] = useState(false);
 
+  /*
+   * Documents can be added or replaced after listing, which there was no way to
+   * do before: space insurance is optional at creation, and a rejected sublease
+   * had a reason but nowhere to act on it. The sublease uploader only appears
+   * when it was rejected — replacing it sends the listing back for review, so it
+   * is not offered on a listing that is fine. Insurance can be added or replaced
+   * any time; it never gated the listing going live.
+   */
+  const [subleaseDoc, setSubleaseDoc] = useState<File | null>(null);
+  const [insuranceDoc, setInsuranceDoc] = useState<File | null>(null);
+  const subleaseRejected = space.subleaseReview.state === "rejected";
+
   const rateCents = Math.round(Number(rate) * 100);
   const rateIsNumber = rate.trim() !== "" && Number.isFinite(rateCents) && rateCents > 0;
 
@@ -151,7 +164,9 @@ export function EditSpace({
     parking.join() !== space.parking.options.join() ||
     parkingLimit !== space.parking.limitMinutes ||
     suitableFor.join() !== space.suitableFor.join() ||
-    roomSetup !== space.roomSetup;
+    roomSetup !== space.roomSetup ||
+    subleaseDoc !== null ||
+    insuranceDoc !== null;
 
   const save = async () => {
     if (!rateIsNumber) {
@@ -174,6 +189,10 @@ export function EditSpace({
     try {
       await onSave({
         name: name.trim(),
+        // Only sent when actually picked; the repository resets that document's
+        // review to pending on any new path (0019 trigger).
+        ...(subleaseDoc ? { subleaseDoc } : {}),
+        ...(insuranceDoc ? { insuranceDoc } : {}),
         hourlyRateCents: rateCents,
         capacity: Number(capacity),
         entryInstructions: entry.trim(),
@@ -528,11 +547,46 @@ export function EditSpace({
             review={space.subleaseReview}
             note={space.reviewNote}
           />
+          {/*
+            Offered only when it was rejected. A live or pending listing's proof
+            is not something to replace by accident — doing so sends the whole
+            listing back for review and off search — so the affordance appears
+            exactly where it is needed: next to a rejection with a reason.
+          */}
+          {subleaseRejected && (
+            <>
+              <DocumentUpload
+                label="Replace this document"
+                hint="Lease clause, landlord letter, or deed"
+                file={subleaseDoc}
+                onPick={setSubleaseDoc}
+                onRemove={() => setSubleaseDoc(null)}
+              />
+              {subleaseDoc && (
+                <Note tone="warn">
+                  Saving sends this listing back for review and off search until we have checked the
+                  new document — usually the same day.
+                </Note>
+              )}
+            </>
+          )}
           <DocumentStatus
             label="Space insurance"
             fileName={space.insuranceDocName}
             review={space.insuranceReview}
             optional
+          />
+          {/*
+            Space insurance can be added or replaced whenever. It is optional and
+            never gated the listing going live, so a new certificate is checked
+            without taking the room off search.
+          */}
+          <DocumentUpload
+            label={space.insuranceDocName ? "Replace space insurance" : "Add space insurance"}
+            hint="PDF or photo"
+            file={insuranceDoc}
+            onPick={setInsuranceDoc}
+            onRemove={() => setInsuranceDoc(null)}
           />
         </div>
 

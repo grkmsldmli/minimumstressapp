@@ -18,20 +18,20 @@ export function MoneyScreen() {
   return (
     <div className="flex flex-col gap-4">
       <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}>
-        <Stat label="Our revenue · this month" value={usd(data.month.platformCents)} strong />
-        <Stat label="Booking volume · this month" value={usd(data.month.grossCents)} sub="what practitioners paid — not our revenue" />
-        <Stat label="Paid to hosts · this month" value={usd(data.month.hostCents)} />
-        <Stat label="Our revenue · all time" value={usd(data.allTime.platformCents)} />
+        <Stat label="Our net revenue · this month" value={usd(data.month.platformCents)} strong />
+        <Stat label="Net booking volume · this month" value={usd(data.month.grossCents)} sub="practitioner payments after refunds" />
+        <Stat label="Host earnings · this month" value={usd(data.month.hostCents)} sub="earned — not necessarily paid out yet" />
+        <Stat label="Our net revenue · all time" value={usd(data.allTime.platformCents)} />
       </div>
 
-      <Panel title="Last 14 days" right={<Muted className="text-[11px]">volume vs our revenue</Muted>}>
+      <Panel title="Last 14 days" right={<Muted className="text-[11px]">net volume vs our net revenue</Muted>}>
         <div className="flex items-end gap-1.5" style={{ height: 120 }}>
           {data.byDay.map((d) => {
             const grossH = (d.grossCents / maxGross) * 100;
             const platH = (d.platformCents / maxGross) * 100;
             return (
-              <div key={d.day} className="flex-1 relative h-full" title={`${d.day}: ${usd(d.grossCents)} volume, ${usd(d.platformCents)} ours`}>
-                {/* Gross behind, our revenue in front — both from the baseline, never stacked. */}
+              <div key={d.day} className="flex-1 relative h-full" title={`${d.day}: ${usd(d.grossCents)} net volume, ${usd(d.platformCents)} ours`}>
+                {/* Net volume behind, our net revenue in front — both from the baseline, never stacked. */}
                 <div className="absolute bottom-0 left-0 right-0 rounded-t" style={{ height: `${grossH}%`, minHeight: d.grossCents > 0 ? 2 : 0, backgroundColor: `${SKY}55` }} />
                 <div className="absolute bottom-0 left-0 right-0 rounded-t" style={{ height: `${platH}%`, minHeight: d.platformCents > 0 ? 2 : 0, backgroundColor: GREEN }} />
               </div>
@@ -40,10 +40,10 @@ export function MoneyScreen() {
         </div>
         <div className="flex items-center gap-4 mt-2">
           <span className="flex items-center gap-1.5 font-body text-[11px]" style={{ color: MUTED }}>
-            <span className="inline-block rounded" style={{ width: 10, height: 10, backgroundColor: `${SKY}55` }} /> Booking volume
+            <span className="inline-block rounded" style={{ width: 10, height: 10, backgroundColor: `${SKY}55` }} /> Net booking volume
           </span>
           <span className="flex items-center gap-1.5 font-body text-[11px]" style={{ color: MUTED }}>
-            <span className="inline-block rounded" style={{ width: 10, height: 10, backgroundColor: GREEN }} /> Our revenue
+            <span className="inline-block rounded" style={{ width: 10, height: 10, backgroundColor: GREEN }} /> Our net revenue
           </span>
         </div>
       </Panel>
@@ -51,7 +51,7 @@ export function MoneyScreen() {
       <Panel
         title="Hosts who cannot be paid"
         count={data.unpayableHosts.length}
-        right={<Muted className="text-[11px]">{data.hostsUnpaid} sessions awaiting payout</Muted>}
+        right={<Muted className="text-[11px]">{data.hostsUnpaid} completed/due sessions awaiting payout</Muted>}
       >
         {data.unpayableHosts.length === 0 ? (
           <p className="font-body text-[12.5px]" style={{ color: GREEN }}>Everyone who earned can be paid.</p>
@@ -75,7 +75,7 @@ export function MoneyScreen() {
       </Panel>
 
       <p className="font-body text-[11px]" style={{ color: MUTED }}>
-        Booking volume, host earnings and platform revenue are three distinct figures — the difference between them is our fee, and they are never summed.
+        Net booking volume, host earnings and platform revenue are three distinct figures — refunds are already reflected and the figures are never summed.
       </p>
     </div>
   );

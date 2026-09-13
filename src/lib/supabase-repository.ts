@@ -1637,6 +1637,59 @@ export class SupabaseRepository implements Repository {
     if (edit.mapX !== undefined) patch.map_x = edit.mapX;
     if (edit.mapY !== undefined) patch.map_y = edit.mapY;
 
+    /*
+     * Replacement verification documents.
+     *
+     * The bytes go to the private bucket first, so the path in the row always
+     * points at a file that is already there — the same order create and the
+     * profile documents use. The review reset is not done here: writing the
+     * path column trips the spaces edit trigger (0019, as amended by 0078),
+     * which returns that document to pending (and, for the sublease, sends the
+     * whole listing back to pending and off search). The host may write these
+     * two columns — 0019 grants them — so this needs no new policy.
+     *
+     * Refused on an archived listing. An archived listing is one staff have
+     * permanently closed, and the trigger's forced return-to-pending would
+     * silently reopen it (0081 also refuses this at the database, which covers a
+     * direct write; this is the loud, early copy so nothing is uploaded first).
+     */
+    const uploadedPaths: string[] = [];
+    if (edit.subleaseDoc || edit.insuranceDoc) {
+      const { data: current } = await this.db
+        .from("spaces")
+        .select("archived_at")
+        .eq("id", spaceId)
+        .eq("host_id", hostId)
+        .maybeSingle();
+      if (current?.archived_at) {
+        throw new Error(
+          "This listing is archived. Contact support to restore it before changing its documents.",
+        );
+      }
+    }
+    if (edit.subleaseDoc) {
+      const reason = rejectionReason(edit.subleaseDoc, "document");
+      if (reason) throw new Error(reason);
+      const path = spaceDocPath(hostId, spaceId, edit.subleaseDoc.type, crypto.randomUUID());
+      const { error } = await this.db.storage
+        .from("verification-docs")
+        .upload(path, edit.subleaseDoc, { contentType: edit.subleaseDoc.type, upsert: false });
+      if (error) throw asError(error);
+      uploadedPaths.push(path);
+      patch.sublease_doc_path = path;
+    }
+    if (edit.insuranceDoc) {
+      const reason = rejectionReason(edit.insuranceDoc, "document");
+      if (reason) throw new Error(reason);
+      const path = spaceDocPath(hostId, spaceId, edit.insuranceDoc.type, crypto.randomUUID());
+      const { error } = await this.db.storage
+        .from("verification-docs")
+        .upload(path, edit.insuranceDoc, { contentType: edit.insuranceDoc.type, upsert: false });
+      if (error) throw asError(error);
+      uploadedPaths.push(path);
+      patch.insurance_doc_path = path;
+    }
+
     if (Object.keys(patch).length === 0) {
       const [unchanged] = (await this.listMySpaces()).filter((s) => s.id === spaceId);
       return unchanged;
@@ -1655,10 +1708,18 @@ export class SupabaseRepository implements Repository {
       .eq("id", spaceId)
       .eq("host_id", hostId);
 
-    // The trigger in 0019 raises when a booked space is moved. Its message is
+    // The edit trigger raises when a booked space is moved. Its message is
     // written for the host and says how many sessions are in the way, so it is
-    // passed through rather than replaced with something vaguer.
-    if (error) throw new Error(error.message);
+    // passed through rather than replaced with something vaguer. If the update
+    // fails after a document was already uploaded, remove the just-uploaded
+    // object(s) best-effort so a failed edit does not orphan bytes in the
+    // bucket — the row still points at the old file either way.
+    if (error) {
+      if (uploadedPaths.length > 0) {
+        await this.db.storage.from("verification-docs").remove(uploadedPaths).catch(() => {});
+      }
+      throw new Error(error.message);
+    }
 
     const [updated] = (await this.listMySpaces()).filter((s) => s.id === spaceId);
     return updated;

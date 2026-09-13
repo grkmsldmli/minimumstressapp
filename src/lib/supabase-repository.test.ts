@@ -418,3 +418,109 @@ describe("signOut", () => {
     await expect(repo.signOut()).rejects.toThrow("network down");
   });
 });
+
+/**
+ * The production editSpace document path — previously exercised only through the
+ * mock. Guards the column mapping, the validate-before-upload gate, the archived
+ * refusal, and best-effort cleanup when the row write fails.
+ */
+describe("editSpace document uploads", () => {
+  function editDb(opts: { archivedAt?: string | null; updateError?: string } = {}) {
+    const uploads: { path: string; type: string }[] = [];
+    const removed: string[] = [];
+    let patch: Record<string, unknown> | null = null;
+    const db = {
+      auth: { getUser: async () => ({ data: { user: { id: "host-1" } }, error: null }) },
+      from: () => ({
+        select: () => ({
+          eq: () => ({
+            eq: () => ({
+              maybeSingle: async () => ({
+                data: { archived_at: opts.archivedAt ?? null },
+                error: null,
+              }),
+            }),
+          }),
+        }),
+        update: (p: Record<string, unknown>) => {
+          patch = p;
+          return {
+            eq: () => ({
+              eq: async () => ({ error: opts.updateError ? { message: opts.updateError } : null }),
+            }),
+          };
+        },
+      }),
+      storage: {
+        from: () => ({
+          upload: async (path: string, _blob: Blob, o: { contentType: string }) => {
+            uploads.push({ path, type: o.contentType });
+            return { error: null };
+          },
+          remove: async (paths: string[]) => {
+            removed.push(...paths);
+            return { error: null };
+          },
+        }),
+      },
+    } as unknown as SupabaseClient;
+    return { db, uploads, removed, getPatch: () => patch };
+  }
+
+  const pdf = () => ({ type: "application/pdf", size: 1000 }) as unknown as File;
+
+  it("uploads insurance and sets only the insurance path column", async () => {
+    const { db, uploads, getPatch } = editDb();
+    const repo = new SupabaseRepository(db);
+    vi.spyOn(repo, "listMySpaces").mockResolvedValue([{ id: "sp1" }] as never);
+
+    await repo.editSpace("sp1", { insuranceDoc: pdf() });
+
+    expect(uploads).toHaveLength(1);
+    expect(uploads[0].path.startsWith("space/host-1/sp1/")).toBe(true);
+    const patch = getPatch()!;
+    expect(patch.insurance_doc_path).toBeTruthy();
+    expect(patch.sublease_doc_path).toBeUndefined();
+  });
+
+  it("uploads a replacement sublease and sets the sublease path column", async () => {
+    const { db, uploads, getPatch } = editDb();
+    const repo = new SupabaseRepository(db);
+    vi.spyOn(repo, "listMySpaces").mockResolvedValue([{ id: "sp1" }] as never);
+
+    await repo.editSpace("sp1", { subleaseDoc: pdf() });
+
+    expect(uploads).toHaveLength(1);
+    expect(getPatch()!.sublease_doc_path).toBeTruthy();
+  });
+
+  it("rejects a bad file before any upload", async () => {
+    const { db, uploads } = editDb();
+    const repo = new SupabaseRepository(db);
+    vi.spyOn(repo, "listMySpaces").mockResolvedValue([{ id: "sp1" }] as never);
+
+    await expect(
+      repo.editSpace("sp1", { insuranceDoc: { type: "text/plain", size: 10 } as unknown as File }),
+    ).rejects.toThrow();
+    expect(uploads).toHaveLength(0);
+  });
+
+  it("refuses a document change on an archived listing before uploading", async () => {
+    const { db, uploads } = editDb({ archivedAt: "2026-01-01T00:00:00Z" });
+    const repo = new SupabaseRepository(db);
+    vi.spyOn(repo, "listMySpaces").mockResolvedValue([{ id: "sp1" }] as never);
+
+    await expect(repo.editSpace("sp1", { subleaseDoc: pdf() })).rejects.toThrow(/archived/i);
+    expect(uploads).toHaveLength(0);
+  });
+
+  it("removes an uploaded file if the row update fails", async () => {
+    const { db, uploads, removed } = editDb({ updateError: "boom" });
+    const repo = new SupabaseRepository(db);
+    vi.spyOn(repo, "listMySpaces").mockResolvedValue([{ id: "sp1" }] as never);
+
+    await expect(repo.editSpace("sp1", { insuranceDoc: pdf() })).rejects.toThrow("boom");
+    expect(uploads).toHaveLength(1);
+    expect(removed).toEqual(uploads.map((u) => u.path));
+  });
+});

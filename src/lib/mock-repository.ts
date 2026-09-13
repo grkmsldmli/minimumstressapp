@@ -848,6 +848,26 @@ export class MockRepository implements Repository {
     if (!space) throw new Error("No such space");
 
     /*
+     * Parity with the real repository, before any mutation: a replacement
+     * document is validated (the mock's other upload paths do this too), and it
+     * is refused on an archived listing — the trigger's forced return-to-pending
+     * would otherwise silently reopen a listing staff permanently closed (0081).
+     */
+    if (edit.subleaseDoc || edit.insuranceDoc) {
+      if (space.archivedAt) {
+        throw new Error(
+          "This listing is archived. Contact support to restore it before changing its documents.",
+        );
+      }
+      for (const doc of [edit.subleaseDoc, edit.insuranceDoc]) {
+        if (doc) {
+          const reason = rejectionReason(doc, "document");
+          if (reason) throw new Error(reason);
+        }
+      }
+    }
+
+    /*
      * Coordinates count as a move, the same as the address text does. The
      * trigger in 0019 compares lat and lng too, so a mock that only watched
      * the string would let a nudged pin through here and be refused against
@@ -878,12 +898,33 @@ export class MockRepository implements Repository {
       }
     }
 
-    Object.assign(space, edit);
+    // The two document files are not columns on the space — pull them out so
+    // Object.assign does not smear File objects across the row, and apply them
+    // the way the 0019 trigger does below.
+    const { subleaseDoc, insuranceDoc, ...fields } = edit;
+    Object.assign(space, fields);
 
     // Filtered the same way the real repository filters it, so a use that has
     // since been renamed is dropped here too rather than only failing against
     // the check constraint in 0043.
     if (edit.suitableFor !== undefined) space.suitableFor = knownSpaceTypes(edit.suitableFor);
+
+    /*
+     * A replaced document returns to pending, mirroring the spaces trigger
+     * (0019): any new path is unreviewed by definition. A new sublease also
+     * sends the whole listing back for review and off search; new insurance
+     * does not, since it never gated the listing going live.
+     */
+    if (insuranceDoc) {
+      space.insuranceDocName = insuranceDoc.name;
+      space.insuranceReview = { state: "pending", reviewedAt: null };
+    }
+    if (subleaseDoc) {
+      space.subleaseDocName = subleaseDoc.name;
+      space.subleaseReview = { state: "pending", reviewedAt: null };
+      space.reviewNote = null;
+      space.status = "pending";
+    }
 
     // What was verified is no longer what is listed.
     if (moved) {

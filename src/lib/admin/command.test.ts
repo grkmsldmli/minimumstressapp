@@ -15,6 +15,7 @@ function baseQueue(overrides: Partial<AdminQueue> = {}): AdminQueue {
     escalations: [],
     pendingListings: [],
     pendingInsurance: [],
+    pendingSpaceInsurance: [],
     pendingCredentials: [],
     accountChangeRequests: [],
     listingClosureRequests: [],
@@ -60,6 +61,16 @@ describe("commandView", () => {
     );
     expect(view.needsAttention).toContainEqual(
       expect.objectContaining({ key: "listing_closures", count: 1 }),
+    );
+    expect(view.queuesClear).toBe(false);
+  });
+
+  it("surfaces space insurance waiting for review", () => {
+    const view = commandView(
+      baseQueue({ pendingSpaceInsurance: [{ id: "sp-1" } as never, { id: "sp-2" } as never] }),
+    );
+    expect(view.needsAttention).toContainEqual(
+      expect.objectContaining({ key: "space_insurance", count: 2 }),
     );
     expect(view.queuesClear).toBe(false);
   });

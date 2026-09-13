@@ -22,6 +22,8 @@ const AUDIT_TARGET: Record<string, string> = {
   decide_claim: "studio_claim",
   verify_insurance: "profile",
   reject_insurance: "profile",
+  verify_space_insurance: "space",
+  reject_space_insurance: "space",
   verify_credential: "profile",
   reject_credential: "profile",
 };
@@ -57,6 +59,8 @@ export async function POST(request: NextRequest): Promise<Response> {
       "decide_claim",
       "verify_insurance",
       "reject_insurance",
+      "verify_space_insurance",
+      "reject_space_insurance",
       "verify_credential",
       "reject_credential",
     ] as const);
@@ -282,6 +286,41 @@ export async function POST(request: NextRequest): Promise<Response> {
           });
         }
         return done();
+      }
+
+      /*
+       * Space insurance, verified or rejected on the space itself. Listing
+       * approval only ever touched the sublease, so a space certificate had no
+       * decision path at all; this is it. Written with the service role, whose
+       * update does not trip the host-only edit trigger. The 0018 constraint
+       * pairs a non-pending state with a reviewed-at timestamp, so both are set
+       * together. There is no space-insurance note column, so a rejection is
+       * recorded in the audit log rather than shown back to the host.
+       */
+      case "verify_space_insurance": {
+        const { error } = await admin
+          .from("spaces")
+          .update({
+            insurance_doc_state: "verified",
+            insurance_doc_reviewed_at: new Date().toISOString(),
+          })
+          .eq("id", id.value)
+          .not("insurance_doc_path", "is", null);
+        if (error) throw error;
+        return done({}, { outcome: "verified" });
+      }
+
+      case "reject_space_insurance": {
+        const { error } = await admin
+          .from("spaces")
+          .update({
+            insurance_doc_state: "rejected",
+            insurance_doc_reviewed_at: new Date().toISOString(),
+          })
+          .eq("id", id.value)
+          .not("insurance_doc_path", "is", null);
+        if (error) throw error;
+        return done({}, { outcome: "rejected" });
       }
 
       case "verify_credential": {

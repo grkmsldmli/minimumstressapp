@@ -905,9 +905,12 @@ export async function loadQueue(admin: SupabaseClient): Promise<AdminQueue> {
   const reviewReasons: ReviewReason[] = (spaces.data ?? [])
     .filter(
       (space) =>
-        space.status === "pending" ||
-        space.sublease_doc_state === "rejected" ||
-        space.insurance_doc_state === "rejected",
+        // A listing waiting on LISTING review: pending, or a rejected sublease
+        // (which delists it and needs a fresh document). Space-insurance state is
+        // deliberately not a trigger here — rejecting a certificate never changes
+        // the listing's status, so a live listing must not appear as "waiting",
+        // and space insurance has its own dedicated review queue now.
+        space.status === "pending" || space.sublease_doc_state === "rejected",
     )
     .map((space) => {
       const created = new Date(space.created_at as string).getTime();

@@ -62,6 +62,28 @@ export interface PendingInsurance {
 }
 
 /**
+ * A space's insurance certificate waiting to be read.
+ *
+ * Space insurance is optional and, until now, was never actually reviewed: the
+ * listing-approval path verifies only the sublease, so an uploaded certificate
+ * sat at "Waiting on us" with nowhere for staff to act on it — a dead end made
+ * plain once hosts could add it from the edit screen. This is the queue that
+ * lets it be verified or rejected. Any space that carries a certificate whose
+ * review is still pending, whatever the listing's own status, oldest-first.
+ * Archived (permanently-closed) listings are left out — there is nothing to
+ * approve on a listing staff already shut.
+ */
+export interface PendingSpaceInsurance {
+  id: string;
+  name: string;
+  hostEmail: string | null;
+  docPath: string | null;
+  /** The listing's own status, for context (a live listing vs one under review). */
+  listingStatus: string;
+  since: string;
+}
+
+/**
  * A practitioner's professional credential awaiting review. Staff open the
  * document and verify or reject it by hand. The number and jurisdiction are what
  * the practitioner typed; the profession is shown so staff know what a valid
@@ -447,6 +469,8 @@ export interface AdminQueue {
   pendingListings: PendingListing[];
   /** Professionals whose liability certificate is waiting to be verified. */
   pendingInsurance: PendingInsurance[];
+  /** Spaces whose insurance certificate is waiting to be verified. */
+  pendingSpaceInsurance: PendingSpaceInsurance[];
   pendingCredentials: PendingCredential[];
   accountChangeRequests: AccountChangeRequest[];
   listingClosureRequests: ListingClosureQueueItem[];
@@ -548,7 +572,7 @@ export async function loadQueue(admin: SupabaseClient): Promise<AdminQueue> {
     admin
       .from("spaces")
       .select(
-        "id, host_id, name, status, created_at, archived_at, category, hourly_rate_cents, address_line, description, entrance_access, restroom_access, sublease_doc_state, insurance_doc_state, doc_review_note, review_reason, previous_address_line, updated_at",
+        "id, host_id, name, status, created_at, archived_at, category, hourly_rate_cents, address_line, description, entrance_access, restroom_access, sublease_doc_state, insurance_doc_state, insurance_doc_path, doc_review_note, review_reason, previous_address_line, updated_at",
       ),
 
     /**
@@ -1083,6 +1107,28 @@ export async function loadQueue(admin: SupabaseClient): Promise<AdminQueue> {
         insurer: (p.insurance_insurer as string) ?? null,
         policyNumber: (p.insurance_policy_number as string) ?? null,
         since: (p.created_at as string) ?? "",
+      }))
+      .sort((a, b) => a.since.localeCompare(b.since)),
+
+    // A space's certificate, read off the space rather than the profile. Listing
+    // approval verifies only the sublease, so an uploaded space certificate is
+    // never otherwise reviewed; this surfaces every pending one for a decision,
+    // whatever the listing's status, minus the archived listings staff have
+    // already closed. Oldest-first, like the professional queue.
+    pendingSpaceInsurance: (spaces.data ?? [])
+      .filter(
+        (s) =>
+          s.insurance_doc_path != null &&
+          ((s.insurance_doc_state as string) ?? "pending") === "pending" &&
+          s.archived_at == null,
+      )
+      .map((s) => ({
+        id: s.id as string,
+        name: s.name as string,
+        hostEmail: emails.get(s.host_id as string) ?? null,
+        docPath: (s.insurance_doc_path as string) ?? null,
+        listingStatus: (s.status as string) ?? "",
+        since: (s.updated_at as string) ?? (s.created_at as string) ?? "",
       }))
       .sort((a, b) => a.since.localeCompare(b.since)),
 

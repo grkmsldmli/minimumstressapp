@@ -194,6 +194,7 @@ export function AdminDashboard() {
     queue.listingClosureRequests.length === 0 &&
     queue.pendingListings.length === 0 &&
     queue.pendingInsurance.length === 0 &&
+    queue.pendingSpaceInsurance.length === 0 &&
     queue.pendingCredentials.length === 0 &&
     queue.accountChangeRequests.length === 0;
 
@@ -554,6 +555,61 @@ export function AdminDashboard() {
                   onVerify={(fields) => void act("verify_insurance", item.id, undefined, fields)}
                   onReject={(note) => void act("reject_insurance", item.id, note)}
                 />
+              ))}
+            </Panel>
+
+            <Panel
+              title="Space insurance waiting for review"
+              count={queue.pendingSpaceInsurance.length}
+            >
+              {queue.pendingSpaceInsurance.map((item) => (
+                <Card key={item.id}>
+                  <p className="font-body font-medium text-[12.5px]" style={{ color: "#fff" }}>
+                    {item.name}
+                  </p>
+                  <p
+                    className="font-body font-light text-[11.5px] mt-1"
+                    style={{ color: MUTED }}
+                  >
+                    {item.hostEmail ?? "unknown host"} · listing {item.listingStatus}
+                  </p>
+
+                  <div className="flex flex-wrap gap-2 mt-3">
+                    {item.docPath ? (
+                      <Doc
+                        label="Insurance certificate"
+                        onClick={() => void openDocument(item.docPath!)}
+                      />
+                    ) : (
+                      <span className="font-body text-[11px]" style={{ color: CORAL }}>
+                        No document
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex gap-2 mt-3">
+                    <Action
+                      primary
+                      disabled={busy === item.id || !item.docPath}
+                      onClick={() => void act("verify_space_insurance", item.id)}
+                    >
+                      <Check size={12} /> Verify
+                    </Action>
+                    <Action
+                      disabled={busy === item.id}
+                      onClick={() => {
+                        const reason = window.prompt(
+                          "Reject this space insurance certificate? Add an optional note for the record.",
+                        );
+                        // Cancel leaves it; OK (even empty) rejects.
+                        if (reason === null) return;
+                        void act("reject_space_insurance", item.id, reason.trim() || undefined);
+                      }}
+                    >
+                      <X size={12} /> Reject
+                    </Action>
+                  </div>
+                </Card>
               ))}
             </Panel>
 

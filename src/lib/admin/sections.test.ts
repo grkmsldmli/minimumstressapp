@@ -10,6 +10,7 @@ function baseQueue(overrides: Partial<AdminQueue> = {}): AdminQueue {
     escalations: [],
     pendingListings: [],
     pendingInsurance: [],
+    pendingSpaceInsurance: [],
     pendingCredentials: [],
     accountChangeRequests: [],
     listingClosureRequests: [],

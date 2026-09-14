@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import type Stripe from "stripe";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { recordEvent } from "@/lib/analytics/record";
 import { notifyBookingCreated, notifyRequestMade, recipientFor } from "@/lib/notify/for-booking";
@@ -124,6 +125,150 @@ async function verify(
   return null;
 }
 
+interface CapturedBooking {
+  id: string;
+  approval_state: string;
+  practitioner_id: string | null;
+}
+
+interface PaymentBooking extends CapturedBooking {
+  captured_at: string | null;
+  space_id: string;
+  status: string;
+  stripe_payment_intent_id: string | null;
+  total_cents: number;
+}
+
+function exactlyOneUpdatedBooking(
+  rows: CapturedBooking[] | null,
+  paymentIntentId: string,
+): CapturedBooking | null {
+  if ((rows?.length ?? 0) > 1) {
+    throw new Error(`PaymentIntent ${paymentIntentId} matched multiple bookings`);
+  }
+  return rows?.[0] ?? null;
+}
+
+async function bookingForPaymentIntent(
+  admin: SupabaseClient,
+  paymentIntentId: string,
+): Promise<PaymentBooking | null> {
+  const { data, error } = await admin
+    .from("bookings")
+    .select(
+      "id, approval_state, practitioner_id, space_id, status, total_cents, captured_at, stripe_payment_intent_id",
+    )
+    .eq("stripe_payment_intent_id", paymentIntentId)
+    .maybeSingle();
+  if (error) throw error;
+  return (data as PaymentBooking | null) ?? null;
+}
+
+/**
+ * Claim the one booking funded by this PaymentIntent.
+ *
+ * A zero-row guarded update has two very different meanings: a harmless Stripe
+ * replay after `captured_at` was already written, or a PaymentIntent whose id
+ * never made it back to Postgres after Stripe created it. The latter can happen
+ * on a transient database/network failure. Stripe metadata is the recovery
+ * journal, but it is never trusted on booking id alone: the booking's owner,
+ * space and amount must all agree before the missing association is repaired.
+ */
+async function claimCapturedBooking(
+  admin: SupabaseClient,
+  intent: Stripe.PaymentIntent,
+): Promise<CapturedBooking | null> {
+  const capturedAt = new Date().toISOString();
+  const { data: directlyPaid, error: directError } = await admin
+    .from("bookings")
+    .update({ captured_at: capturedAt })
+    .eq("stripe_payment_intent_id", intent.id)
+    // Guarded so a replayed event cannot overwrite a time already recorded.
+    .is("captured_at", null)
+    .select("id, approval_state, practitioner_id");
+  if (directError) throw directError;
+
+  const direct = exactlyOneUpdatedBooking(
+    directlyPaid as CapturedBooking[] | null,
+    intent.id,
+  );
+  if (direct) return direct;
+
+  // Normal replay: the association exists and this exact intent has already
+  // captured it. Return no claimed row so analytics and notifications stay once.
+  const alreadyLinked = await bookingForPaymentIntent(admin, intent.id);
+  if (alreadyLinked?.captured_at) return null;
+  if (alreadyLinked) {
+    throw new Error(
+      `PaymentIntent ${intent.id} is linked to booking ${alreadyLinked.id} but capture was not claimed`,
+    );
+  }
+
+  const bookingId = intent.metadata?.booking_id?.trim();
+  const spaceId = intent.metadata?.space_id?.trim();
+  const practitionerId = intent.metadata?.practitioner_id?.trim();
+  if (!bookingId || !spaceId || !practitionerId) {
+    throw new Error(`PaymentIntent ${intent.id} has no complete booking recovery metadata`);
+  }
+
+  const { data: candidateData, error: candidateError } = await admin
+    .from("bookings")
+    .select(
+      "id, approval_state, practitioner_id, space_id, status, total_cents, captured_at, stripe_payment_intent_id",
+    )
+    .eq("id", bookingId)
+    .maybeSingle();
+  if (candidateError) throw candidateError;
+
+  const candidate = (candidateData as PaymentBooking | null) ?? null;
+  if (!candidate) {
+    throw new Error(`PaymentIntent ${intent.id} names missing booking ${bookingId}`);
+  }
+  if (
+    candidate.stripe_payment_intent_id !== null ||
+    candidate.captured_at !== null ||
+    candidate.space_id !== spaceId ||
+    candidate.status !== "upcoming" ||
+    candidate.practitioner_id !== practitionerId ||
+    candidate.total_cents !== intent.amount ||
+    intent.currency.toLowerCase() !== "usd"
+  ) {
+    throw new Error(`PaymentIntent ${intent.id} does not match booking ${bookingId}`);
+  }
+
+  const { data: recoveredData, error: recoveryError } = await admin
+    .from("bookings")
+    .update({
+      stripe_payment_intent_id: intent.id,
+      captured_at: capturedAt,
+    })
+    .eq("id", bookingId)
+    // These guards make concurrent webhook deliveries safe: exactly one can
+    // repair-and-capture; the loser is recognized as a replay below.
+    .is("stripe_payment_intent_id", null)
+    .is("captured_at", null)
+    .eq("space_id", spaceId)
+    .eq("practitioner_id", practitionerId)
+    .eq("status", "upcoming")
+    .eq("total_cents", intent.amount)
+    .select("id, approval_state, practitioner_id");
+
+  if (!recoveryError) {
+    const recovered = exactlyOneUpdatedBooking(
+      recoveredData as CapturedBooking[] | null,
+      intent.id,
+    );
+    if (recovered) return recovered;
+  }
+
+  // An update error or zero rows may simply be the other delivery winning the
+  // race. Only acknowledge it when the exact intent is now durably captured.
+  const raced = await bookingForPaymentIntent(admin, intent.id);
+  if (raced?.captured_at) return null;
+  if (recoveryError) throw recoveryError;
+  throw new Error(`PaymentIntent ${intent.id} could not be associated with booking ${bookingId}`);
+}
+
 async function handle(event: Stripe.Event): Promise<void> {
   const admin = supabaseAdmin();
 
@@ -139,10 +284,11 @@ async function handle(event: Stripe.Event): Promise<void> {
       const account = event.data.object;
       const payable = Boolean(account.charges_enabled && account.payouts_enabled);
 
-      await admin
+      const { error } = await admin
         .from("profiles")
         .update({ stripe_connect_charges_enabled: payable })
         .eq("stripe_connect_account_id", account.id);
+      if (error) throw error;
       return;
     }
 
@@ -157,13 +303,7 @@ async function handle(event: Stripe.Event): Promise<void> {
      */
     case "payment_intent.succeeded": {
       const intent = event.data.object;
-      const { data: paid } = await admin
-        .from("bookings")
-        .update({ captured_at: new Date().toISOString() })
-        .eq("stripe_payment_intent_id", intent.id)
-        // Guarded so a replayed event cannot overwrite a time already recorded.
-        .is("captured_at", null)
-        .select("id, approval_state, practitioner_id");
+      const booking = await claimCapturedBooking(admin, intent);
 
       /*
        * And this is where the host finds out.
@@ -177,7 +317,6 @@ async function handle(event: Stripe.Event): Promise<void> {
        * selects no rows, and notify() claims a unique dedupe key per kind and
        * subject in any case.
        */
-      const booking = paid?.[0];
       /*
        * The one place money is truly captured, and so the honest source for the
        * revenue events the Growth dashboard reads. The update guard means this
@@ -235,12 +374,13 @@ async function handle(event: Stripe.Event): Promise<void> {
      */
     case "payment_intent.amount_capturable_updated": {
       const intent = event.data.object;
-      const { data: held } = await admin
+      const { data: held, error } = await admin
         .from("bookings")
         .update({ authorized_at: new Date().toISOString() })
         .eq("stripe_payment_intent_id", intent.id)
         .eq("approval_state", "pending")
         .select("id");
+      if (error) throw error;
 
       const requestId = held?.[0]?.id;
       if (requestId) await notifyRequestMade(admin, requestId);
@@ -253,7 +393,7 @@ async function handle(event: Stripe.Event): Promise<void> {
      */
     case "payment_intent.canceled": {
       const intent = event.data.object;
-      await admin
+      const { error } = await admin
         .from("bookings")
         .update({
           status: "cancelled_by_practitioner",
@@ -274,6 +414,7 @@ async function handle(event: Stripe.Event): Promise<void> {
          * dispute.
          */
         .eq("status", "upcoming");
+      if (error) throw error;
       return;
     }
 
@@ -292,11 +433,12 @@ async function handle(event: Stripe.Event): Promise<void> {
       const userId = session.metadata?.user_id;
       if (!userId) return;
 
-      await admin
+      const { error } = await admin
         .from("profiles")
         .update({ identity_verified_at: new Date().toISOString() })
         .eq("id", userId)
         .is("identity_verified_at", null);
+      if (error) throw error;
       return;
     }
 
@@ -322,11 +464,12 @@ async function handle(event: Stripe.Event): Promise<void> {
       // and the only record is a line nobody is reading.
       if (!event.account) return;
 
-      const { data: host } = await admin
+      const { data: host, error } = await admin
         .from("profiles")
         .select("id")
         .eq("stripe_connect_account_id", event.account)
         .maybeSingle();
+      if (error) throw error;
       if (!host) return;
 
       const recipient = await recipientFor(admin, host.id);

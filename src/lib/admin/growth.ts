@@ -5,9 +5,9 @@ import type { FunnelStep } from "./queue";
  *
  * The funnel is real — it is computed from live rows. The analytics stream is
  * new: server-side product events land in analytics_events, and this counts
- * exactly what is there over a window. Web/app visitor analytics has no
- * collector yet and is reported as such rather than as a zero, so nobody reads
- * an empty chart as "no visitors" when it means "not measured".
+ * exactly what is there over a window. The first-party website/app collector is
+ * now mounted in both product surfaces, so a successful empty read is a real
+ * zero rather than "not measured".
  */
 
 export interface RawEvent {
@@ -32,7 +32,7 @@ export interface GrowthView {
     distinctUsers: number;
     byName: EventCount[];
   };
-  /** Whether any product events have been recorded yet at all. */
+  /** The collector and backing read are live, even when this window is empty. */
   instrumented: boolean;
   /** Surfaces that have no collector — never shown as a zero. */
   notInstrumented: string[];
@@ -62,7 +62,10 @@ export function growthView(funnel: FunnelStep[], events: RawEvent[], windowDays 
         .map(([name, count]) => ({ name, count }))
         .sort((a, b) => b.count - a.count),
     },
-    instrumented: events.length > 0,
-    notInstrumented: ["Website visitors", "App opens", "Screen views"],
+    instrumented: true,
+    // App launches are measured, but navigation inside the authenticated app
+    // is intentionally not collected yet. Keep that gap visible instead of
+    // implying the product-events list includes screen-view coverage.
+    notInstrumented: ["App screen views"],
   };
 }

@@ -112,21 +112,58 @@ describe("commandView", () => {
     expect(kpi("platform_all").value).toBe(50000);
   });
 
-  it("marks uninstrumented KPIs as null, never a fake zero", () => {
+  it("marks unavailable analytics KPIs as null, never a fake zero", () => {
     const v = commandView(baseQueue());
     expect(v.kpis.find((k) => k.key === "visitors_today")!.value).toBeNull();
     expect(v.kpis.find((k) => k.key === "app_opens_today")!.value).toBeNull();
   });
+
+  it("shows real first-party analytics values, including an honest zero", () => {
+    const v = commandView(baseQueue(), {
+      analytics: {
+        available: true,
+        websiteSessionsToday: 4,
+        appOpensToday: 0,
+        truncated: false,
+      },
+    });
+    expect(v.kpis.find((k) => k.key === "visitors_today")!.value).toBe(4);
+    expect(v.kpis.find((k) => k.key === "app_opens_today")!.value).toBe(0);
+  });
 });
 
 describe("deriveHealth", () => {
-  it("reports only measurable health, unknown elsewhere", () => {
+  it("never invents a green state when live evidence was not supplied", () => {
     const h = deriveHealth(baseQueue());
     const state = (k: string) => h.find((x) => x.key === k)!.state;
+    expect(state("database")).toBe("unknown");
+    expect(state("auth")).toBe("unknown");
+    expect(state("notifications")).toBe("unknown");
+    expect(state("stripe_payments")).toBe("unknown");
+    expect(state("web_analytics")).toBe("unknown");
+  });
+
+  it("does not call configured email healthy without delivery evidence", () => {
+    const checkedAt = "2026-09-14T12:00:00.000Z";
+    const h = deriveHealth(baseQueue(), {
+      notificationsConfigured: true,
+      coreHealth: [
+        { key: "database", label: "Database", state: "healthy", checkedAt },
+        { key: "auth", label: "Auth", state: "healthy", checkedAt },
+        { key: "stripe_payments", label: "Stripe payments", state: "healthy", checkedAt },
+        { key: "stripe_payouts", label: "Stripe Connect payouts", state: "healthy", checkedAt },
+        { key: "web_analytics", label: "Web analytics", state: "unknown", note: "Waiting for first event", checkedAt },
+      ],
+    });
+    const state = (key: string) => h.find((item) => item.key === key)!.state;
     expect(state("database")).toBe("healthy");
     expect(state("auth")).toBe("healthy");
-    expect(state("notifications")).toBe("healthy");
-    expect(state("stripe_payments")).toBe("unknown");
+    expect(state("reporting_data")).toBe("healthy");
+    expect(state("notifications")).toBe("unknown");
+    expect(h.find((item) => item.key === "notifications")!.note).toBe(
+      "Configured · delivery unverified",
+    );
+    expect(state("stripe_payments")).toBe("healthy");
     expect(state("web_analytics")).toBe("unknown");
   });
 
@@ -134,6 +171,55 @@ describe("deriveHealth", () => {
     const h = deriveHealth(baseQueue({ failedNotifications: [{ givenUp: true } as never] }));
     const notif = h.find((x) => x.key === "notifications")!;
     expect(notif.state).toBe("attention");
-    expect(notif.note).toContain("gave up");
+    expect(notif.note).toContain("permanently failed");
+  });
+
+  it("raises payout health to attention for blocked hosts even when the provider probe is unknown", () => {
+    const h = deriveHealth(
+      baseQueue({ unpayableHosts: [{ id: "host-1" } as never] }),
+      {
+        coreHealth: [
+          {
+            key: "stripe_payouts",
+            label: "Stripe Connect payouts",
+            state: "unknown",
+            note: "Configured · delivery unverified",
+          },
+        ],
+      },
+    );
+    expect(h.find((item) => item.key === "stripe_payouts")).toMatchObject({
+      state: "attention",
+      note: "1 host cannot receive payouts",
+    });
+  });
+
+  it("keeps health visible while marking reporting KPIs and queues unavailable", () => {
+    const view = commandView(null, {
+      coreHealth: [
+        { key: "database", label: "Database", state: "healthy" },
+        { key: "auth", label: "Auth", state: "healthy" },
+      ],
+      analytics: {
+        available: true,
+        websiteSessionsToday: 3,
+        appOpensToday: 2,
+        truncated: false,
+      },
+    });
+
+    expect(view.reportingAvailable).toBe(false);
+    expect(view.urgentCount).toBeNull();
+    expect(view.queuesClear).toBeNull();
+    expect(view.queuesTotal).toBeNull();
+    expect(view.needsAttention).toEqual([]);
+    expect(view.health.find((item) => item.key === "database")!.state).toBe(
+      "healthy",
+    );
+    expect(view.health.find((item) => item.key === "reporting_data")!.state).toBe(
+      "critical",
+    );
+    expect(view.kpis.find((item) => item.key === "platform_month")!.value).toBeNull();
+    expect(view.kpis.find((item) => item.key === "visitors_today")!.value).toBe(3);
   });
 });

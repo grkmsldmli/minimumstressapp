@@ -1,6 +1,11 @@
 import { adminGet } from "@/lib/admin/guard";
-import { loadReportingQueue } from "@/lib/admin/reporting-truth";
+import { loadReportingQueueResult } from "@/lib/admin/reporting-truth";
 import { systemView } from "@/lib/admin/sections";
+import {
+  probeCoreSystemHealth,
+  productionSystemHealthDependencies,
+} from "@/lib/admin/system-health";
+import { emailConfigured } from "@/lib/notify/transports";
 
 /**
  * System: measurable health only (unknown where there is no probe), the audited
@@ -8,5 +13,15 @@ import { systemView } from "@/lib/admin/sections";
  * outbox failures. Nothing invented — a metric we cannot measure is not green.
  */
 export function GET(): Promise<Response> {
-  return adminGet(async (admin) => systemView(await loadReportingQueue(admin)));
+  return adminGet(async (admin) => {
+    const [reporting, coreHealth] = await Promise.all([
+      loadReportingQueueResult(admin),
+      probeCoreSystemHealth(productionSystemHealthDependencies(admin)),
+    ]);
+    return systemView(reporting.queue, {
+      coreHealth,
+      reportingCheckedAt: reporting.checkedAt,
+      notificationsConfigured: emailConfigured(),
+    });
+  });
 }

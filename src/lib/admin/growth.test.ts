@@ -9,12 +9,12 @@ const funnel: FunnelStep[] = [
 ];
 
 describe("growthView", () => {
-  it("reports the funnel and an uninstrumented event stream honestly", () => {
+  it("reports a successful empty collector read as a real zero", () => {
     const v = growthView(funnel, []);
     expect(v.funnel).toEqual(funnel);
-    expect(v.instrumented).toBe(false);
+    expect(v.instrumented).toBe(true);
     expect(v.events.total).toBe(0);
-    expect(v.notInstrumented.length).toBeGreaterThan(0);
+    expect(v.notInstrumented).toEqual(["App screen views"]);
   });
 
   it("counts events, distinct sessions and users when instrumented", () => {

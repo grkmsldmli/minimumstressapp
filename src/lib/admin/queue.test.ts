@@ -4,12 +4,31 @@ import { standingFor, toCancellationEvents } from "../reliability";
 import {
   LIVE_LEAD_MS,
   LIVE_TRAIL_MS,
+  assertSupabaseResultsSucceeded,
   type PaidBooking,
   buildActivity,
   rollUp,
   sessionState,
   standingByPerson,
 } from "./queue";
+
+describe("assertSupabaseResultsSucceeded", () => {
+  it("accepts successful Supabase results", () => {
+    expect(() =>
+      assertSupabaseResultsSucceeded([{ error: null }]),
+    ).not.toThrow();
+  });
+
+  it("throws the original error instead of turning a failed read into an empty result", () => {
+    const failure = new Error("database unavailable");
+    expect(() =>
+      assertSupabaseResultsSucceeded([
+        { error: null },
+        { error: failure },
+      ]),
+    ).toThrow(failure);
+  });
+});
 
 /**
  * The operator screen turns numbers back into names, and this is the part that

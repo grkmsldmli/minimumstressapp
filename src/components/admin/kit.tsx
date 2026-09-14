@@ -28,6 +28,8 @@ import {
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
+import type { HealthItem } from "@/lib/admin/command";
+
 export const BG = "#0E1D2E";
 export const PANEL = "#152A40";
 export const PANEL2 = "#0E1D2E";
@@ -212,6 +214,86 @@ export function StatusDot({ state }: { state: "healthy" | "attention" | "critica
   );
 }
 
+const STATUS_LABEL: Record<HealthItem["state"], string> = {
+  healthy: "Healthy",
+  attention: "Degraded",
+  critical: "Down",
+  unknown: "No signal",
+};
+
+function timeLabel(value: string): string | null {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" });
+}
+
+function eventTimeLabel(value: string): string | null {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  const ageMs = Date.now() - date.getTime();
+  const age = ageMs < 60_000
+    ? "just now"
+    : ageMs < 60 * 60_000
+      ? `${Math.floor(ageMs / 60_000)}m ago`
+      : ageMs < 48 * 60 * 60_000
+        ? `${Math.floor(ageMs / (60 * 60_000))}h ago`
+        : `${Math.floor(ageMs / (24 * 60 * 60_000))}d ago`;
+  return `${date.toLocaleString([], {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  })} · ${age}`;
+}
+
+/** Live provider evidence with an explicit state and observation time. */
+export function HealthGrid({ items }: { items: HealthItem[] }) {
+  return (
+    <div className="grid gap-2" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))" }}>
+      {items.map((item) => {
+        const checked = item.checkedAt ? timeLabel(item.checkedAt) : null;
+        const lastSeen = item.lastSeenAt ? eventTimeLabel(item.lastSeenAt) : null;
+        const stateLabel = item.state === "unknown" && item.note?.startsWith("Not configured")
+          ? "Not configured"
+          : item.state === "unknown" && item.note?.startsWith("Configured")
+            ? "Unverified"
+            : item.state === "unknown" && item.note === "Waiting for first event"
+            ? "Awaiting data"
+            : item.state === "unknown" && item.note?.startsWith("No event")
+              ? "Stale"
+            : STATUS_LABEL[item.state];
+
+        return (
+          <div
+            key={item.key}
+            className="rounded-lg px-3 py-2.5"
+            style={{ backgroundColor: PANEL2, border: `1px solid ${LINE}` }}
+          >
+            <div className="flex items-center gap-2">
+              <StatusDot state={item.state} />
+              <span className="font-body text-[13px]" style={{ color: TEXT }}>{item.label}</span>
+              <span className="font-body font-medium text-[11px] ml-auto" style={{ color: STATUS_COLOR[item.state] }}>
+                {stateLabel}
+              </span>
+            </div>
+            {item.note && (
+              <p className="font-body text-[10.5px] mt-1 truncate" style={{ color: MUTED }} title={item.note}>
+                {item.note}
+              </p>
+            )}
+            {(checked || lastSeen) && (
+              <p className="font-body text-[10px] mt-0.5" style={{ color: MUTED }}>
+                {lastSeen ? `Last event ${lastSeen}` : `Checked ${checked}`}
+                {item.latencyMs !== undefined && item.latencyMs > 0 ? ` · ${item.latencyMs} ms` : ""}
+              </p>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export function Pill({ children, color = SKY }: { children: React.ReactNode; color?: string }) {
   return (
     <span
@@ -237,8 +319,8 @@ export function EntityLink({ href, children }: { href: string; children: React.R
 }
 
 /** "Not instrumented yet" vs a real zero — the two must never look the same. */
-export function NotInstrumented() {
-  return <span className="font-body italic text-[12px]" style={{ color: MUTED }}>Not instrumented yet</span>;
+export function NotInstrumented({ label = "Not instrumented yet" }: { label?: string }) {
+  return <span className="font-body italic text-[12px]" style={{ color: MUTED }}>{label}</span>;
 }
 
 export function usd(cents: number): string {

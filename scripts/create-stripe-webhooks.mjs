@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 
 /**
@@ -29,6 +30,10 @@ if (!base) {
 }
 
 const url = new URL("/api/stripe/webhook", base).toString();
+
+const SCOPE_METADATA_KEY = "minimumstress_scope";
+const SECRET_FINGERPRINT_METADATA_KEY =
+  "minimumstress_signing_secret_sha256";
 
 const key = readFileSync(".env.local", "utf8")
   .split(/\r?\n/)
@@ -62,11 +67,14 @@ async function stripe(path, { method = "GET", params } = {}) {
 const ENDPOINTS = [
   {
     label: "payments (platform account)",
+    scope: "platform",
     connect: false,
     events: [
       "payment_intent.succeeded",
+      "payment_intent.amount_capturable_updated",
       "payment_intent.canceled",
       "charge.refunded",
+      "identity.verification_session.verified",
       // Subscriptions live on the platform account, not the connected one.
       // These are the only thing that ever marks somebody Pro.
       "customer.subscription.created",
@@ -76,36 +84,59 @@ const ENDPOINTS = [
   },
   {
     label: "hosts (connected accounts)",
+    scope: "connect",
     connect: true,
     events: ["account.updated", "payout.failed"],
   },
 ];
 
-/**
- * Which of the two an existing endpoint is.
- *
- * Not `connect` — that field is accepted when creating an endpoint but is
- * absent from the one the API returns, so reading it back gives `undefined`
- * for both kinds. Matching on it made every endpoint look like the platform
- * one: the script "found" the Connect endpoint, relabelled it, and then
- * created a second Connect endpoint because it had not found that one. Three
- * endpoints, two of them wrong, and a duplicate quietly failing signature
- * checks against a secret nobody had stored.
- *
- * `application` is the field that actually distinguishes them: a Connect
- * endpoint carries the connect application id, a platform endpoint has null.
- */
-const isConnect = (endpoint) => endpoint.application !== null;
+const descriptionFor = (endpoint) => `Minimum Stress — ${endpoint.label}`;
+const markedScopeOf = (endpoint) => {
+  const marker = endpoint.metadata?.[SCOPE_METADATA_KEY];
+  if (marker === "platform" || marker === "connect") return marker;
+  return null;
+};
+const fingerprint = (secret) =>
+  createHash("sha256").update(secret).digest("hex");
 
 const existing = await stripe("webhook_endpoints?limit=100");
 const secrets = [];
 
-for (const endpoint of ENDPOINTS) {
-  const already = existing.data.find(
-    (e) => e.url === url && isConnect(e) === endpoint.connect,
+// An endpoint at our URL without one of our exact scope markers is not safe to
+// guess about. Creating around it can cause duplicate deliveries, while
+// relabelling it could claim somebody else's endpoint. Stop and make the
+// ambiguity visible instead.
+const ambiguous = existing.data.filter(
+  (endpoint) => endpoint.url === url && markedScopeOf(endpoint) === null,
+);
+if (ambiguous.length > 0) {
+  console.error(
+    `Refusing to guess the scope of ${ambiguous.length} endpoint(s) at ${url}: ${ambiguous
+      .map((endpoint) => endpoint.id)
+      .join(", ")}`,
   );
+  console.error(
+    `Verify each endpoint's platform/Connect scope in Stripe, then add metadata ${SCOPE_METADATA_KEY}=platform or ${SCOPE_METADATA_KEY}=connect. Alternatively remove the legacy endpoints and let this script recreate them.`,
+  );
+  process.exit(1);
+}
 
-  const description = `Minimum Stress — ${endpoint.label}`;
+for (const endpoint of ENDPOINTS) {
+  const matches = existing.data.filter(
+    (candidate) =>
+      candidate.url === url && markedScopeOf(candidate) === endpoint.scope,
+  );
+  if (matches.length > 1) {
+    console.error(
+      `Refusing to modify duplicate ${endpoint.scope} endpoints at ${url}: ${matches
+        .map((candidate) => candidate.id)
+        .join(", ")}`,
+    );
+    process.exit(1);
+  }
+  const already = matches[0];
+
+  const description = descriptionFor(endpoint);
 
   if (already) {
     console.log(`· ${endpoint.label}: already registered as ${already.id}.`);
@@ -114,12 +145,24 @@ for (const endpoint of ENDPOINTS) {
     // The label is the only thing worth correcting on an existing endpoint:
     // the URL and events define what it does, but the description is what a
     // person reads in the dashboard, so a stale one is quietly misleading.
-    if (already.description !== description) {
+    if (
+      already.description !== description ||
+      already.metadata?.[SCOPE_METADATA_KEY] !== endpoint.scope
+    ) {
       await stripe(`webhook_endpoints/${already.id}`, {
         method: "POST",
-        params: [["description", description]],
+        params: [
+          ["description", description],
+          [`metadata[${SCOPE_METADATA_KEY}]`, endpoint.scope],
+        ],
       });
-      console.log(`  Description updated to "${description}".`);
+      console.log(`  Description and scope marker synced.`);
+    }
+
+    if (!already.metadata?.[SECRET_FINGERPRINT_METADATA_KEY]) {
+      console.log(
+        "  Signing-secret ownership is unverified; rotate/recreate this endpoint to establish proof.",
+      );
     }
 
     /**
@@ -149,6 +192,7 @@ for (const endpoint of ENDPOINTS) {
     params: [
       ["url", url],
       ["description", description],
+      [`metadata[${SCOPE_METADATA_KEY}]`, endpoint.scope],
       ...(endpoint.connect ? [["connect", "true"]] : []),
       ...endpoint.events.map((event) => ["enabled_events[]", event]),
     ],
@@ -157,6 +201,28 @@ for (const endpoint of ENDPOINTS) {
   console.log(`✓ ${endpoint.label}: ${created.id}`);
   console.log(`  ${created.enabled_events.join(", ")}`);
   secrets.push(created.secret);
+
+  // Stripe reveals this secret once. Persist only its one-way fingerprint on
+  // the endpoint so runtime health can prove the configured secret belongs to
+  // a real, enabled endpoint without ever reading or exposing the secret.
+  try {
+    await stripe(`webhook_endpoints/${created.id}`, {
+      method: "POST",
+      params: [
+        [
+          `metadata[${SECRET_FINGERPRINT_METADATA_KEY}]`,
+          fingerprint(created.secret),
+        ],
+      ],
+    });
+    console.log("  Signing-secret proof recorded.");
+  } catch (error) {
+    // Do not lose the once-visible secret because a metadata write failed.
+    // It remains in `secrets` and is printed below for recovery.
+    console.error(
+      `  Could not record signing-secret proof for ${created.id}: ${error instanceof Error ? error.message : "unknown error"}`,
+    );
+  }
 }
 
 if (secrets.length === ENDPOINTS.length) {

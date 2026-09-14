@@ -3,6 +3,7 @@ import { DM_Sans, DM_Serif_Display } from "next/font/google";
 
 import { BRAND } from "@/lib/company";
 import { JadeChat } from "@/components/site/jade-chat";
+import { WebsiteAnalytics } from "@/components/site/WebsiteAnalytics";
 
 /**
  * The content site's own typeface, which is not the app's.
@@ -55,6 +56,7 @@ export default function SiteLayout({ children }: { children: React.ReactNode }) 
       className={`${dmSerif.variable} ${dmSans.variable} min-h-screen`}
       style={{ backgroundColor: "#ffffff", color: "#1a2744", fontFamily: "var(--font-dm-sans)" }}
     >
+      <WebsiteAnalytics />
       {children}
 
       {/*

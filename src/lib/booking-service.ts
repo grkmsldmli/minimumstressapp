@@ -460,6 +460,8 @@ export async function createBooking(
     .single();
   if (insertError) throw insertError;
 
+  let paymentIntentId: string | null = null;
+
   try {
     /*
      * The host's account is not passed and not needed. They are paid after the
@@ -485,10 +487,16 @@ export async function createBooking(
     );
 
     if (customerId !== facts.stripeCustomerId) {
-      await admin
+      const { data: savedCustomer, error: customerError } = await admin
         .from("profiles")
         .update({ stripe_customer_id: customerId })
-        .eq("id", practitionerId);
+        .eq("id", practitionerId)
+        .select("id")
+        .single();
+      if (customerError) throw customerError;
+      if (savedCustomer?.id !== practitionerId) {
+        throw new Error(`Stripe customer was not saved for practitioner ${practitionerId}`);
+      }
     }
 
     const charged = await stripeGateway.charge(
@@ -501,14 +509,24 @@ export async function createBooking(
       customerId,
       needsApproval,
     );
+    paymentIntentId = charged.paymentIntentId;
 
-    await admin
+    const { data: associated, error: associationError } = await admin
       .from("bookings")
       .update({
         stripe_payment_intent_id: charged.paymentIntentId,
         authorized_at: new Date().toISOString(),
       })
-      .eq("id", booking.id);
+      .eq("id", booking.id)
+      // Returning the row is intentional. Supabase updates otherwise report
+      // success even when a filter matched nothing; `.single()` also refuses a
+      // data-corruption case where more than one row somehow matched.
+      .select("id")
+      .single();
+    if (associationError) throw associationError;
+    if (associated?.id !== booking.id) {
+      throw new Error(`PaymentIntent was not associated with booking ${booking.id}`);
+    }
 
     /*
      * Nobody is told yet, and the comment that used to sit here was wrong.
@@ -527,9 +545,38 @@ export async function createBooking(
 
     return { bookingId: booking.id, money, clientSecret: charged.clientSecret };
   } catch (error) {
-    // Undo the row rather than leave an unpayable booking occupying an hour
-    // that other practitioners could have had.
-    await admin.from("bookings").delete().eq("id", booking.id);
+    /*
+     * Stripe and Postgres cannot commit together, so compensate in the safe
+     * order. Once an intent exists, close it before freeing the hour. If Stripe
+     * cannot confirm the close, retain the booking row: the intent carries the
+     * booking id in signed metadata, which gives the webhook/reconciliation
+     * path a record to repair. Deleting first would leave a live intent that
+     * could still be paid with no booking behind it.
+     */
+    if (paymentIntentId) {
+      try {
+        await stripeGateway.release(paymentIntentId);
+      } catch (releaseError) {
+        console.error(
+          `Could not cancel PaymentIntent ${paymentIntentId}; preserving booking ${booking.id} for reconciliation`,
+          releaseError,
+        );
+        throw new AggregateError(
+          [error, releaseError],
+          `Booking ${booking.id} failed and its PaymentIntent could not be cancelled`,
+        );
+      }
+    }
+
+    // No live intent remains, so the failed checkout must not keep the hour.
+    const { error: cleanupError } = await admin.from("bookings").delete().eq("id", booking.id);
+    if (cleanupError) {
+      console.error(`Could not remove failed booking ${booking.id}:`, cleanupError);
+      throw new AggregateError(
+        [error, cleanupError],
+        `Booking ${booking.id} failed and its database row could not be removed`,
+      );
+    }
     throw error;
   }
 }

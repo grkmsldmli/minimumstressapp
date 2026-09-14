@@ -1,6 +1,12 @@
 import { commandView } from "@/lib/admin/command";
+import { loadAnalyticsSnapshot } from "@/lib/admin/analytics-snapshot";
 import { adminGet } from "@/lib/admin/guard";
-import { loadReportingQueue } from "@/lib/admin/reporting-truth";
+import { loadReportingQueueResult } from "@/lib/admin/reporting-truth";
+import {
+  probeCoreSystemHealth,
+  productionSystemHealthDependencies,
+} from "@/lib/admin/system-health";
+import { emailConfigured } from "@/lib/notify/transports";
 
 /**
  * The Command home summary — KPIs, health, the ranked needs-attention list, and
@@ -9,5 +15,18 @@ import { loadReportingQueue } from "@/lib/admin/reporting-truth";
  * it cheaply.
  */
 export function GET(): Promise<Response> {
-  return adminGet(async (admin) => commandView(await loadReportingQueue(admin)));
+  return adminGet(async (admin) => {
+    const [reporting, coreHealth, analytics] = await Promise.all([
+      loadReportingQueueResult(admin),
+      probeCoreSystemHealth(productionSystemHealthDependencies(admin)),
+      loadAnalyticsSnapshot(admin),
+    ]);
+
+    return commandView(reporting.queue, {
+      coreHealth,
+      reportingCheckedAt: reporting.checkedAt,
+      notificationsConfigured: emailConfigured(),
+      analytics,
+    });
+  });
 }

@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import {
+  AMBER,
   BG,
   CORAL,
   GREEN,
@@ -25,7 +26,8 @@ interface AttentionItem {
 }
 
 interface CommandSummary {
-  urgentCount: number;
+  urgentCount: number | null;
+  reportingAvailable?: boolean;
   /** Everything waiting on staff, each tagged with the section it lives in. */
   needsAttention?: AttentionItem[];
 }
@@ -116,6 +118,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   // A compact poll: what is on fire, what is waiting per section, and are we live.
   const { data, error, updatedAt } = useAdminData<CommandSummary>("/api/admin/command", 20_000);
   const urgent = data?.urgentCount ?? 0;
+  const reportingUnavailable = data?.reportingAvailable === false;
 
   // Per-section badge counts, and the whole backlog for the header, derived from
   // the one needs-attention list the command route already returns. So a new
@@ -171,9 +174,17 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
             <p className="font-body text-[11px] flex items-center gap-1.5" style={{ color: MUTED }}>
               <span
                 className="inline-block rounded-full"
-                style={{ width: 7, height: 7, backgroundColor: error ? CORAL : GREEN }}
+                style={{ width: 7, height: 7, backgroundColor: error ? CORAL : reportingUnavailable ? AMBER : GREEN }}
               />
-              {error ? "Offline" : updatedAt ? `Live · updated ${updatedAt.toLocaleTimeString()}` : "Connecting…"}
+              {error
+                ? "Offline"
+                : reportingUnavailable
+                  ? updatedAt
+                    ? `Partial · updated ${updatedAt.toLocaleTimeString()}`
+                    : "Connecting…"
+                  : updatedAt
+                    ? `Live · updated ${updatedAt.toLocaleTimeString()}`
+                    : "Connecting…"}
             </p>
           </div>
 
@@ -191,7 +202,15 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
             </div>
           </form>
 
-          {waiting > 0 && (
+          {reportingUnavailable ? (
+            <Link
+              href="/admin/system"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg font-body font-semibold text-[12.5px] press shrink-0"
+              style={{ backgroundColor: "rgba(232,163,61,0.12)", color: AMBER, border: "1px solid rgba(232,163,61,0.4)" }}
+            >
+              Reporting unavailable
+            </Link>
+          ) : waiting > 0 && (
             <Link
               href="/admin/trust"
               className="flex items-center gap-1.5 px-3 py-2 rounded-lg font-body font-semibold text-[12.5px] press shrink-0"

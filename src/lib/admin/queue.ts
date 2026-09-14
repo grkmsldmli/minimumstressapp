@@ -5,6 +5,22 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { type Party, type Standing, standingFor, toCancellationEvents } from "@/lib/reliability";
 
 /**
+ * Admin reporting must fail closed when any backing read fails.
+ *
+ * Supabase returns query failures alongside `data`; treating a failed result as
+ * `data ?? []` makes an outage look like an empty, healthy marketplace. Keep
+ * this small boundary shared by every reporting query so callers cannot forget
+ * to inspect the error before consuming the data.
+ */
+export function assertSupabaseResultsSucceeded(
+  results: readonly { error: unknown | null }[],
+): void {
+  for (const result of results) {
+    if (result.error) throw result.error;
+  }
+}
+
+/**
  * Everything a person needs to run this, in one read.
  *
  * Two halves, and the order between them is deliberate. First what is waiting
@@ -625,12 +641,27 @@ export async function loadQueue(admin: SupabaseClient): Promise<AdminQueue> {
       .limit(15),
   ]);
 
-  const { data: closureRequestRows, error: closureRequestError } = await admin
+  assertSupabaseResultsSucceeded([
+    listings,
+    escalations,
+    changes,
+    profiles,
+    spaces,
+    bookings,
+    notifications,
+    media,
+    availability,
+    reviews,
+    messages,
+  ]);
+
+  const closureRequests = await admin
     .from("listing_closure_requests")
     .select("id, space_id, host_id, reason, detail, requested_at")
     .eq("state", "open")
     .order("requested_at");
-  if (closureRequestError) throw closureRequestError;
+  assertSupabaseResultsSucceeded([closureRequests]);
+  const closureRequestRows = closureRequests.data;
 
   const spaceName = new Map<string, string>(
     (spaces.data ?? []).map((s) => [s.id as string, s.name as string]),
@@ -801,6 +832,7 @@ export async function loadQueue(admin: SupabaseClient): Promise<AdminQueue> {
       .in("state", ["awaiting_practitioner", "awaiting_staff"])
       .order("created_at"),
   ]);
+  assertSupabaseResultsSucceeded([refundRows, claimRows]);
 
   /** How often this person has asked lately. A count, not a verdict. */
   const requestsPerPractitioner = new Map<string, number>();
@@ -1392,7 +1424,9 @@ async function emailsFor(
   const found = new Map<string, string | null>();
   if (ids.length === 0) return found;
 
-  const { data } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+  const users = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+  assertSupabaseResultsSucceeded([users]);
+  const { data } = users;
   for (const user of data?.users ?? []) {
     if (ids.includes(user.id)) found.set(user.id, user.email ?? null);
   }

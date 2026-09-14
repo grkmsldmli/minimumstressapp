@@ -196,6 +196,14 @@ describe("the words a version stands for", () => {
      * obligations on every user, so everybody is asked again.
      */
     5: "8da98c80",
+    /*
+     * Version 6 discloses the new first-party usage events: an app open, a
+     * public-site page name, and an ephemeral per-session identifier. It
+     * also states the fields deliberately excluded. This is a new category of
+     * collection with a 90-day retention limit, so existing accounts are
+     * shown the current privacy terms again before continuing.
+     */
+    6: "c94fd4f6",
   };
 
   it("still says what the current version said", () => {

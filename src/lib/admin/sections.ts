@@ -1,4 +1,8 @@
-import { deriveHealth, type HealthItem } from "./command";
+import {
+  deriveHealth,
+  type CommandRuntimeEvidence,
+  type HealthItem,
+} from "./command";
 import type { AdminQueue, DayMoney, FailedNotification, UnpayableHost } from "./queue";
 
 /**
@@ -33,17 +37,22 @@ export function moneyView(q: AdminQueue): MoneyView {
 }
 
 export interface SystemView {
+  reportingAvailable: boolean;
   health: HealthItem[];
-  counts: AdminQueue["counts"];
-  termsOutstanding: number;
-  failedNotifications: FailedNotification[];
+  counts: AdminQueue["counts"] | null;
+  termsOutstanding: number | null;
+  failedNotifications: FailedNotification[] | null;
 }
 
-export function systemView(q: AdminQueue): SystemView {
+export function systemView(
+  q: AdminQueue | null,
+  evidence: CommandRuntimeEvidence = {},
+): SystemView {
   return {
-    health: deriveHealth(q),
-    counts: q.counts,
-    termsOutstanding: q.termsOutstanding,
-    failedNotifications: q.failedNotifications,
+    reportingAvailable: q !== null,
+    health: deriveHealth(q, evidence),
+    counts: q?.counts ?? null,
+    termsOutstanding: q?.termsOutstanding ?? null,
+    failedNotifications: q?.failedNotifications ?? null,
   };
 }

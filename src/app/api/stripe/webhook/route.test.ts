@@ -8,10 +8,27 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
  * matter how badly the secret handling was broken.
  */
 
+interface DbResult {
+  data?: unknown;
+  error: unknown;
+}
+
+const dbState = {
+  results: [] as DbResult[],
+};
+
+const nextDbResult = (): DbResult => dbState.results.shift() ?? { data: null, error: null };
+
 const updateChain = {
   update: vi.fn((_patch?: Record<string, unknown>) => updateChain),
   eq: vi.fn((_col?: string, _val?: unknown) => updateChain),
-  is: vi.fn(() => Promise.resolve({ error: null })),
+  is: vi.fn((_col?: string, _val?: unknown) => updateChain),
+  select: vi.fn((_columns?: string) => updateChain),
+  maybeSingle: vi.fn(() => Promise.resolve(nextDbResult())),
+  then: (
+    resolve: (result: DbResult) => unknown,
+    reject?: (reason: unknown) => unknown,
+  ) => Promise.resolve(nextDbResult()).then(resolve, reject),
 };
 
 vi.mock("@/lib/supabase/server", () => ({
@@ -26,9 +43,19 @@ vi.mock("@/lib/stripe/client", () => ({
   stripe: () => stripeForSigning,
 }));
 
-// The route now emits best-effort analytics on capture; that module is
-// server-only and irrelevant to the signature/notification behavior under test.
-vi.mock("@/lib/analytics/record", () => ({ recordEvent: vi.fn() }));
+const effects = vi.hoisted(() => ({
+  notifyBookingCreated: vi.fn(),
+  notifyRequestMade: vi.fn(),
+  recordEvent: vi.fn(),
+}));
+
+vi.mock("@/lib/notify/for-booking", () => ({
+  notifyBookingCreated: effects.notifyBookingCreated,
+  notifyRequestMade: effects.notifyRequestMade,
+  recipientFor: vi.fn(async () => null),
+}));
+
+vi.mock("@/lib/analytics/record", () => ({ recordEvent: effects.recordEvent }));
 
 const { POST } = await import("./route");
 
@@ -52,6 +79,39 @@ const accountUpdated = {
   data: { object: { id: "acct_1", charges_enabled: true, payouts_enabled: true } },
 };
 
+const paymentBooking = {
+  id: "bk_1",
+  approval_state: "not_required",
+  practitioner_id: "pr_1",
+  space_id: "sp_1",
+  status: "upcoming",
+  total_cents: 5_000,
+  captured_at: null,
+  stripe_payment_intent_id: null,
+};
+
+const paymentSucceeded = (over: Record<string, unknown> = {}) => ({
+  id: "evt_payment",
+  type: "payment_intent.succeeded",
+  data: {
+    object: {
+      id: "pi_1",
+      amount: 5_000,
+      currency: "usd",
+      metadata: {
+        booking_id: "bk_1",
+        space_id: "sp_1",
+        practitioner_id: "pr_1",
+      },
+      ...over,
+    },
+  },
+});
+
+function respondWith(...results: DbResult[]): void {
+  dbState.results.push(...results);
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const post = (request: Request) => POST(request as any);
 
@@ -59,6 +119,7 @@ describe("stripe webhook", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.unstubAllEnvs();
+    dbState.results = [];
   });
 
   it("refuses everything when no secret is configured", async () => {
@@ -75,6 +136,18 @@ describe("stripe webhook", () => {
     const response = await post(signed(PLATFORM_SECRET, accountUpdated));
 
     expect(response.status).toBe(200);
+  });
+
+  it("returns 500 when the database write fails so Stripe retries the event", async () => {
+    vi.stubEnv("STRIPE_WEBHOOK_SECRET", PLATFORM_SECRET);
+    const databaseError = { code: "XX000", message: "database unavailable" };
+    updateChain.eq.mockImplementationOnce(
+      () => Promise.resolve({ error: databaseError }) as never,
+    );
+
+    const response = await post(signed(PLATFORM_SECRET, accountUpdated));
+
+    expect(response.status).toBe(500);
   });
 
   /**
@@ -134,6 +207,165 @@ describe("stripe webhook", () => {
     );
 
     expect(updateChain.update).toHaveBeenCalledWith({ stripe_connect_charges_enabled: false });
+  });
+
+  describe("payment_intent.succeeded booking association", () => {
+    it("captures a directly-associated booking and runs its effects once", async () => {
+      vi.stubEnv("STRIPE_WEBHOOK_SECRET", PLATFORM_SECRET);
+      respondWith({
+        data: [
+          {
+            id: "bk_1",
+            approval_state: "not_required",
+            practitioner_id: "pr_1",
+          },
+        ],
+        error: null,
+      });
+
+      const response = await post(signed(PLATFORM_SECRET, paymentSucceeded()));
+
+      expect(response.status).toBe(200);
+      expect(effects.recordEvent).toHaveBeenCalledTimes(2);
+      expect(effects.notifyBookingCreated).toHaveBeenCalledTimes(1);
+      expect(effects.notifyBookingCreated).toHaveBeenCalledWith(expect.anything(), "bk_1");
+    });
+
+    it("acknowledges a normal replay without duplicating analytics or notifications", async () => {
+      vi.stubEnv("STRIPE_WEBHOOK_SECRET", PLATFORM_SECRET);
+      respondWith(
+        { data: [], error: null },
+        {
+          data: {
+            ...paymentBooking,
+            captured_at: "2026-09-14T12:00:00.000Z",
+            stripe_payment_intent_id: "pi_1",
+          },
+          error: null,
+        },
+      );
+
+      const response = await post(signed(PLATFORM_SECRET, paymentSucceeded()));
+
+      expect(response.status).toBe(200);
+      expect(effects.recordEvent).not.toHaveBeenCalled();
+      expect(effects.notifyBookingCreated).not.toHaveBeenCalled();
+    });
+
+    it("repairs a missing association from matching Stripe metadata before acknowledging", async () => {
+      vi.stubEnv("STRIPE_WEBHOOK_SECRET", PLATFORM_SECRET);
+      respondWith(
+        { data: [], error: null }, // no direct PaymentIntent association
+        { data: null, error: null }, // not a replay by PaymentIntent id
+        { data: paymentBooking, error: null }, // signed metadata finds the booking
+        {
+          data: [
+            {
+              id: "bk_1",
+              approval_state: "not_required",
+              practitioner_id: "pr_1",
+            },
+          ],
+          error: null,
+        },
+      );
+
+      const response = await post(signed(PLATFORM_SECRET, paymentSucceeded()));
+
+      expect(response.status).toBe(200);
+      expect(updateChain.update).toHaveBeenNthCalledWith(2, {
+        stripe_payment_intent_id: "pi_1",
+        captured_at: expect.any(String),
+      });
+      expect(updateChain.is).toHaveBeenCalledWith("stripe_payment_intent_id", null);
+      expect(effects.recordEvent).toHaveBeenCalledTimes(2);
+      expect(effects.notifyBookingCreated).toHaveBeenCalledTimes(1);
+    });
+
+    it("treats a concurrent recovery winner as a replay, not an infinite 500", async () => {
+      vi.stubEnv("STRIPE_WEBHOOK_SECRET", PLATFORM_SECRET);
+      respondWith(
+        { data: [], error: null },
+        { data: null, error: null },
+        { data: paymentBooking, error: null },
+        { data: [], error: null }, // this delivery lost the guarded update race
+        {
+          data: {
+            ...paymentBooking,
+            captured_at: "2026-09-14T12:00:00.000Z",
+            stripe_payment_intent_id: "pi_1",
+          },
+          error: null,
+        },
+      );
+
+      const response = await post(signed(PLATFORM_SECRET, paymentSucceeded()));
+
+      expect(response.status).toBe(200);
+      expect(effects.recordEvent).not.toHaveBeenCalled();
+      expect(effects.notifyBookingCreated).not.toHaveBeenCalled();
+    });
+
+    it("returns 500 when neither an association nor recovery metadata exists", async () => {
+      vi.stubEnv("STRIPE_WEBHOOK_SECRET", PLATFORM_SECRET);
+      respondWith({ data: [], error: null }, { data: null, error: null });
+
+      const response = await post(
+        signed(
+          PLATFORM_SECRET,
+          paymentSucceeded({ metadata: {} }),
+        ),
+      );
+
+      expect(response.status).toBe(500);
+      expect(effects.recordEvent).not.toHaveBeenCalled();
+      expect(effects.notifyBookingCreated).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ["another intent", { stripe_payment_intent_id: "pi_other" }, {}],
+      ["another space", { space_id: "sp_other" }, {}],
+      ["another practitioner", { practitioner_id: "pr_other" }, {}],
+      ["a closed booking", { status: "cancelled_by_practitioner" }, {}],
+      ["another amount", { total_cents: 7_500 }, {}],
+      ["another currency", {}, { currency: "cad" }],
+    ])("refuses metadata recovery for %s", async (_label, bookingOver, intentOver) => {
+      vi.stubEnv("STRIPE_WEBHOOK_SECRET", PLATFORM_SECRET);
+      respondWith(
+        { data: [], error: null },
+        { data: null, error: null },
+        { data: { ...paymentBooking, ...bookingOver }, error: null },
+      );
+
+      const response = await post(
+        signed(PLATFORM_SECRET, paymentSucceeded(intentOver as Record<string, unknown>)),
+      );
+
+      expect(response.status).toBe(500);
+      // Only the initial direct capture was attempted; a mismatched booking is
+      // never rewritten to fit the PaymentIntent.
+      expect(updateChain.update).toHaveBeenCalledTimes(1);
+      expect(effects.recordEvent).not.toHaveBeenCalled();
+      expect(effects.notifyBookingCreated).not.toHaveBeenCalled();
+    });
+
+    it("returns 500 when recovery is not durably written", async () => {
+      vi.stubEnv("STRIPE_WEBHOOK_SECRET", PLATFORM_SECRET);
+      const writeError = { code: "XX000", message: "database unavailable" };
+      respondWith(
+        { data: [], error: null },
+        { data: null, error: null },
+        { data: paymentBooking, error: null },
+        { data: null, error: writeError },
+        { data: null, error: null },
+      );
+
+      const response = await post(signed(PLATFORM_SECRET, paymentSucceeded()));
+
+      expect(response.status).toBe(500);
+      expect(effects.recordEvent).not.toHaveBeenCalled();
+      expect(effects.notifyBookingCreated).not.toHaveBeenCalled();
+    });
   });
 
   /**

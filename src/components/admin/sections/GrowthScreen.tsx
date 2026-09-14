@@ -38,12 +38,14 @@ export function GrowthScreen() {
               <Stat label="Distinct users" value={data.events.distinctUsers.toLocaleString()} />
             </div>
             <div className="flex flex-col gap-1.5">
-              {data.events.byName.map((e) => (
-                <div key={e.name} className="flex items-center justify-between rounded-lg px-3 py-2" style={{ backgroundColor: PANEL2, border: `1px solid ${LINE}` }}>
-                  <span className="font-body text-[12.5px]" style={{ color: TEXT }}>{e.name}</span>
-                  <span className="font-body font-semibold text-[12.5px]" style={{ color: MUTED }}>{e.count.toLocaleString()}</span>
-                </div>
-              ))}
+              {data.events.byName.length === 0 ? (
+                <Muted className="text-[12px]">No events in this window yet.</Muted>
+              ) : data.events.byName.map((e) => (
+                  <div key={e.name} className="flex items-center justify-between rounded-lg px-3 py-2" style={{ backgroundColor: PANEL2, border: `1px solid ${LINE}` }}>
+                    <span className="font-body text-[12.5px]" style={{ color: TEXT }}>{e.name}</span>
+                    <span className="font-body font-semibold text-[12.5px]" style={{ color: MUTED }}>{e.count.toLocaleString()}</span>
+                  </div>
+                ))}
             </div>
           </>
         ) : (
@@ -55,16 +57,18 @@ export function GrowthScreen() {
         )}
       </Panel>
 
-      <Panel title="Not instrumented yet">
-        <div className="flex flex-col gap-1.5">
-          {data.notInstrumented.map((label) => (
-            <div key={label} className="flex items-center justify-between rounded-lg px-3 py-2" style={{ backgroundColor: PANEL2, border: `1px solid ${LINE}` }}>
-              <span className="font-body text-[12.5px]" style={{ color: TEXT }}>{label}</span>
-              <NotInstrumented />
-            </div>
-          ))}
-        </div>
-      </Panel>
+      {data.notInstrumented.length > 0 && (
+        <Panel title="Not instrumented yet">
+          <div className="flex flex-col gap-1.5">
+            {data.notInstrumented.map((label) => (
+              <div key={label} className="flex items-center justify-between rounded-lg px-3 py-2" style={{ backgroundColor: PANEL2, border: `1px solid ${LINE}` }}>
+                <span className="font-body text-[12.5px]" style={{ color: TEXT }}>{label}</span>
+                <NotInstrumented />
+              </div>
+            ))}
+          </div>
+        </Panel>
+      )}
     </div>
   );
 }

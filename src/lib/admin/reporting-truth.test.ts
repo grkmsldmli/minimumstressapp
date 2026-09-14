@@ -1,8 +1,10 @@
-import { describe, expect, it } from "vitest";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { describe, expect, it, vi } from "vitest";
 
 import type { AdminQueue } from "./queue";
 import {
   enforceReportingTruth,
+  loadReportingQueueResult,
   netBookingAmounts,
   type ReportingBookingRow,
 } from "./reporting-truth";
@@ -199,5 +201,29 @@ describe("enforceReportingTruth", () => {
     expect(out.people.find((p) => p.id === "practitioner")?.spentCents).toBe(8000);
     expect(out.people.find((p) => p.id === "host")?.earnedCents).toBe(8000);
     expect(out.listings[0].earnedCents).toBe(8000);
+  });
+});
+
+describe("loadReportingQueueResult", () => {
+  const admin = {} as SupabaseClient;
+
+  it("preserves a successful reporting result", async () => {
+    const queue = baseQueue();
+    const result = await loadReportingQueueResult(admin, async () => queue);
+    expect(result.available).toBe(true);
+    expect(result.queue).toBe(queue);
+    expect(Number.isFinite(Date.parse(result.checkedAt))).toBe(true);
+  });
+
+  it("returns an explicit unavailable result instead of throwing or inventing an empty queue", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const result = await loadReportingQueueResult(admin, async () => {
+      throw new Error("private database detail");
+    });
+
+    expect(result).toMatchObject({ available: false, queue: null });
+    expect(error).toHaveBeenCalledWith("Admin reporting queue unavailable");
+    expect(JSON.stringify(result)).not.toContain("private database detail");
+    error.mockRestore();
   });
 });

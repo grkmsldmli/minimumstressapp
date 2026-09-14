@@ -41,7 +41,8 @@ questionnaire with the answers below.
 | Customer support | Yes | Yes | No | Customer Support (emails to support) | MS, Resend |
 | Identifiers — user ID | Yes | Yes | No | App Functionality | MS/Supabase |
 | Identifiers — device ID / advertising ID | **No** | — | No | — | — |
-| Diagnostics / usage / crash | **No** custom collection | — | No | Hosting infrastructure logs (Vercel/Supabase) may retain standard request logs; no analytics SDK in the app | Infra |
+| Usage data — product interaction | Yes | **No** | No | Analytics: counts of public page views and app opens using a random id that lasts only for the current tab/WebView session; no query text, referrer, device id or advertising id | MS/Supabase |
+| Diagnostics / crash data | **No** custom collection | — | No | Hosting infrastructure logs (Vercel/Supabase) may retain standard request logs; no diagnostics or third-party analytics SDK in the app | Infra |
 
 ## Notes for the reviewer of this label
 - The private `space-media` bucket means listing photos are served only through
@@ -50,6 +51,10 @@ questionnaire with the answers below.
   and selfie on our behalf; that data lives with Stripe, and MS stores only the
   outcome. Declare it under Stripe's processing, purpose "App Functionality / Fraud
   Prevention," not linked to marketing.
+- The first-party product-interaction events are not linked to an account. Their
+  only identifier is a random `sessionStorage` value, which disappears with the
+  tab/WebView session, is never joined to a user id, and is deleted with the raw
+  event after 90 days.
 - The public Privacy Policy at `https://minimumstress.app/privacy` must match this
   table. Verify it names Supabase, Stripe, Resend, and the geocoding provider, and
   states that precise location is not retained. If it does not, update the policy

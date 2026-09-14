@@ -15,6 +15,7 @@ import type { Profile } from "@/lib/domain";
 import { isNativeApp } from "@/lib/native";
 import { type AppRepository, createRepository, supabaseBackendEnabled } from "@/lib/repository-factory";
 import { supabaseBrowser } from "@/lib/supabase/client";
+import { AppAnalytics } from "@/components/AppAnalytics";
 
 /**
  * Every screen in the flow, as one state machine.
@@ -277,7 +278,12 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     ],
   );
 
-  return <Context.Provider value={value}>{children}</Context.Provider>;
+  return (
+    <Context.Provider value={value}>
+      <AppAnalytics />
+      {children}
+    </Context.Provider>
+  );
 }
 
 export function useApp(): AppState {

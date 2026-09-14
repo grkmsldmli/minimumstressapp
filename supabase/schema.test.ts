@@ -268,6 +268,23 @@ describe("migrations apply cleanly", () => {
     expect(granted).toEqual([]);
   });
 
+  it("gives only the service role the exact analytics ingest/report/prune privileges", async () => {
+    const grants = await rows<{ grantee: string; privilege_type: string }>(
+      `select grantee, privilege_type
+       from information_schema.role_table_grants
+       where table_schema = 'public'
+         and table_name = 'analytics_events'
+         and grantee in ('anon', 'authenticated', 'service_role')
+       order by grantee, privilege_type`,
+    );
+
+    expect(grants).toEqual([
+      { grantee: "service_role", privilege_type: "DELETE" },
+      { grantee: "service_role", privilege_type: "INSERT" },
+      { grantee: "service_role", privilege_type: "SELECT" },
+    ]);
+  });
+
   it("enables row level security on every table", async () => {
     const unprotected = await rows<{ tablename: string }>(
       `select tablename from pg_tables

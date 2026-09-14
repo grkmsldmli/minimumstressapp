@@ -1,5 +1,6 @@
 import { adminGet } from "@/lib/admin/guard";
 import { growthView, type RawEvent } from "@/lib/admin/growth";
+import { assertSupabaseResultsSucceeded } from "@/lib/admin/queue";
 import { loadReportingQueue } from "@/lib/admin/reporting-truth";
 
 const WINDOW_DAYS = 30;
@@ -21,6 +22,7 @@ export function GET(): Promise<Response> {
         .order("occurred_at", { ascending: false })
         .limit(10000),
     ]);
+    assertSupabaseResultsSucceeded([eventsRes]);
     return growthView(q.funnel, (eventsRes.data ?? []) as RawEvent[], WINDOW_DAYS);
   });
 }

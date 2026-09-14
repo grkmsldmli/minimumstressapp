@@ -59,10 +59,25 @@ describe("moneyView", () => {
 describe("systemView", () => {
   it("carries measured counts and the outbox failures", () => {
     const v = systemView(baseQueue());
-    expect(v.counts.practitioners).toBe(10);
+    expect(v.reportingAvailable).toBe(true);
+    expect(v.counts!.practitioners).toBe(10);
     expect(v.termsOutstanding).toBe(6);
-    expect(v.failedNotifications).toHaveLength(1);
+    expect(v.failedNotifications!).toHaveLength(1);
     // Health comes from the shared derivation — a given-up message raises it.
     expect(v.health.find((h) => h.key === "notifications")!.state).toBe("attention");
+  });
+
+  it("keeps health but makes reporting fields unavailable after a read failure", () => {
+    const v = systemView(null, {
+      coreHealth: [{ key: "database", label: "Database", state: "healthy" }],
+    });
+    expect(v.reportingAvailable).toBe(false);
+    expect(v.counts).toBeNull();
+    expect(v.termsOutstanding).toBeNull();
+    expect(v.failedNotifications).toBeNull();
+    expect(v.health.find((item) => item.key === "database")!.state).toBe("healthy");
+    expect(v.health.find((item) => item.key === "reporting_data")!.state).toBe(
+      "critical",
+    );
   });
 });

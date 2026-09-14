@@ -1,6 +1,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { rollUp, type AdminQueue, loadQueue } from "./queue";
+import {
+  assertSupabaseResultsSucceeded,
+  rollUp,
+  type AdminQueue,
+  loadQueue,
+} from "./queue";
 
 /**
  * A booking row in the admin reporting layer.
@@ -225,10 +230,35 @@ export async function loadReportingQueue(admin: SupabaseClient): Promise<AdminQu
       ),
     admin.from("spaces").select("id, host_id"),
   ]);
+  assertSupabaseResultsSucceeded([bookings, spaces]);
 
   return enforceReportingTruth(
     queue,
     (bookings.data ?? []) as unknown as ReportingBookingRow[],
     (spaces.data ?? []) as unknown as ReportingSpaceRow[],
   );
+}
+
+export type ReportingQueueResult =
+  | { available: true; queue: AdminQueue; checkedAt: string }
+  | { available: false; queue: null; checkedAt: string };
+
+/**
+ * Health must survive a reporting outage: database/auth/provider probes are
+ * independent evidence and remain useful even when the broad business query
+ * fails. The failure is explicit, never replaced with an empty queue.
+ */
+export async function loadReportingQueueResult(
+  admin: SupabaseClient,
+  load: (client: SupabaseClient) => Promise<AdminQueue> = loadReportingQueue,
+): Promise<ReportingQueueResult> {
+  try {
+    const queue = await load(admin);
+    return { available: true, queue, checkedAt: new Date().toISOString() };
+  } catch {
+    // Provider details stay server-side and are intentionally not serialized
+    // into the operator response.
+    console.error("Admin reporting queue unavailable");
+    return { available: false, queue: null, checkedAt: new Date().toISOString() };
+  }
 }

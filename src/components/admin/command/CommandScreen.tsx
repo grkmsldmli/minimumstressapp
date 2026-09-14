@@ -9,6 +9,7 @@ import {
   AMBER,
   CORAL,
   GREEN,
+  HealthGrid,
   LINE,
   MUTED,
   Muted,
@@ -56,7 +57,7 @@ export function CommandScreen() {
             sub={k.sub}
             value={
               k.value === null ? (
-                <NotInstrumented />
+                <NotInstrumented label={k.nullLabel} />
               ) : k.format === "money" ? (
                 usd(k.value)
               ) : (
@@ -68,23 +69,21 @@ export function CommandScreen() {
       </div>
 
       {/* System status */}
-      <Panel title="System status">
-        <div className="grid gap-2" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))" }}>
-          {data.health.map((h) => (
-            <div key={h.key} className="flex items-center gap-2 rounded-lg px-3 py-2" style={{ backgroundColor: PANEL2, border: `1px solid ${LINE}` }}>
-              <StatusDot state={h.state} />
-              <span className="font-body text-[13px]" style={{ color: TEXT }}>{h.label}</span>
-              <span className="font-body text-[11px] ml-auto capitalize" style={{ color: MUTED }}>
-                {h.note ?? h.state}
-              </span>
-            </div>
-          ))}
-        </div>
+      <Panel title="System status" right={<Muted className="text-[11px]">live probes · no fake greens</Muted>}>
+        <HealthGrid items={data.health} />
       </Panel>
+
+      {!data.reportingAvailable && (
+        <div className="rounded-xl px-3.5 py-3 font-body text-[12.5px]" style={{ color: AMBER, border: `1px solid rgba(232,163,61,0.4)`, backgroundColor: "rgba(232,163,61,0.08)" }}>
+          Reporting data is unavailable. Provider health is still live; business KPIs and queues are marked unavailable instead of zero.
+        </div>
+      )}
 
       {/* Needs attention — collapses when clear */}
       <Panel title="Needs attention">
-        {data.queuesClear ? (
+        {!data.reportingAvailable ? (
+          <NotInstrumented label="Unavailable — reporting query failed" />
+        ) : data.queuesClear ? (
           <div className="flex items-center gap-2 rounded-lg px-3 py-3" style={{ backgroundColor: "rgba(74,222,128,0.1)", border: `1px solid rgba(74,222,128,0.3)` }}>
             <StatusDot state="healthy" />
             <span className="font-body text-[13px]" style={{ color: TEXT }}>
@@ -115,7 +114,11 @@ export function CommandScreen() {
 
       <div className="grid gap-4" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))" }}>
         {/* In a room now */}
-        {data.liveSessions.length > 0 && (
+        {!data.reportingAvailable ? (
+          <Panel title="In a room now">
+            <NotInstrumented label="Unavailable — reporting query failed" />
+          </Panel>
+        ) : data.liveSessions.length > 0 && (
           <Panel title="In a room now" count={data.liveSessions.length}>
             {data.liveSessions.map((s) => (
               <div key={s.bookingId} className="rounded-xl p-3 mb-2 last:mb-0" style={{ backgroundColor: PANEL2, border: `1px solid ${LINE}` }}>
@@ -134,7 +137,9 @@ export function CommandScreen() {
 
         {/* Live activity */}
         <Panel title="Live activity">
-          {data.activity.length === 0 ? (
+          {!data.reportingAvailable ? (
+            <NotInstrumented label="Unavailable — reporting query failed" />
+          ) : data.activity.length === 0 ? (
             <Muted className="text-[12px]">Nothing yet.</Muted>
           ) : (
             <div className="flex flex-col gap-1.5">

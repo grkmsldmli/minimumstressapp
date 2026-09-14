@@ -5,6 +5,7 @@ import { expireStaleRequests, remindWaitingHosts } from "@/lib/approval-service"
 import { stripeGateway } from "@/lib/api/stripe-gateway";
 import { safetyRecipient } from "@/lib/admin/access";
 import { subjectFor, waitingOn, waitingSignature } from "@/lib/admin/attention";
+import { runWithIndependentRetention } from "@/lib/cron-runner";
 import { notifyAccessCodesReady, rebuildPending } from "@/lib/notify/for-booking";
 import { notify, retryPending } from "@/lib/notify/send";
 import { payHost, settle } from "@/lib/stripe/client";
@@ -51,44 +52,96 @@ export async function GET(request: NextRequest): Promise<Response> {
 
   const now = new Date();
 
-  try {
-    /**
-     * Sequential, and the payouts go first.
-     *
-     * If the run is cut short — a function timeout, a deploy mid-run — the
-     * thing that must already have happened is paying the hosts whose rooms
-     * were used. A door-code email is recoverable on the next pass; a payout
-     * that never happens is somebody who let a stranger into their studio and
-     * was not paid for it.
-     */
-    const paid = await payHostsForFinishedSessions(now);
-    const released = await releaseAbandonedCheckouts(now);
-    /*
-     * Before the access codes, and for the same reason payouts come first: an
-     * expired request is an hour a studio cannot sell and money held on
-     * somebody's card. Both keep getting worse until this runs.
-     */
-    const requests = await sweepRequests(now);
-    const announced = await announceAccessCodes(now);
-    const retried = await retryFailedNotifications();
-    const waiting = await reportWhatIsWaiting(now);
+  const outcome = await runWithIndependentRetention(
+    () => runOperationalTasks(now),
+    () => pruneAnalyticsEvents(now),
+  );
 
-    return Response.json({
-      ranAt: now.toISOString(),
-      ...paid,
-      ...released,
-      ...requests,
-      ...announced,
-      ...retried,
-      ...waiting,
-    });
-  } catch (error) {
+  if (!outcome.operational.ok || !outcome.retention.ok) {
+    const failures: { operational?: string; analyticsRetention?: string } = {};
+
     // Supabase rejects with a plain object rather than an Error, so the default
     // logging renders it as `{}` — useless at 3am when a payout run has
     // stopped. Pull the fields out by hand.
-    console.error("Cron run failed:", describe(error));
-    return Response.json({ error: describe(error) }, { status: 500 });
+    if (!outcome.operational.ok) {
+      failures.operational = describe(outcome.operational.error);
+      console.error("Cron run failed:", failures.operational);
+    }
+    if (!outcome.retention.ok) {
+      failures.analyticsRetention = describe(outcome.retention.error);
+      console.error("Analytics retention failed:", failures.analyticsRetention);
+    }
+
+    return Response.json(
+      {
+        ranAt: now.toISOString(),
+        error: "Cron run incomplete",
+        failures,
+        ...(outcome.operational.ok ? outcome.operational.value : {}),
+        ...(outcome.retention.ok ? outcome.retention.value : {}),
+      },
+      { status: 500 },
+    );
   }
+
+  return Response.json({
+    ranAt: now.toISOString(),
+    ...outcome.operational.value,
+    ...outcome.retention.value,
+  });
+}
+
+/**
+ * Sequential, and the payouts go first.
+ *
+ * If the run is cut short — a function timeout, a deploy mid-run — the thing
+ * that must already have happened is paying the hosts whose rooms were used.
+ * A door-code email is recoverable on the next pass; a payout that never
+ * happens is somebody who let a stranger into their studio and was not paid
+ * for it.
+ */
+async function runOperationalTasks(now: Date) {
+  const paid = await payHostsForFinishedSessions(now);
+  const released = await releaseAbandonedCheckouts(now);
+  /*
+   * Before the access codes, and for the same reason payouts come first: an
+   * expired request is an hour a studio cannot sell and money held on
+   * somebody's card. Both keep getting worse until this runs.
+   */
+  const requests = await sweepRequests(now);
+  const announced = await announceAccessCodes(now);
+  const retried = await retryFailedNotifications();
+  const waiting = await reportWhatIsWaiting(now);
+
+  return {
+    ...paid,
+    ...released,
+    ...requests,
+    ...announced,
+    ...retried,
+    ...waiting,
+  };
+}
+
+const ANALYTICS_RETENTION_DAYS = 90;
+
+/**
+ * Raw product-usage events are operational counters, not permanent customer
+ * history. The scheduled sweep enforces the same 90-day limit the public
+ * privacy policy promises; booking/payment records remain untouched.
+ */
+async function pruneAnalyticsEvents(
+  now: Date,
+): Promise<{ analyticsEventsPruned: number }> {
+  const cutoff = new Date(
+    now.getTime() - ANALYTICS_RETENTION_DAYS * 24 * 60 * 60 * 1_000,
+  ).toISOString();
+  const { error, count } = await supabaseAdmin()
+    .from("analytics_events")
+    .delete({ count: "exact" })
+    .lt("occurred_at", cutoff);
+  if (error) throw error;
+  return { analyticsEventsPruned: count ?? 0 };
 }
 
 function describe(error: unknown): string {
@@ -237,11 +290,12 @@ async function payHostsForFinishedSessions(
     try {
       const hostId = (booking.spaces as unknown as { host_id: string }).host_id;
 
-      const { data: host } = await admin
+      const { data: host, error: hostError } = await admin
         .from("profiles")
         .select("stripe_connect_account_id")
         .eq("id", hostId)
         .maybeSingle();
+      if (hostError) throw hostError;
 
       if (!host?.stripe_connect_account_id) {
         // Not an error to retry blindly: the host has not finished onboarding.
@@ -307,11 +361,12 @@ async function payHostsForFinishedSessions(
         if (statusError) throw statusError;
       }
 
-      await admin
+      const { error: paidWriteError } = await admin
         .from("bookings")
         .update(paidFields)
         .eq("id", booking.id)
         .is("host_paid_at", null);
+      if (paidWriteError) throw paidWriteError;
 
       paid += 1;
     } catch (failure) {
@@ -436,6 +491,10 @@ async function reportWhatIsWaiting(now: Date): Promise<{ waiting: number }> {
       .is("sent_at", null)
       .not("last_error", "is", null),
   ]);
+
+  for (const result of [unpayable, refunds, claims, escalations, listings, changes, failed]) {
+    if (result.error) throw result.error;
+  }
 
   const items = waitingOn({
     unpayableHosts: unpayable.count ?? 0,

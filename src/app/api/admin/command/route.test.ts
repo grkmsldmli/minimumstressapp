@@ -15,6 +15,14 @@ vi.mock("@/lib/admin/reporting-truth", () => ({
     checkedAt,
   }),
 }));
+vi.mock("@/lib/admin/email-delivery", () => ({
+  loadEmailDeliveryEvidence: async () => ({
+    available: true,
+    checkedAt,
+    lastEventAt: null,
+    lastEventType: null,
+  }),
+}));
 vi.mock("@/lib/admin/system-health", () => ({
   productionSystemHealthDependencies: () => ({}),
   probeCoreSystemHealth: async () => [
@@ -31,7 +39,10 @@ vi.mock("@/lib/admin/analytics-snapshot", () => ({
     truncated: false,
   }),
 }));
-vi.mock("@/lib/notify/transports", () => ({ emailConfigured: () => true }));
+vi.mock("@/lib/notify/transports", () => ({
+  emailConfigured: () => true,
+  emailWebhookConfigured: () => true,
+}));
 
 import { GET } from "./route";
 
@@ -49,6 +60,11 @@ describe("GET /api/admin/command", () => {
       expect.arrayContaining([
         expect.objectContaining({ key: "database", state: "healthy" }),
         expect.objectContaining({ key: "reporting_data", state: "critical" }),
+        expect.objectContaining({
+          key: "notifications",
+          state: "unknown",
+          note: "Configured · waiting for delivery test · queue unavailable",
+        }),
       ]),
     );
     expect(

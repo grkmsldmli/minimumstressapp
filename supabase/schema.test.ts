@@ -97,7 +97,8 @@ describe("migrations apply cleanly", () => {
       // +1 in 0070 (Studio Pro): work_roster.
       // +2 in 0073 (admin ops): analytics_events, admin_audit_log.
       // +1 in 0079: listing_closure_requests.
-      expect(tables.rows).toHaveLength(30);
+      // +2 in 20260914190221: signed Resend events and correlated probes.
+      expect(tables.rows).toHaveLength(32);
     } finally {
       await fresh.close();
     }
@@ -185,6 +186,10 @@ describe("migrations apply cleanly", () => {
       // (migration 0061).
       "referrer_codes",
       "refund_requests",
+      // Minimal signed Resend delivery evidence; server-only and append-only.
+      "resend_email_events",
+      // Provider IDs for Command Center probes under the current email config.
+      "resend_email_probes",
       "review_escalations",
       "reviews",
       "space_media",
@@ -282,6 +287,28 @@ describe("migrations apply cleanly", () => {
       { grantee: "service_role", privilege_type: "DELETE" },
       { grantee: "service_role", privilege_type: "INSERT" },
       { grantee: "service_role", privilege_type: "SELECT" },
+    ]);
+  });
+
+  it("gives only the service role append-only access to Resend delivery evidence", async () => {
+    const grants = await rows<{
+      table_name: string;
+      grantee: string;
+      privilege_type: string;
+    }>(
+      `select table_name, grantee, privilege_type
+       from information_schema.role_table_grants
+       where table_schema = 'public'
+         and table_name in ('resend_email_events', 'resend_email_probes')
+         and grantee in ('anon', 'authenticated', 'service_role')
+       order by table_name, grantee, privilege_type`,
+    );
+
+    expect(grants).toEqual([
+      { table_name: "resend_email_events", grantee: "service_role", privilege_type: "INSERT" },
+      { table_name: "resend_email_events", grantee: "service_role", privilege_type: "SELECT" },
+      { table_name: "resend_email_probes", grantee: "service_role", privilege_type: "INSERT" },
+      { table_name: "resend_email_probes", grantee: "service_role", privilege_type: "SELECT" },
     ]);
   });
 

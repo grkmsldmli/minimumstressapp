@@ -143,10 +143,17 @@ describe("deriveHealth", () => {
     expect(state("web_analytics")).toBe("unknown");
   });
 
-  it("does not call configured email healthy without delivery evidence", () => {
+  it("does not call configured email healthy before the first signed receipt", () => {
     const checkedAt = "2026-09-14T12:00:00.000Z";
     const h = deriveHealth(baseQueue(), {
       notificationsConfigured: true,
+      emailWebhookConfigured: true,
+      emailDelivery: {
+        available: true,
+        checkedAt,
+        lastEventAt: null,
+        lastEventType: null,
+      },
       coreHealth: [
         { key: "database", label: "Database", state: "healthy", checkedAt },
         { key: "auth", label: "Auth", state: "healthy", checkedAt },
@@ -161,14 +168,86 @@ describe("deriveHealth", () => {
     expect(state("reporting_data")).toBe("healthy");
     expect(state("notifications")).toBe("unknown");
     expect(h.find((item) => item.key === "notifications")!.note).toBe(
-      "Configured · delivery unverified",
+      "Configured · waiting for delivery test",
     );
     expect(state("stripe_payments")).toBe("healthy");
     expect(state("web_analytics")).toBe("unknown");
   });
 
+  it("turns email healthy only from a fresh signed delivered event", () => {
+    const checkedAt = "2026-09-14T12:00:00.000Z";
+    const h = deriveHealth(baseQueue(), {
+      notificationsConfigured: true,
+      emailWebhookConfigured: true,
+      emailDelivery: {
+        available: true,
+        checkedAt,
+        lastEventAt: "2026-09-14T11:59:00.000Z",
+        lastEventType: "email.delivered",
+      },
+    });
+
+    expect(h.find((item) => item.key === "notifications")).toMatchObject({
+      state: "healthy",
+      note: "Delivery verified",
+      lastSeenAt: "2026-09-14T11:59:00.000Z",
+    });
+  });
+
+  it.each([
+    ["email.failed", "Latest email failed"],
+    ["email.bounced", "Latest email bounced"],
+    ["email.complained", "Latest email marked as spam"],
+  ] as const)("degrades email for a fresh signed %s event", (lastEventType, note) => {
+    const h = deriveHealth(baseQueue(), {
+      notificationsConfigured: true,
+      emailWebhookConfigured: true,
+      emailDelivery: {
+        available: true,
+        checkedAt: "2026-09-14T12:00:00.000Z",
+        lastEventAt: "2026-09-14T11:59:00.000Z",
+        lastEventType,
+      },
+    });
+
+    expect(h.find((item) => item.key === "notifications")).toMatchObject({
+      state: "attention",
+      note,
+    });
+  });
+
+  it("expires old positive evidence instead of leaving a permanent green", () => {
+    const h = deriveHealth(baseQueue(), {
+      notificationsConfigured: true,
+      emailWebhookConfigured: true,
+      emailDelivery: {
+        available: true,
+        checkedAt: "2026-09-14T12:00:00.000Z",
+        lastEventAt: "2026-08-01T12:00:00.000Z",
+        lastEventType: "email.delivered",
+      },
+    });
+
+    expect(h.find((item) => item.key === "notifications")).toMatchObject({
+      state: "unknown",
+      note: "No delivery event in 30 days",
+    });
+  });
+
   it("raises notifications to attention when a message gave up", () => {
-    const h = deriveHealth(baseQueue({ failedNotifications: [{ givenUp: true } as never] }));
+    const h = deriveHealth(
+      baseQueue({ failedNotifications: [{ givenUp: true } as never] }),
+      {
+        notificationsConfigured: true,
+        emailWebhookConfigured: true,
+        emailDelivery: {
+          available: true,
+          checkedAt: "2026-09-14T12:00:00.000Z",
+          lastEventAt: "2026-09-14T11:59:00.000Z",
+          lastEventType: "email.delivered",
+        },
+      },
+    );
     const notif = h.find((x) => x.key === "notifications")!;
     expect(notif.state).toBe("attention");
     expect(notif.note).toContain("permanently failed");

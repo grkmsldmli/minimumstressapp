@@ -190,6 +190,13 @@ export const LIMITS = {
    * A screen open and a pull-to-refresh or two; generous, cheap, per-caller.
    */
   workRead: { limit: 60, windowMs: 60_000 },
+
+  /**
+   * A staff-only, real delivery probe. One per five minutes is enough to retry
+   * a setup and prevents a stuck button or double click from filling an inbox.
+   * The provider request also carries a matching five-minute idempotency key.
+   */
+  adminEmailTest: { limit: 1, windowMs: 5 * 60_000 },
 } as const satisfies Record<string, RateLimit>;
 
 export interface RateLimitResult {

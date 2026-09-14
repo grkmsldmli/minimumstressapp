@@ -1,3 +1,5 @@
+import "server-only";
+
 import { type Message, toHtml } from "./messages";
 
 /**
@@ -14,11 +16,24 @@ export type SendResult =
   | { status: "retry"; reason: string }
   | { status: "dropped"; reason: string };
 
+export interface EmailSendOptions {
+  /** Resend deduplicates repeated requests carrying the same key. */
+  idempotencyKey?: string;
+}
+
 /** Who the mail is from. Overridable so a staging deploy is obviously staging. */
 const FROM = process.env.NOTIFY_FROM_EMAIL ?? "Minimum Stress <hello@minimumstress.app>";
 
 export function emailConfigured(): boolean {
-  return Boolean(process.env.RESEND_API_KEY);
+  return Boolean(process.env.RESEND_API_KEY?.trim());
+}
+
+/** Sending plus signed delivery receipts; both are required for green health. */
+export function emailWebhookConfigured(): boolean {
+  return (
+    emailConfigured() &&
+    Boolean(process.env.RESEND_WEBHOOK_SECRET?.trim().startsWith("whsec_"))
+  );
 }
 
 export function smsConfigured(): boolean {
@@ -29,15 +44,23 @@ export function smsConfigured(): boolean {
   );
 }
 
-export async function sendEmail(to: string, message: Message): Promise<SendResult> {
-  const key = process.env.RESEND_API_KEY;
+export async function sendEmail(
+  to: string,
+  message: Message,
+  options: EmailSendOptions = {},
+): Promise<SendResult> {
+  const key = process.env.RESEND_API_KEY?.trim();
   if (!key) return { status: "retry", reason: "RESEND_API_KEY is not set" };
 
   let response: Response;
   try {
     response = await fetch("https://api.resend.com/emails", {
       method: "POST",
-      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      headers: {
+        Authorization: `Bearer ${key}`,
+        "Content-Type": "application/json",
+        ...(options.idempotencyKey ? { "Idempotency-Key": options.idempotencyKey } : {}),
+      },
       body: JSON.stringify({
         from: FROM,
         to: [to],

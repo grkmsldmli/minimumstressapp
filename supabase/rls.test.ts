@@ -1372,6 +1372,98 @@ describe("notification history", () => {
 });
 
 /**
+ * Resend receipts are provider-authenticated operational evidence, not user
+ * notification history. They contain no message body or address, and browser
+ * roles cannot read or forge even those minimal rows.
+ */
+describe("Resend delivery evidence", () => {
+  const eventId = "msg_delivery_test_1";
+
+  beforeAll(async () => {
+    await db.exec(`
+      insert into resend_email_events (
+        svix_id, resend_email_id, event_type, event_created_at
+      ) values (
+        '${eventId}', 'email_test_1', 'email.delivered', now()
+      );
+      -- The signed event can beat the API response/probe insert. No FK may
+      -- reject that race; correlation happens later by provider message id.
+      insert into resend_email_probes (
+        resend_email_id, configuration_sha256
+      ) values (
+        'email_test_1', '${"a".repeat(64)}'
+      );
+    `);
+  });
+
+  it("refuses signed-in and anonymous reads", async () => {
+    await expect(
+      asUser(PRACTITIONER, `select svix_id from resend_email_events`),
+    ).rejects.toThrow(/permission denied|row-level security/i);
+    await expect(
+      asAnon(`select svix_id from resend_email_events`),
+    ).rejects.toThrow(/permission denied|row-level security/i);
+    await expect(
+      asUser(PRACTITIONER, `select resend_email_id from resend_email_probes`),
+    ).rejects.toThrow(/permission denied|row-level security/i);
+    await expect(
+      asAnon(`select resend_email_id from resend_email_probes`),
+    ).rejects.toThrow(/permission denied|row-level security/i);
+  });
+
+  it("refuses browser inserts", async () => {
+    await expect(
+      asUser(
+        PRACTITIONER,
+        `insert into resend_email_events (
+           svix_id, resend_email_id, event_type, event_created_at
+         ) values ('forged', 'email_forged', 'email.delivered', now())`,
+      ),
+    ).rejects.toThrow(/permission denied|row-level security/i);
+    await expect(
+      asUser(
+        PRACTITIONER,
+        `insert into resend_email_probes (
+           resend_email_id, configuration_sha256
+         ) values ('email_forged', '${"b".repeat(64)}')`,
+      ),
+    ).rejects.toThrow(/permission denied|row-level security/i);
+  });
+
+  it("deduplicates provider retries by svix id", async () => {
+    await expect(db.exec(`
+      insert into resend_email_events (
+        svix_id, resend_email_id, event_type, event_created_at
+      ) values ('${eventId}', 'email_test_1', 'email.delivered', now())
+    `)).rejects.toThrow(/duplicate|unique/i);
+  });
+
+  it("rejects outcomes the webhook does not measure", async () => {
+    await expect(db.exec(`
+      insert into resend_email_events (
+        svix_id, resend_email_id, event_type, event_created_at
+      ) values ('unsupported', 'email_test_2', 'email.opened', now())
+    `)).rejects.toThrow(/check constraint/i);
+  });
+
+  it("deduplicates probe retries by provider email id", async () => {
+    await expect(db.exec(`
+      insert into resend_email_probes (
+        resend_email_id, configuration_sha256
+      ) values ('email_test_1', '${"a".repeat(64)}')
+    `)).rejects.toThrow(/duplicate|unique/i);
+  });
+
+  it("rejects malformed probe configuration fingerprints", async () => {
+    await expect(db.exec(`
+      insert into resend_email_probes (
+        resend_email_id, configuration_sha256
+      ) values ('email_test_2', 'not-a-sha256')
+    `)).rejects.toThrow(/check constraint/i);
+  });
+});
+
+/**
  * The address arrives when the booking becomes committed.
  *
  * It used to arrive the moment a booking existed, which left a hole with no

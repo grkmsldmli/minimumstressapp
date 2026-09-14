@@ -1,6 +1,8 @@
 import Stripe from "stripe";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("server-only", () => ({}));
+
 /**
  * The signature check is this endpoint's entire security model, so the tests
  * sign real payloads with Stripe's own header generator rather than mocking

@@ -7,6 +7,9 @@
  * (null), never shown as a reassuring zero.
  */
 
+import type { ResendDeliveryEventType } from "@/lib/resend/webhook";
+
+import type { EmailDeliveryEvidence } from "./email-delivery";
 import type { ActivityEntry, AdminQueue, LiveSession } from "./queue";
 
 export interface Kpi {
@@ -40,6 +43,10 @@ export interface CommandRuntimeEvidence {
   reportingCheckedAt?: string;
   /** Configuration is injected so this projection stays pure and testable. */
   notificationsConfigured?: boolean;
+  /** A configured sender is not observable until its signed webhook exists. */
+  emailWebhookConfigured?: boolean;
+  /** Latest provider-authenticated delivery outcome, never API acceptance. */
+  emailDelivery?: EmailDeliveryEvidence;
   analytics?: {
     available: boolean;
     websiteSessionsToday: number | null;
@@ -104,24 +111,14 @@ export function deriveHealth(
 
   const failedGivenUp = q?.failedNotifications.filter((item) => item.givenUp).length;
   const retrying = q ? q.failedNotifications.length - (failedGivenUp ?? 0) : null;
-  const checkedAt = evidence.reportingCheckedAt;
-  const notifications: HealthItem = q === null
-    ? {
-        key: "notifications",
-        label: "Email notifications",
-        state: "unknown",
-        note: evidence.notificationsConfigured
-          ? "Configured · delivery queue unavailable"
-          : "Not configured · delivery queue unavailable",
-        checkedAt,
-      }
-    : (failedGivenUp ?? 0) > 0
+  const delivery = deliveryHealth(evidence);
+  let notifications: HealthItem = (failedGivenUp ?? 0) > 0
     ? {
         key: "notifications",
         label: "Email notifications",
         state: "attention",
         note: `${failedGivenUp} permanently failed`,
-        checkedAt,
+        checkedAt: evidence.reportingCheckedAt,
       }
     : (retrying ?? 0) > 0
       ? {
@@ -129,23 +126,20 @@ export function deriveHealth(
           label: "Email notifications",
           state: "attention",
           note: `${retrying} retrying`,
-          checkedAt,
+          checkedAt: evidence.reportingCheckedAt,
         }
-      : evidence.notificationsConfigured
-        ? {
-            key: "notifications",
-            label: "Email notifications",
-            state: "unknown",
-            note: "Configured · delivery unverified",
-            checkedAt,
-          }
-        : {
-            key: "notifications",
-            label: "Email notifications",
-            state: "unknown",
-            note: "Not configured",
-            checkedAt,
-          };
+      : delivery;
+
+  // A provider failure is still actionable if the broad reporting read is
+  // down. Positive provider evidence alone cannot be green while the outbox
+  // itself is unreadable, because unsent work could be hiding there.
+  if (q === null && notifications.state !== "attention") {
+    notifications = {
+      ...notifications,
+      state: "unknown",
+      note: `${notifications.note ?? "Delivery status unknown"} · queue unavailable`,
+    };
+  }
 
   let payouts = unknown("stripe_payouts", "Stripe Connect payouts");
   if (q && q.unpayableHosts.length > 0 && payouts.state !== "critical") {
@@ -165,6 +159,89 @@ export function deriveHealth(
     payouts,
     unknown("web_analytics", "Web analytics"),
   ];
+}
+
+const EMAIL_DELIVERY_FRESHNESS_MS = 30 * 24 * 60 * 60 * 1000;
+const EMAIL_DELIVERY_CLOCK_SKEW_MS = 5 * 60 * 1000;
+
+function deliveryHealth(evidence: CommandRuntimeEvidence): HealthItem {
+  const base = { key: "notifications", label: "Email notifications" } as const;
+  if (!evidence.notificationsConfigured) {
+    return { ...base, state: "unknown", note: "Not configured" };
+  }
+  if (!evidence.emailWebhookConfigured) {
+    return {
+      ...base,
+      state: "unknown",
+      note: "Sending configured · webhook not configured",
+    };
+  }
+
+  const delivery = evidence.emailDelivery;
+  if (!delivery?.available) {
+    return {
+      ...base,
+      state: "unknown",
+      note: "Configured · delivery evidence unavailable",
+      checkedAt: delivery?.checkedAt,
+    };
+  }
+  if (!delivery.lastEventAt || !delivery.lastEventType) {
+    return {
+      ...base,
+      state: "unknown",
+      note: "Configured · waiting for delivery test",
+      checkedAt: delivery.checkedAt,
+    };
+  }
+
+  const eventAt = Date.parse(delivery.lastEventAt);
+  const checkedAt = Date.parse(delivery.checkedAt);
+  if (
+    Number.isNaN(eventAt) ||
+    Number.isNaN(checkedAt) ||
+    eventAt - checkedAt > EMAIL_DELIVERY_CLOCK_SKEW_MS
+  ) {
+    return {
+      ...base,
+      state: "unknown",
+      note: "Delivery evidence timestamp invalid",
+      checkedAt: delivery.checkedAt,
+    };
+  }
+
+  if (checkedAt - eventAt > EMAIL_DELIVERY_FRESHNESS_MS) {
+    return {
+      ...base,
+      state: "unknown",
+      note: "No delivery event in 30 days",
+      checkedAt: delivery.checkedAt,
+      lastSeenAt: delivery.lastEventAt,
+    };
+  }
+
+  if (delivery.lastEventType === "email.delivered") {
+    return {
+      ...base,
+      state: "healthy",
+      note: "Delivery verified",
+      checkedAt: delivery.checkedAt,
+      lastSeenAt: delivery.lastEventAt,
+    };
+  }
+
+  const failureNote: Record<Exclude<ResendDeliveryEventType, "email.delivered">, string> = {
+    "email.failed": "Latest email failed",
+    "email.bounced": "Latest email bounced",
+    "email.complained": "Latest email marked as spam",
+  };
+  return {
+    ...base,
+    state: "attention",
+    note: failureNote[delivery.lastEventType],
+    checkedAt: delivery.checkedAt,
+    lastSeenAt: delivery.lastEventAt,
+  };
 }
 
 export function commandView(

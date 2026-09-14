@@ -1,11 +1,46 @@
 "use client";
 
+import { useState } from "react";
+
 import type { SystemView } from "@/lib/admin/sections";
 
-import { AMBER, CORAL, HealthGrid, LINE, MUTED, Muted, NotInstrumented, PANEL2, Panel, Stat, TEXT, useAdminData } from "../kit";
+import { AMBER, CORAL, HealthGrid, LINE, MUTED, Muted, NotInstrumented, PANEL2, Panel, SKY, Stat, TEXT, useAdminData } from "../kit";
 
 export function SystemScreen() {
-  const { data, error, loading } = useAdminData<SystemView>("/api/admin/system", 30_000);
+  const { data, error, loading, reload } = useAdminData<SystemView>("/api/admin/system", 30_000);
+  const [sendingTest, setSendingTest] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+
+  const sendDeliveryTest = async () => {
+    if (sendingTest) return;
+    setSendingTest(true);
+    setTestResult(null);
+    try {
+      const response = await fetch("/api/admin/system/test-email", {
+        method: "POST",
+        headers: { Accept: "application/json" },
+      });
+      const payload = (await response.json().catch(() => null)) as {
+        error?: string;
+        message?: string;
+      } | null;
+      if (!response.ok) {
+        throw new Error(payload?.error ?? `Request failed (${response.status})`);
+      }
+      setTestResult({
+        ok: true,
+        message: "Resend accepted the test. Waiting for signed delivery confirmation…",
+      });
+      window.setTimeout(reload, 3_000);
+    } catch (cause) {
+      setTestResult({
+        ok: false,
+        message: cause instanceof Error ? cause.message : "The delivery test failed.",
+      });
+    } finally {
+      setSendingTest(false);
+    }
+  };
 
   if (error) return <p className="font-body text-[13px]" style={{ color: CORAL }}>Could not load: {error}</p>;
   if (loading && !data) return <p className="font-body text-[13px]" style={{ color: MUTED }}>Loading…</p>;
@@ -18,8 +53,32 @@ export function SystemScreen() {
 
   return (
     <div className="flex flex-col gap-4">
-      <Panel title="Health" right={<Muted className="text-[11px]">measured only — no fake greens</Muted>}>
+      <Panel
+        title="Health"
+        right={(
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            <Muted className="text-[11px]">measured only — no fake greens</Muted>
+            <button
+              type="button"
+              disabled={sendingTest}
+              onClick={() => void sendDeliveryTest()}
+              className="press rounded-lg px-2.5 py-1.5 font-body font-medium text-[11px] disabled:opacity-50"
+              style={{ color: TEXT, border: `1px solid ${SKY}88`, backgroundColor: `${SKY}1A` }}
+            >
+              {sendingTest ? "Sending…" : "Send delivery test"}
+            </button>
+          </div>
+        )}
+      >
         <HealthGrid items={data.health} />
+        {testResult && (
+          <p
+            className="font-body text-[11px] mt-2"
+            style={{ color: testResult.ok ? "#4ADE80" : CORAL }}
+          >
+            {testResult.message}
+          </p>
+        )}
       </Panel>
 
       {!data.reportingAvailable && (

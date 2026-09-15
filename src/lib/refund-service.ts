@@ -3,16 +3,19 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { FinancialResolutionState } from "./financial-resolution";
-import { notifyRefundDecided, notifyRefundRequested } from "./notify/for-refund";
+import {
+  executeMoneyOperation,
+  MoneyOperationExecutionError,
+} from "./money-operation-service";
+import { claimRefundDecision } from "./money-operations";
+import { notifyRefundRequested } from "./notify/for-refund";
 import {
   REQUEST_WINDOW_DAYS,
   type RefundOutcome,
   type RefundReason,
   canRequestRefund,
-  refundCents,
   routeRefund,
 } from "./refunds";
-import { refundRequested } from "./stripe/client";
 
 /**
  * The server half of a refund request: the checks a browser must not be
@@ -141,14 +144,10 @@ export async function requestRefund(
     hostAlreadyPaid: Boolean(booking.host_paid_at),
   });
 
-  const state =
+  const initialState =
     route.kind === "ask_host"
       ? "awaiting_host"
-      : route.kind === "staff"
-        ? "awaiting_staff"
-        : route.outcome === "none"
-          ? "refused"
-          : "approved";
+      : "awaiting_staff";
 
   const decidedNow = route.kind === "decided";
 
@@ -160,16 +159,11 @@ export async function requestRefund(
       reason: input.reason,
       detail: input.detail,
       evidence_path: input.evidencePath,
-      state,
-      ...(decidedNow
-        ? {
-            outcome: route.outcome,
-            // The rule decided this one, so the rule is named as the decider.
-            decided_by: practitionerId,
-            decided_at: now.toISOString(),
-            decision_note: route.because,
-          }
-        : {}),
+      // Even an automatic decision starts undecided.  The database claim is
+      // the one place that is allowed to turn a request into a decision, so a
+      // process crash can never leave an approved row whose Stripe refund was
+      // not made.
+      state: initialState,
     })
     .select("id")
     .single();
@@ -183,14 +177,29 @@ export async function requestRefund(
     throw insertError;
   }
 
-  if (decidedNow && route.outcome !== "none") {
-    await payBack(admin, booking, route.outcome, created.id, now);
-  }
-
+  // This describes the durable request, not a successful refund.  A decision
+  // email is emitted by executeMoneyOperation only after its provider receipt
+  // and the domain rows commit together.
   await notifyRefundRequested(admin, created.id).catch(() => {});
 
+  if (decidedNow) {
+    await settleRefundDecision(
+      admin,
+      created.id,
+      practitionerId,
+      route.outcome,
+      route.because,
+      now,
+    );
+  }
+
   return {
-    state,
+    state:
+      decidedNow && route.outcome === "none"
+        ? "refused"
+        : decidedNow
+          ? "approved"
+          : initialState,
     outcome: decidedNow ? route.outcome : null,
     because: route.because,
   };
@@ -219,7 +228,7 @@ export async function replyToRefund(
     throw new RefundError("This request is no longer waiting on you", 409);
   }
 
-  const { error: updateError } = await admin
+  const { data: updated, error: updateError } = await admin
     .from("refund_requests")
     .update({
       host_reply: reply,
@@ -229,8 +238,17 @@ export async function replyToRefund(
       // the side with money at stake.
       state: "awaiting_staff",
     })
-    .eq("id", requestId);
+    .eq("id", requestId)
+    // Compare-and-set: another host tab, staff action or timeout sweep may
+    // have moved the request after the ownership read above. Only the caller
+    // that still owns `awaiting_host` may record the reply.
+    .eq("state", "awaiting_host")
+    .select("id")
+    .maybeSingle();
   if (updateError) throw updateError;
+  if (!updated) {
+    throw new RefundError("This request is no longer waiting on you", 409);
+  }
 }
 
 /** Staff decide, and this is where money actually moves. */
@@ -256,88 +274,52 @@ export async function decideRefund(
 
   const booking = await loadBooking(admin, request.booking_id as string);
   requireSettledBooking(booking);
-  const refunded =
-    outcome === "none" ? 0 : await payBack(admin, booking, outcome, requestId, now, staffId);
-
-  const { error: updateError } = await admin
-    .from("refund_requests")
-    .update({
-      state: outcome === "none" ? "refused" : "approved",
-      outcome,
-      decided_by: staffId,
-      decided_at: now.toISOString(),
-      decision_note: note,
-      refunded_cents: refunded,
-    })
-    .eq("id", requestId)
-    // Only from an undecided state, so two staff clicking at once cannot
-    // refund twice — the second update matches no rows.
-    .in("state", ["awaiting_host", "awaiting_staff"]);
-  if (updateError) throw updateError;
-
-  await notifyRefundDecided(admin, requestId).catch(() => {});
+  const refunded = await settleRefundDecision(
+    admin,
+    requestId,
+    staffId,
+    outcome,
+    note,
+    now,
+  );
 
   return { refundedCents: refunded };
 }
 
 /**
- * Moves the money, and takes it from whoever should be out of pocket.
- *
- * A refund request arrives after the session, so the host may already have
- * been paid. Returning the full amount from our own balance would mean us
- * absorbing a host's mistake, so when the whole booking is being refunded and
- * the payout has gone, the host's transfer is reversed for their share first.
- *
- * The middle outcome never needs that: our fee never left our balance.
+ * Claims the decision before touching Stripe, then lets the journal own every
+ * retry and completion.  A null claim is deliberately one public answer for a
+ * competing staff click, a different verdict, or another active money action:
+ * none of those callers may race the owner of the durable lease.
  */
-async function payBack(
+async function settleRefundDecision(
   admin: SupabaseClient,
-  booking: BookingRow,
-  outcome: RefundOutcome,
   requestId: string,
+  decisionActorId: string,
+  outcome: RefundOutcome,
+  note: string,
   now: Date,
-  _staffId?: string,
 ): Promise<number> {
-  // Keep the irreversible provider call behind the same fail-closed guard as
-  // request creation and staff decision. This is deliberately repeated at the
-  // settlement boundary so future callers cannot bypass the invariant.
-  requireSettledBooking(booking);
-
-  const amount = refundCents(outcome, {
-    totalCents: booking.total_cents,
-    hostRateCents: booking.host_rate_cents,
-  });
-  if (amount <= 0) return 0;
-
-  if (!booking.stripe_payment_intent_id) {
-    throw new RefundError("This booking was never paid", 409);
-  }
-
-  const alreadyRefunded = booking.refunded_cents ?? 0;
-  const room = booking.total_cents - alreadyRefunded;
-  if (amount > room) {
-    throw new RefundError("That is more than is left on this booking", 409);
-  }
-
-  const clawBack =
-    outcome === "full" && booking.host_paid_at ? booking.host_rate_cents : 0;
-
-  const { refundedCents } = await refundRequested(
-    booking.stripe_payment_intent_id,
-    amount,
-    booking.stripe_transfer_id,
-    clawBack,
-    requestId,
+  const operation = await claimRefundDecision(
+    admin,
+    { requestId, decisionActorId, outcome, note },
+    undefined,
+    now,
   );
+  if (!operation) {
+    throw new RefundError("This request changed while the decision was starting", 409);
+  }
 
-  const { error } = await admin
-    .from("bookings")
-    .update({
-      refunded_at: now.toISOString(),
-      refunded_cents: alreadyRefunded + refundedCents,
-    })
-    .eq("id", booking.id);
-  if (error) throw error;
-
-  return refundedCents;
+  try {
+    const result = await executeMoneyOperation(admin, operation, undefined, now);
+    if (!result.committed) {
+      throw new RefundError("The refund is waiting for Stripe confirmation", 503);
+    }
+    return result.refundedCents;
+  } catch (failure) {
+    if (failure instanceof MoneyOperationExecutionError) {
+      throw new RefundError(failure.message, failure.manualReview ? 409 : 503);
+    }
+    throw failure;
+  }
 }

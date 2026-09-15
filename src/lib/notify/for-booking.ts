@@ -135,6 +135,19 @@ interface CancelledBookingRow extends BookingRow {
   financial_resolution_state: string;
 }
 
+interface PaidBookingRow {
+  id: string;
+  starts_at: string;
+  host_rate_cents: number;
+  host_paid_at: string | null;
+  stripe_transfer_id: string | null;
+  spaces: {
+    name: string;
+    host_id: string;
+    timezone: string;
+  };
+}
+
 /**
  * The booking behind a message that is about to be sent again.
  *
@@ -187,6 +200,29 @@ async function loadCancelledBooking(
   if (error) throw error;
 
   return (data as CancelledBookingRow | null) ?? null;
+}
+
+/**
+ * A payout receipt may only be built from both halves of the durable marker.
+ * Stripe returning a transfer is not enough: a process can stop before that
+ * fact reaches Postgres, and only persisted state is recoverable by a worker.
+ */
+async function loadPaidBooking(
+  admin: SupabaseClient,
+  bookingId: string,
+): Promise<PaidBookingRow | null> {
+  const { data, error } = await admin
+    .from("bookings")
+    .select(
+      "id, starts_at, host_rate_cents, host_paid_at, stripe_transfer_id, spaces!inner(name, host_id, timezone)",
+    )
+    .eq("id", bookingId)
+    .not("host_paid_at", "is", null)
+    .not("stripe_transfer_id", "is", null)
+    .maybeSingle();
+
+  if (error) throw error;
+  return (data as PaidBookingRow | null) ?? null;
 }
 
 /**
@@ -249,6 +285,7 @@ export async function notifyRequestMade(
       booking.status !== "upcoming" ||
       booking.approval_state !== "pending" ||
       !booking.authorized_at ||
+      booking.captured_at !== null ||
       booking.cancelled_at !== null ||
       booking.financial_resolution_state !== "not_required"
     ) return;
@@ -281,6 +318,90 @@ export async function notifyRequestMade(
     });
   } catch (error) {
     console.error(`Request notification failed for ${bookingId}:`, error);
+    if (options.propagate) throw error;
+  }
+}
+
+/**
+ * Tell the practitioner their request is real and waiting.
+ *
+ * The `authorized_at` gate is intentionally the same one the Stripe webhook
+ * writes after `amount_capturable_updated`. A PaymentIntent id alone only
+ * proves that a checkout form was created; it does not prove any funds are
+ * held and must never produce this receipt.
+ */
+export async function notifyRequestSubmitted(
+  admin: SupabaseClient,
+  bookingId: string,
+  options: { propagate?: boolean } = {},
+): Promise<void> {
+  try {
+    const booking = await loadRequest(admin, bookingId);
+    if (
+      !booking ||
+      booking.status !== "upcoming" ||
+      booking.approval_state !== "pending" ||
+      !booking.authorized_at ||
+      booking.captured_at !== null ||
+      booking.cancelled_at !== null ||
+      booking.financial_resolution_state !== "not_required"
+    ) return;
+
+    const practitioner = await recipientFor(admin, booking.practitioner_id);
+    if (!practitioner) return;
+
+    const zone = booking.spaces.timezone;
+    const deadline = expiresAt({
+      approvalState: "pending",
+      requestedAt: new Date(booking.created_at),
+      startsAt: new Date(booking.starts_at),
+    });
+
+    await notify({
+      kind: "request_submitted",
+      recipient: practitioner,
+      subjectId: bookingId,
+      bookingId,
+      expiresAt: deadline,
+      context: {
+        spaceName: booking.spaces.name,
+        when: formatWhen(new Date(booking.starts_at), zone),
+        amountCents: booking.total_cents,
+        deadline: formatWhen(deadline, zone),
+      },
+    });
+  } catch (error) {
+    console.error(`Request-submitted notification failed for ${bookingId}:`, error);
+    if (options.propagate) throw error;
+  }
+}
+
+/** A host receipt only after the confirmed transfer is durably recorded. */
+export async function notifyHostPayoutSent(
+  admin: SupabaseClient,
+  bookingId: string,
+  options: { propagate?: boolean } = {},
+): Promise<void> {
+  try {
+    const booking = await loadPaidBooking(admin, bookingId);
+    if (!booking?.host_paid_at || !booking.stripe_transfer_id) return;
+
+    const host = await recipientFor(admin, booking.spaces.host_id);
+    if (!host || hasOptedOut(host, "host_payout_sent")) return;
+
+    await notify({
+      kind: "host_payout_sent",
+      recipient: host,
+      subjectId: bookingId,
+      bookingId,
+      context: {
+        spaceName: booking.spaces.name,
+        when: formatWhen(new Date(booking.starts_at), booking.spaces.timezone),
+        amountCents: booking.host_rate_cents,
+      },
+    });
+  } catch (error) {
+    console.error(`Host payout notification failed for ${bookingId}:`, error);
     if (options.propagate) throw error;
   }
 }
@@ -689,6 +810,31 @@ export async function notifyAccessCodesReady(
 }
 
 /**
+ * Repair a crash after a direct booking was captured but before both sides'
+ * independent outbox rows were claimed. Existing rows collide on their stable
+ * dedupe keys, so a one-sided crash sends only the receipt that is missing.
+ */
+export async function reconcileBookingConfirmationNotifications(
+  admin: SupabaseClient,
+  now = new Date(),
+): Promise<{ reconciled: number }> {
+  const since = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const { data, error } = await admin.rpc("list_booking_confirmation_notification_gaps", {
+    p_since: since,
+    p_now: now.toISOString(),
+    p_limit: 100,
+  });
+  if (error) throw error;
+
+  let reconciled = 0;
+  for (const booking of data ?? []) {
+    await notifyBookingCreated(admin, booking.id);
+    reconciled += 1;
+  }
+  return { reconciled };
+}
+
+/**
  * Reconcile durable cancellation state with the outbox.
  *
  * A process can stop after the booking and Stripe settlement are durable but
@@ -758,5 +904,51 @@ export async function reconcileRequestOutcomeNotifications(
     }
   }
 
+  return { reconciled };
+}
+
+/**
+ * Repair the process gap after Stripe authorization became durable but before
+ * either side's outbox row was claimed. Both calls are deduped independently,
+ * so this also repairs the one-sided crash between the two receipts.
+ */
+export async function reconcileRequestSubmissionNotifications(
+  admin: SupabaseClient,
+  now = new Date(),
+): Promise<{ reconciled: number }> {
+  const since = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const { data, error } = await admin.rpc("list_request_submission_notification_gaps", {
+    p_since: since,
+    p_now: now.toISOString(),
+    p_limit: 100,
+  });
+  if (error) throw error;
+
+  let reconciled = 0;
+  for (const request of data ?? []) {
+    await notifyRequestSubmitted(admin, request.id);
+    await notifyRequestMade(admin, request.id);
+    reconciled += 1;
+  }
+  return { reconciled };
+}
+
+/** Repair a crash after durable payout state and before the host outbox claim. */
+export async function reconcileHostPayoutNotifications(
+  admin: SupabaseClient,
+  now = new Date(),
+): Promise<{ reconciled: number }> {
+  const since = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const { data, error } = await admin.rpc("list_host_payout_notification_gaps", {
+    p_since: since,
+    p_limit: 100,
+  });
+  if (error) throw error;
+
+  let reconciled = 0;
+  for (const payout of data ?? []) {
+    await notifyHostPayoutSent(admin, payout.id);
+    reconciled += 1;
+  }
   return { reconciled };
 }

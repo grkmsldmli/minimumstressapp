@@ -40,7 +40,13 @@ describe("cancellation settlement reconciliation", () => {
         { action: "void", chargedCents: 0 },
         "booking_financial_cancellation_bk_1",
       ),
-    ).resolves.toEqual({ refundedCents: 6_000, paidCents: 6_000 });
+    ).resolves.toEqual({
+      refundId: null,
+      providerStatus: "confirmed",
+      paymentIntentStatus: "succeeded",
+      refundedCents: 6_000,
+      paidCents: 6_000,
+    });
 
     expect(settle).toHaveBeenNthCalledWith(
       2,
@@ -70,7 +76,13 @@ describe("cancellation settlement reconciliation", () => {
         { action: "void", chargedCents: 0 },
         "booking_financial_cancellation_bk_1",
       ),
-    ).resolves.toEqual({ refundedCents: 0, paidCents: 0 });
+    ).resolves.toEqual({
+      refundId: null,
+      providerStatus: "canceled",
+      paymentIntentStatus: "canceled",
+      refundedCents: 0,
+      paidCents: 0,
+    });
     expect(settle).toHaveBeenCalledTimes(1);
   });
 

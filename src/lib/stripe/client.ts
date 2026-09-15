@@ -24,6 +24,51 @@ export function stripe(): Stripe {
   return cached;
 }
 
+/** A controlled provider conflict: safe to persist and safe to show to logs. */
+export class StripeReconciliationError extends Error {
+  constructor(
+    message: string,
+    readonly manualReview: boolean,
+  ) {
+    super(message);
+  }
+}
+
+export interface MoneyCorrelation {
+  operationId: string;
+  bookingId: string;
+  operationKind: "payout" | "cancellation" | "refund_request";
+  refundRequestId?: string | null;
+}
+
+const objectId = (value: { id: string } | string | null | undefined): string | null =>
+  typeof value === "string" ? value : value?.id ?? null;
+
+async function collect<T>(source: AsyncIterable<T>): Promise<T[]> {
+  const found: T[] = [];
+  for await (const item of source) found.push(item);
+  return found;
+}
+
+function moneyMetadata(
+  correlation: MoneyCorrelation,
+  step: "host_transfer" | "host_transfer_reversal" | "customer_refund",
+): Record<string, string> {
+  return {
+    minimumstress_money_operation_id: correlation.operationId,
+    booking_id: correlation.bookingId,
+    operation_kind: correlation.operationKind,
+    operation_step: step,
+    ...(correlation.refundRequestId
+      ? { refund_request_id: correlation.refundRequestId }
+      : {}),
+  };
+}
+
+function operationKey(correlation: MoneyCorrelation, step: string): string {
+  return `ms_money:${correlation.operationId}:${step}:v1`;
+}
+
 /* ------------------------------------------------------------------ */
 /*  Identity — practitioner verification                               */
 /* ------------------------------------------------------------------ */
@@ -538,7 +583,10 @@ async function refundExists(paymentIntentId: string, operationId: string): Promi
 }
 
 function controlledStripeError(message: string, failure: unknown): Error {
-  const error = new Error(message) as Error & { code?: string; type?: string };
+  const error = new StripeReconciliationError(message, false) as StripeReconciliationError & {
+    code?: string;
+    type?: string;
+  };
   if (failure && typeof failure === "object") {
     const source = failure as { code?: unknown; type?: unknown };
     if (typeof source.code === "string") error.code = source.code;
@@ -562,7 +610,13 @@ export async function payHost(
   money: BookingMoney,
   hostStripeAccountId: string,
   paymentIntentId: string,
-  meta: { bookingId: string; spaceId: string; practitionerId: string },
+  meta: {
+    bookingId: string;
+    spaceId: string;
+    practitionerId: string;
+    moneyOperationId?: string;
+    knownTransferId?: string | null;
+  },
 ): Promise<{ transferId: string }> {
   /*
    * The charge, not the intent. A transfer can only be funded by a charge, and
@@ -579,6 +633,52 @@ export async function payHost(
 
   const plan = planHostTransfer(money, hostStripeAccountId, chargeId, meta);
 
+  const correlation: MoneyCorrelation | null = meta.moneyOperationId
+    ? {
+        operationId: meta.moneyOperationId,
+        bookingId: meta.bookingId,
+        operationKind: "payout",
+      }
+    : null;
+
+  const matchesPlan = (transfer: Stripe.Transfer): boolean =>
+    transfer.amount === plan.amount &&
+    transfer.currency === plan.currency &&
+    objectId(transfer.destination) === plan.destination &&
+    objectId(transfer.source_transaction) === plan.source_transaction &&
+    transfer.transfer_group === plan.transfer_group;
+
+  if (meta.knownTransferId) {
+    const known = await stripe().transfers.retrieve(meta.knownTransferId);
+    if (!matchesPlan(known)) {
+      throw new StripeReconciliationError(
+        "The recorded Stripe transfer does not match the payout claim",
+        true,
+      );
+    }
+    return { transferId: known.id };
+  }
+
+  if (correlation) {
+    const narrowed = await collect(
+      stripe().transfers.list({
+        transfer_group: plan.transfer_group,
+        limit: 100,
+      }),
+    );
+    // transfer_group has always been deterministic per booking. Treat every
+    // provider row in that group as relevant, including old rows that predate
+    // operation metadata; filtering first could hide an earlier payout and
+    // create a second transfer after a host changed Connect accounts.
+    if (narrowed.length > 1 || narrowed.some((candidate) => !matchesPlan(candidate))) {
+      throw new StripeReconciliationError(
+        "Stripe has ambiguous transfer records for this booking",
+        true,
+      );
+    }
+    if (narrowed[0]) return { transferId: narrowed[0].id };
+  }
+
   const transfer = await stripe().transfers.create(
     {
       amount: plan.amount,
@@ -586,12 +686,180 @@ export async function payHost(
       destination: plan.destination,
       transfer_group: plan.transfer_group,
       source_transaction: plan.source_transaction,
-      metadata: plan.metadata,
+      metadata: {
+        ...plan.metadata,
+        ...(correlation ? moneyMetadata(correlation, "host_transfer") : {}),
+      },
     },
-    { idempotencyKey: `booking_payout_${meta.bookingId}` },
+    {
+      idempotencyKey: correlation
+        ? operationKey(correlation, "host_transfer")
+        : `booking_payout_${meta.bookingId}`,
+    },
   );
 
   return { transferId: transfer.id };
+}
+
+function validateRefund(
+  refund: Stripe.Refund,
+  paymentIntentId: string,
+  amountCents: number,
+): boolean {
+  return (
+    refund.amount === amountCents &&
+    refund.currency === "usd" &&
+    objectId(refund.payment_intent) === paymentIntentId
+  );
+}
+
+/** Find a correlated refund before creating one, even after Stripe prunes a key. */
+async function ensureCustomerRefund(
+  paymentIntentId: string,
+  amountCents: number,
+  correlation: MoneyCorrelation,
+  knownRefundId?: string | null,
+): Promise<Stripe.Refund> {
+  if (knownRefundId) {
+    const known = await stripe().refunds.retrieve(knownRefundId);
+    if (!validateRefund(known, paymentIntentId, amountCents)) {
+      throw new StripeReconciliationError(
+        "The recorded Stripe refund does not match the money claim",
+        true,
+      );
+    }
+    return known;
+  }
+
+  const narrowed = await collect(
+    stripe().refunds.list({ payment_intent: paymentIntentId, limit: 100 }),
+  );
+  const candidates = narrowed.filter(
+    (refund) =>
+      refund.metadata?.minimumstress_money_operation_id === correlation.operationId &&
+      refund.metadata?.operation_step === "customer_refund",
+  );
+
+  if (candidates.length > 1 || candidates.some((candidate) => !validateRefund(
+    candidate,
+    paymentIntentId,
+    amountCents,
+  ))) {
+    throw new StripeReconciliationError(
+      "Stripe has ambiguous refund records for this money operation",
+      true,
+    );
+  }
+  if (candidates[0]) return candidates[0];
+
+  return stripe().refunds.create(
+    {
+      payment_intent: paymentIntentId,
+      amount: amountCents,
+      metadata: moneyMetadata(correlation, "customer_refund"),
+    },
+    { idempotencyKey: operationKey(correlation, "customer_refund") },
+  );
+}
+
+export interface CancellationSettlementResult {
+  refundId: string | null;
+  providerStatus: string;
+  paymentIntentStatus: string;
+  paidCents: number;
+  refundedCents: number;
+}
+
+/**
+ * Settle a claimed cancellation from Stripe's current truth.
+ *
+ * In particular, `captured_at` may still be null locally while a successful
+ * capture webhook is in flight.  A failed cancel is therefore followed by a
+ * retrieve: if payment won, the frozen cancellation policy is applied to the
+ * amount Stripe actually received instead of recording a free cancellation as
+ * unpaid or sending a zero-dollar receipt.
+ */
+export async function settleClaimedCancellation(
+  paymentIntentId: string | null,
+  expectedRefundCents: number,
+  correlation: MoneyCorrelation & { knownRefundId?: string | null },
+): Promise<CancellationSettlementResult> {
+  if (!paymentIntentId) {
+    return {
+      refundId: null,
+      providerStatus: "not_required",
+      paymentIntentStatus: "not_required",
+      paidCents: 0,
+      refundedCents: 0,
+    };
+  }
+
+  const fromIntent = async (intent: Stripe.PaymentIntent): Promise<CancellationSettlementResult | null> => {
+    if (intent.status === "canceled") {
+      return {
+        refundId: null,
+        providerStatus: "canceled",
+        paymentIntentStatus: "canceled",
+        paidCents: 0,
+        refundedCents: 0,
+      };
+    }
+
+    if (intent.status !== "succeeded") return null;
+    const paidCents = intent.amount_received;
+    if (expectedRefundCents <= 0) {
+      return {
+        refundId: null,
+        providerStatus: "succeeded",
+        paymentIntentStatus: "succeeded",
+        paidCents,
+        refundedCents: 0,
+      };
+    }
+
+    const refund = await ensureCustomerRefund(
+      paymentIntentId,
+      expectedRefundCents,
+      correlation,
+      correlation.knownRefundId,
+    );
+    return {
+      refundId: refund.id,
+      providerStatus: refund.status ?? "unknown",
+      paymentIntentStatus: "succeeded",
+      paidCents,
+      refundedCents: refund.amount,
+    };
+  };
+
+  const before = await stripe().paymentIntents.retrieve(paymentIntentId);
+  const alreadyTerminal = await fromIntent(before);
+  if (alreadyTerminal) return alreadyTerminal;
+
+  try {
+    const canceled = await stripe().paymentIntents.cancel(
+      paymentIntentId,
+      {},
+      { idempotencyKey: operationKey(correlation, "payment_intent_cancel") },
+    );
+    const result = await fromIntent(canceled);
+    if (result) return result;
+  } catch {
+    const recovered = await stripe().paymentIntents.retrieve(paymentIntentId).catch(() => null);
+    if (recovered) {
+      const result = await fromIntent(recovered);
+      if (result) return result;
+    }
+    throw new StripeReconciliationError(
+      "Stripe could not confirm the cancellation settlement",
+      false,
+    );
+  }
+
+  throw new StripeReconciliationError(
+    "Stripe returned an unexpected payment state for the cancellation",
+    true,
+  );
 }
 
 /**
@@ -627,26 +895,92 @@ export async function refundRequested(
    * written. This is the one money path that did not.
    */
   requestId: string,
-): Promise<{ refundedCents: number; reversedCents: number }> {
-  if (amountCents <= 0) return { refundedCents: 0, reversedCents: 0 };
-
-  let reversedCents = 0;
-  if (hostTransferId && clawBackFromHost > 0) {
-    const reversal = await stripe().transfers.createReversal(hostTransferId, {
-      amount: clawBackFromHost,
-    });
-    reversedCents = reversal.amount;
+  operation?: {
+    operationId: string;
+    bookingId: string;
+    knownRefundId?: string | null;
+    knownReversalId?: string | null;
+  },
+): Promise<{
+  refundId: string;
+  reversalId: string | null;
+  providerStatus: string;
+  refundedCents: number;
+  reversedCents: number;
+}> {
+  if (amountCents <= 0) {
+    throw new StripeReconciliationError("A refund operation must have a positive amount", true);
   }
 
-  const refund = await stripe().refunds.create(
-    {
-      payment_intent: paymentIntentId,
-      amount: amountCents,
-    },
-    { idempotencyKey: `refund_request_${requestId}` },
+  const correlation: MoneyCorrelation = {
+    operationId: operation?.operationId ?? requestId,
+    bookingId: operation?.bookingId ?? requestId,
+    operationKind: "refund_request",
+    refundRequestId: requestId,
+  };
+
+  let reversedCents = 0;
+  let reversalId: string | null = null;
+  if (hostTransferId && clawBackFromHost > 0) {
+    const expectedMetadata = moneyMetadata(correlation, "host_transfer_reversal");
+    const validateReversal = (reversal: Stripe.TransferReversal): boolean =>
+      reversal.amount === clawBackFromHost &&
+      reversal.currency === "usd" &&
+      objectId(reversal.transfer) === hostTransferId;
+
+    let reversal: Stripe.TransferReversal | null = null;
+    if (operation?.knownReversalId) {
+      reversal = await stripe().transfers.retrieveReversal(
+        hostTransferId,
+        operation.knownReversalId,
+      );
+      if (!validateReversal(reversal)) {
+        throw new StripeReconciliationError(
+          "The recorded Stripe reversal does not match the refund claim",
+          true,
+        );
+      }
+    } else {
+      const reversals = await collect(
+        stripe().transfers.listReversals(hostTransferId, { limit: 100 }),
+      );
+      const candidates = reversals.filter(
+        (item) => item.metadata?.minimumstress_money_operation_id === correlation.operationId,
+      );
+      if (candidates.length > 1 || candidates.some((candidate) => !validateReversal(candidate))) {
+        throw new StripeReconciliationError(
+          "Stripe has ambiguous transfer reversals for this refund",
+          true,
+        );
+      }
+      reversal = candidates[0] ?? null;
+    }
+
+    if (!reversal) {
+      reversal = await stripe().transfers.createReversal(
+        hostTransferId,
+        { amount: clawBackFromHost, metadata: expectedMetadata },
+        { idempotencyKey: operationKey(correlation, "host_transfer_reversal") },
+      );
+    }
+    reversedCents = reversal.amount;
+    reversalId = reversal.id;
+  }
+
+  const refund = await ensureCustomerRefund(
+    paymentIntentId,
+    amountCents,
+    correlation,
+    operation?.knownRefundId,
   );
 
-  return { refundedCents: refund.amount, reversedCents };
+  return {
+    refundId: refund.id,
+    reversalId,
+    providerStatus: refund.status ?? "unknown",
+    refundedCents: refund.amount,
+    reversedCents,
+  };
 }
 
 /**

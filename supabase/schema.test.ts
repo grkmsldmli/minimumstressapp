@@ -99,7 +99,8 @@ describe("migrations apply cleanly", () => {
       // +2 in 0073 (admin ops): analytics_events, admin_audit_log.
       // +1 in 0079: listing_closure_requests.
       // +2 in 20260914190221: signed Resend events and correlated probes.
-      expect(tables.rows).toHaveLength(32);
+      // +1 in 20260915025303: the private booking money-operation journal.
+      expect(tables.rows).toHaveLength(33);
     } finally {
       await fresh.close();
     }
@@ -163,6 +164,8 @@ describe("migrations apply cleanly", () => {
       "availability",
       // A user severs the message channel with another (App Store 1.2, 0067).
       "blocked_users",
+      // Durable Stripe/booking commit seam; browser roles cannot read it.
+      "booking_money_operations",
       "bookings",
       // A studio's reusable class definition, for Work coverage (0069).
       "class_templates",
@@ -371,8 +374,11 @@ describe("migrations apply cleanly", () => {
            'apply_resend_delivery_event',
            'record_notification_acceptance',
            'claim_booking_financial_resolution_batch',
+           'list_booking_confirmation_notification_gaps',
            'list_cancellation_notification_gaps',
-           'list_request_outcome_notification_gaps'
+           'list_request_outcome_notification_gaps',
+           'list_request_submission_notification_gaps',
+           'list_host_payout_notification_gaps'
          )
        order by routine_name`,
     );
@@ -380,9 +386,42 @@ describe("migrations apply cleanly", () => {
       "apply_resend_delivery_event",
       "claim_booking_financial_resolution_batch",
       "claim_notification_batch",
+      "list_booking_confirmation_notification_gaps",
       "list_cancellation_notification_gaps",
+      "list_host_payout_notification_gaps",
       "list_request_outcome_notification_gaps",
+      "list_request_submission_notification_gaps",
       "record_notification_acceptance",
+    ]);
+  });
+
+  it("keeps lifecycle gap reconciliation callable only by service_role", async () => {
+    const grants = await rows<{ routine_name: string; grantee: string }>(
+      `select routine_name, grantee
+       from information_schema.role_routine_grants
+       where specific_schema = 'public'
+         and routine_name in (
+           'list_booking_confirmation_notification_gaps',
+           'list_request_submission_notification_gaps',
+           'list_host_payout_notification_gaps'
+         )
+         and grantee in ('PUBLIC', 'anon', 'authenticated', 'service_role')
+       order by routine_name, grantee`,
+    );
+
+    expect(grants).toEqual([
+      {
+        routine_name: "list_booking_confirmation_notification_gaps",
+        grantee: "service_role",
+      },
+      {
+        routine_name: "list_host_payout_notification_gaps",
+        grantee: "service_role",
+      },
+      {
+        routine_name: "list_request_submission_notification_gaps",
+        grantee: "service_role",
+      },
     ]);
   });
 
@@ -575,6 +614,7 @@ describe("durable booking financial resolution", () => {
           'pending', 12, '2026-09-15T10:00:00Z'
         )
       on conflict do nothing;
+
     `);
 
     const first = await rows<{ id: string; attempts: number; lease_token: string }>(`
@@ -1226,6 +1266,343 @@ describe("reliable notification outbox", () => {
         message_snapshot: null,
       });
     }
+  });
+
+  it("finds either side of a captured direct-booking confirmation gap", async () => {
+    const host = "a1111111-1111-4111-8111-111111111111";
+    const practitioner = "a2222222-2222-4222-8222-222222222222";
+    const space = "a3333333-3333-4333-8333-333333333333";
+    const booking = "a4444444-4444-4444-8444-444444444444";
+    const approvedRequest = "a5555555-5555-4555-8555-555555555555";
+    const activeBooking = "a6666666-6666-4666-8666-666666666666";
+    const activeOperation = "a7777777-7777-4777-8777-777777777777";
+
+    await db.exec(`
+      insert into auth.users (id, email) values
+        ('${host}', 'confirmation-host@example.com'),
+        ('${practitioner}', 'confirmation-practitioner@example.com')
+      on conflict do nothing;
+      insert into profiles (id, display_name, notify_bookings) values
+        ('${host}', 'Confirmation Host', true),
+        ('${practitioner}', 'Confirmation Practitioner', true)
+      on conflict do nothing;
+      insert into spaces (
+        id, host_id, name, category, hourly_rate_cents, capacity, access_type,
+        entry_instructions, address_line, status, sublease_doc_path,
+        legal_ack_at, sublease_doc_state, sublease_doc_reviewed_at
+      ) values (
+        '${space}', '${host}', 'Confirmation Room', 'physical', 4500, 3, 'keypad',
+        'Side door', '12 Test Lane', 'active', 'space/confirmation/lease.pdf',
+        now(), 'verified', now()
+      ) on conflict do nothing;
+      insert into bookings (
+        id, space_id, practitioner_id, starts_at, ends_at, status,
+        is_instant, was_pro, host_rate_cents, service_fee_cents,
+        instant_fee_cents, pro_discount_cents, credit_applied_cents,
+        total_cents, platform_cents, approval_state,
+        stripe_payment_intent_id, captured_at
+      ) values
+        (
+          '${booking}', '${space}', '${practitioner}', now() + interval '2 days',
+          now() + interval '2 days 1 hour', 'upcoming', true, false, 4500, 900,
+          500, 0, 0, 5900, 1400, 'not_required', 'pi_confirmation_gap', now()
+        ),
+        (
+          '${approvedRequest}', '${space}', '${practitioner}', now() + interval '3 days',
+          now() + interval '3 days 1 hour', 'upcoming', false, false, 4500, 900,
+          0, 0, 0, 5400, 900, 'approved', 'pi_approved_gap', now()
+        ),
+        (
+          '${activeBooking}', '${space}', '${practitioner}', now() + interval '4 days',
+          now() + interval '4 days 1 hour', 'upcoming', true, false, 4500, 900,
+          500, 0, 0, 5900, 1400, 'not_required', 'pi_active_gap', now()
+        )
+      on conflict do nothing;
+      insert into booking_money_operations (
+        id, booking_id, kind, state, operation_key, cancellation_actor,
+        provider_action, space_id, practitioner_id, payment_intent_id,
+        host_rate_cents, service_fee_cents, instant_fee_cents,
+        pro_discount_cents, total_cents, platform_cents
+      ) values (
+        '${activeOperation}', '${activeBooking}', 'cancellation', 'claimed',
+        'booking:${activeBooking}:confirmation-test', 'practitioner', 'refund',
+        '${space}', '${practitioner}', 'pi_active_gap', 4500, 900, 500, 0, 5900, 1400
+      ) on conflict do nothing;
+      update bookings set active_money_operation_id = '${activeOperation}'
+      where id = '${activeBooking}';
+    `);
+
+    let gaps = await rows<{ id: string }>(`
+      select id from list_booking_confirmation_notification_gaps(
+        now() - interval '1 day', now(), 100
+      )
+    `);
+    expect(gaps.map((row) => row.id)).toContain(booking);
+    expect(gaps.map((row) => row.id)).not.toContain(approvedRequest);
+    expect(gaps.map((row) => row.id)).not.toContain(activeBooking);
+
+    await db.exec(`
+      insert into notifications (
+        user_id, booking_id, kind, channel, dedupe_key, destination,
+        message_snapshot, attempts, next_attempt_at, expires_at
+      ) values (
+        '${practitioner}', '${booking}', 'booking_confirmed', 'email',
+        'booking_confirmed:${booking}:email', 'confirmation-practitioner@example.com',
+        '{"version":1,"message":{"subject":"Confirmed","body":"Booked","sms":null}}',
+        0, now(), now() + interval '2 days'
+      );
+    `);
+
+    // One claimed receipt must not hide a crash before the other side's claim.
+    gaps = await rows<{ id: string }>(`
+      select id from list_booking_confirmation_notification_gaps(
+        now() - interval '1 day', now(), 100
+      )
+    `);
+    expect(gaps.map((row) => row.id)).toContain(booking);
+
+    // A host who opted out is not an outstanding delivery gap.
+    await db.exec(`update profiles set notify_bookings = false where id = '${host}'`);
+    gaps = await rows<{ id: string }>(`
+      select id from list_booking_confirmation_notification_gaps(
+        now() - interval '1 day', now(), 100
+      )
+    `);
+    expect(gaps.map((row) => row.id)).not.toContain(booking);
+
+    await db.exec(`
+      update profiles set notify_bookings = true where id = '${host}';
+      insert into notifications (
+        user_id, booking_id, kind, channel, dedupe_key, destination,
+        message_snapshot, attempts, next_attempt_at, expires_at
+      ) values (
+        '${host}', '${booking}', 'host_new_booking', 'email',
+        'host_new_booking:${booking}:email', 'confirmation-host@example.com',
+        '{"version":1,"message":{"subject":"New booking","body":"Booked","sms":null}}',
+        0, now(), now() + interval '2 days'
+      );
+    `);
+
+    gaps = await rows<{ id: string }>(`
+      select id from list_booking_confirmation_notification_gaps(
+        now() - interval '1 day', now(), 100
+      )
+    `);
+    expect(gaps.map((row) => row.id)).not.toContain(booking);
+  });
+
+  it("repairs either side of a held-request crash and drops stale request receipts", async () => {
+    const host = "10101010-1010-4010-8010-101010101010";
+    const practitioner = "20202020-2020-4020-8020-202020202020";
+    const space = "30303030-3030-4030-8030-303030303030";
+    const booking = "40404040-4040-4040-8040-404040404040";
+
+    await db.exec(`
+      insert into auth.users (id, email) values
+        ('${host}', 'request-host@example.com'),
+        ('${practitioner}', 'request-practitioner@example.com')
+      on conflict do nothing;
+      insert into profiles (id, display_name) values
+        ('${host}', 'Request Host'),
+        ('${practitioner}', 'Request Practitioner')
+      on conflict do nothing;
+      insert into spaces (
+        id, host_id, name, category, hourly_rate_cents, capacity, access_type,
+        entry_instructions, address_line, status, sublease_doc_path,
+        legal_ack_at, sublease_doc_state, sublease_doc_reviewed_at
+      ) values (
+        '${space}', '${host}', 'Request Room', 'physical', 4500, 3, 'keypad',
+        'Side door', '12 Test Lane', 'active', 'space/request/lease.pdf',
+        now(), 'verified', now()
+      ) on conflict do nothing;
+      insert into bookings (
+        id, space_id, practitioner_id, starts_at, ends_at, is_instant, was_pro,
+        host_rate_cents, service_fee_cents, instant_fee_cents,
+        pro_discount_cents, credit_applied_cents, total_cents, platform_cents,
+        approval_state, authorized_at
+      ) values (
+        '${booking}', '${space}', '${practitioner}', now() + interval '2 days',
+        now() + interval '2 days 1 hour', false, false, 4500, 900, 0,
+        0, 0, 5400, 900, 'pending', now()
+      ) on conflict do nothing;
+    `);
+
+    let gaps = await rows<{ id: string }>(`
+      select id from list_request_submission_notification_gaps(
+        now() - interval '1 day', now(), 100
+      )
+    `);
+    expect(gaps.map((row) => row.id)).toContain(booking);
+
+    await db.exec(`
+      insert into notifications (
+        user_id, booking_id, kind, channel, dedupe_key, destination,
+        message_snapshot, attempts, next_attempt_at, expires_at
+      ) values (
+        '${practitioner}', '${booking}', 'request_submitted', 'email',
+        'request_submitted:${booking}:email', 'request-practitioner@example.com',
+        '{"version":1,"message":{"subject":"Request sent","body":"Held, not charged","sms":null}}',
+        0, now(), now() + interval '1 day'
+      );
+    `);
+
+    // The practitioner receipt alone must not hide a crash before the host
+    // notification was claimed.
+    gaps = await rows<{ id: string }>(`
+      select id from list_request_submission_notification_gaps(
+        now() - interval '1 day', now(), 100
+      )
+    `);
+    expect(gaps.map((row) => row.id)).toContain(booking);
+
+    await db.exec(`
+      insert into notifications (
+        user_id, booking_id, kind, channel, dedupe_key, destination,
+        message_snapshot, attempts, next_attempt_at, expires_at
+      ) values (
+        '${host}', '${booking}', 'host_new_request', 'email',
+        'host_new_request:${booking}:email', 'request-host@example.com',
+        '{"version":1,"message":{"subject":"New request","body":"Review it","sms":null}}',
+        0, now(), now() + interval '1 day'
+      );
+      update bookings
+      set approval_state = 'approved', approval_decided_at = now(), captured_at = now()
+      where id = '${booking}';
+    `);
+
+    gaps = await rows<{ id: string }>(`
+      select id from list_request_submission_notification_gaps(
+        now() - interval '1 day', now(), 100
+      )
+    `);
+    expect(gaps.map((row) => row.id)).not.toContain(booking);
+
+    const claimed = await rows<{ dedupe_key: string }>(`
+      select dedupe_key from claim_notification_batch(
+        '41414141-4141-4141-8141-414141414141', 200, now()
+      )
+    `);
+    expect(claimed.map((row) => row.dedupe_key)).not.toContain(
+      `request_submitted:${booking}:email`,
+    );
+
+    const [state] = await rows<{ provider_status: string; destination: string | null }>(`
+      select provider_status, destination from notifications
+      where dedupe_key = 'request_submitted:${booking}:email'
+    `);
+    expect(state).toEqual({ provider_status: "failed", destination: null });
+  });
+
+  it("finds durable payout gaps, respects preference, and rejects premature receipts", async () => {
+    const host = "50505050-5050-4050-8050-505050505050";
+    const practitioner = "60606060-6060-4060-8060-606060606060";
+    const space = "70707070-7070-4070-8070-707070707070";
+    const paidBooking = "80808080-8080-4080-8080-808080808080";
+    const unpaidBooking = "90909090-9090-4090-8090-909090909090";
+
+    await db.exec(`
+      insert into auth.users (id, email) values
+        ('${host}', 'payout-host@example.com'),
+        ('${practitioner}', 'payout-practitioner@example.com')
+      on conflict do nothing;
+      insert into profiles (id, display_name, notify_payouts) values
+        ('${host}', 'Payout Host', false),
+        ('${practitioner}', 'Payout Practitioner', true)
+      on conflict do nothing;
+      insert into spaces (
+        id, host_id, name, category, hourly_rate_cents, capacity, access_type,
+        entry_instructions, address_line, status, sublease_doc_path,
+        legal_ack_at, sublease_doc_state, sublease_doc_reviewed_at
+      ) values (
+        '${space}', '${host}', 'Payout Room', 'physical', 4500, 3, 'keypad',
+        'Side door', '12 Test Lane', 'active', 'space/payout/lease.pdf',
+        now(), 'verified', now()
+      ) on conflict do nothing;
+      insert into bookings (
+        id, space_id, practitioner_id, starts_at, ends_at, status,
+        is_instant, was_pro, host_rate_cents, service_fee_cents,
+        instant_fee_cents, pro_discount_cents, credit_applied_cents,
+        total_cents, platform_cents, captured_at, host_paid_at,
+        stripe_transfer_id
+      ) values
+        (
+          '${paidBooking}', '${space}', '${practitioner}', now() - interval '2 hours',
+          now() - interval '1 hour', 'completed', true, false, 4500, 900,
+          500, 0, 0, 5900, 1400, now() - interval '2 days', now(), 'tr_paid'
+        ),
+        (
+          '${unpaidBooking}', '${space}', '${practitioner}', now() - interval '2 hours',
+          now() - interval '1 hour', 'completed', true, false, 4500, 900,
+          500, 0, 0, 5900, 1400, now() - interval '2 days', null, null
+        )
+      on conflict do nothing;
+
+      insert into booking_money_operations (
+        booking_id, kind, state, operation_key, provider_action,
+        space_id, practitioner_id, host_rate_cents, service_fee_cents,
+        instant_fee_cents, pro_discount_cents, total_cents, platform_cents,
+        expected_transfer_cents, stripe_transfer_id, provider_status,
+        completed_at
+      ) values (
+        '${paidBooking}', 'payout', 'committed',
+        'booking:${paidBooking}:payout', 'transfer', '${space}',
+        '${practitioner}', 4500, 900, 500, 0, 5900, 1400, 4500,
+        'tr_paid', 'succeeded', now()
+      ) on conflict (operation_key) do nothing;
+    `);
+
+    let gaps = await rows<{ id: string }>(`
+      select id from list_host_payout_notification_gaps(now() - interval '1 day', 100)
+    `);
+    expect(gaps.map((row) => row.id)).not.toContain(paidBooking);
+
+    await db.exec(`update profiles set notify_payouts = true where id = '${host}'`);
+    gaps = await rows<{ id: string }>(`
+      select id from list_host_payout_notification_gaps(now() - interval '1 day', 100)
+    `);
+    expect(gaps.map((row) => row.id)).toContain(paidBooking);
+
+    await db.exec(`
+      insert into notifications (
+        user_id, booking_id, kind, channel, dedupe_key, destination,
+        message_snapshot, attempts, next_attempt_at
+      ) values
+        (
+          '${host}', '${paidBooking}', 'host_payout_sent', 'email',
+          'host_payout_sent:${paidBooking}:email', 'payout-host@example.com',
+          '{"version":1,"message":{"subject":"Sent to Stripe","body":"Transfer complete","sms":null}}',
+          0, now()
+        ),
+        (
+          '${host}', '${unpaidBooking}', 'host_payout_sent', 'email',
+          'host_payout_sent:${unpaidBooking}:email', 'payout-host@example.com',
+          '{"version":1,"message":{"subject":"Sent to Stripe","body":"Transfer complete","sms":null}}',
+          0, now()
+        );
+    `);
+
+    gaps = await rows<{ id: string }>(`
+      select id from list_host_payout_notification_gaps(now() - interval '1 day', 100)
+    `);
+    expect(gaps.map((row) => row.id)).not.toContain(paidBooking);
+
+    const claimed = await rows<{ dedupe_key: string }>(`
+      select dedupe_key from claim_notification_batch(
+        '91919191-9191-4191-8191-919191919191', 200, now()
+      )
+    `);
+    expect(claimed.map((row) => row.dedupe_key)).toContain(
+      `host_payout_sent:${paidBooking}:email`,
+    );
+    expect(claimed.map((row) => row.dedupe_key)).not.toContain(
+      `host_payout_sent:${unpaidBooking}:email`,
+    );
+
+    const [premature] = await rows<{ provider_status: string; destination: string | null }>(`
+      select provider_status, destination from notifications
+      where dedupe_key = 'host_payout_sent:${unpaidBooking}:email'
+    `);
+    expect(premature).toEqual({ provider_status: "failed", destination: null });
   });
 
   it("allows declined and expired requests to end without inventing an actor", async () => {

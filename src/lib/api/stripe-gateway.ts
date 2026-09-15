@@ -8,6 +8,7 @@ import {
   paymentIntentSettlementState,
   releaseHold,
   settle,
+  settleClaimedCancellation,
 } from "../stripe/client";
 import { settlementFor } from "../stripe/payments";
 
@@ -27,10 +28,20 @@ export const stripeGateway: StripeGateway = {
   release: (paymentIntentId, idempotencyKey?: string) =>
     releaseHold(paymentIntentId, idempotencyKey),
 
-  settle: async (paymentIntentId, paidCents, outcome, idempotencyKey?: string) =>
-    settlementFor(outcome, paidCents).kind === "none"
-      ? { refundedCents: 0, paidCents }
-      : settleAndReport(paymentIntentId, paidCents, outcome, idempotencyKey),
+  settle: async (paymentIntentId, paidCents, outcome, operation) =>
+    operation && typeof operation !== "string"
+      ? settleClaimedCancellation(paymentIntentId, operation.expectedRefundCents, {
+          operationId: operation.operationId,
+          bookingId: operation.bookingId,
+          operationKind: "cancellation",
+          knownRefundId: operation.knownRefundId,
+        })
+      : settleAndReport(
+          paymentIntentId,
+          paidCents,
+          outcome,
+          typeof operation === "string" ? operation : undefined,
+        ),
 
   payHost: (money, hostAccountId, paymentIntentId, meta) =>
     payHost(money, hostAccountId, paymentIntentId, meta),
@@ -46,7 +57,13 @@ async function settleAndReport(
   paidCents: number,
   outcome: { action: "void" | "capture_full"; chargedCents: number },
   idempotencyKey?: string,
-): Promise<{ refundedCents: number; paidCents: number }> {
+): Promise<{
+  refundId: null;
+  providerStatus: string;
+  paymentIntentStatus: string;
+  paidCents: number;
+  refundedCents: number;
+}> {
   const action = settlementFor(outcome, paidCents);
   try {
     await settle(paymentIntentId, action, providerOperationKey(idempotencyKey, action.kind));
@@ -66,7 +83,15 @@ async function settleAndReport(
       throw failure;
     }
 
-    if (state.status === "canceled") return { refundedCents: 0, paidCents: 0 };
+    if (state.status === "canceled") {
+      return {
+        refundId: null,
+        providerStatus: "canceled",
+        paymentIntentStatus: "canceled",
+        refundedCents: 0,
+        paidCents: 0,
+      };
+    }
     if (state.amountReceivedCents <= 0) throw failure;
 
     const reconciled = settlementFor(outcome, state.amountReceivedCents);
@@ -76,12 +101,18 @@ async function settleAndReport(
       providerOperationKey(idempotencyKey, reconciled.kind),
     );
     return {
+      refundId: null,
+      providerStatus: reconciled.kind === "none" ? "not_required" : "confirmed",
+      paymentIntentStatus: state.status,
       refundedCents: reconciled.kind === "refund" ? reconciled.amountCents : 0,
       paidCents: state.amountReceivedCents,
     };
   }
 
   return {
+    refundId: null,
+    providerStatus: action.kind === "none" ? "not_required" : "confirmed",
+    paymentIntentStatus: "not_retrieved",
     refundedCents: action.kind === "refund" ? action.amountCents : 0,
     paidCents,
   };

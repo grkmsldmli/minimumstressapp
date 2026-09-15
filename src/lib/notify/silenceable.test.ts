@@ -36,12 +36,12 @@ const recipient = (over: Partial<Recipient> = {}): Recipient => ({
 /**
  * Everything a person is told about their own session, and about money.
  *
- * `host_new_booking` is the only kind SILENCEABLE actually reaches. Its other
- * entry, `host_payout_sent`, is not a notification anybody sends — which is
- * why it cannot be subtracted here, and why the host's "Payout alerts" switch
- * had nothing to switch.
+ * These two host-only notices are the things the preference switches promise
+ * to control: a new confirmed booking and a transfer into Stripe balance.
  */
-const NEVER_SILENCEABLE = NOTIFICATION_KINDS.filter((kind) => kind !== "host_new_booking");
+const NEVER_SILENCEABLE = NOTIFICATION_KINDS.filter(
+  (kind) => kind !== "host_new_booking" && kind !== "host_payout_sent",
+);
 
 describe("what a switch may stop", () => {
   it("lets a host mute the booking nudge", () => {
@@ -50,6 +50,13 @@ describe("what a switch may stop", () => {
 
   it("sends the booking nudge when they have not muted it", () => {
     expect(hasOptedOut(recipient({ wantsBookingAlerts: true }), "host_new_booking")).toBe(false);
+  });
+
+  it("lets a host mute the payout receipt", () => {
+    expect(hasOptedOut(recipient(), "host_payout_sent")).toBe(true);
+    expect(
+      hasOptedOut(recipient({ wantsPayoutAlerts: true }), "host_payout_sent"),
+    ).toBe(false);
   });
 
   /**

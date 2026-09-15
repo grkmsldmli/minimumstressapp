@@ -22,6 +22,7 @@ import { notify } from "./send";
 
 interface RequestRow {
   id: string;
+  state: "awaiting_host" | "awaiting_staff" | "approved" | "refused";
   reason: RefundReason;
   detail: string;
   practitioner_id: string;
@@ -38,14 +39,18 @@ async function loadRequest(
   admin: SupabaseClient,
   requestId: string,
 ): Promise<RequestRow | null> {
-  const { data } = await admin
+  const { data, error } = await admin
     .from("refund_requests")
     .select(
-      "id, reason, detail, practitioner_id, bookings!inner(id, starts_at, host_rate_cents, host_paid_at, spaces!inner(name, host_id, timezone))",
+      "id, state, reason, detail, practitioner_id, bookings!inner(id, starts_at, host_rate_cents, host_paid_at, spaces!inner(name, host_id, timezone))",
     )
     .eq("id", requestId)
     .maybeSingle();
 
+  // A transient database or relationship error is not the same thing as a
+  // missing request. Let the caller/cron retry instead of silently declaring
+  // the notification unnecessary.
+  if (error) throw error;
   return (data as RequestRow | null) ?? null;
 }
 
@@ -63,14 +68,7 @@ export async function notifyRefundRequested(
   try {
     const request = await loadRequest(admin, requestId);
     if (!request) return;
-
-    const { data: state } = await admin
-      .from("refund_requests")
-      .select("state")
-      .eq("id", requestId)
-      .maybeSingle();
-
-    if (state?.state !== "awaiting_host") return;
+    if (request.state !== "awaiting_host") return;
 
     const host = await recipientFor(admin, request.bookings.spaces.host_id);
     if (!host || hasOptedOut(host, "refund_requested")) return;
@@ -80,6 +78,10 @@ export async function notifyRefundRequested(
       recipient: host,
       subjectId: requestId,
       bookingId: request.bookings.id,
+      // The database worker rechecks that the request is still waiting for
+      // this host immediately before it leases the envelope. This prevents a
+      // reply/timeout race from sending an obsolete request afterward.
+      defer: true,
       context: {
         spaceName: request.bookings.spaces.name,
         when: formatWhen(new Date(request.bookings.starts_at), request.bookings.spaces.timezone),
@@ -91,6 +93,7 @@ export async function notifyRefundRequested(
     });
   } catch (error) {
     console.error(`Refund request notification failed for ${requestId}:`, error);
+    throw error;
   }
 }
 
@@ -112,11 +115,17 @@ export async function notifyRefundDecided(
     const request = await loadRequest(admin, requestId);
     if (!request) return;
 
-    const { data: decision } = await admin
+    const { data: decision, error: decisionError } = await admin
       .from("refund_requests")
-      .select("refunded_cents, decision_note, outcome")
+      .select("state, refunded_cents, decision_note, outcome")
       .eq("id", requestId)
       .maybeSingle();
+    if (decisionError) throw decisionError;
+
+    // The request can be claimed before Stripe has committed the refund. A
+    // retry or crash-repair pass must never turn that in-flight decision into
+    // a receipt, because the wording promises money that may not have moved.
+    if (!decision || !["approved", "refused"].includes(decision.state)) return;
 
     const practitioner = await recipientFor(admin, request.practitioner_id);
     if (practitioner) {
@@ -159,5 +168,57 @@ export async function notifyRefundDecided(
     });
   } catch (error) {
     console.error(`Refund decision notification failed for ${requestId}:`, error);
+    throw error;
   }
+}
+
+/** Repair a crash after the durable host-facing request and before its outbox claim. */
+export async function reconcileRefundRequestNotifications(
+  admin: SupabaseClient,
+  now = new Date(),
+): Promise<{ reconciled: number }> {
+  const since = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const { data, error } = await admin.rpc("list_refund_request_notification_gaps", {
+    p_since: since,
+    p_limit: 100,
+  });
+  if (error) throw error;
+
+  let reconciled = 0;
+  let firstFailure: unknown;
+  for (const request of data ?? []) {
+    if (!request?.id) continue;
+    try {
+      await notifyRefundRequested(admin, request.id);
+      reconciled += 1;
+    } catch (error) {
+      // Keep repairing later rows in the bounded batch. The failed request
+      // remains absent from the outbox and is therefore eligible next run.
+      firstFailure ??= error;
+    }
+  }
+
+  if (firstFailure) throw firstFailure;
+  return { reconciled };
+}
+
+/** Repair a crash after a durable refund decision and before its outbox claim. */
+export async function reconcileRefundDecisionNotifications(
+  admin: SupabaseClient,
+  now = new Date(),
+): Promise<{ reconciled: number }> {
+  const since = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const { data, error } = await admin.rpc("list_refund_decision_notification_gaps", {
+    p_since: since,
+    p_limit: 100,
+  });
+  if (error) throw error;
+
+  let reconciled = 0;
+  for (const request of data ?? []) {
+    if (!request?.id) continue;
+    await notifyRefundDecided(admin, request.id);
+    reconciled += 1;
+  }
+  return { reconciled };
 }

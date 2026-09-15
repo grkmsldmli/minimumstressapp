@@ -7,6 +7,7 @@ import {
   notifyBookingCreated,
   notifyRequestApproved,
   notifyRequestMade,
+  notifyRequestSubmitted,
   recipientFor,
 } from "@/lib/notify/for-booking";
 import { notify } from "@/lib/notify/send";
@@ -139,6 +140,7 @@ interface CapturedBooking {
 }
 
 interface PaymentBooking extends CapturedBooking {
+  active_money_operation_id: string | null;
   captured_at: string | null;
   space_id: string;
   status: string;
@@ -163,7 +165,7 @@ async function bookingForPaymentIntent(
   const { data, error } = await admin
     .from("bookings")
     .select(
-      "id, approval_state, practitioner_id, space_id, status, total_cents, captured_at, cancelled_at, financial_resolution_state, stripe_payment_intent_id",
+      "id, approval_state, practitioner_id, space_id, status, total_cents, captured_at, cancelled_at, financial_resolution_state, stripe_payment_intent_id, active_money_operation_id",
     )
     .eq("stripe_payment_intent_id", paymentIntentId)
     .maybeSingle();
@@ -192,6 +194,9 @@ async function claimCapturedBooking(
     .eq("stripe_payment_intent_id", intent.id)
     // Guarded so a replayed event cannot overwrite a time already recorded.
     .is("captured_at", null)
+    // A cancellation/refund operation owns provider reconciliation and will
+    // persist actual paid truth atomically with its final domain state.
+    .is("active_money_operation_id", null)
     .select("id, approval_state, practitioner_id, cancelled_at, financial_resolution_state");
   if (directError) throw directError;
 
@@ -222,7 +227,7 @@ async function claimCapturedBooking(
   const { data: candidateData, error: candidateError } = await admin
     .from("bookings")
     .select(
-      "id, approval_state, practitioner_id, space_id, status, total_cents, captured_at, cancelled_at, financial_resolution_state, stripe_payment_intent_id",
+      "id, approval_state, practitioner_id, space_id, status, total_cents, captured_at, cancelled_at, financial_resolution_state, stripe_payment_intent_id, active_money_operation_id",
     )
     .eq("id", bookingId)
     .maybeSingle();
@@ -237,6 +242,7 @@ async function claimCapturedBooking(
     candidate.captured_at !== null ||
     candidate.cancelled_at !== null ||
     candidate.financial_resolution_state !== "not_required" ||
+    Boolean(candidate.active_money_operation_id) ||
     candidate.space_id !== spaceId ||
     candidate.status !== "upcoming" ||
     candidate.practitioner_id !== practitionerId ||
@@ -257,6 +263,7 @@ async function claimCapturedBooking(
     // repair-and-capture; the loser is recognized as a replay below.
     .is("stripe_payment_intent_id", null)
     .is("captured_at", null)
+    .is("active_money_operation_id", null)
     .eq("space_id", spaceId)
     .eq("practitioner_id", practitionerId)
     .eq("status", "upcoming")
@@ -406,6 +413,17 @@ async function handle(event: Stripe.Event): Promise<void> {
      */
     case "payment_intent.amount_capturable_updated": {
       const intent = event.data.object;
+      // The event name says the amount changed; the object proves that usable
+      // funds are actually held. Never authorize locally from a zero/closed
+      // intent, even if Stripe replays an unusual historical snapshot.
+      if (
+        intent.status !== "requires_capture" ||
+        intent.amount_capturable <= 0 ||
+        intent.currency.toLowerCase() !== "usd"
+      ) {
+        return;
+      }
+
       const { data: held, error } = await admin
         .from("bookings")
         .update({ authorized_at: new Date().toISOString() })
@@ -414,7 +432,10 @@ async function handle(event: Stripe.Event): Promise<void> {
         .eq("status", "upcoming")
         .is("cancelled_at", null)
         .eq("financial_resolution_state", "not_required")
+        .eq("total_cents", intent.amount_capturable)
+        .is("captured_at", null)
         .is("authorized_at", null)
+        .is("active_money_operation_id", null)
         .select("id");
       if (error) throw error;
 
@@ -430,13 +451,17 @@ async function handle(event: Stripe.Event): Promise<void> {
           .eq("status", "upcoming")
           .is("cancelled_at", null)
           .eq("financial_resolution_state", "not_required")
+          .eq("total_cents", intent.amount_capturable)
+          .is("captured_at", null)
           .not("authorized_at", "is", null)
+          .is("active_money_operation_id", null)
           .maybeSingle();
         if (existingError) throw existingError;
         requestId = existing?.id as string | undefined;
       }
 
       if (requestId) {
+        await notifyRequestSubmitted(admin, requestId, { propagate: true });
         await notifyRequestMade(admin, requestId, { propagate: true });
       }
       return;
@@ -470,6 +495,9 @@ async function handle(event: Stripe.Event): Promise<void> {
         */
         .eq("status", "upcoming")
         .is("cancelled_at", null)
+        // The journal owns actor and money truth while a cancellation/refund
+        // is in flight; a Stripe event must not relabel that decision.
+        .is("active_money_operation_id", null)
         .eq("financial_resolution_state", "not_required");
       if (error) throw error;
       return;

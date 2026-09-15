@@ -8,12 +8,6 @@ import { abandonedBefore } from "./abandoned";
 import { recordEvent } from "./analytics/record";
 import { type HeldBookingRow, isHeldBooking } from "./booking-visibility";
 import {
-  FINANCIAL_RESOLUTION_SELECT,
-  initialFinancialResolution,
-  resolveCancellationFinancial,
-  type FinancialResolutionRow,
-} from "./financial-resolution";
-import {
   explainRejection,
   planBooking,
   planSeries,
@@ -21,8 +15,13 @@ import {
   type PractitionerFacts,
   type SpaceFacts,
 } from "./booking-plan";
-import type { BookingMoney } from "./money";
-import { notifyCancellation } from "./notify/for-booking";
+import { resolveCancellation, type BookingMoney } from "./money";
+import { claimCancellation } from "./money-operations";
+import {
+  executeMoneyOperation,
+  MoneyOperationExecutionError,
+  stripeMoneyProvider,
+} from "./money-operation-service";
 import { toCancellationEvents, type CancellationEvent } from "./reliability";
 import { SESSION_MINUTES } from "./session";
 import { customerFor } from "./stripe/subscription";
@@ -106,6 +105,7 @@ async function releaseAbandoned(
       .eq("status", "upcoming")
       .is("captured_at", null)
       .is("cancelled_at", null)
+      .is("active_money_operation_id", null)
       .eq("financial_resolution_state", "not_required")
       .or("approval_state.neq.pending,authorized_at.is.null")
       .lt("created_at", abandonedBefore(now).toISOString());
@@ -129,6 +129,7 @@ async function releaseAbandoned(
         .eq("status", "upcoming")
         .is("captured_at", null)
         .is("cancelled_at", null)
+        .is("active_money_operation_id", null)
         .eq("financial_resolution_state", "not_required");
     }
   } catch (failure) {
@@ -154,7 +155,18 @@ export interface StripeGateway {
   settle(paymentIntentId: string, paidCents: number, outcome: {
     action: "void" | "capture_full";
     chargedCents: number;
-  }, idempotencyKey?: string): Promise<{ refundedCents: number; paidCents?: number }>;
+  }, operation?: string | {
+    operationId: string;
+    bookingId: string;
+    expectedRefundCents: number;
+    knownRefundId?: string | null;
+  }): Promise<{
+    refundId: string | null;
+    providerStatus: string;
+    paymentIntentStatus: string;
+    paidCents: number;
+    refundedCents: number;
+  }>;
   /** Sends the host their rate, out of the charge that funded it. */
   payHost(
     money: BookingMoney,
@@ -706,16 +718,6 @@ export async function cancelBooking(
     throw new BookingError("That session has already started", 409);
   }
 
-  /*
-   * Approval is written before capture. During that short interval Stripe may
-   * already be taking the hold while `captured_at` is still waiting on the
-   * signed webhook. Treating it as unpaid and trying to cancel would race the
-   * capture. The webhook is the only authority that closes this interval.
-   */
-  if (booking.approval_state === "approved" && !booking.captured_at) {
-    throw new BookingError("Payment confirmation is still processing", 409);
-  }
-
   // Whoever is asking must actually be the party they claim to be.
   const hostId = (booking.spaces as { host_id: string }).host_id;
   const allowed =
@@ -724,64 +726,102 @@ export async function cancelBooking(
       : hostId === requesterId;
   if (!allowed) throw new BookingError("Not your booking to cancel", 403);
 
-  const financial = initialFinancialResolution(
-    Boolean(booking.stripe_payment_intent_id),
+  const money: BookingMoney = {
+    hostRateCents: booking.host_rate_cents,
+    serviceFeeCents: booking.service_fee_cents,
+    instantFeeCents: booking.instant_fee_cents,
+    proDiscountCents: booking.pro_discount_cents,
+    totalCents: booking.total_cents,
+    platformCents: booking.platform_cents,
+  };
+
+  const outcome = resolveCancellation(
+    money,
+    actor,
+    new Date(booking.starts_at),
     now,
+    Boolean(booking.was_pro),
   );
 
   /*
-   * This guarded write is the cancellation claim. Only one request can turn
-   * an open booking into a provider-backed cancellation; every later request
-   * matches no row before it can call Stripe with a different actor or policy.
+   * Local capture state can lag Stripe while a webhook is in flight. A live
+   * intent therefore freezes the policy refund even when captured_at is null;
+   * provider reconciliation will either prove cancellation (zero paid) or a
+   * winning capture and apply this exact policy. With no intent, no money ever
+   * moved and both receipt amounts must be zero.
    */
-  const { data: cancelled, error: cancellationWriteError } = await admin
-    .from("bookings")
-    .update({
-      /*
-       * A live intent can still be paid. Keep the row `upcoming` — and thus
-       * keep the hour unavailable — until Stripe has confirmed the refund or
-       * cancellation. With no intent there is no provider gap, so the booking
-       * can become terminal in this same write.
-       */
-      status: booking.stripe_payment_intent_id
-        ? "upcoming"
-        : actor === "host"
-          ? "cancelled_by_host"
-          : "cancelled_by_practitioner",
-      cancelled_at: now.toISOString(),
-      cancelled_by: actor,
-      ...financial.patch,
-    })
-    .eq("id", bookingId)
-    .eq("status", "upcoming")
-    .is("cancelled_at", null)
-    .eq("approval_state", booking.approval_state)
-    .eq("financial_resolution_state", booking.financial_resolution_state)
-    .gt("starts_at", now.toISOString())
-    .select(FINANCIAL_RESOLUTION_SELECT)
-    .maybeSingle();
-  if (cancellationWriteError) throw cancellationWriteError;
-  if (!cancelled) throw new BookingError("That booking is already closed", 409);
+  const paidCents = booking.captured_at ? booking.total_cents : 0;
+  const expectedRefundCents = booking.stripe_payment_intent_id
+    ? Math.max(0, booking.total_cents - outcome.chargedCents)
+    : 0;
+  const expectedChargedCents = booking.stripe_payment_intent_id
+    ? outcome.chargedCents
+    : 0;
+  const providerAction = !booking.stripe_payment_intent_id
+    ? "none"
+    : booking.captured_at
+      ? expectedRefundCents > 0
+        ? "refund"
+        : "none"
+      : "cancel_intent";
 
-  let refundedCents = 0;
-  let chargedCents = 0;
-  if (financial.leaseToken) {
-    try {
-      ({ refundedCents, chargedCents } = await resolveCancellationFinancial(
-        admin,
-        stripeGateway,
-        cancelled as FinancialResolutionRow,
-        financial.leaseToken,
-        now,
-      ));
-    } catch (failure) {
-      // The cancellation claim is durable and the slot is still blocked. The
-      // financial worker owns the retry, and the receipt stays gated until it
-      // records Stripe truth and makes the row terminal.
-      console.error(`Cancellation settlement queued for booking ${bookingId}:`, failure);
-      return;
-    }
+  const operation = await claimCancellation(
+    admin,
+    {
+      bookingId,
+      actor,
+      requesterId,
+      providerAction,
+      expectedRefundCents,
+      expectedChargedCents,
+    },
+    undefined,
+    now,
+  );
+  if (!operation) {
+    throw new BookingError("That booking changed while cancellation was starting", 409);
   }
+
+  let result: { committed: boolean; refundedCents: number };
+  try {
+    result = await executeMoneyOperation(
+      admin,
+      operation,
+      {
+        ...stripeMoneyProvider,
+        cancellation: (claimed) =>
+          claimed.payment_intent_id
+            ? stripeGateway.settle(
+                claimed.payment_intent_id,
+                paidCents,
+                outcome,
+                {
+                  operationId: claimed.id,
+                  bookingId: claimed.booking_id,
+                  expectedRefundCents: claimed.expected_refund_cents,
+                  knownRefundId: claimed.stripe_refund_id,
+                },
+              )
+            : Promise.resolve({
+                refundId: null,
+                providerStatus: "not_required",
+                paymentIntentStatus: "not_required",
+                paidCents: 0,
+                refundedCents: 0,
+              }),
+      },
+      now,
+    );
+  } catch (failure) {
+    if (failure instanceof MoneyOperationExecutionError) {
+      throw new BookingError(failure.message, failure.manualReview ? 409 : 503);
+    }
+    throw failure;
+  }
+  if (!result.committed) {
+    throw new BookingError("The cancellation is waiting for Stripe confirmation", 503);
+  }
+  const refundedCents = result.refundedCents;
 
   // Nothing to award: a host's cancellation refunds in full and that is the
   // whole compensation.
@@ -803,13 +843,4 @@ export async function cancelBooking(
     true,
   );
 
-  /*
-   * Last, so the figures quoted are the ones that actually landed — and taken
-   * from what Stripe did rather than from what the policy said, so an email
-   * can never describe a refund that was not made.
-  */
-  await notifyCancellation(admin, bookingId, actor, {
-    chargedCents,
-    refundedCents,
-  });
 }

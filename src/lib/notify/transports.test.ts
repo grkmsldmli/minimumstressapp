@@ -51,6 +51,7 @@ describe("Resend transport", () => {
     expect(JSON.parse(String(request.body))).toMatchObject({
       tags: [{ name: "notification_id", value: "a".repeat(64) }],
     });
+    expect(JSON.parse(String(request.body)).html).toMatch(/<h1[^>]*>Check<\/h1>/);
   });
 
   it("never copies a provider response body containing an address into durable errors", async () => {

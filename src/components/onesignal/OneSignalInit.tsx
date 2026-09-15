@@ -3,21 +3,22 @@
 import { useEffect } from "react";
 
 import { isNativeApp } from "@/lib/native";
+import { isSiteHost } from "@/lib/site-host";
 import { supabaseBrowser } from "@/lib/supabase/client";
 
 /**
  * OneSignal web push, wired to the signed-in account.
  *
- * Runs ONLY in a real browser — never inside the Capacitor native shell. That
- * shell's WebView cannot do service-worker web push (its own native push is a
- * separate, later integration through the OneSignal Capacitor plugin), and
- * trying to register a service worker there only errors. So the whole thing is
- * gated on !isNativeApp().
+ * Runs in exactly one place: a real browser on the APP host. It is skipped
+ *  - inside the Capacitor native shell (its WebView can't do service-worker web
+ *    push; native push is a separate plugin integration), and
+ *  - on the marketing site (minimumstress.com) — no sign-in there, and that
+ *    host's CSP would block the SDK anyway.
  *
- * It initialises the SDK, then keeps the OneSignal "user" in step with the
- * Supabase session: on sign-in it calls login(userId) so a push can be aimed at
- * a person across their devices from the server, and on sign-out it calls
- * logout() so the next person on the same browser is not tied to the last one.
+ * It initialises the SDK once, then keeps the OneSignal "user" in step with the
+ * Supabase session: login(userId) on sign-in so a push can be aimed at a person
+ * across their devices from the server, logout() on sign-out so the next person
+ * on the same browser is not tied to the last one.
  *
  * The App ID is public — it ships in the page source of every web-push site, so
  * defaulting it here is safe. The secret REST API key that SENDS pushes lives
@@ -40,21 +41,25 @@ interface OneSignalApi {
 declare global {
   interface Window {
     OneSignalDeferred?: Array<(os: OneSignalApi) => void | Promise<void>>;
+    /** Set once the SDK setup has run; on window (not module scope) so it
+     *  survives Fast Refresh and the SDK is never initialised twice. */
+    __oneSignalStarted?: boolean;
   }
 }
-
-// Once per page load. React StrictMode (dev) double-invokes effects and HMR
-// re-runs them, and initialising the SDK twice throws "SDK already initialized";
-// a module-level latch keeps init and the auth listener to exactly one setup.
-let started = false;
 
 export function OneSignalInit() {
   useEffect(() => {
     const appId = process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID || DEFAULT_APP_ID;
-    // Web push only, once, and only when we have an App ID. The native shell
-    // uses the native plugin instead — see the component comment.
-    if (!appId || isNativeApp() || started) return;
-    started = true;
+    // Web push only, app host only, once per page load. See the component note.
+    if (
+      !appId ||
+      isNativeApp() ||
+      isSiteHost(window.location.host) ||
+      window.__oneSignalStarted
+    ) {
+      return;
+    }
+    window.__oneSignalStarted = true;
 
     // The SDK drains this queue when it loads; anything pushed after init still
     // runs, which is what lets the auth listener reach OneSignal later.
@@ -63,35 +68,44 @@ export function OneSignalInit() {
       window.OneSignalDeferred.push(fn);
     };
 
-    const syncUser = (userId: string | null | undefined) => {
-      withOneSignal(async (os) => {
-        if (userId) {
-          await os.login(userId);
-          // Invite a signed-in visitor to turn on notifications. promptPush has
-          // its own backoff, so a dismissal is remembered and this does not nag.
-          if (!os.User.PushSubscription.optedIn) os.Slidedown.promptPush();
-        } else {
-          await os.logout();
-        }
-      });
-    };
-
     withOneSignal(async (os) => {
-      await os.init({
-        appId,
-        allowLocalhostAsSecureOrigin: process.env.NODE_ENV !== "production",
-      });
+      try {
+        await os.init({
+          appId,
+          allowLocalhostAsSecureOrigin: process.env.NODE_ENV !== "production",
+        });
+      } catch {
+        // A stray second init throws "already initialized" — harmless; the auth
+        // sync below still binds against the live SDK.
+      }
 
+      // Keep the OneSignal user in step with the Supabase session, driven only
+      // by onAuthStateChange (it emits an INITIAL_SESSION event on load, so no
+      // separate getSession() call is needed and nothing double-fires). Act only
+      // on a real change of id, and only invite the prompt on a genuine sign-in
+      // — never on the roughly-hourly token refresh.
       const supabase = supabaseBrowser();
-      const { data } = await supabase.auth.getSession();
-      syncUser(data.session?.user?.id ?? null);
+      let lastId: string | null | undefined;
       supabase.auth.onAuthStateChange((_event, session) => {
-        syncUser(session?.user?.id ?? null);
+        const userId = session?.user?.id ?? null;
+        if (userId === lastId) return;
+        const signingIn = userId !== null && !lastId;
+        lastId = userId;
+        withOneSignal(async (next) => {
+          if (userId) {
+            await next.login(userId);
+            // promptPush has its own backoff, so even here it won't nag.
+            if (signingIn && !next.User.PushSubscription.optedIn) next.Slidedown.promptPush();
+          } else {
+            await next.logout();
+          }
+        });
       });
     });
 
-    // Load the page SDK. Injected here rather than rendered as a <script> so it
-    // is never fetched inside the native shell (guarded above).
+    // Load the page SDK. Injected here (not rendered as a <script>) so it is
+    // never fetched in the native shell or on the marketing site, both guarded
+    // above.
     if (!document.querySelector(`script[src="${SDK_SRC}"]`)) {
       const script = document.createElement("script");
       script.src = SDK_SRC;

@@ -11,6 +11,10 @@ workflows:
     max_build_duration: 60
     environment:
       node: 22
+      vars:
+        # Minimum Stress uses app geolocation itself, but does not send device
+        # location to OneSignal. Keep this consistent for sync and Gradle.
+        ONESIGNAL_DISABLE_LOCATION: "true"
     scripts:
       - name: Install dependencies
         script: npm ci
@@ -29,6 +33,67 @@ workflows:
     artifacts:
       - android/app/build/outputs/**/*.apk
 
+  android-release:
+    name: Android — signed Play AAB
+    instance_type: mac_mini_m2
+    max_build_duration: 90
+    environment:
+      node: 22
+      # Upload the long-lived Play upload keystore once in Codemagic under
+      # Team settings -> Code signing identities using this exact reference.
+      android_signing:
+        - minimumstress_upload
+      vars:
+        APP_VERSION_NAME: "1.0.1"
+        ONESIGNAL_DISABLE_LOCATION: "true"
+    scripts:
+      - name: Verify release inputs
+        script: |
+          set -eu
+          case "${PROJECT_BUILD_NUMBER:-}" in
+            ""|*[!0-9]*|0)
+              echo "PROJECT_BUILD_NUMBER must be a positive integer for Play versionCode."
+              exit 1
+              ;;
+          esac
+          for required in CM_KEYSTORE_PATH CM_KEYSTORE_PASSWORD CM_KEY_ALIAS CM_KEY_PASSWORD; do
+            if [ -z "$(printenv "$required")" ]; then
+              echo "Missing encrypted Android signing input: $required"
+              exit 1
+            fi
+          done
+          if [ ! -f "$CM_KEYSTORE_PATH" ]; then
+            echo "Codemagic did not fetch the configured Android keystore."
+            exit 1
+          fi
+      - name: Install dependencies
+        script: npm ci
+      - name: Sync Capacitor (Android)
+        script: npx cap sync android
+      - name: Build and verify signed AAB
+        script: |
+          set -eu
+          export JAVA_HOME=$(/usr/libexec/java_home -v 21)
+          "$JAVA_HOME/bin/java" -version
+          cd android
+          chmod +x ./gradlew
+          ./gradlew clean bundleRelease \
+            -Dorg.gradle.java.home="$JAVA_HOME" \
+            --no-daemon
+          AAB_PATH="app/build/outputs/bundle/release/app-release.aab"
+          test -s "$AAB_PATH"
+          SIGNATURE_OUTPUT=$("$JAVA_HOME/bin/jarsigner" -verify "$AAB_PATH" 2>&1)
+          printf '%s\n' "$SIGNATURE_OUTPUT"
+          printf '%s\n' "$SIGNATURE_OUTPUT" | grep -Fq "jar verified." || {
+            echo "AAB signature verification failed."
+            exit 1
+          }
+    artifacts:
+      - android/app/build/outputs/bundle/release/*.aab
+    # Google requires the first version to be uploaded manually. Download the
+    # signed AAB artifact and upload it to Internal testing in Play Console.
+    # Add google_play publishing only after that first Play version exists.
+
   ios-release:
     name: iOS — TestFlight
     instance_type: mac_mini_m2
@@ -38,6 +103,8 @@ workflows:
     environment:
       node: 22
       xcode: latest
+      vars:
+        ONESIGNAL_DISABLE_LOCATION: "true"
       ios_signing:
         distribution_type: app_store
         bundle_identifier: com.minimumstress.app
@@ -49,7 +116,7 @@ workflows:
       - name: Apply uploaded signing files
         script: |
           xcode-project use-profiles
-      - name: Verify Sign in with Apple provisioning
+      - name: Verify Apple capabilities in provisioning
         script: |
           set -e
           PROFILE_PATH="${CM_PROVISIONING_PROFILE:-}"
@@ -69,7 +136,13 @@ workflows:
             echo "Selected provisioning profile does not contain the Sign in with Apple entitlement."
             exit 1
           }
+          APNS_ENV=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:aps-environment' /tmp/profile.plist 2>/dev/null || true)
+          if [ "$APNS_ENV" != "production" ]; then
+            echo "Selected provisioning profile must contain aps-environment=production. Regenerate it after enabling Push Notifications for com.minimumstress.app."
+            exit 1
+          fi
           echo "Sign in with Apple entitlement: present"
+          echo "APNs push entitlement: present"
       - name: Unique build number
         script: |
           cd ios/App

@@ -6,8 +6,9 @@ questionnaire with the answers below.
 ## Headline answers
 - **Does the app collect data?** Yes.
 - **Does the app use data to track you (ATT)?** **No.** There is no advertising
-  SDK, no IDFA access, no cross-app/website tracking, and no third-party analytics
-  in the client. Do **not** add an ATT prompt.
+  SDK, no IDFA access, and no cross-app/website tracking. OneSignal measures push
+  delivery, notification opens and app sessions for app functionality/analytics;
+  it does not perform cross-app tracking. Do **not** add an ATT prompt.
 - **Is collected data linked to the user's identity?** Yes for account data (it is
   a signed-in marketplace).
 
@@ -20,6 +21,10 @@ questionnaire with the answers below.
   Minimum Stress stores only Stripe identifiers and a pass/fail verdict — never
   card numbers, bank numbers, or the ID document/selfie.
 - **Resend**: delivers transactional email (receives the email address).
+- **OneSignal**: delivers opt-in web/iOS/Android push. It receives an opaque
+  account alias, push token, permission/delivery/open status, session activity,
+  and device/browser metadata. Push copy is generic and contains no booking
+  address, time, amount, message text, or access code.
 - **Google Places** (geocoding): receives a ZIP or place text to turn it into
   coordinates for distance sorting. Not stored by the provider on our behalf.
 
@@ -39,10 +44,11 @@ questionnaire with the answers below.
 | Purchase history / booking history | Yes | Yes | No | App Functionality | MS/Supabase; payments via Stripe |
 | Payment info | Yes | Yes | No | App Functionality — entered into and held **by Stripe**; MS stores only identifiers | Stripe |
 | Customer support | Yes | Yes | No | Customer Support (emails to support) | MS, Resend |
-| Identifiers — user ID | Yes | Yes | No | App Functionality | MS/Supabase |
-| Identifiers — device ID / advertising ID | **No** | — | No | — | — |
-| Usage data — product interaction | Yes | **No** | No | Analytics: counts of public page views and app opens using a random id that lasts only for the current tab/WebView session; no query text, referrer, device id or advertising id | MS/Supabase |
-| Diagnostics / crash data | **No** custom collection | — | No | Hosting infrastructure logs (Vercel/Supabase) may retain standard request logs; no diagnostics or third-party analytics SDK in the app | Infra |
+| Identifiers — user ID | Yes | Yes | No | App Functionality | MS/Supabase; opaque linked alias in OneSignal when push is enabled |
+| Identifiers — device/push identifier | Yes | Yes | No | App Functionality (deliver opt-in push) | OneSignal (OneSignal ID and APNs/FCM/web push token; no advertising ID) |
+| Usage data — product interaction | Yes | Yes for OneSignal push/session activity; No for first-party page/open counts | No | App Functionality, Analytics: push delivery/opens and sessions; first-party page/open counts use a random per-session id | MS/Supabase, OneSignal |
+| Diagnostics — other diagnostic data | Yes | Yes | No | App Functionality: device/browser model, OS, app version, network state and carrier used to operate push | OneSignal |
+| Crash / performance data | **No** custom collection | — | No | Hosting infrastructure logs may retain standard request logs; OneSignal does not receive crash or energy logs | Infra |
 
 ## Notes for the reviewer of this label
 - The private `space-media` bucket means listing photos are served only through
@@ -55,7 +61,8 @@ questionnaire with the answers below.
   only identifier is a random `sessionStorage` value, which disappears with the
   tab/WebView session, is never joined to a user id, and is deleted with the raw
   event after 90 days.
+- No purchase history is sent to OneSignal: the app has no native in-app purchase
+  integration and sends no purchase tags, outcomes or custom events to OneSignal.
 - The public Privacy Policy at `https://minimumstress.app/privacy` must match this
-  table. Verify it names Supabase, Stripe, Resend, and the geocoding provider, and
-  states that precise location is not retained. If it does not, update the policy
-  before submission (see the report's manual steps).
+  table. Verify it names Supabase, Stripe, Resend, OneSignal, and the geocoding
+  provider, and states that precise location is not retained.

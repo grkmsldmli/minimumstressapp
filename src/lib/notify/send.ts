@@ -1,8 +1,16 @@
 import { createHash, randomUUID } from "node:crypto";
 
+import { oneSignalExternalId } from "../onesignal/identity";
 import { supabaseAdmin } from "../supabase/server";
 import { type Message, type MessageContext, type NotificationKind, render } from "./messages";
-import { emailConfigured, sendEmail, sendSms, smsConfigured } from "./transports";
+import {
+  emailConfigured,
+  pushConfigured,
+  sendEmail,
+  sendPush,
+  sendSms,
+  smsConfigured,
+} from "./transports";
 
 /** A person or an internal team address that can receive a notification. */
 export interface Recipient {
@@ -30,6 +38,7 @@ export interface NotifyRequest {
 }
 
 export type NotifyOutcome = "queued" | "sent" | "skipped" | "duplicate" | "failed";
+type NotificationChannel = "email" | "sms" | "push";
 
 interface MessageSnapshot {
   version: 1;
@@ -45,9 +54,28 @@ interface MessageSnapshot {
  */
 export async function notify(
   request: NotifyRequest,
-): Promise<Partial<Record<"email" | "sms", NotifyOutcome>>> {
+): Promise<Partial<Record<NotificationChannel, NotifyOutcome>>> {
   const message = render(request.kind, { name: request.recipient.name, ...request.context });
-  const outcome: Partial<Record<"email" | "sms", NotifyOutcome>> = {};
+  const outcome: Partial<Record<NotificationChannel, NotifyOutcome>> = {};
+
+  // Persist push first and let the state-gated worker send it. If this process
+  // stops before email is written, the existing missing-email repair reruns
+  // the notifier: push dedupes and email is restored. The reverse ordering can
+  // leave a delivered email with no durable push claim after a crash.
+  if (request.recipient.userId && message.push) {
+    const externalId = oneSignalExternalId(request.recipient.userId);
+    // Never retain the richer email/SMS envelope in a push row. Only the
+    // privacy-reviewed lock-screen copy belongs in the OneSignal queue.
+    const pushOnlyMessage: Message = {
+      subject: message.push.title,
+      body: message.push.body,
+      sms: null,
+      push: message.push,
+    };
+    outcome.push = externalId
+      ? await deliver({ ...request, defer: true }, "push", externalId, pushOnlyMessage)
+      : "skipped";
+  }
 
   if (request.recipient.email) {
     outcome.email = await deliver(request, "email", request.recipient.email, message);
@@ -62,14 +90,19 @@ export async function notify(
 
 async function deliver(
   request: NotifyRequest,
-  channel: "email" | "sms",
+  channel: NotificationChannel,
   destination: string,
   message: Message,
 ): Promise<NotifyOutcome> {
   const admin = supabaseAdmin();
   const dedupeKey = `${request.kind}:${request.subjectId}:${channel}`;
   const correlationId = channel === "email" ? providerCorrelationId(dedupeKey) : null;
-  const configured = channel === "email" ? emailConfigured() : smsConfigured();
+  const configured =
+    channel === "email"
+      ? emailConfigured()
+      : channel === "sms"
+        ? smsConfigured()
+        : pushConfigured();
   const now = new Date();
   const dispatchLease = randomUUID();
   const { error: claimError } = await admin.from("notifications").insert({
@@ -119,17 +152,29 @@ async function deliver(
     return "skipped";
   }
 
-  const result =
-    channel === "email"
-      ? await sendEmail(destination, message, {
-          idempotencyKey: providerIdempotencyKey(dedupeKey),
-          correlationId: correlationId!,
-        })
-      : await sendSms(destination, message.sms!);
+  const result = channel === "email"
+    ? await sendEmail(destination, message, {
+        idempotencyKey: providerIdempotencyKey(dedupeKey),
+        correlationId: correlationId!,
+      })
+    : channel === "sms"
+      ? await sendSms(destination, message.sms!)
+      : await sendPush(destination, message.push!, {
+          idempotencyKey: oneSignalPushIdempotencyKey(dedupeKey),
+        });
 
   if (result.status === "sent") {
     await recordAcceptance(admin, dedupeKey, result.id, new Date().toISOString(), dispatchLease);
     return "sent";
+  }
+
+  if (result.status === "skipped") {
+    await finishUnsubscribed(
+      admin,
+      { dedupe_key: dedupeKey, lease_token: dispatchLease },
+      now,
+    );
+    return "skipped";
   }
 
   const terminal = result.status === "dropped";
@@ -167,6 +212,22 @@ export function providerCorrelationId(dedupeKey: string): string {
   return createHash("sha256").update(dedupeKey, "utf8").digest("hex");
 }
 
+/**
+ * Deterministic RFC 9562 UUIDv8 for OneSignal's thirty-day idempotency window.
+ * The provider sees no booking id or notification kind, only this digest.
+ */
+export function oneSignalPushIdempotencyKey(dedupeKey: string): string {
+  const bytes = createHash("sha256")
+    .update(`minimum-stress:onesignal:notification:v1:${dedupeKey}`, "utf8")
+    .digest()
+    .subarray(0, 16);
+  bytes[6] = (bytes[6] & 0x0f) | 0x80;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+
+  const hex = bytes.toString("hex");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
 function snapshot(message: Message): MessageSnapshot {
   return { version: 1, message };
 }
@@ -186,11 +247,28 @@ function messageFromSnapshot(value: unknown): Message | null {
   }
 
   const message = envelope.message as Partial<Message>;
+  const push = message.push;
   if (
     typeof message.subject !== "string" ||
     typeof message.body !== "string" ||
     !(message.sms === null || typeof message.sms === "string") ||
-    !(message.html === undefined || typeof message.html === "string")
+    !(message.html === undefined || typeof message.html === "string") ||
+    !(
+      push === undefined ||
+      push === null ||
+      (
+        typeof push === "object" &&
+        typeof push.title === "string" &&
+        push.title.length > 0 &&
+        push.title.length <= 100 &&
+        typeof push.body === "string" &&
+        push.body.length > 0 &&
+        push.body.length <= 240 &&
+        typeof push.url === "string" &&
+        push.url.length > 0 &&
+        push.url.length <= 2048
+      )
+    )
   ) {
     return null;
   }
@@ -227,19 +305,26 @@ export async function retryPending(
     while (cursor < pending.length) {
       const row = pending[cursor++];
       const message = messageFromSnapshot(row.message_snapshot);
-      if (!message || (row.channel === "sms" && !message.sms)) {
+      if (
+        !message ||
+        (row.channel === "sms" && !message.sms) ||
+        (row.channel === "push" && !message.push)
+      ) {
         await finishFailed(admin, row, "notification payload is invalid", true, now);
         givenUp += 1;
         continue;
       }
 
-      const result =
-        row.channel === "email"
-          ? await sendEmail(row.destination, message, {
-              idempotencyKey: providerIdempotencyKey(row.dedupe_key),
-              correlationId: row.provider_correlation_id,
-            })
-          : await sendSms(row.destination, message.sms!);
+      const result = row.channel === "email"
+        ? await sendEmail(row.destination, message, {
+            idempotencyKey: providerIdempotencyKey(row.dedupe_key),
+            correlationId: row.provider_correlation_id ?? undefined,
+          })
+        : row.channel === "sms"
+          ? await sendSms(row.destination, message.sms!)
+          : await sendPush(row.destination, message.push!, {
+              idempotencyKey: oneSignalPushIdempotencyKey(row.dedupe_key),
+            });
 
       if (result.status === "sent") {
         await recordAcceptance(
@@ -250,6 +335,11 @@ export async function retryPending(
           row.lease_token,
         );
         sent += 1;
+        continue;
+      }
+
+      if (result.status === "skipped") {
+        await finishUnsubscribed(admin, row, now);
         continue;
       }
 
@@ -318,6 +408,29 @@ async function finishFailed(
     .eq("lease_token", row.lease_token);
 }
 
+async function finishUnsubscribed(
+  admin: ReturnType<typeof supabaseAdmin>,
+  row: Pick<PendingNotification, "dedupe_key" | "lease_token">,
+  now: Date,
+): Promise<void> {
+  // A 200/no-id means OneSignal found no subscribed device. It is terminal but
+  // not a delivery failure, so close the queue row without polluting the
+  // operator failure list or retaining the opaque alias and message snapshot.
+  await admin
+    .from("notifications")
+    .update({
+      provider_status: "unsubscribed",
+      sent_at: now.toISOString(),
+      destination: null,
+      message_snapshot: null,
+      last_error: null,
+      lease_token: null,
+      lease_until: null,
+    })
+    .eq("dedupe_key", row.dedupe_key)
+    .eq("lease_token", row.lease_token);
+}
+
 function nextAttemptAt(attempts: number, from: Date): string {
   const minutes = Math.min(6 * 60, 2 ** Math.max(0, attempts - 1));
   return new Date(from.getTime() + minutes * 60_000).toISOString();
@@ -328,7 +441,7 @@ export const MAX_ATTEMPTS = 12;
 export interface PendingNotification {
   id: string;
   kind: NotificationKind;
-  channel: "email" | "sms";
+  channel: NotificationChannel;
   dedupe_key: string;
   destination: string;
   message_snapshot: unknown;
@@ -336,5 +449,5 @@ export interface PendingNotification {
   booking_id: string | null;
   expires_at: string | null;
   lease_token: string;
-  provider_correlation_id: string;
+  provider_correlation_id: string | null;
 }

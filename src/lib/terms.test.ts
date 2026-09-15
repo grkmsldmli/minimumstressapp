@@ -204,6 +204,16 @@ describe("the words a version stands for", () => {
      * shown the current privacy terms again before continuing.
      */
     6: "c94fd4f6",
+    /*
+     * Version 7 discloses opt-in OneSignal push delivery across web, iOS and
+     * Android: the opaque linked identifier, push token, permission/delivery/
+     * open status, session activity and device metadata it processes. It also
+     * promises that lock-screen copy excludes booking detail and explains how
+     * to request deletion of linked OneSignal records. This is a new processor and
+     * category of collection, so existing accounts see the current privacy
+     * terms again before continuing.
+     */
+    7: "b13d2223",
   };
 
   it("still says what the current version said", () => {

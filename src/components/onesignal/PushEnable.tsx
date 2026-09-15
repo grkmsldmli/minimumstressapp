@@ -4,78 +4,163 @@ import { Bell } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { isNativeApp } from "@/lib/native";
+import { nativeOneSignal } from "@/lib/onesignal/client";
+import {
+  nativePushConsentGiven,
+  setNativePushConsentGiven,
+} from "@/lib/onesignal/consent";
+import { requestNativePushOptIn } from "@/lib/onesignal/native-sync";
+import { webOneSignal } from "@/lib/onesignal/web";
+import { requestWebPushOptIn } from "@/lib/onesignal/web-sync";
 
-/**
- * A one-tap "turn on notifications" control for the Notifications screen, shown
- * to both hosts and practitioners.
- *
- * Web push needs a real user gesture to raise the browser's permission prompt —
- * an auto-prompt on load is unreliable and, once dismissed or blocked, never
- * comes back. A clear button the person taps is the dependable path: the click
- * itself is the gesture, so the "Allow" prompt appears every time.
- *
- * It asks the browser directly (works even if the OneSignal SDK is slow to
- * load), then nudges OneSignal to register the subscription. It renders nothing
- * where push cannot work — the native shell (its own push comes from the native
- * plugin), a browser with no Notification API, or once permission is already
- * granted — and shows a short hint if the browser has it blocked.
- */
+type PushState = "checking" | "unsupported" | "ready" | "blocked" | "repair" | "on" | "error";
 
-interface OneSignalPush {
-  User: { PushSubscription: { optIn?: () => void } };
-}
-
-type Perm = "default" | "granted" | "denied" | "unsupported";
-
-function readPermission(): Perm {
-  if (typeof window === "undefined" || !("Notification" in window)) return "unsupported";
-  return Notification.permission as Perm;
-}
-
+/** One user gesture that enables push in either a browser or a native shell. */
 export function PushEnable() {
-  const native = isNativeApp();
-  const [perm, setPerm] = useState<Perm>("unsupported");
+  const [state, setState] = useState<PushState>("checking");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (native) return;
-    // Read after mount (in a callback, not synchronously in the effect body) so
-    // there is no hydration mismatch and no cascading render — the first paint
-    // shows nothing, then this fills in the real permission state.
-    const id = window.setTimeout(() => setPerm(readPermission()), 0);
-    return () => window.clearTimeout(id);
-  }, [native]);
+    let stopped = false;
 
-  // Nothing to offer in the native shell, on an unsupported browser, or once
-  // it is already on.
-  if (native || perm === "unsupported" || perm === "granted") return null;
+    if (isNativeApp()) {
+      let removeChange: (() => void) | undefined;
+
+      void nativeOneSignal().then(async (oneSignal) => {
+        if (!oneSignal || stopped) {
+          if (!stopped) setState("unsupported");
+          return;
+        }
+
+        const refresh = async () => {
+          const permitted = await oneSignal.Notifications.hasPermission();
+          const consented = nativePushConsentGiven();
+          if (!consented) {
+            oneSignal.setConsentGiven(false);
+            if (!stopped) setState("ready");
+            return;
+          }
+          if (!permitted) {
+            setNativePushConsentGiven(false);
+            oneSignal.setConsentGiven(false);
+            if (!stopped) setState("blocked");
+            return;
+          }
+          const optedIn = await oneSignal.User.pushSubscription.getOptedInAsync();
+          if (!stopped) setState(optedIn ? "on" : "repair");
+        };
+
+        const onChange = () => void refresh();
+        oneSignal.User.pushSubscription.addEventListener("change", onChange);
+        removeChange = () =>
+          oneSignal.User.pushSubscription.removeEventListener("change", onChange);
+        await refresh().catch(() => {
+          if (!stopped) setState("error");
+        });
+      });
+
+      return () => {
+        stopped = true;
+        removeChange?.();
+      };
+    }
+
+    if (!("Notification" in window)) {
+      queueMicrotask(() => {
+        if (!stopped) setState("unsupported");
+      });
+      return;
+    }
+
+    let removeChange: (() => void) | undefined;
+    const permission = Notification.permission;
+    queueMicrotask(() => {
+      if (!stopped) setState(permission === "denied" ? "blocked" : "checking");
+    });
+
+    void webOneSignal().then((oneSignal) => {
+      if (stopped) return;
+      const subscription = oneSignal.User.PushSubscription;
+      const refresh = () => {
+        if (stopped) return;
+        const nextPermission = Notification.permission;
+        setState(
+          nextPermission === "denied"
+            ? "blocked"
+            : nextPermission === "granted" && subscription.optedIn
+              ? "on"
+              : nextPermission === "granted"
+                ? "repair"
+                : "ready",
+        );
+      };
+      const onChange = () => refresh();
+      subscription.addEventListener?.("change", onChange);
+      removeChange = () => subscription.removeEventListener?.("change", onChange);
+      refresh();
+    });
+
+    return () => {
+      stopped = true;
+      removeChange?.();
+    };
+  }, []);
+
+  if (state === "checking" || state === "unsupported" || state === "on") return null;
 
   const enable = async () => {
-    if (busy || !("Notification" in window)) return;
+    if (busy) return;
     setBusy(true);
     try {
-      // The click is the gesture, so this reliably shows the native prompt.
-      const result = await Notification.requestPermission();
-      setPerm(result as Perm);
-      if (result === "granted") {
-        // Let OneSignal (loaded app-wide by OneSignalInit) register the
-        // subscription now that permission is ours.
-        const w = window as unknown as {
-          OneSignalDeferred?: Array<(os: OneSignalPush) => void>;
-        };
-        w.OneSignalDeferred = w.OneSignalDeferred ?? [];
-        w.OneSignalDeferred.push((os) => {
-          try {
-            os.User.PushSubscription.optIn?.();
-          } catch {
-            /* already subscribed, or SDK unavailable — nothing to do */
-          }
-        });
+      if (isNativeApp()) {
+        const oneSignal = await nativeOneSignal();
+        if (!oneSignal) {
+          setState("unsupported");
+          return;
+        }
+        const permitted = await oneSignal.Notifications.requestPermission(true);
+        if (!permitted) {
+          setNativePushConsentGiven(false);
+          oneSignal.setConsentGiven(false);
+          setState("blocked");
+          return;
+        }
+        setNativePushConsentGiven(true);
+        if (!(await requestNativePushOptIn())) {
+          setNativePushConsentGiven(false);
+          oneSignal.setConsentGiven(false);
+          throw new Error("Push identity unavailable");
+        }
+        setState((await oneSignal.User.pushSubscription.getOptedInAsync()) ? "on" : "repair");
+        return;
       }
+
+      const oneSignal = await webOneSignal();
+      if (Notification.permission === "default") {
+        // Ask the browser directly while OneSignal is still consent-gated.
+        await Notification.requestPermission();
+      }
+      if (Notification.permission === "denied") {
+        await oneSignal.setConsentGiven(false);
+        setState("blocked");
+        return;
+      }
+      if (Notification.permission !== "granted") {
+        setState("ready");
+        return;
+      }
+      if (!(await requestWebPushOptIn())) throw new Error("Push identity unavailable");
+      setState(oneSignal.User.PushSubscription.optedIn ? "on" : "repair");
+    } catch {
+      setState("error");
     } finally {
       setBusy(false);
     }
   };
+
+  const blocked = state === "blocked";
+  const repair = state === "repair";
+  const native = isNativeApp();
 
   return (
     <div
@@ -85,26 +170,31 @@ export function PushEnable() {
       <Bell size={16} color="#2578C2" className="mt-0.5 shrink-0" />
       <div className="min-w-0 flex-1">
         <p className="font-body font-medium text-[15px] text-navy">Turn on notifications</p>
-        {perm === "denied" ? (
-          <p className="font-body font-normal text-[13.5px] mt-0.5 leading-relaxed text-ink-soft">
-            Notifications are blocked for this site in your browser. Allow them in your browser&apos;s
-            site settings to get booking alerts here.
-          </p>
-        ) : (
-          <>
-            <p className="font-body font-normal text-[13.5px] mt-0.5 leading-relaxed text-ink-soft">
-              Get booking confirmations, messages and door codes the moment they happen.
-            </p>
-            <button
-              type="button"
-              onClick={() => void enable()}
-              disabled={busy}
-              className="mt-2.5 px-4 py-2 rounded-full font-body font-medium text-[14px] press disabled:opacity-60"
-              style={{ backgroundColor: "#16304E", color: "#fff" }}
-            >
-              {busy ? "Turning on…" : "Turn on"}
-            </button>
-          </>
+        <p className="font-body font-normal text-[13.5px] mt-0.5 leading-relaxed text-ink-soft">
+          {blocked
+            ? "Notifications are blocked. Allow them in this device’s settings, then try again."
+            : repair
+              ? "Permission is allowed, but this device is not subscribed yet. Finish setup to receive booking alerts."
+              : state === "error"
+                ? "Notifications could not be enabled. Check your connection and try again."
+                : "Get booking confirmations and important updates as soon as they happen."}
+        </p>
+        {(!blocked || native) && (
+          <button
+            type="button"
+            onClick={() => void enable()}
+            disabled={busy}
+            className="mt-2.5 px-4 py-2 rounded-full font-body font-medium text-[14px] press disabled:opacity-60"
+            style={{ backgroundColor: "#16304E", color: "#fff" }}
+          >
+            {busy
+              ? "Turning on…"
+              : blocked
+                ? "Open settings"
+                : repair
+                  ? "Finish setup"
+                  : "Turn on"}
+          </button>
         )}
       </div>
     </div>

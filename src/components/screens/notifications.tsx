@@ -69,7 +69,7 @@ export function Notifications({
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 pt-5 pb-8 safe-pb-8">
-        {/* One-tap push opt-in (web only; hidden in the native shell and once on). */}
+        {/* One-tap push opt-in for web, iOS and Android; hidden once subscribed. */}
         <PushEnable />
         {entries.length === 0 ? (
           <p className="font-body font-normal text-[14px] leading-relaxed text-ink-soft">

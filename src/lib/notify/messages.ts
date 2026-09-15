@@ -1,5 +1,5 @@
 import { formatCents } from "../money";
-import { renderNotificationEmail, renderPlainEmail } from "./email-template";
+import { appEmailUrl, renderNotificationEmail, renderPlainEmail } from "./email-template";
 
 /**
  * What each notification says, as pure functions over plain data.
@@ -55,6 +55,20 @@ export const NOTIFICATION_KINDS = [
 
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
 
+/**
+ * The deliberately small envelope allowed onto a lock screen.
+ *
+ * Push providers and operating systems may display this before a device is
+ * unlocked. It therefore never carries names, locations, times, amounts,
+ * access codes, message text, or review notes. The authenticated app remains
+ * the source of the actual detail.
+ */
+export interface PushMessage {
+  title: string;
+  body: string;
+  url: string;
+}
+
 export interface Message {
   subject: string;
   /** Plain text, always present as the accessible and provider fallback form. */
@@ -76,6 +90,9 @@ export interface Message {
    * and let `toHtml` build the safe generic shell.
    */
   html?: string;
+
+  /** Generic lock-screen copy, or null for internal-only notifications. */
+  push?: PushMessage | null;
 }
 
 export interface MessageContext {
@@ -168,8 +185,82 @@ export function render(kind: NotificationKind, context: MessageContext): Message
   const message = renderPlain(kind, context);
   return {
     ...message,
+    push: renderPush(kind),
     html: renderNotificationEmail(kind, message, context),
   };
+}
+
+/**
+ * Privacy-safe push copy. Keep this independent of MessageContext on purpose:
+ * even a future caller passing a door code or a claim note cannot put that
+ * value onto somebody's lock screen or into OneSignal's provider payload.
+ */
+function renderPush(kind: NotificationKind): PushMessage | null {
+  // A web-push cold start has no mounted click listener yet. The safe marker
+  // lets the freshly opened app consume the intent after authentication.
+  const url = appEmailUrl("/?open=notifications");
+
+  switch (kind) {
+    case "booking_confirmed":
+      return push("Booking confirmed", "Your booking is confirmed. Open Minimum Stress for details.", url);
+    case "host_new_booking":
+      return push("New booking", "You have a new confirmed booking. Open Minimum Stress for details.", url);
+    case "host_new_request":
+    case "host_request_reminder":
+      return push("Booking request", "A booking request needs your response in Minimum Stress.", url);
+    case "request_submitted":
+      return push("Request sent", "Your booking request was sent. Open Minimum Stress for its status.", url);
+    case "request_approved":
+      return push("Request approved", "Your booking request was approved. Open Minimum Stress for details.", url);
+    case "request_declined":
+      return push("Request update", "Your booking request was not approved. Open Minimum Stress for options.", url);
+    case "request_expired":
+      return push("Request expired", "Your booking request expired. Open Minimum Stress for options.", url);
+    case "access_code_ready":
+      return push("Access details ready", "Open Minimum Stress securely to view your access details.", url);
+    case "new_message":
+      return push("New message", "You have a new message in Minimum Stress.", url);
+    case "cancelled_by_practitioner":
+    case "cancelled_by_host":
+      return push("Booking cancelled", "A booking was cancelled. Open Minimum Stress for details.", url);
+    case "reliability_warning":
+    case "reliability_suspended":
+      return push("Account update", "There is an update about your account in Minimum Stress.", url);
+    case "host_payout_sent":
+      return push("Payout update", "There is a new payout update in Minimum Stress.", url);
+    case "payout_failed":
+      return push("Payout needs attention", "Open Minimum Stress to review a payout issue.", url);
+    case "safety_escalation":
+    case "account_change_requested":
+      return push("Review needed", "An item needs review in Minimum Stress.", url);
+    case "refund_requested":
+    case "claim_filed":
+      return push("Response requested", "A booking issue needs your response in Minimum Stress.", url);
+    case "refund_decided":
+    case "refund_taken_back":
+    case "claim_decided":
+      return push("Booking update", "There is an update about a booking in Minimum Stress.", url);
+    case "insurance_verified":
+      return push("Insurance verified", "Your insurance review is complete. Open Minimum Stress for details.", url);
+    case "insurance_rejected":
+      return push("Insurance needs attention", "Open Minimum Stress to review your insurance status.", url);
+    case "work_opportunity":
+      return push("Coverage available", "A new coverage opportunity is available in Minimum Stress.", url);
+    case "work_interest_received":
+      return push("New coverage interest", "Someone responded to your coverage request.", url);
+    case "work_confirmed":
+      return push("Coverage confirmed", "A coverage arrangement is confirmed. Open Minimum Stress for details.", url);
+    case "work_request_cancelled":
+      return push("Coverage cancelled", "A coverage request was cancelled. Open Minimum Stress for details.", url);
+    case "work_selection_withdrawn":
+      return push("Coverage update", "A coverage arrangement changed. Open Minimum Stress for next steps.", url);
+    case "staff_waiting":
+      return null;
+  }
+}
+
+function push(title: string, body: string, url: string): PushMessage {
+  return { title, body, url };
 }
 
 function renderPlain(kind: NotificationKind, context: MessageContext): Message {

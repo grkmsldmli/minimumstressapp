@@ -4,6 +4,8 @@ import { AlertTriangle, ArrowLeft, Check, Clock } from "lucide-react";
 
 import { type NotificationEntry, describeNotification, explainState } from "@/lib/notify/history";
 
+import { PushEnable } from "@/components/onesignal/PushEnable";
+
 /**
  * What the app has sent you.
  *
@@ -67,6 +69,8 @@ export function Notifications({
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 pt-5 pb-8 safe-pb-8">
+        {/* One-tap push opt-in (web only; hidden in the native shell and once on). */}
+        <PushEnable />
         {entries.length === 0 ? (
           <p className="font-body font-normal text-[14px] leading-relaxed text-ink-soft">
             Nothing yet. Alerts about your bookings appear here.

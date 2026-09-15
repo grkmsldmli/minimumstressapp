@@ -6,7 +6,12 @@ import { stripeGateway } from "@/lib/api/stripe-gateway";
 import { safetyRecipient } from "@/lib/admin/access";
 import { subjectFor, waitingOn, waitingSignature } from "@/lib/admin/attention";
 import { runWithIndependentRetention } from "@/lib/cron-runner";
-import { notifyAccessCodesReady, rebuildPending } from "@/lib/notify/for-booking";
+import { retryFinancialResolutions } from "@/lib/financial-resolution";
+import {
+  notifyAccessCodesReady,
+  reconcileCancellationNotifications,
+  reconcileRequestOutcomeNotifications,
+} from "@/lib/notify/for-booking";
 import { notify, retryPending } from "@/lib/notify/send";
 import { payHost, settle } from "@/lib/stripe/client";
 import { siteUrl } from "@/lib/site-url";
@@ -92,35 +97,73 @@ export async function GET(request: NextRequest): Promise<Response> {
 }
 
 /**
- * Sequential, and the payouts go first.
+ * Sequential, with unresolved cancellation money reconciled before payouts.
  *
- * If the run is cut short — a function timeout, a deploy mid-run — the thing
- * that must already have happened is paying the hosts whose rooms were used.
- * A door-code email is recoverable on the next pass; a payout that never
- * happens is somebody who let a stranger into their studio and was not paid
- * for it.
+ * A cancellation can still be waiting for Stripe to confirm its refund or
+ * hold release. Resolving those rows first keeps a payout from overtaking that
+ * work. The payout query also excludes unresolved rows, so a failed financial
+ * retry remains safely blocked rather than paying the host while the guest's
+ * cancellation is unsettled.
  */
-async function runOperationalTasks(now: Date) {
+export async function runOperationalTasks(now: Date) {
+  const financial = await settlePendingFinancialWork(now);
   const paid = await payHostsForFinishedSessions(now);
   const released = await releaseAbandonedCheckouts(now);
   /*
-   * Before the access codes, and for the same reason payouts come first: an
-   * expired request is an hour a studio cannot sell and money held on
-   * somebody's card. Both keep getting worse until this runs.
+   * Before the access codes: an expired request is an hour a studio cannot
+   * sell and money held on somebody's card. Both keep getting worse until
+   * this runs.
    */
   const requests = await sweepRequests(now);
+  const requestOutcomes = await reconcileRequestOutcomes(now);
+  const cancellations = await reconcileCancellations(now);
   const announced = await announceAccessCodes(now);
   const retried = await retryFailedNotifications();
   const waiting = await reportWhatIsWaiting(now);
 
   return {
+    ...financial,
     ...paid,
     ...released,
     ...requests,
+    ...requestOutcomes,
+    ...cancellations,
     ...announced,
     ...retried,
     ...waiting,
   };
+}
+
+async function settlePendingFinancialWork(
+  now: Date,
+): Promise<{
+  financialResolutionsClaimed: number;
+  financialResolutionsCompleted: number;
+  financialResolutionsRetrying: number;
+  financialResolutionsManualReview: number;
+}> {
+  try {
+    const result = await retryFinancialResolutions(
+      supabaseAdmin(),
+      stripeGateway,
+      100,
+      now,
+    );
+    return {
+      financialResolutionsClaimed: result.claimed,
+      financialResolutionsCompleted: result.resolved,
+      financialResolutionsRetrying: result.retrying,
+      financialResolutionsManualReview: result.manualReview,
+    };
+  } catch (error) {
+    console.error("Financial resolution retries failed:", describe(error));
+    return {
+      financialResolutionsClaimed: 0,
+      financialResolutionsCompleted: 0,
+      financialResolutionsRetrying: 0,
+      financialResolutionsManualReview: 0,
+    };
+  }
 }
 
 const ANALYTICS_RETENTION_DAYS = 90;
@@ -184,6 +227,8 @@ async function releaseAbandonedCheckouts(
     // Never paid. This is the whole safety condition — `captured_at` is
     // written by the `payment_intent.succeeded` webhook and by nothing else.
     .is("captured_at", null)
+    .is("cancelled_at", null)
+    .eq("financial_resolution_state", "not_required")
     /*
      * Except a request still waiting on its host, which is uncaptured by
      * design and would otherwise be reaped half an hour after it was made.
@@ -226,7 +271,9 @@ async function releaseAbandonedCheckouts(
         // Only from where we found it. If the card went through in the
         // meantime, this matches nothing and the booking stands.
         .eq("status", "upcoming")
-        .is("captured_at", null);
+        .is("captured_at", null)
+        .is("cancelled_at", null)
+        .eq("financial_resolution_state", "not_required");
       if (updateError) throw updateError;
 
       released += 1;
@@ -256,7 +303,7 @@ async function releaseAbandonedCheckouts(
  * Failures are collected rather than thrown. One host with a closed account
  * must not stop the other twenty from being paid.
  */
-async function payHostsForFinishedSessions(
+export async function payHostsForFinishedSessions(
   now: Date,
 ): Promise<{ paid: number; failed: number }> {
   const admin = supabaseAdmin();
@@ -278,6 +325,10 @@ async function payHostsForFinishedSessions(
      */
     .eq("host_rate_refunded", false)
     .is("host_paid_at", null)
+    // A cancellation/refusal must finish its Stripe refund or hold release
+    // before this booking can become payable. Manual-review rows stay blocked
+    // until an operator resolves the provider ambiguity.
+    .in("financial_resolution_state", ["not_required", "resolved"])
     .in("status", ["upcoming", "completed", "cancelled_by_practitioner", "no_show"]);
 
   if (error) throw error;
@@ -421,11 +472,32 @@ async function announceAccessCodes(now: Date): Promise<{ announced: number }> {
   }
 }
 
+async function reconcileCancellations(now: Date): Promise<{ cancellationsReconciled: number }> {
+  try {
+    const { reconciled } = await reconcileCancellationNotifications(supabaseAdmin(), now);
+    return { cancellationsReconciled: reconciled };
+  } catch (error) {
+    console.error("Cancellation notification reconciliation failed:", describe(error));
+    return { cancellationsReconciled: 0 };
+  }
+}
+
+async function reconcileRequestOutcomes(
+  now: Date,
+): Promise<{ requestOutcomesReconciled: number }> {
+  try {
+    const { reconciled } = await reconcileRequestOutcomeNotifications(supabaseAdmin(), now);
+    return { requestOutcomesReconciled: reconciled };
+  } catch (error) {
+    console.error("Request-outcome notification reconciliation failed:", describe(error));
+    return { requestOutcomesReconciled: 0 };
+  }
+}
+
 /** Second chance for anything a provider refused for a reason that may have passed. */
 async function retryFailedNotifications(): Promise<{ notificationsSent: number }> {
   try {
-    const admin = supabaseAdmin();
-    const { sent } = await retryPending(await rebuildPending(admin));
+    const { sent } = await retryPending();
     return { notificationsSent: sent };
   } catch (error) {
     console.error("Notification retries failed:", describe(error));
@@ -460,7 +532,12 @@ async function reportWhatIsWaiting(now: Date): Promise<{ waiting: number }> {
    * zero, so the alerting would have stayed silent about exactly the things it
    * was built to raise. A monitor that fails quietly is worse than none.
    */
-  const [unpayable, refunds, claims, escalations, listings, changes, failed] = await Promise.all([
+  const [financial, unpayable, refunds, claims, escalations, listings, changes, failed] =
+    await Promise.all([
+    admin
+      .from("bookings")
+      .select("id", { count: "exact", head: true })
+      .eq("financial_resolution_state", "manual_review"),
     admin
       .from("profiles")
       .select("id", { count: "exact", head: true })
@@ -490,13 +567,23 @@ async function reportWhatIsWaiting(now: Date): Promise<{ waiting: number }> {
       .select("id", { count: "exact", head: true })
       .is("sent_at", null)
       .not("last_error", "is", null),
-  ]);
+    ]);
 
-  for (const result of [unpayable, refunds, claims, escalations, listings, changes, failed]) {
+  for (const result of [
+    financial,
+    unpayable,
+    refunds,
+    claims,
+    escalations,
+    listings,
+    changes,
+    failed,
+  ]) {
     if (result.error) throw result.error;
   }
 
   const items = waitingOn({
+    financialManualReview: financial.count ?? 0,
     unpayableHosts: unpayable.count ?? 0,
     openDisputes: (refunds.count ?? 0) + (claims.count ?? 0),
     escalations: escalations.count ?? 0,
@@ -512,7 +599,7 @@ async function reportWhatIsWaiting(now: Date): Promise<{ waiting: number }> {
     // Not a user row: the operator is an address in ADMIN_EMAILS, and there
     // is no account to carry preferences. Alert switches would not apply to a
     // queue anyway — it is the person who runs the place.
-    recipient: { userId: "staff", email: to },
+    recipient: { userId: null, email: to },
     /*
      * The fingerprint is the subject id, which is what makes the dedupe do the
      * right thing on its own: an unchanged queue produces the same key and the

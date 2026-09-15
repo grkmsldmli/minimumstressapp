@@ -4,9 +4,11 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 
 export const RESEND_DELIVERY_EVENT_TYPES = [
   "email.delivered",
+  "email.delivery_delayed",
   "email.failed",
   "email.bounced",
   "email.complained",
+  "email.suppressed",
 ] as const;
 
 export type ResendDeliveryEventType = (typeof RESEND_DELIVERY_EVENT_TYPES)[number];
@@ -15,6 +17,8 @@ export interface ResendDeliveryEvent {
   type: ResendDeliveryEventType;
   createdAt: string;
   emailId: string;
+  /** Opaque notification tag set before the provider call. */
+  correlationId: string | null;
 }
 
 export type ParsedResendWebhook =
@@ -89,7 +93,7 @@ export function verifyResendWebhook(
 }
 
 /**
- * Parse only the four delivery outcomes Command Center measures. A signed event
+ * Parse only delivery outcomes Command Center and the notification ledger use. A signed event
  * of another type is acknowledged and ignored so adding a Resend subscription
  * later cannot turn an otherwise healthy webhook into a retry loop.
  */
@@ -116,8 +120,15 @@ export function parseResendWebhook(rawBody: string): ParsedResendWebhook {
       type: payload.type,
       createdAt: new Date(payload.created_at).toISOString(),
       emailId: payload.data.email_id,
+      correlationId: parseCorrelationId(payload.data.tags),
     },
   };
+}
+
+function parseCorrelationId(tags: unknown): string | null {
+  if (!isRecord(tags)) return null;
+  const value = tags.notification_id;
+  return typeof value === "string" && /^[a-f0-9]{64}$/.test(value) ? value : null;
 }
 
 function isDeliveryEventType(value: string): value is ResendDeliveryEventType {

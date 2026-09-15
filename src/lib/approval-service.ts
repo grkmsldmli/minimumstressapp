@@ -3,6 +3,13 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { BookingError, type StripeGateway } from "./booking-service";
 import { canAnswer, expiresAt, explainApprovalRefusal, hasExpired } from "./booking-approval";
 import {
+  FINANCIAL_RESOLUTION_SELECT,
+  initialFinancialResolution,
+  resolveApprovalCaptureFinancial,
+  resolveRequestHoldFinancial,
+  type FinancialResolutionRow,
+} from "./financial-resolution";
+import {
   notifyRequestApproved,
   notifyRequestDeclined,
   notifyRequestExpired,
@@ -59,6 +66,14 @@ export async function answerRequest(
     throw new BookingError("No such booking", 404);
   }
 
+  if (
+    booking.status !== "upcoming" ||
+    booking.cancelled_at !== null ||
+    booking.financial_resolution_state !== "not_required"
+  ) {
+    throw new BookingError("This request is no longer open", 409);
+  }
+
   const refusal = canAnswer(
     {
       approvalState: booking.approval_state,
@@ -81,6 +96,7 @@ export async function answerRequest(
   }
 
   if (decision === "approve") {
+    const financial = initialFinancialResolution(true, now);
     /*
      * The row first, then the money — the opposite of the decline path below,
      * and for the same reason read the other way round. A capture that
@@ -90,27 +106,46 @@ export async function answerRequest(
      * is what `payment_intent.succeeded` then completes by stamping
      * `captured_at`, which is the field everything downstream actually reads.
      */
-    const { data: answered } = await admin
+    const { data: answered, error: answerError } = await admin
       .from("bookings")
       .update({
         approval_state: "approved",
         approval_decided_at: now.toISOString(),
         approval_note: note,
+        ...financial.patch,
       })
       .eq("id", bookingId)
       // Nobody answers twice. A second tap selects no rows and returns quietly
       // rather than capturing a hold that is already captured.
       .eq("approval_state", "pending")
-      .select("id");
+      .eq("status", "upcoming")
+      .is("cancelled_at", null)
+      .eq("financial_resolution_state", "not_required")
+      .select(FINANCIAL_RESOLUTION_SELECT);
+    if (answerError) throw answerError;
     if (!answered?.length) return;
 
-    await stripeGateway.capture(booking.stripe_payment_intent_id, bookingId);
+    try {
+      await resolveApprovalCaptureFinancial(
+        admin,
+        stripeGateway,
+        answered[0] as FinancialResolutionRow,
+        financial.leaseToken!,
+        now,
+      );
+    } catch (failure) {
+      // Approval is durable and the slot remains blocked. The financial worker
+      // retries capture; no approval receipt is allowed ahead of provider
+      // confirmation and the signed succeeded webhook.
+      console.error(`Approved-request capture queued for booking ${bookingId}:`, failure);
+      return;
+    }
     await notifyRequestApproved(admin, bookingId);
     return;
   }
 
-  await closeRequest(admin, stripeGateway, booking, "declined", note, now);
-  await notifyRequestDeclined(admin, bookingId);
+  const closed = await closeRequest(admin, stripeGateway, booking, "declined", note, now);
+  if (closed === "resolved") await notifyRequestDeclined(admin, bookingId);
 }
 
 /**
@@ -127,8 +162,12 @@ async function closeRequest(
   state: "declined" | "expired",
   note: string | null,
   now: Date,
-): Promise<boolean> {
-  const { data: closed } = await admin
+): Promise<false | "pending" | "resolved"> {
+  const financial = initialFinancialResolution(
+    Boolean(booking.stripe_payment_intent_id),
+    now,
+  );
+  const { data: closed, error: closeError } = await admin
     .from("bookings")
     .update({
       approval_state: state,
@@ -146,7 +185,10 @@ async function closeRequest(
        * ever held. So declining is free, which is what makes it a real
        * option rather than one a host learns to avoid.
        */
-      status: "cancelled_by_host",
+      // A live hold is still payable until Stripe confirms its release. Keep
+      // the slot blocked while the financial worker owns that gap; finalizing
+      // the leased resolution is what moves it to cancelled_by_host.
+      status: booking.stripe_payment_intent_id ? "upcoming" : "cancelled_by_host",
       cancelled_at: now.toISOString(),
       /*
        * Left null for both. `cancelled_by` names a person who cancelled a
@@ -156,32 +198,35 @@ async function closeRequest(
        * column rather than the status.
        */
       cancelled_by: null,
+      ...financial.patch,
     })
     .eq("id", booking.id)
     .eq("approval_state", "pending")
-    .select("id");
+    .eq("status", "upcoming")
+    .is("cancelled_at", null)
+    .eq("financial_resolution_state", "not_required")
+    .select(FINANCIAL_RESOLUTION_SELECT);
+  if (closeError) throw closeError;
   if (!closed?.length) return false;
 
-  if (booking.stripe_payment_intent_id) {
-    /*
-     * The hold goes back. Not a refund — nothing was ever taken, so there is
-     * no money moving in either direction and nothing appears on a statement
-     * for a session that did not happen.
-     *
-     * Swallowed rather than thrown, because the row is already correct. An
-     * intent Stripe has expired on its own, or one already cancelled by a
-     * retry, both throw here and both mean the money is exactly where this
-     * function was trying to put it. Failing the request over that would leave
-     * a host looking at a decline that appears not to have worked.
-     */
+  if (financial.leaseToken) {
     try {
-      await stripeGateway.release(booking.stripe_payment_intent_id);
+      await resolveRequestHoldFinancial(
+        admin,
+        stripeGateway,
+        closed[0] as FinancialResolutionRow,
+        financial.leaseToken,
+        now,
+      );
     } catch (failure) {
-      console.error(`Could not release the hold on booking ${booking.id}:`, failure);
+      // The terminal request is durable. A leased worker retries the release,
+      // and no receipt may claim success before that provider fact is stored.
+      console.error(`Hold release queued for booking ${booking.id}:`, failure);
+      return "pending";
     }
   }
 
-  return true;
+  return "resolved";
 }
 
 /**
@@ -206,7 +251,9 @@ export async function expireStaleRequests(
     .from("bookings")
     .select("id, created_at, starts_at, stripe_payment_intent_id")
     .eq("approval_state", "pending")
-    .eq("status", "upcoming");
+    .eq("status", "upcoming")
+    .is("cancelled_at", null)
+    .eq("financial_resolution_state", "not_required");
   if (error) throw error;
 
   let expired = 0;
@@ -226,7 +273,7 @@ export async function expireStaleRequests(
       const closed = await closeRequest(admin, stripeGateway, booking, "expired", null, now);
       if (!closed) continue;
       expired += 1;
-      await notifyRequestExpired(admin, booking.id);
+      if (closed === "resolved") await notifyRequestExpired(admin, booking.id);
     } catch (failure) {
       console.error(`Could not expire request ${booking.id}:`, failure);
     }
@@ -255,7 +302,9 @@ export async function remindWaitingHosts(
     .from("bookings")
     .select("id, created_at, starts_at")
     .eq("approval_state", "pending")
-    .eq("status", "upcoming");
+    .eq("status", "upcoming")
+    .is("cancelled_at", null)
+    .eq("financial_resolution_state", "not_required");
   if (error) throw error;
 
   let reminded = 0;

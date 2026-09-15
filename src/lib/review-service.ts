@@ -215,7 +215,7 @@ async function raiseEscalation(
     kind: "safety_escalation",
     // Staff, not a user — there is no profile row, and the outbox only needs
     // an address to send to and a key to deduplicate on.
-    recipient: { userId: reviewId, email: staffEmail },
+    recipient: { userId: null, email: staffEmail },
     subjectId: reviewId,
     context: {
       spaceName: context.spaceName,

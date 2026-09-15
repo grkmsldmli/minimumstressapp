@@ -1343,7 +1343,14 @@ describe("notification history", () => {
    * policy lets somebody read their own rows, so they could query the table
    * directly and get everything the view was written to hold back.
    */
-  it.each(["last_error", "attempts", "dedupe_key"])(
+  it.each([
+    "last_error",
+    "attempts",
+    "dedupe_key",
+    "destination",
+    "message_snapshot",
+    "provider_message_id",
+  ])(
     "refuses %s even on your own row",
     async (column) => {
       await expect(
@@ -1351,6 +1358,20 @@ describe("notification history", () => {
       ).rejects.toThrow(/permission denied/i);
     },
   );
+
+  it("turns a signed terminal provider result into a visible failure without exposing it", async () => {
+    await db.exec(`
+      update notifications
+      set provider_status = 'bounced'
+      where dedupe_key = 'k1'
+    `);
+
+    const [row] = await asUser<{ state: string }>(
+      PRACTITIONER,
+      `select state from my_notifications where kind = 'booking_confirmed'`,
+    );
+    expect(row.state).toBe("failed");
+  });
 
   it("refuses somebody else's notification rows outright", async () => {
     const found = await asUser(

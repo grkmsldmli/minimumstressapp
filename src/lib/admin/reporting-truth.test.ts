@@ -21,6 +21,7 @@ function baseQueue(overrides: Partial<AdminQueue> = {}): AdminQueue {
     accountChangeRequests: [],
     listingClosureRequests: [],
     unpayableHosts: [],
+    financialManualReview: [],
     money: { platformCents: 999, hostCents: 999, grossCents: 999, platformAllTimeCents: 999 },
     counts: {
       activeListings: 1,

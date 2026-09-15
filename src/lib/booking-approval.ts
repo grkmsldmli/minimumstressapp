@@ -117,7 +117,7 @@ export function explainApprovalRefusal(reason: ApprovalRefusal): string {
     case "not_pending":
       return "This request has already been answered.";
     case "already_expired":
-      return "This request expired before it was answered, and the hold has been released.";
+      return "This request expired before it was answered. Any card hold will be released.";
     case "session_too_close":
       return "This session is too soon to accept now.";
     case "session_passed":

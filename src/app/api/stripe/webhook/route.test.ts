@@ -25,6 +25,7 @@ const updateChain = {
   update: vi.fn((_patch?: Record<string, unknown>) => updateChain),
   eq: vi.fn((_col?: string, _val?: unknown) => updateChain),
   is: vi.fn((_col?: string, _val?: unknown) => updateChain),
+  not: vi.fn((_col?: string, _op?: string, _val?: unknown) => updateChain),
   select: vi.fn((_columns?: string) => updateChain),
   maybeSingle: vi.fn(() => Promise.resolve(nextDbResult())),
   then: (
@@ -47,12 +48,14 @@ vi.mock("@/lib/stripe/client", () => ({
 
 const effects = vi.hoisted(() => ({
   notifyBookingCreated: vi.fn(),
+  notifyRequestApproved: vi.fn(),
   notifyRequestMade: vi.fn(),
   recordEvent: vi.fn(),
 }));
 
 vi.mock("@/lib/notify/for-booking", () => ({
   notifyBookingCreated: effects.notifyBookingCreated,
+  notifyRequestApproved: effects.notifyRequestApproved,
   notifyRequestMade: effects.notifyRequestMade,
   recipientFor: vi.fn(async () => null),
 }));
@@ -89,6 +92,8 @@ const paymentBooking = {
   status: "upcoming",
   total_cents: 5_000,
   captured_at: null,
+  cancelled_at: null,
+  financial_resolution_state: "not_required",
   stripe_payment_intent_id: null,
 };
 
@@ -109,6 +114,12 @@ const paymentSucceeded = (over: Record<string, unknown> = {}) => ({
     },
   },
 });
+
+const paymentAuthorized = {
+  id: "evt_authorized",
+  type: "payment_intent.amount_capturable_updated",
+  data: { object: { id: "pi_1" } },
+};
 
 function respondWith(...results: DbResult[]): void {
   dbState.results.push(...results);
@@ -220,6 +231,8 @@ describe("stripe webhook", () => {
             id: "bk_1",
             approval_state: "not_required",
             practitioner_id: "pr_1",
+            cancelled_at: null,
+            financial_resolution_state: "not_required",
           },
         ],
         error: null,
@@ -233,25 +246,24 @@ describe("stripe webhook", () => {
       expect(effects.notifyBookingCreated).toHaveBeenCalledWith(expect.anything(), "bk_1");
     });
 
-    it("acknowledges a normal replay without duplicating analytics or notifications", async () => {
+    it("uses a normal replay to repair notification delivery without duplicating analytics", async () => {
       vi.stubEnv("STRIPE_WEBHOOK_SECRET", PLATFORM_SECRET);
+      const captured = {
+        ...paymentBooking,
+        captured_at: "2026-09-14T12:00:00.000Z",
+        stripe_payment_intent_id: "pi_1",
+      };
       respondWith(
         { data: [], error: null },
-        {
-          data: {
-            ...paymentBooking,
-            captured_at: "2026-09-14T12:00:00.000Z",
-            stripe_payment_intent_id: "pi_1",
-          },
-          error: null,
-        },
+        { data: captured, error: null },
+        { data: captured, error: null },
       );
 
       const response = await post(signed(PLATFORM_SECRET, paymentSucceeded()));
 
       expect(response.status).toBe(200);
       expect(effects.recordEvent).not.toHaveBeenCalled();
-      expect(effects.notifyBookingCreated).not.toHaveBeenCalled();
+      expect(effects.notifyBookingCreated).toHaveBeenCalledWith(expect.anything(), "bk_1");
     });
 
     it("repairs a missing association from matching Stripe metadata before acknowledging", async () => {
@@ -266,6 +278,8 @@ describe("stripe webhook", () => {
               id: "bk_1",
               approval_state: "not_required",
               practitioner_id: "pr_1",
+              cancelled_at: null,
+              financial_resolution_state: "not_required",
             },
           ],
           error: null,
@@ -286,26 +300,75 @@ describe("stripe webhook", () => {
 
     it("treats a concurrent recovery winner as a replay, not an infinite 500", async () => {
       vi.stubEnv("STRIPE_WEBHOOK_SECRET", PLATFORM_SECRET);
+      const captured = {
+        ...paymentBooking,
+        captured_at: "2026-09-14T12:00:00.000Z",
+        stripe_payment_intent_id: "pi_1",
+      };
       respondWith(
         { data: [], error: null },
         { data: null, error: null },
         { data: paymentBooking, error: null },
         { data: [], error: null }, // this delivery lost the guarded update race
-        {
-          data: {
-            ...paymentBooking,
-            captured_at: "2026-09-14T12:00:00.000Z",
-            stripe_payment_intent_id: "pi_1",
-          },
-          error: null,
-        },
+        { data: captured, error: null },
+        { data: captured, error: null },
       );
 
       const response = await post(signed(PLATFORM_SECRET, paymentSucceeded()));
 
       expect(response.status).toBe(200);
       expect(effects.recordEvent).not.toHaveBeenCalled();
+      expect(effects.notifyBookingCreated).toHaveBeenCalledWith(expect.anything(), "bk_1");
+    });
+
+    it("reconciles an approved request with the approved notification, not a new-booking copy", async () => {
+      vi.stubEnv("STRIPE_WEBHOOK_SECRET", PLATFORM_SECRET);
+      respondWith({
+        data: [{
+          id: "bk_1",
+          approval_state: "approved",
+          practitioner_id: "pr_1",
+          cancelled_at: null,
+          financial_resolution_state: "not_required",
+        }],
+        error: null,
+      });
+
+      const response = await post(signed(PLATFORM_SECRET, paymentSucceeded()));
+
+      expect(response.status).toBe(200);
+      expect(effects.notifyRequestApproved).toHaveBeenCalledWith(
+        expect.anything(),
+        "bk_1",
+        { propagate: true },
+      );
       expect(effects.notifyBookingCreated).not.toHaveBeenCalled();
+    });
+
+    it("records provider capture but suppresses confirmation after cancellation was claimed", async () => {
+      vi.stubEnv("STRIPE_WEBHOOK_SECRET", PLATFORM_SECRET);
+      respondWith({
+        data: [{
+          id: "bk_1",
+          approval_state: "not_required",
+          practitioner_id: "pr_1",
+          cancelled_at: "2026-09-15T11:59:00.000Z",
+          financial_resolution_state: "pending",
+        }],
+        error: null,
+      });
+
+      const response = await post(signed(PLATFORM_SECRET, paymentSucceeded()));
+
+      expect(response.status).toBe(200);
+      expect(effects.recordEvent).toHaveBeenCalledTimes(1);
+      expect(effects.recordEvent).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ name: "payment_succeeded" }),
+        true,
+      );
+      expect(effects.notifyBookingCreated).not.toHaveBeenCalled();
+      expect(effects.notifyRequestApproved).not.toHaveBeenCalled();
     });
 
     it("returns 500 when neither an association nor recovery metadata exists", async () => {
@@ -368,6 +431,84 @@ describe("stripe webhook", () => {
       expect(effects.recordEvent).not.toHaveBeenCalled();
       expect(effects.notifyBookingCreated).not.toHaveBeenCalled();
     });
+  });
+
+  describe("payment_intent.amount_capturable_updated", () => {
+    it("records the first authorization and strictly queues the request notification", async () => {
+      vi.stubEnv("STRIPE_WEBHOOK_SECRET", PLATFORM_SECRET);
+      respondWith({ data: [{ id: "bk_1" }], error: null });
+
+      const response = await post(signed(PLATFORM_SECRET, paymentAuthorized));
+
+      expect(response.status).toBe(200);
+      expect(updateChain.update).toHaveBeenCalledWith({ authorized_at: expect.any(String) });
+      expect(updateChain.eq).toHaveBeenCalledWith("status", "upcoming");
+      expect(updateChain.is).toHaveBeenCalledWith("authorized_at", null);
+      expect(effects.notifyRequestMade).toHaveBeenCalledWith(
+        expect.anything(),
+        "bk_1",
+        { propagate: true },
+      );
+    });
+
+    it("uses a replay to repair the request notification without rewriting authorized_at", async () => {
+      vi.stubEnv("STRIPE_WEBHOOK_SECRET", PLATFORM_SECRET);
+      respondWith(
+        { data: [], error: null },
+        { data: { id: "bk_1" }, error: null },
+      );
+
+      const response = await post(signed(PLATFORM_SECRET, paymentAuthorized));
+
+      expect(response.status).toBe(200);
+      expect(updateChain.not).toHaveBeenCalledWith("authorized_at", "is", null);
+      expect(effects.notifyRequestMade).toHaveBeenCalledWith(
+        expect.anything(),
+        "bk_1",
+        { propagate: true },
+      );
+    });
+
+    it("returns 500 when the authorization write fails so Stripe retries", async () => {
+      vi.stubEnv("STRIPE_WEBHOOK_SECRET", PLATFORM_SECRET);
+      respondWith({ data: null, error: { code: "XX000", message: "database unavailable" } });
+
+      const response = await post(signed(PLATFORM_SECRET, paymentAuthorized));
+
+      expect(response.status).toBe(500);
+      expect(effects.notifyRequestMade).not.toHaveBeenCalled();
+    });
+
+    it("does not notify when no pending upcoming request matches the intent", async () => {
+      vi.stubEnv("STRIPE_WEBHOOK_SECRET", PLATFORM_SECRET);
+      respondWith(
+        { data: [], error: null },
+        { data: null, error: null },
+      );
+
+      const response = await post(signed(PLATFORM_SECRET, paymentAuthorized));
+
+      expect(response.status).toBe(200);
+      expect(effects.notifyRequestMade).not.toHaveBeenCalled();
+    });
+  });
+
+  it("does not let a canceled-intent replay overwrite a durable cancellation claim", async () => {
+    vi.stubEnv("STRIPE_WEBHOOK_SECRET", PLATFORM_SECRET);
+    const event = {
+      id: "evt_canceled",
+      type: "payment_intent.canceled",
+      data: { object: { id: "pi_1" } },
+    };
+
+    const response = await post(signed(PLATFORM_SECRET, event));
+
+    expect(response.status).toBe(200);
+    expect(updateChain.is).toHaveBeenCalledWith("cancelled_at", null);
+    expect(updateChain.eq).toHaveBeenCalledWith(
+      "financial_resolution_state",
+      "not_required",
+    );
   });
 
   /**

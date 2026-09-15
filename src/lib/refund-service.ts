@@ -2,6 +2,7 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import type { FinancialResolutionState } from "./financial-resolution";
 import { notifyRefundDecided, notifyRefundRequested } from "./notify/for-refund";
 import {
   REQUEST_WINDOW_DAYS,
@@ -46,13 +47,14 @@ interface BookingRow {
   stripe_transfer_id: string | null;
   host_paid_at: string | null;
   refunded_cents: number | null;
+  financial_resolution_state: FinancialResolutionState;
 }
 
 async function loadBooking(admin: SupabaseClient, bookingId: string): Promise<BookingRow> {
   const { data, error } = await admin
     .from("bookings")
     .select(
-      "id, practitioner_id, space_id, status, starts_at, total_cents, host_rate_cents, stripe_payment_intent_id, captured_at, stripe_transfer_id, host_paid_at, refunded_cents",
+      "id, practitioner_id, space_id, status, starts_at, total_cents, host_rate_cents, stripe_payment_intent_id, captured_at, stripe_transfer_id, host_paid_at, refunded_cents, financial_resolution_state",
     )
     .eq("id", bookingId)
     .maybeSingle();
@@ -60,6 +62,23 @@ async function loadBooking(admin: SupabaseClient, bookingId: string): Promise<Bo
   if (error) throw error;
   if (!data) throw new RefundError("No such booking", 404);
   return data as BookingRow;
+}
+
+/**
+ * Cancellation settlement and discretionary refunds must never race each
+ * other. Only a booking with no outstanding resolution work can open or
+ * decide a separate refund request; unknown future states fail closed too.
+ */
+function requireSettledBooking(booking: BookingRow): void {
+  if (
+    booking.financial_resolution_state !== "not_required" &&
+    booking.financial_resolution_state !== "resolved"
+  ) {
+    throw new RefundError(
+      "This booking's cancellation is still being finalized. Try again after it is resolved.",
+      409,
+    );
+  }
 }
 
 /**
@@ -84,6 +103,8 @@ export async function requestRefund(
   if (booking.practitioner_id !== practitionerId) {
     throw new RefundError("No such booking", 404);
   }
+
+  requireSettledBooking(booking);
 
   /*
    * Captured, not merely attempted. An intent id says a card form was opened,
@@ -234,6 +255,7 @@ export async function decideRefund(
   }
 
   const booking = await loadBooking(admin, request.booking_id as string);
+  requireSettledBooking(booking);
   const refunded =
     outcome === "none" ? 0 : await payBack(admin, booking, outcome, requestId, now, staffId);
 
@@ -276,6 +298,11 @@ async function payBack(
   now: Date,
   _staffId?: string,
 ): Promise<number> {
+  // Keep the irreversible provider call behind the same fail-closed guard as
+  // request creation and staff decision. This is deliberately repeated at the
+  // settlement boundary so future callers cannot bypass the invariant.
+  requireSettledBooking(booking);
+
   const amount = refundCents(outcome, {
     totalCents: booking.total_cents,
     hostRateCents: booking.host_rate_cents,

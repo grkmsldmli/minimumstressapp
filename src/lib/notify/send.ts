@@ -1,27 +1,17 @@
+import { createHash, randomUUID } from "node:crypto";
+
 import { supabaseAdmin } from "../supabase/server";
 import { type Message, type MessageContext, type NotificationKind, render } from "./messages";
 import { emailConfigured, sendEmail, sendSms, smsConfigured } from "./transports";
 
-/**
- * Claiming a message, sending it, and recording what happened.
- *
- * The order is claim → send → mark, and it is the order that does the work.
- * Claiming first means a concurrent or retried run collides on the unique key
- * and stops; if the claim were last, two runs could both send and only then
- * discover they had raced.
- */
-
+/** A person or an internal team address that can receive a notification. */
 export interface Recipient {
-  userId: string;
+  /** Staff destinations deliberately have no profile row. */
+  userId: string | null;
   name?: string;
   email: string | null;
-  /** Only ever populated when the number has been verified and opted in. */
+  /** Only populated after verification and explicit opt-in. */
   phone?: string | null;
-  /*
-   * Preferences, carried with the recipient rather than fetched again at the
-   * point of sending. They gate alerts only — never a door code or a
-   * cancellation, which arrive whatever the switches say.
-   */
   wantsBookingAlerts?: boolean;
   wantsPayoutAlerts?: boolean;
 }
@@ -33,16 +23,25 @@ export interface NotifyRequest {
   /** What this message is about. Two messages about the same thing collide. */
   subjectId: string;
   bookingId?: string;
+  /** A door code or reminder must become terminal when it is no longer useful. */
+  expiresAt?: Date | string;
+  /** Queue only; the state-gated worker owns the first provider call. */
+  defer?: boolean;
 }
 
-export type NotifyOutcome = "sent" | "skipped" | "duplicate" | "failed";
+export type NotifyOutcome = "queued" | "sent" | "skipped" | "duplicate" | "failed";
+
+interface MessageSnapshot {
+  version: 1;
+  message: Message;
+}
 
 /**
- * Sends one message on every channel it belongs on.
+ * Queue and immediately attempt every channel for one semantic notification.
  *
- * Returns the outcome per channel rather than a single verdict, because
- * "the SMS bounced but the email arrived" is a materially different situation
- * from either channel alone and the caller may want to say so.
+ * The exact rendered message and destination are recorded before the provider
+ * call. A retry therefore cannot turn a host amount into a practitioner total,
+ * lose a refund decision, or invent context from a booking that changed later.
  */
 export async function notify(
   request: NotifyRequest,
@@ -51,17 +50,11 @@ export async function notify(
   const outcome: Partial<Record<"email" | "sms", NotifyOutcome>> = {};
 
   if (request.recipient.email) {
-    outcome.email = await deliver(request, "email", request.recipient.email, () =>
-      sendEmail(request.recipient.email!, message),
-    );
+    outcome.email = await deliver(request, "email", request.recipient.email, message);
   }
 
-  // An SMS only happens when the message is one of the two urgent kinds *and*
-  // there is a verified number to send it to. The kind decides, not the caller.
   if (message.sms && request.recipient.phone) {
-    outcome.sms = await deliver(request, "sms", request.recipient.phone, () =>
-      sendSms(request.recipient.phone!, message.sms!),
-    );
+    outcome.sms = await deliver(request, "sms", request.recipient.phone, message);
   }
 
   return outcome;
@@ -71,167 +64,277 @@ async function deliver(
   request: NotifyRequest,
   channel: "email" | "sms",
   destination: string,
-  send: () => Promise<import("./transports").SendResult>,
+  message: Message,
 ): Promise<NotifyOutcome> {
   const admin = supabaseAdmin();
   const dedupeKey = `${request.kind}:${request.subjectId}:${channel}`;
-
+  const correlationId = channel === "email" ? providerCorrelationId(dedupeKey) : null;
   const configured = channel === "email" ? emailConfigured() : smsConfigured();
-  if (!configured) {
-    /**
-     * No provider yet.
-     *
-     * Logged and skipped rather than queued. A row claimed now would be
-     * retried the moment a key is added, and the first thing a new Resend
-     * account would do is deliver a backlog of stale messages about sessions
-     * that already happened.
-     */
-    console.warn(`Notification skipped — no ${channel} provider: ${dedupeKey}`);
-    return "skipped";
-  }
-
-  // Claim. A duplicate key here is the mechanism working, not an error.
+  const now = new Date();
+  const dispatchLease = randomUUID();
   const { error: claimError } = await admin.from("notifications").insert({
     user_id: request.recipient.userId,
     booking_id: request.bookingId ?? null,
     kind: request.kind,
     channel,
     dedupe_key: dedupeKey,
+    destination,
+    message_snapshot: snapshot(message),
+    provider_correlation_id: correlationId,
+    provider_status: "queued",
     attempts: 1,
+    next_attempt_at: now.toISOString(),
+    expires_at: normalizeExpiry(request.expiresAt),
+    lease_token: request.defer ? null : dispatchLease,
+    lease_until: request.defer
+      ? null
+      : new Date(now.getTime() + 2 * 60_000).toISOString(),
   });
 
   if (claimError) {
     if (claimError.code === "23505") return "duplicate";
-    console.error(`Could not claim notification ${dedupeKey}:`, claimError);
-    return "failed";
+    throw new Error(`Could not persist notification ${dedupeKey}`);
   }
 
-  const result = await send();
+  // Door codes are never sent from the stale result of a prior select. The
+  // worker claims them only after the database rechecks booking state and the
+  // reveal/end window in the same transaction.
+  if (request.defer) return "queued";
 
-  if (result.status === "sent") {
+  // Provider configuration can arrive after the business event. Preserve the
+  // exact envelope now; state and expiry gates keep a future provider key from
+  // releasing stale booking or door-code messages as a surprise backlog.
+  if (!configured) {
     await admin
       .from("notifications")
-      .update({ sent_at: new Date().toISOString() })
-      .eq("dedupe_key", dedupeKey);
+      .update({
+        last_error: `${channel} provider is not configured`,
+        next_attempt_at: nextAttemptAt(1, now),
+        lease_token: null,
+        lease_until: null,
+      })
+      .eq("dedupe_key", dedupeKey)
+      .eq("lease_token", dispatchLease);
+    console.warn(`Notification queued — no ${channel} provider: ${dedupeKey}`);
+    return "skipped";
+  }
+
+  const result =
+    channel === "email"
+      ? await sendEmail(destination, message, {
+          idempotencyKey: providerIdempotencyKey(dedupeKey),
+          correlationId: correlationId!,
+        })
+      : await sendSms(destination, message.sms!);
+
+  if (result.status === "sent") {
+    await recordAcceptance(admin, dedupeKey, result.id, new Date().toISOString(), dispatchLease);
     return "sent";
   }
 
-  const patch =
-    result.status === "dropped"
-      ? { dropped_at: new Date().toISOString(), last_error: result.reason }
-      : { last_error: result.reason };
-
-  await admin.from("notifications").update(patch).eq("dedupe_key", dedupeKey);
+  const terminal = result.status === "dropped";
+  await admin
+    .from("notifications")
+    .update({
+      provider_status: terminal ? "failed" : "queued",
+      last_error: result.reason,
+      next_attempt_at: nextAttemptAt(1, now),
+      lease_token: null,
+      lease_until: null,
+      ...(terminal
+        ? {
+            dropped_at: now.toISOString(),
+            failed_at: now.toISOString(),
+            destination: null,
+            message_snapshot: null,
+          }
+        : {}),
+    })
+    .eq("dedupe_key", dedupeKey)
+    .eq("lease_token", dispatchLease);
 
   console.error(`Notification ${result.status} — ${dedupeKey}: ${result.reason}`);
   return "failed";
 }
 
+/** Stable, bounded and free of recipient data. Resend retains it for 24 hours. */
+export function providerIdempotencyKey(dedupeKey: string): string {
+  return `minimum-stress-notification-${providerCorrelationId(dedupeKey)}`;
+}
+
+/** Provider-visible correlation that contains no address, name or booking id. */
+export function providerCorrelationId(dedupeKey: string): string {
+  return createHash("sha256").update(dedupeKey, "utf8").digest("hex");
+}
+
+function snapshot(message: Message): MessageSnapshot {
+  return { version: 1, message };
+}
+
+function normalizeExpiry(value: Date | string | undefined): string | null {
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) throw new RangeError("Notification expiry must be a date");
+  return date.toISOString();
+}
+
+function messageFromSnapshot(value: unknown): Message | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const envelope = value as { version?: unknown; message?: unknown };
+  if (envelope.version !== 1 || !envelope.message || typeof envelope.message !== "object") {
+    return null;
+  }
+
+  const message = envelope.message as Partial<Message>;
+  if (
+    typeof message.subject !== "string" ||
+    typeof message.body !== "string" ||
+    !(message.sms === null || typeof message.sms === "string") ||
+    !(message.html === undefined || typeof message.html === "string")
+  ) {
+    return null;
+  }
+  return message as Message;
+}
+
 /**
- * Retries the messages that failed for a reason that might have passed.
+ * Retry immutable envelopes claimed atomically by Postgres.
  *
- * Run from the cron job. Only touches rows that were claimed but never sent or
- * dropped, so a message whose provider was briefly down goes out on the next
- * pass instead of being lost with the request that created it.
- *
- * `renderFor` is supplied by the caller because rebuilding a message needs the
- * booking it is about, and this module deliberately knows nothing about
- * bookings.
+ * A fifteen-minute lease plus `FOR UPDATE SKIP LOCKED` in the migration
+ * prevents overlapping cron runs from sending the same SMS. A small bounded
+ * pool keeps a full batch comfortably inside that lease. Email also carries
+ * the same provider idempotency key on every attempt.
  */
 export async function retryPending(
-  renderFor: (row: PendingNotification) => Promise<{ to: string; message: Message } | null>,
-  limit = 50,
+  limit = 20,
 ): Promise<{ retried: number; sent: number; givenUp: number }> {
   const admin = supabaseAdmin();
-
-  const { data: pending, error } = await admin
-    .from("notifications")
-    .select("id, kind, channel, user_id, booking_id, dedupe_key, attempts")
-    .is("sent_at", null)
-    .is("dropped_at", null)
-    .lt("attempts", MAX_ATTEMPTS)
-    .order("created_at")
-    .limit(limit);
+  const now = new Date();
+  const worker = randomUUID();
+  const { data, error } = await admin.rpc("claim_notification_batch", {
+    p_worker: worker,
+    p_limit: limit,
+    p_now: now.toISOString(),
+  });
 
   if (error) throw error;
-  if (!pending?.length) return { retried: 0, sent: 0, givenUp: 0 };
-
+  const pending = (data ?? []) as PendingNotification[];
   let sent = 0;
   let givenUp = 0;
 
-  for (const row of pending as PendingNotification[]) {
-    const rebuilt = await renderFor(row);
+  let cursor = 0;
+  const work = async () => {
+    while (cursor < pending.length) {
+      const row = pending[cursor++];
+      const message = messageFromSnapshot(row.message_snapshot);
+      if (!message || (row.channel === "sms" && !message.sms)) {
+        await finishFailed(admin, row, "notification payload is invalid", true, now);
+        givenUp += 1;
+        continue;
+      }
 
-    if (!rebuilt) {
-      // The booking or the recipient is gone. Nothing to send, ever.
-      await admin
-        .from("notifications")
-        .update({ dropped_at: new Date().toISOString(), last_error: "subject no longer exists" })
-        .eq("id", row.id);
-      givenUp += 1;
-      continue;
+      const result =
+        row.channel === "email"
+          ? await sendEmail(row.destination, message, {
+              idempotencyKey: providerIdempotencyKey(row.dedupe_key),
+              correlationId: row.provider_correlation_id,
+            })
+          : await sendSms(row.destination, message.sms!);
+
+      if (result.status === "sent") {
+        await recordAcceptance(
+          admin,
+          row.dedupe_key,
+          result.id,
+          new Date().toISOString(),
+          row.lease_token,
+        );
+        sent += 1;
+        continue;
+      }
+
+      const exhausted = result.status === "dropped" || row.attempts >= MAX_ATTEMPTS;
+      await finishFailed(admin, row, result.reason, exhausted, now);
+      if (exhausted) givenUp += 1;
     }
+  };
 
-    // An sms row can only exist for a kind that has SMS text, but the type
-    // does not know that, so a missing one is treated as nothing to retry.
-    if (row.channel === "sms" && !rebuilt.message.sms) {
-      await admin
-        .from("notifications")
-        .update({ dropped_at: new Date().toISOString(), last_error: "no sms text for this kind" })
-        .eq("id", row.id);
-      givenUp += 1;
-      continue;
-    }
-
-    const result =
-      row.channel === "email"
-        ? await sendEmail(rebuilt.to, rebuilt.message)
-        : await sendSms(rebuilt.to, rebuilt.message.sms!);
-
-    const attempts = row.attempts + 1;
-
-    if (result.status === "sent") {
-      await admin
-        .from("notifications")
-        .update({ sent_at: new Date().toISOString(), attempts })
-        .eq("id", row.id);
-      sent += 1;
-      continue;
-    }
-
-    // Given up on either because the provider says it will never work, or
-    // because we have now asked enough times to stop asking.
-    const exhausted = result.status === "dropped" || attempts >= MAX_ATTEMPTS;
-    if (exhausted) givenUp += 1;
-
-    await admin
-      .from("notifications")
-      .update({
-        attempts,
-        last_error: result.reason,
-        ...(exhausted ? { dropped_at: new Date().toISOString() } : {}),
-      })
-      .eq("id", row.id);
-  }
+  await Promise.all(
+    Array.from({ length: Math.min(5, pending.length) }, () => work()),
+  );
 
   return { retried: pending.length, sent, givenUp };
 }
 
-/**
- * Five, against a job that runs daily on the current plan.
- *
- * Every message here is about a session at a particular time, so a delivery on
- * the sixth day is not a late success — it is a confusing message about
- * something that already happened.
- */
-export const MAX_ATTEMPTS = 5;
+async function recordAcceptance(
+  admin: ReturnType<typeof supabaseAdmin>,
+  dedupeKey: string,
+  providerMessageId: string,
+  acceptedAt: string,
+  leaseToken: string,
+): Promise<void> {
+  // The RPC also reconciles a signed provider event that arrived unusually
+  // quickly, before this provider id could be written.
+  const rpc = (admin as unknown as {
+    rpc?: (name: string, args: Record<string, unknown>) => Promise<{ error: unknown }>;
+  }).rpc;
+  const { error } = rpc
+    ? await rpc.call(admin, "record_notification_acceptance", {
+        p_dedupe_key: dedupeKey,
+        p_provider_message_id: providerMessageId ?? "unknown",
+        p_accepted_at: acceptedAt,
+        p_lease_token: leaseToken,
+      })
+    : { error: { message: "RPC unavailable" } };
+
+  if (error) throw new Error("Could not record provider acceptance");
+}
+
+async function finishFailed(
+  admin: ReturnType<typeof supabaseAdmin>,
+  row: PendingNotification,
+  reason: string,
+  terminal: boolean,
+  now: Date,
+): Promise<void> {
+  await admin
+    .from("notifications")
+    .update({
+      provider_status: terminal ? "failed" : "queued",
+      last_error: reason,
+      next_attempt_at: nextAttemptAt(row.attempts, now),
+      lease_token: null,
+      lease_until: null,
+      ...(terminal
+        ? {
+            dropped_at: now.toISOString(),
+            failed_at: now.toISOString(),
+            destination: null,
+            message_snapshot: null,
+          }
+        : {}),
+    })
+    .eq("id", row.id)
+    .eq("lease_token", row.lease_token);
+}
+
+function nextAttemptAt(attempts: number, from: Date): string {
+  const minutes = Math.min(6 * 60, 2 ** Math.max(0, attempts - 1));
+  return new Date(from.getTime() + minutes * 60_000).toISOString();
+}
+
+export const MAX_ATTEMPTS = 12;
 
 export interface PendingNotification {
   id: string;
   kind: NotificationKind;
   channel: "email" | "sms";
-  user_id: string;
-  booking_id: string | null;
   dedupe_key: string;
+  destination: string;
+  message_snapshot: unknown;
   attempts: number;
+  booking_id: string | null;
+  expires_at: string | null;
+  lease_token: string;
+  provider_correlation_id: string;
 }

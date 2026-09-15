@@ -20,6 +20,7 @@ function baseQueue(overrides: Partial<AdminQueue> = {}): AdminQueue {
     accountChangeRequests: [],
     listingClosureRequests: [],
     unpayableHosts: [],
+    financialManualReview: [],
     money: { platformCents: 12000, hostCents: 80000, grossCents: 100000, platformAllTimeCents: 50000 },
     counts: {
       activeListings: 4,
@@ -270,6 +271,30 @@ describe("deriveHealth", () => {
     expect(h.find((item) => item.key === "stripe_payouts")).toMatchObject({
       state: "attention",
       note: "1 host cannot receive payouts",
+    });
+  });
+
+  it("makes an unresolved booking payment critical and actionable", () => {
+    const queue = baseQueue({
+      financialManualReview: [{ id: "booking-1" } as never],
+    });
+    const health = deriveHealth(queue, {
+      coreHealth: [
+        {
+          key: "stripe_payments",
+          label: "Stripe payments",
+          state: "healthy",
+        },
+      ],
+    });
+
+    expect(health.find((item) => item.key === "stripe_payments")).toMatchObject({
+      state: "critical",
+      note: "1 booking payment needs manual review",
+    });
+    expect(commandView(queue).needsAttention[0]).toMatchObject({
+      key: "financial",
+      count: 1,
     });
   });
 

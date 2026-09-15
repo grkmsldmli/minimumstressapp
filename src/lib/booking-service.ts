@@ -8,6 +8,12 @@ import { abandonedBefore } from "./abandoned";
 import { recordEvent } from "./analytics/record";
 import { type HeldBookingRow, isHeldBooking } from "./booking-visibility";
 import {
+  FINANCIAL_RESOLUTION_SELECT,
+  initialFinancialResolution,
+  resolveCancellationFinancial,
+  type FinancialResolutionRow,
+} from "./financial-resolution";
+import {
   explainRejection,
   planBooking,
   planSeries,
@@ -15,7 +21,7 @@ import {
   type PractitionerFacts,
   type SpaceFacts,
 } from "./booking-plan";
-import { resolveCancellation, type BookingMoney } from "./money";
+import type { BookingMoney } from "./money";
 import { notifyCancellation } from "./notify/for-booking";
 import { toCancellationEvents, type CancellationEvent } from "./reliability";
 import { SESSION_MINUTES } from "./session";
@@ -99,6 +105,9 @@ async function releaseAbandoned(
       .eq("space_id", spaceId)
       .eq("status", "upcoming")
       .is("captured_at", null)
+      .is("cancelled_at", null)
+      .eq("financial_resolution_state", "not_required")
+      .or("approval_state.neq.pending,authorized_at.is.null")
       .lt("created_at", abandonedBefore(now).toISOString());
 
     for (const booking of stale ?? []) {
@@ -118,7 +127,9 @@ async function releaseAbandoned(
         })
         .eq("id", booking.id)
         .eq("status", "upcoming")
-        .is("captured_at", null);
+        .is("captured_at", null)
+        .is("cancelled_at", null)
+        .eq("financial_resolution_state", "not_required");
     }
   } catch (failure) {
     console.error(`Could not release abandoned bookings on ${spaceId}:`, failure);
@@ -138,12 +149,12 @@ export interface StripeGateway {
   /** Takes a hold the host approved. */
   capture(paymentIntentId: string, bookingId: string): Promise<void>;
   /** Gives a hold back, because the host declined or never answered. */
-  release(paymentIntentId: string): Promise<void>;
+  release(paymentIntentId: string, idempotencyKey?: string): Promise<void>;
   /** Returns what went back, so the booking can record it. */
   settle(paymentIntentId: string, paidCents: number, outcome: {
     action: "void" | "capture_full";
     chargedCents: number;
-  }): Promise<{ refundedCents: number }>;
+  }, idempotencyKey?: string): Promise<{ refundedCents: number; paidCents?: number }>;
   /** Sends the host their rate, out of the charge that funded it. */
   payHost(
     money: BookingMoney,
@@ -515,7 +526,6 @@ export async function createBooking(
       .from("bookings")
       .update({
         stripe_payment_intent_id: charged.paymentIntentId,
-        authorized_at: new Date().toISOString(),
       })
       .eq("id", booking.id)
       // Returning the row is intentional. Supabase updates otherwise report
@@ -664,9 +674,10 @@ export async function rollbackSeries(
 /**
  * Cancel, and move whatever money the policy says should move.
  *
- * The outcome comes from `resolveCancellation`, so this route and the mock
- * repository cannot drift on the 24-hour rule or on how much goodwill a host
- * cancellation earns.
+ * The cancellation is claimed before Stripe is touched. Two devices — even
+ * two different actors — therefore converge on one durable actor and
+ * cancellation instant. The slot remains blocked until provider settlement
+ * is confirmed, and a crash after the claim is recoverable.
  */
 export async function cancelBooking(
   admin: SupabaseClient,
@@ -683,8 +694,26 @@ export async function cancelBooking(
     .maybeSingle();
   if (error) throw error;
   if (!booking) throw new BookingError("No such booking", 404);
-  if (booking.status !== "upcoming") {
+  if (
+    booking.status !== "upcoming" ||
+    booking.cancelled_at !== null ||
+    !["not_required", "resolved"].includes(booking.financial_resolution_state)
+  ) {
     throw new BookingError("That booking is already closed", 409);
+  }
+
+  if (new Date(booking.starts_at).getTime() <= now.getTime()) {
+    throw new BookingError("That session has already started", 409);
+  }
+
+  /*
+   * Approval is written before capture. During that short interval Stripe may
+   * already be taking the hold while `captured_at` is still waiting on the
+   * signed webhook. Treating it as unpaid and trying to cancel would race the
+   * capture. The webhook is the only authority that closes this interval.
+   */
+  if (booking.approval_state === "approved" && !booking.captured_at) {
+    throw new BookingError("Payment confirmation is still processing", 409);
   }
 
   // Whoever is asking must actually be the party they claim to be.
@@ -695,60 +724,64 @@ export async function cancelBooking(
       : hostId === requesterId;
   if (!allowed) throw new BookingError("Not your booking to cancel", 403);
 
-  const money: BookingMoney = {
-    hostRateCents: booking.host_rate_cents,
-    serviceFeeCents: booking.service_fee_cents,
-    instantFeeCents: booking.instant_fee_cents,
-    proDiscountCents: booking.pro_discount_cents,
-    totalCents: booking.total_cents,
-    platformCents: booking.platform_cents,
-  };
-
-  /*
-   * Read from the booking rather than the profile. `was_pro` is what they held
-   * when they paid, and a subscription that lapsed afterwards must not
-   * retroactively add a fee to a session they bought under Pro.
-   */
-  const outcome = resolveCancellation(
-    money,
-    actor,
-    new Date(booking.starts_at),
+  const financial = initialFinancialResolution(
+    Boolean(booking.stripe_payment_intent_id),
     now,
-    Boolean(booking.was_pro),
   );
 
   /*
-   * What we are actually holding, which is not the same as what was quoted.
-   *
-   * The card is charged when the payment sheet is completed, not when the row
-   * is written, so a booking abandoned at the card form has a total and no
-   * money behind it. Refunding against the quoted figure there would send real
-   * money to somebody who never paid any.
+   * This guarded write is the cancellation claim. Only one request can turn
+   * an open booking into a provider-backed cancellation; every later request
+   * matches no row before it can call Stripe with a different actor or policy.
    */
-  const paidCents = booking.captured_at ? booking.total_cents : 0;
-
-  let refundedCents = 0;
-  if (booking.stripe_payment_intent_id) {
-    ({ refundedCents } = await stripeGateway.settle(
-      booking.stripe_payment_intent_id,
-      paidCents,
-      outcome,
-    ));
-  }
-
-  await admin
+  const { data: cancelled, error: cancellationWriteError } = await admin
     .from("bookings")
     .update({
-      status: actor === "host" ? "cancelled_by_host" : "cancelled_by_practitioner",
+      /*
+       * A live intent can still be paid. Keep the row `upcoming` — and thus
+       * keep the hour unavailable — until Stripe has confirmed the refund or
+       * cancellation. With no intent there is no provider gap, so the booking
+       * can become terminal in this same write.
+       */
+      status: booking.stripe_payment_intent_id
+        ? "upcoming"
+        : actor === "host"
+          ? "cancelled_by_host"
+          : "cancelled_by_practitioner",
       cancelled_at: now.toISOString(),
       cancelled_by: actor,
-      // Both or neither — the row constraint says so, and the payout sweep
-      // reads this to know the money is no longer ours to pass on.
-      ...(refundedCents > 0
-        ? { refunded_at: now.toISOString(), refunded_cents: refundedCents }
-        : {}),
+      ...financial.patch,
     })
-    .eq("id", bookingId);
+    .eq("id", bookingId)
+    .eq("status", "upcoming")
+    .is("cancelled_at", null)
+    .eq("approval_state", booking.approval_state)
+    .eq("financial_resolution_state", booking.financial_resolution_state)
+    .gt("starts_at", now.toISOString())
+    .select(FINANCIAL_RESOLUTION_SELECT)
+    .maybeSingle();
+  if (cancellationWriteError) throw cancellationWriteError;
+  if (!cancelled) throw new BookingError("That booking is already closed", 409);
+
+  let refundedCents = 0;
+  let chargedCents = 0;
+  if (financial.leaseToken) {
+    try {
+      ({ refundedCents, chargedCents } = await resolveCancellationFinancial(
+        admin,
+        stripeGateway,
+        cancelled as FinancialResolutionRow,
+        financial.leaseToken,
+        now,
+      ));
+    } catch (failure) {
+      // The cancellation claim is durable and the slot is still blocked. The
+      // financial worker owns the retry, and the receipt stays gated until it
+      // records Stripe truth and makes the row terminal.
+      console.error(`Cancellation settlement queued for booking ${bookingId}:`, failure);
+      return;
+    }
+  }
 
   // Nothing to award: a host's cancellation refunds in full and that is the
   // whole compensation.
@@ -774,9 +807,9 @@ export async function cancelBooking(
    * Last, so the figures quoted are the ones that actually landed — and taken
    * from what Stripe did rather than from what the policy said, so an email
    * can never describe a refund that was not made.
-   */
+  */
   await notifyCancellation(admin, bookingId, actor, {
-    chargedCents: outcome.chargedCents,
+    chargedCents,
     refundedCents,
   });
 }

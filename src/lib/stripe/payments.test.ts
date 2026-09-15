@@ -159,10 +159,11 @@ describe("settling a cancellation", () => {
       new Date(sessionStart.getTime() - hoursBefore * 3600_000),
     );
 
-  it("refunds in full when the practitioner cancels early", () => {
-    expect(settlementFor(outcomeFor("practitioner", 48), money.totalCents)).toEqual({
+  it("keeps only the card cost when a non-Pro practitioner cancels early", () => {
+    const outcome = outcomeFor("practitioner", 48);
+    expect(settlementFor(outcome, money.totalCents)).toEqual({
       kind: "refund",
-      amountCents: money.totalCents,
+      amountCents: money.totalCents - outcome.chargedCents,
     });
   });
 

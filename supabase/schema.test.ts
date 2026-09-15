@@ -29,6 +29,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
  * silently: the suite stays green while covering less and less.
  */
 const STUBS = "0000_supabase_stubs.sql";
+const RELIABLE_OUTBOX_MIGRATION = "20260915003724_reliable_notification_outbox.sql";
 
 const migrationsDir = join(import.meta.dirname, "migrations");
 
@@ -312,6 +313,79 @@ describe("migrations apply cleanly", () => {
     ]);
   });
 
+  it("creates the private immutable notification envelope and worker functions", async () => {
+    const columns = await rows<{ column_name: string }>(
+      `select column_name from information_schema.columns
+       where table_schema = 'public' and table_name = 'notifications'
+         and column_name in (
+           'destination', 'message_snapshot', 'provider_message_id',
+           'provider_correlation_id',
+           'provider_status', 'accepted_at', 'delivered_at', 'failed_at',
+           'next_attempt_at', 'expires_at', 'lease_token', 'lease_until'
+         )
+       order by column_name`,
+    );
+
+    expect(columns.map((row) => row.column_name)).toEqual([
+      "accepted_at",
+      "delivered_at",
+      "destination",
+      "expires_at",
+      "failed_at",
+      "lease_token",
+      "lease_until",
+      "message_snapshot",
+      "next_attempt_at",
+      "provider_correlation_id",
+      "provider_message_id",
+      "provider_status",
+    ]);
+
+    const financialColumns = await rows<{ column_name: string }>(
+      `select column_name from information_schema.columns
+       where table_schema = 'public' and table_name = 'bookings'
+         and column_name in (
+           'financial_resolution_state', 'financial_resolution_attempts',
+           'financial_resolution_next_attempt_at',
+           'financial_resolution_last_error', 'financial_resolved_at',
+           'financial_resolution_lease_token',
+           'financial_resolution_lease_until'
+         )
+       order by column_name`,
+    );
+    expect(financialColumns.map((row) => row.column_name)).toEqual([
+      "financial_resolution_attempts",
+      "financial_resolution_last_error",
+      "financial_resolution_lease_token",
+      "financial_resolution_lease_until",
+      "financial_resolution_next_attempt_at",
+      "financial_resolution_state",
+      "financial_resolved_at",
+    ]);
+
+    const routines = await rows<{ routine_name: string }>(
+      `select routine_name from information_schema.routines
+       where routine_schema = 'public'
+         and routine_name in (
+           'claim_notification_batch',
+           'apply_resend_delivery_event',
+           'record_notification_acceptance',
+           'claim_booking_financial_resolution_batch',
+           'list_cancellation_notification_gaps',
+           'list_request_outcome_notification_gaps'
+         )
+       order by routine_name`,
+    );
+    expect(routines.map((row) => row.routine_name)).toEqual([
+      "apply_resend_delivery_event",
+      "claim_booking_financial_resolution_batch",
+      "claim_notification_batch",
+      "list_cancellation_notification_gaps",
+      "list_request_outcome_notification_gaps",
+      "record_notification_acceptance",
+    ]);
+  });
+
   it("enables row level security on every table", async () => {
     const unprotected = await rows<{ tablename: string }>(
       `select tablename from pg_tables
@@ -319,6 +393,904 @@ describe("migrations apply cleanly", () => {
     );
 
     expect(unprotected).toEqual([]);
+  });
+});
+
+describe("durable booking financial resolution", () => {
+  const HOST = "10000000-0000-4000-8000-000000000001";
+  const PRACTITIONER = "10000000-0000-4000-8000-000000000002";
+  const SPACE = "10000000-0000-4000-8000-000000000003";
+
+  async function seedParties(): Promise<void> {
+    await db.exec(`
+      insert into auth.users (id, email) values
+        ('${HOST}', 'financial-host@example.com'),
+        ('${PRACTITIONER}', 'financial-practitioner@example.com')
+      on conflict do nothing;
+      insert into profiles (id, display_name) values
+        ('${HOST}', 'Financial Host'),
+        ('${PRACTITIONER}', 'Financial Practitioner')
+      on conflict do nothing;
+      insert into spaces (
+        id, host_id, name, category, hourly_rate_cents, capacity, access_type,
+        entry_instructions, address_line, status, sublease_doc_path,
+        legal_ack_at, sublease_doc_state, sublease_doc_reviewed_at
+      ) values (
+        '${SPACE}', '${HOST}', 'Financial Room', 'physical', 4500, 3, 'keypad',
+        'Side door', '12 Ledger Lane', 'active', 'space/financial/lease.pdf',
+        now(), 'verified', now()
+      ) on conflict do nothing;
+    `);
+  }
+
+  it("backfills only financial outcomes that are safe to call resolved", async () => {
+    const fresh = new PGlite();
+    try {
+      await fresh.exec(read(STUBS));
+      for (const migration of MIGRATIONS) {
+        if (migration !== RELIABLE_OUTBOX_MIGRATION) await fresh.exec(read(migration));
+      }
+
+      const host = "20000000-0000-4000-8000-000000000001";
+      const practitioner = "20000000-0000-4000-8000-000000000002";
+      const space = "20000000-0000-4000-8000-000000000003";
+      await fresh.exec(`
+        insert into auth.users (id, email) values
+          ('${host}', 'legacy-host@example.com'),
+          ('${practitioner}', 'legacy-practitioner@example.com');
+        insert into profiles (id, display_name) values
+          ('${host}', 'Legacy Host'),
+          ('${practitioner}', 'Legacy Practitioner');
+        insert into spaces (
+          id, host_id, name, category, hourly_rate_cents, capacity, access_type,
+          entry_instructions, address_line, status, sublease_doc_path,
+          legal_ack_at, sublease_doc_state, sublease_doc_reviewed_at
+        ) values (
+          '${space}', '${host}', 'Legacy Room', 'physical', 4500, 3, 'keypad',
+          'Side door', '14 Ledger Lane', 'active', 'space/legacy/lease.pdf',
+          now(), 'verified', now()
+        );
+        insert into bookings (
+          id, space_id, practitioner_id, starts_at, ends_at, status,
+          is_instant, was_pro, host_rate_cents, service_fee_cents,
+          instant_fee_cents, pro_discount_cents, credit_applied_cents,
+          total_cents, platform_cents, stripe_payment_intent_id,
+          authorized_at, captured_at, cancelled_at, cancelled_by,
+          approval_state, approval_decided_at
+        ) values
+          (
+            '20000000-0000-4000-8000-000000000011', '${space}', '${practitioner}',
+            now() + interval '1 day', now() + interval '1 day 1 hour',
+            'cancelled_by_host', true, false, 4500, 900, 500, 0, 0, 5900, 1400,
+            'pi_legacy_cancelled', now(), now(), now(), 'host',
+            'not_required', null
+          ),
+          (
+            '20000000-0000-4000-8000-000000000012', '${space}', '${practitioner}',
+            now() + interval '2 days', now() + interval '2 days 1 hour',
+            'upcoming', false, false, 4500, 900, 0, 0, 0, 5400, 900,
+            'pi_legacy_declined', now(), null, null, null, 'declined', now()
+          ),
+          (
+            '20000000-0000-4000-8000-000000000013', '${space}', '${practitioner}',
+            now() + interval '3 days', now() + interval '3 days 1 hour',
+            'upcoming', false, false, 4500, 900, 0, 0, 0, 5400, 900,
+            null, null, null, null, null, 'expired', now()
+          );
+      `);
+
+      await fresh.exec(read(RELIABLE_OUTBOX_MIGRATION));
+      const result = await fresh.query<{
+        id: string;
+        status: string;
+        cancelled_at: Date | null;
+        cancelled_by: string | null;
+        financial_resolution_state: string;
+        financial_resolution_next_attempt_at: Date | null;
+        financial_resolved_at: Date | null;
+      }>(`
+        select id, status, cancelled_at, cancelled_by,
+          financial_resolution_state,
+          financial_resolution_next_attempt_at, financial_resolved_at
+        from bookings
+        where id::text like '20000000-0000-4000-8000-00000000001%'
+        order by id
+      `);
+
+      expect(result.rows).toEqual([
+        expect.objectContaining({
+          id: "20000000-0000-4000-8000-000000000011",
+          status: "cancelled_by_host",
+          cancelled_at: expect.any(Date),
+          cancelled_by: "host",
+          financial_resolution_state: "resolved",
+          financial_resolution_next_attempt_at: null,
+          financial_resolved_at: expect.any(Date),
+        }),
+        expect.objectContaining({
+          id: "20000000-0000-4000-8000-000000000012",
+          status: "upcoming",
+          cancelled_at: expect.any(Date),
+          cancelled_by: null,
+          financial_resolution_state: "pending",
+          financial_resolution_next_attempt_at: expect.any(Date),
+          financial_resolved_at: null,
+        }),
+        expect.objectContaining({
+          id: "20000000-0000-4000-8000-000000000013",
+          status: "cancelled_by_host",
+          cancelled_at: expect.any(Date),
+          cancelled_by: null,
+          financial_resolution_state: "resolved",
+          financial_resolution_next_attempt_at: null,
+          financial_resolved_at: expect.any(Date),
+        }),
+      ]);
+
+      const claimed = await fresh.query<{
+        id: string;
+        approval_state: string;
+        cancelled_at: Date | null;
+      }>(`
+        select id, approval_state, cancelled_at
+        from claim_booking_financial_resolution_batch(
+          '20000000-0000-4000-8000-000000000099', 10,
+          '2099-01-01T00:00:00Z'
+        )
+      `);
+      expect(claimed.rows).toContainEqual({
+        id: "20000000-0000-4000-8000-000000000012",
+        approval_state: "declined",
+        cancelled_at: expect.any(Date),
+      });
+    } finally {
+      await fresh.close();
+    }
+  }, 60_000);
+
+  it("leases each due Stripe resolution once and surfaces exhausted work", async () => {
+    await seedParties();
+    await db.exec(`
+      insert into bookings (
+        id, space_id, practitioner_id, starts_at, ends_at, is_instant, was_pro,
+        host_rate_cents, service_fee_cents, instant_fee_cents,
+        pro_discount_cents, credit_applied_cents, total_cents, platform_cents,
+        stripe_payment_intent_id, approval_state, approval_decided_at,
+        cancelled_at,
+        financial_resolution_state, financial_resolution_attempts,
+        financial_resolution_next_attempt_at
+      ) values
+        (
+          '10000000-0000-4000-8000-000000000011', '${SPACE}', '${PRACTITIONER}',
+          '2026-09-20T12:00:00Z', '2026-09-20T13:00:00Z', false, false,
+          4500, 900, 0, 0, 0, 5400, 900, 'pi_financial_due', 'declined',
+          '2026-09-15T10:00:00Z', '2026-09-15T10:00:00Z',
+          'pending', 0, '2026-09-15T10:00:00Z'
+        ),
+        (
+          '10000000-0000-4000-8000-000000000012', '${SPACE}', '${PRACTITIONER}',
+          '2026-09-21T12:00:00Z', '2026-09-21T13:00:00Z', false, false,
+          4500, 900, 0, 0, 0, 5400, 900, 'pi_financial_exhausted', 'expired',
+          '2026-09-15T10:00:00Z', '2026-09-15T10:00:00Z',
+          'pending', 12, '2026-09-15T10:00:00Z'
+        )
+      on conflict do nothing;
+    `);
+
+    const first = await rows<{ id: string; attempts: number; lease_token: string }>(`
+      select id, attempts, lease_token
+      from claim_booking_financial_resolution_batch(
+        '30000000-0000-4000-8000-000000000001', 200,
+        '2026-09-15T11:00:00Z'
+      )
+    `);
+    const second = await rows<{ id: string }>(`
+      select id from claim_booking_financial_resolution_batch(
+        '30000000-0000-4000-8000-000000000002', 200,
+        '2026-09-15T11:00:00Z'
+      )
+    `);
+
+    expect(first).toContainEqual({
+      id: "10000000-0000-4000-8000-000000000011",
+      attempts: 1,
+      lease_token: "30000000-0000-4000-8000-000000000001",
+    });
+    expect(second.map((row) => row.id)).not.toContain(
+      "10000000-0000-4000-8000-000000000011",
+    );
+
+    const [exhausted] = await rows<{
+      financial_resolution_state: string;
+      financial_resolution_last_error: string;
+      financial_resolution_next_attempt_at: Date | null;
+    }>(`
+      select financial_resolution_state, financial_resolution_last_error,
+        financial_resolution_next_attempt_at
+      from bookings where id = '10000000-0000-4000-8000-000000000012'
+    `);
+    expect(exhausted).toEqual({
+      financial_resolution_state: "manual_review",
+      financial_resolution_last_error: "financial resolution retry attempts exhausted",
+      financial_resolution_next_attempt_at: null,
+    });
+  });
+
+  it("withholds financial receipts and reconciliation gaps until Stripe is resolved", async () => {
+    await seedParties();
+    const request = "10000000-0000-4000-8000-000000000021";
+    const requestGap = "10000000-0000-4000-8000-000000000022";
+    const cancellation = "10000000-0000-4000-8000-000000000023";
+    const legacyAbandoned = "10000000-0000-4000-8000-000000000024";
+    const legacyPreauthorized = "10000000-0000-4000-8000-000000000025";
+    const recoveredPreauthorized = "10000000-0000-4000-8000-000000000026";
+    await db.exec(`
+      insert into bookings (
+        id, space_id, practitioner_id, starts_at, ends_at, status,
+        is_instant, was_pro, host_rate_cents, service_fee_cents,
+        instant_fee_cents, pro_discount_cents, credit_applied_cents,
+        total_cents, platform_cents, stripe_payment_intent_id,
+        authorized_at, captured_at, cancelled_at, cancelled_by,
+        approval_state, approval_decided_at, financial_resolution_state,
+        financial_resolution_attempts, financial_resolution_next_attempt_at
+      ) values
+        (
+          '${request}', '${SPACE}', '${PRACTITIONER}',
+          '2026-09-22T12:00:00Z', '2026-09-22T13:00:00Z', 'upcoming',
+          false, false, 4500, 900, 0, 0, 0, 5400, 900, 'pi_receipt_waits',
+          '2026-09-15T10:00:00Z', null, '2026-09-15T10:00:00Z', null, 'declined',
+          '2026-09-15T10:00:00Z', 'pending', 0, '2026-09-16T10:00:00Z'
+        ),
+        (
+          '${requestGap}', '${SPACE}', '${PRACTITIONER}',
+          '2026-09-23T12:00:00Z', '2026-09-23T13:00:00Z', 'upcoming',
+          false, false, 4500, 900, 0, 0, 0, 5400, 900, 'pi_gap_waits',
+          '2026-09-15T10:00:00Z', null, '2026-09-15T10:00:00Z', null, 'expired',
+          '2026-09-15T10:00:00Z', 'pending', 0, '2026-09-16T10:00:00Z'
+        ),
+        (
+          '${cancellation}', '${SPACE}', '${PRACTITIONER}',
+          '2026-09-24T12:00:00Z', '2026-09-24T13:00:00Z', 'upcoming',
+          true, false, 4500, 900, 500, 0, 0, 5900, 1400,
+          'pi_cancel_gap_waits', '2026-09-15T09:00:00Z',
+          '2026-09-15T09:30:00Z', '2026-09-15T10:00:00Z', 'host',
+          'not_required', null, 'pending', 0, '2026-09-16T10:00:00Z'
+        )
+      on conflict do nothing;
+
+      insert into bookings (
+        id, space_id, practitioner_id, starts_at, ends_at, status,
+        is_instant, was_pro, host_rate_cents, service_fee_cents,
+        instant_fee_cents, pro_discount_cents, credit_applied_cents,
+        total_cents, platform_cents, stripe_payment_intent_id,
+        authorized_at, captured_at, cancelled_at, cancelled_by,
+        approval_state, financial_resolution_state,
+        financial_resolution_attempts, financial_resolved_at
+      ) values
+        (
+          '${legacyAbandoned}', '${SPACE}', '${PRACTITIONER}',
+          '2026-09-25T12:00:00Z', '2026-09-25T13:00:00Z',
+          'cancelled_by_practitioner', true, false, 4500, 900, 500, 0, 0,
+          5900, 1400, 'pi_legacy_abandoned', null, null,
+          '2026-09-15T10:00:00Z', 'practitioner', 'not_required', 'resolved',
+          0, '2026-09-15T10:01:00Z'
+        ),
+        (
+          '${legacyPreauthorized}', '${SPACE}', '${PRACTITIONER}',
+          '2026-09-26T12:00:00Z', '2026-09-26T13:00:00Z',
+          'cancelled_by_practitioner', false, false, 4500, 900, 0, 0, 0,
+          5400, 900, 'pi_legacy_preauthorized', '2026-09-15T09:00:00Z', null,
+          '2026-09-15T10:00:00Z', 'practitioner', 'pending', 'resolved',
+          0, '2026-09-15T10:01:00Z'
+        ),
+        (
+          '${recoveredPreauthorized}', '${SPACE}', '${PRACTITIONER}',
+          '2026-09-27T12:00:00Z', '2026-09-27T13:00:00Z',
+          'cancelled_by_practitioner', false, false, 4500, 900, 0, 0, 0,
+          5400, 900, 'pi_recovered_preauthorized', '2026-09-15T09:00:00Z', null,
+          '2026-09-15T10:00:00Z', 'practitioner', 'pending', 'resolved',
+          1, '2026-09-15T10:01:00Z'
+        )
+      on conflict do nothing;
+
+      insert into notifications (
+        user_id, booking_id, kind, channel, dedupe_key, destination,
+        message_snapshot, attempts, next_attempt_at
+      ) values (
+        '${PRACTITIONER}', '${request}', 'request_declined', 'email',
+        'financial:request-receipt:waits', 'financial-practitioner@example.com',
+        '{"version":1,"message":{"subject":"Declined","body":"Body","sms":null}}',
+        0, '2026-09-15T10:00:00Z'
+      ) on conflict (dedupe_key) do nothing;
+    `);
+
+    const beforeClaim = await rows<{ dedupe_key: string }>(`
+      select dedupe_key from claim_notification_batch(
+        '40000000-0000-4000-8000-000000000001', 200,
+        '2026-09-15T11:00:00Z'
+      )
+    `);
+    expect(beforeClaim.map((row) => row.dedupe_key)).not.toContain(
+      "financial:request-receipt:waits",
+    );
+
+    const beforeRequestGaps = await rows<{ id: string }>(`
+      select id from list_request_outcome_notification_gaps(
+        '2026-09-15T00:00:00Z', 200
+      )
+    `);
+    const beforeCancellationGaps = await rows<{ id: string }>(`
+      select id from list_cancellation_notification_gaps(
+        '2026-09-15T00:00:00Z', 200
+      )
+    `);
+    expect(beforeRequestGaps.map((row) => row.id)).not.toContain(requestGap);
+    expect(beforeCancellationGaps.map((row) => row.id)).not.toContain(cancellation);
+    expect(beforeCancellationGaps.map((row) => row.id)).not.toContain(legacyAbandoned);
+    expect(beforeCancellationGaps.map((row) => row.id)).not.toContain(
+      legacyPreauthorized,
+    );
+    expect(beforeCancellationGaps.map((row) => row.id)).toContain(
+      recoveredPreauthorized,
+    );
+
+    await db.exec(`
+      update bookings
+      set status = 'cancelled_by_host',
+          financial_resolution_state = 'resolved',
+          financial_resolution_next_attempt_at = null,
+          financial_resolved_at = '2026-09-15T11:01:00Z',
+          financial_resolution_lease_token = null,
+          financial_resolution_lease_until = null
+      where id in ('${request}', '${requestGap}', '${cancellation}');
+    `);
+
+    const afterClaim = await rows<{ dedupe_key: string }>(`
+      select dedupe_key from claim_notification_batch(
+        '40000000-0000-4000-8000-000000000002', 200,
+        '2026-09-15T11:02:00Z'
+      )
+    `);
+    expect(afterClaim.map((row) => row.dedupe_key)).toContain(
+      "financial:request-receipt:waits",
+    );
+
+    const afterRequestGaps = await rows<{ id: string }>(`
+      select id from list_request_outcome_notification_gaps(
+        '2026-09-15T00:00:00Z', 200
+      )
+    `);
+    const afterCancellationGaps = await rows<{ id: string }>(`
+      select id from list_cancellation_notification_gaps(
+        '2026-09-15T00:00:00Z', 200
+      )
+    `);
+    expect(afterRequestGaps.map((row) => row.id)).toContain(requestGap);
+    expect(afterCancellationGaps.map((row) => row.id)).toContain(cancellation);
+  });
+
+  it("makes the financial worker callable only by service_role", async () => {
+    const [privileges] = await rows<{
+      anon: boolean;
+      authenticated: boolean;
+      service_role: boolean;
+    }>(`
+      select
+        has_function_privilege(
+          'anon',
+          'public.claim_booking_financial_resolution_batch(uuid,integer,timestamptz)',
+          'execute'
+        ) as anon,
+        has_function_privilege(
+          'authenticated',
+          'public.claim_booking_financial_resolution_batch(uuid,integer,timestamptz)',
+          'execute'
+        ) as authenticated,
+        has_function_privilege(
+          'service_role',
+          'public.claim_booking_financial_resolution_batch(uuid,integer,timestamptz)',
+          'execute'
+        ) as service_role
+    `);
+    expect(privileges).toEqual({
+      anon: false,
+      authenticated: false,
+      service_role: true,
+    });
+  });
+});
+
+describe("reliable notification outbox", () => {
+  const USER = "deaddead-dead-4dea-8dea-deaddeaddead";
+  const HOST = "feedfeed-feed-4fee-8fee-feedfeedfeed";
+  const SPACE = "acedaced-aced-4ace-8ace-acedacedaced";
+  const BOOKING = "beadbead-bead-4bea-8bea-beadbeadbead";
+
+  it("leases each due delivery to only one worker", async () => {
+    await db.exec(`
+      insert into auth.users (id, email)
+      values ('${USER}', 'outbox@example.com') on conflict do nothing;
+      insert into profiles (id, display_name)
+      values ('${USER}', 'Outbox Test') on conflict do nothing;
+      insert into notifications (
+        user_id, kind, channel, dedupe_key, destination, message_snapshot,
+        attempts, next_attempt_at
+      ) values (
+        '${USER}', 'payout_failed', 'email', 'outbox:lease:test',
+        'outbox@example.com',
+        '{"version":1,"message":{"subject":"Confirmed","body":"Body","sms":null}}',
+        0, now() - interval '1 minute'
+      ) on conflict (dedupe_key) do nothing;
+    `);
+
+    const first = await rows<{ dedupe_key: string }>(
+      `select dedupe_key from claim_notification_batch(
+        'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 200, now()
+      )`,
+    );
+    const second = await rows<{ dedupe_key: string }>(
+      `select dedupe_key from claim_notification_batch(
+        'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 200, now()
+      )`,
+    );
+
+    expect(first.map((row) => row.dedupe_key)).toContain("outbox:lease:test");
+    expect(second.map((row) => row.dedupe_key)).not.toContain("outbox:lease:test");
+  });
+
+  it("does not let an older provider event regress delivery state", async () => {
+    await db.exec(`
+      insert into notifications (
+        user_id, kind, channel, dedupe_key, destination, message_snapshot,
+        provider_message_id, provider_status, sent_at, accepted_at
+      ) values (
+        '${USER}', 'booking_confirmed', 'email', 'outbox:event:test',
+        'outbox@example.com',
+        '{"version":1,"message":{"subject":"Confirmed","body":"Body","sms":null}}',
+        'email_outbox_test', 'accepted', '2026-09-15T00:00:00Z',
+        '2026-09-15T00:00:00Z'
+      ) on conflict (dedupe_key) do nothing;
+
+      select apply_resend_delivery_event(
+        'email_outbox_test', null, 'email.delivered', '2026-09-15T00:02:00Z'
+      );
+      select apply_resend_delivery_event(
+        'email_outbox_test', null, 'email.delivery_delayed', '2026-09-15T00:01:00Z'
+      );
+    `);
+
+    let [state] = await rows<{ provider_status: string }>(
+      `select provider_status from notifications where dedupe_key = 'outbox:event:test'`,
+    );
+    expect(state.provider_status).toBe("delivered");
+
+    await db.exec(`
+      select apply_resend_delivery_event(
+        'email_outbox_test', null, 'email.complained', '2026-09-15T00:00:00Z'
+      )
+    `);
+    [state] = await rows<{ provider_status: string }>(
+      `select provider_status from notifications where dedupe_key = 'outbox:event:test'`,
+    );
+    expect(state.provider_status).toBe("complained");
+
+    await db.exec(`
+      select apply_resend_delivery_event(
+        'email_outbox_test', null, 'email.delivered', '2026-09-15T00:04:00Z'
+      )
+    `);
+    [state] = await rows<{ provider_status: string }>(
+      `select provider_status from notifications where dedupe_key = 'outbox:event:test'`,
+    );
+    expect(state.provider_status).toBe("complained");
+  });
+
+  it("lets signed delivery evidence correct a local terminal timeout", async () => {
+    await db.exec(`
+      insert into notifications (
+        user_id, kind, channel, dedupe_key, provider_message_id,
+        provider_status, failed_at, dropped_at
+      ) values (
+        '${USER}', 'booking_confirmed', 'email', 'outbox:late-evidence:test',
+        'email_late_evidence', 'failed', '2026-09-15T00:01:00Z',
+        '2026-09-15T00:01:00Z'
+      ) on conflict (dedupe_key) do nothing;
+
+      select apply_resend_delivery_event(
+        'email_late_evidence', null, 'email.delivered', '2026-09-15T00:02:00Z'
+      );
+    `);
+
+    const [state] = await rows<{
+      provider_status: string;
+      sent_at: Date | null;
+      failed_at: Date | null;
+      dropped_at: Date | null;
+    }>(`
+      select provider_status, sent_at, failed_at, dropped_at
+      from notifications where dedupe_key = 'outbox:late-evidence:test'
+    `);
+    expect(state).toEqual({
+      provider_status: "delivered",
+      sent_at: new Date("2026-09-15T00:02:00.000Z"),
+      failed_at: null,
+      dropped_at: null,
+    });
+  });
+
+  it("uses the signed provider tag to close a timeout before the API response", async () => {
+    const correlation = "b".repeat(64);
+    await db.exec(`
+      insert into notifications (
+        user_id, kind, channel, dedupe_key, destination, message_snapshot,
+        provider_correlation_id, provider_status, attempts, next_attempt_at,
+        lease_token, lease_until
+      ) values (
+        '${USER}', 'booking_confirmed', 'email', 'outbox:timeout:test',
+        'private@example.com',
+        '{"version":1,"message":{"subject":"Confirmed","body":"Body","sms":null}}',
+        '${correlation}', 'queued', 1, now(),
+        'abababab-abab-4aba-8aba-abababababab', now() + interval '2 minutes'
+      ) on conflict (dedupe_key) do nothing;
+
+      insert into resend_email_events (
+        svix_id, resend_email_id, notification_correlation_id,
+        event_type, event_created_at
+      ) values (
+        'svix_timeout_test', 'email_timeout_test', '${correlation}',
+        'email.delivered', '2026-09-15T00:02:00Z'
+      ) on conflict (svix_id) do nothing;
+
+      select apply_resend_delivery_event(
+        'email_timeout_test', '${correlation}',
+        'email.delivered', '2026-09-15T00:02:00Z'
+      );
+    `);
+
+    const [state] = await rows<{
+      provider_message_id: string;
+      provider_status: string;
+      sent_at: string | null;
+      destination: string | null;
+      message_snapshot: unknown;
+    }>(`
+      select provider_message_id, provider_status, sent_at, destination, message_snapshot
+      from notifications where dedupe_key = 'outbox:timeout:test'
+    `);
+    expect(state).toMatchObject({
+      provider_message_id: "email_timeout_test",
+      provider_status: "delivered",
+      sent_at: expect.any(Date),
+      destination: null,
+      message_snapshot: null,
+    });
+
+    const claimed = await rows<{ dedupe_key: string }>(`
+      select dedupe_key from claim_notification_batch(
+        'acacacac-acac-4aca-8aca-acacacacacac', 200,
+        '2026-09-15T01:00:00Z'
+      )
+    `);
+    expect(claimed.map((row) => row.dedupe_key)).not.toContain("outbox:timeout:test");
+  });
+
+  it("replays the strongest stored provider event after an acceptance race", async () => {
+    const correlation = "c".repeat(64);
+    await db.exec(`
+      insert into notifications (
+        user_id, kind, channel, dedupe_key, destination, message_snapshot,
+        provider_correlation_id, attempts, next_attempt_at, lease_token, lease_until
+      ) values (
+        '${USER}', 'booking_confirmed', 'email', 'outbox:acceptance-race:test',
+        'private@example.com',
+        '{"version":1,"message":{"subject":"Confirmed","body":"Body","sms":null}}',
+        '${correlation}', 1, now(),
+        'adadadad-adad-4ada-8ada-adadadadadad', now() + interval '2 minutes'
+      ) on conflict (dedupe_key) do nothing;
+
+      insert into resend_email_events (
+        svix_id, resend_email_id, notification_correlation_id,
+        event_type, event_created_at
+      ) values
+        ('svix_race_delivered', 'email_acceptance_race', '${correlation}',
+         'email.delivered', '2026-09-15T00:03:00Z'),
+        ('svix_race_complained', 'email_acceptance_race', '${correlation}',
+         'email.complained', '2026-09-15T00:02:00Z')
+      on conflict (svix_id) do nothing;
+
+      select record_notification_acceptance(
+        'outbox:acceptance-race:test', 'email_acceptance_race',
+        '2026-09-15T00:01:00Z', 'adadadad-adad-4ada-8ada-adadadadadad'
+      );
+    `);
+
+    const [state] = await rows<{ provider_status: string; provider_event_at: Date }>(`
+      select provider_status, provider_event_at
+      from notifications where dedupe_key = 'outbox:acceptance-race:test'
+    `);
+    expect(state).toEqual({
+      provider_status: "complained",
+      provider_event_at: new Date("2026-09-15T00:02:00.000Z"),
+    });
+  });
+
+  it("only lets the worker that owns the lease record provider acceptance", async () => {
+    await db.exec(`
+      insert into notifications (
+        user_id, kind, channel, dedupe_key, destination, message_snapshot,
+        attempts, next_attempt_at, lease_token, lease_until
+      ) values (
+        '${USER}', 'payout_failed', 'email', 'outbox:fence:test',
+        'outbox@example.com',
+        '{"version":1,"message":{"subject":"Payout","body":"Body","sms":null}}',
+        1, now(), 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', now() + interval '5 minutes'
+      ) on conflict (dedupe_key) do nothing;
+    `);
+
+    const [wrong] = await rows<{ accepted: boolean }>(`
+      select record_notification_acceptance(
+        'outbox:fence:test', 'email_wrong_worker', now(),
+        'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee'
+      ) as accepted
+    `);
+    expect(wrong.accepted).toBe(false);
+
+    const [right] = await rows<{ accepted: boolean }>(`
+      select record_notification_acceptance(
+        'outbox:fence:test', 'email_right_worker', now(),
+        'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
+      ) as accepted
+    `);
+    expect(right.accepted).toBe(true);
+
+    const [state] = await rows<{
+      provider_status: string;
+      destination: string | null;
+      message_snapshot: unknown;
+    }>(
+      `select provider_status, destination, message_snapshot
+       from notifications where dedupe_key = 'outbox:fence:test'`,
+    );
+    expect(state).toEqual({
+      provider_status: "accepted",
+      destination: null,
+      message_snapshot: null,
+    });
+  });
+
+  it("terminally clears a final attempt whose worker lease expired", async () => {
+    await db.exec(`
+      insert into notifications (
+        user_id, kind, channel, dedupe_key, destination, message_snapshot,
+        attempts, next_attempt_at, lease_token, lease_until
+      ) values (
+        '${USER}', 'payout_failed', 'email', 'outbox:dead-worker:test',
+        'outbox@example.com',
+        '{"version":1,"message":{"subject":"Payout","body":"Body","sms":null}}',
+        12, now() - interval '1 hour',
+        'ffffffff-ffff-4fff-8fff-ffffffffffff', now() - interval '1 minute'
+      ) on conflict (dedupe_key) do nothing;
+
+      select * from claim_notification_batch(
+        '12121212-1212-4212-8212-121212121212', 200, now()
+      );
+    `);
+
+    const [state] = await rows<{
+      provider_status: string;
+      destination: string | null;
+      message_snapshot: unknown;
+      last_error: string;
+    }>(
+      `select provider_status, destination, message_snapshot, last_error
+       from notifications where dedupe_key = 'outbox:dead-worker:test'`,
+    );
+    expect(state).toEqual({
+      provider_status: "failed",
+      destination: null,
+      message_snapshot: null,
+      last_error: "notification retry attempts exhausted",
+    });
+  });
+
+  it("drops every queued active notification while cancellation money is pending", async () => {
+    const approvedBooking = "11111111-aaaa-4aaa-8aaa-111111111111";
+    const heldRequest = "22222222-bbbb-4bbb-8bbb-222222222222";
+    await db.exec(`
+      insert into auth.users (id, email) values
+        ('${HOST}', 'outbox-host@example.com') on conflict do nothing;
+      insert into profiles (id, display_name) values
+        ('${HOST}', 'Outbox Host') on conflict do nothing;
+      insert into spaces (
+        id, host_id, name, category, hourly_rate_cents, capacity, access_type,
+        entry_instructions, address_line, status, sublease_doc_path,
+        legal_ack_at, sublease_doc_state, sublease_doc_reviewed_at
+      ) values (
+        '${SPACE}', '${HOST}', 'Outbox Room', 'physical', 4500, 3, 'keypad',
+        'Side door', '12 Test Lane', 'active', 'space/outbox/lease.pdf',
+        now(), 'verified', now()
+      ) on conflict do nothing;
+      insert into bookings (
+        id, space_id, practitioner_id, starts_at, ends_at, is_instant, was_pro,
+        host_rate_cents, service_fee_cents, instant_fee_cents,
+        pro_discount_cents, credit_applied_cents, total_cents, platform_cents,
+        approval_state, stripe_payment_intent_id, authorized_at, captured_at,
+        cancelled_at, cancelled_by, access_code, access_code_revealed_at,
+        financial_resolution_state, financial_resolution_next_attempt_at
+      ) values
+        (
+          '${BOOKING}', '${SPACE}', '${USER}', now() + interval '20 minutes',
+          now() + interval '80 minutes', true, false, 4500, 900, 500,
+          0, 0, 5900, 1400, 'not_required', 'pi_pending_cancel_instant',
+          now(), now(), now(), 'host', '4821', now() - interval '1 minute',
+          'pending', now()
+        ),
+        (
+          '${approvedBooking}', '${SPACE}', '${USER}', now() + interval '100 minutes',
+          now() + interval '160 minutes', false, false, 4500, 900, 0,
+          0, 0, 5400, 900, 'approved', 'pi_pending_cancel_approved',
+          now(), now(), now(), 'host', null, null, 'pending', now()
+        ),
+        (
+          '${heldRequest}', '${SPACE}', '${USER}', now() + interval '180 minutes',
+          now() + interval '240 minutes', false, false, 4500, 900, 0,
+          0, 0, 5400, 900, 'pending', 'pi_pending_cancel_request',
+          now(), null, now(), 'host', null, null, 'pending', now()
+        )
+      on conflict do nothing;
+      insert into notifications (
+        user_id, booking_id, kind, channel, dedupe_key, destination,
+        message_snapshot, attempts, next_attempt_at, expires_at
+      ) values
+        (
+          '${USER}', '${BOOKING}', 'booking_confirmed', 'email',
+          'outbox:pending-cancellation:booking-confirmed', 'outbox@example.com',
+          '{"version":1,"message":{"subject":"Confirmed","body":"Body","sms":null}}',
+          0, now() - interval '1 minute', null
+        ),
+        (
+          '${HOST}', '${BOOKING}', 'host_new_booking', 'email',
+          'outbox:pending-cancellation:host-new-booking', 'outbox-host@example.com',
+          '{"version":1,"message":{"subject":"New booking","body":"Body","sms":null}}',
+          0, now() - interval '1 minute', null
+        ),
+        (
+          '${USER}', '${BOOKING}', 'access_code_ready', 'email',
+          'outbox:pending-cancellation:access-code', 'outbox@example.com',
+          '{"version":1,"message":{"subject":"Door code","body":"4821","sms":"4821"}}',
+          1, now() - interval '1 minute', now() + interval '80 minutes'
+        ),
+        (
+          '${USER}', '${BOOKING}', 'new_message', 'email',
+          'outbox:pending-cancellation:new-message', 'outbox@example.com',
+          '{"version":1,"message":{"subject":"New message","body":"Body","sms":null}}',
+          0, now() - interval '1 minute', null
+        ),
+        (
+          '${USER}', '${approvedBooking}', 'request_approved', 'email',
+          'outbox:pending-cancellation:request-approved', 'outbox@example.com',
+          '{"version":1,"message":{"subject":"Approved","body":"Body","sms":null}}',
+          0, now() - interval '1 minute', null
+        ),
+        (
+          '${HOST}', '${heldRequest}', 'host_new_request', 'email',
+          'outbox:pending-cancellation:host-new-request', 'outbox-host@example.com',
+          '{"version":1,"message":{"subject":"New request","body":"Body","sms":null}}',
+          0, now() - interval '1 minute', null
+        ),
+        (
+          '${HOST}', '${heldRequest}', 'host_request_reminder', 'email',
+          'outbox:pending-cancellation:host-request-reminder', 'outbox-host@example.com',
+          '{"version":1,"message":{"subject":"Request reminder","body":"Body","sms":null}}',
+          0, now() - interval '1 minute', null
+        )
+      on conflict (dedupe_key) do nothing;
+    `);
+
+    const claimed = await rows<{ dedupe_key: string }>(
+      `select dedupe_key from claim_notification_batch(
+        'cccccccc-cccc-4ccc-8ccc-cccccccccccc', 200, now()
+      )`,
+    );
+    const staleKeys = [
+      "outbox:pending-cancellation:booking-confirmed",
+      "outbox:pending-cancellation:host-new-booking",
+      "outbox:pending-cancellation:access-code",
+      "outbox:pending-cancellation:new-message",
+      "outbox:pending-cancellation:request-approved",
+      "outbox:pending-cancellation:host-new-request",
+      "outbox:pending-cancellation:host-request-reminder",
+    ];
+    const claimedKeys = claimed.map((row) => row.dedupe_key);
+    for (const key of staleKeys) {
+      expect(claimedKeys).not.toContain(key);
+    }
+
+    const states = await rows<{
+      dedupe_key: string;
+      provider_status: string;
+      destination: string | null;
+      message_snapshot: unknown;
+    }>(
+      `select dedupe_key, provider_status, destination, message_snapshot
+       from notifications
+       where dedupe_key like 'outbox:pending-cancellation:%'
+       order by dedupe_key`,
+    );
+    expect(states).toHaveLength(staleKeys.length);
+    for (const state of states) {
+      expect(state).toEqual({
+        dedupe_key: state.dedupe_key,
+        provider_status: "failed",
+        destination: null,
+        message_snapshot: null,
+      });
+    }
+  });
+
+  it("allows declined and expired requests to end without inventing an actor", async () => {
+    const host = "11111111-2222-4333-8444-555555555555";
+    const practitioner = "66666666-7777-4888-8999-000000000000";
+    const space = "12121212-3434-4565-8787-909090909090";
+    const booking = "98989898-7676-4545-8323-101010101010";
+    await db.exec(`
+      insert into auth.users (id, email) values
+        ('${host}', 'decline-host@example.com'),
+        ('${practitioner}', 'decline-practitioner@example.com')
+      on conflict do nothing;
+      insert into profiles (id, display_name) values
+        ('${host}', 'Decline Host'),
+        ('${practitioner}', 'Decline Practitioner')
+      on conflict do nothing;
+      insert into spaces (
+        id, host_id, name, category, hourly_rate_cents, capacity, access_type,
+        entry_instructions, address_line, status, sublease_doc_path,
+        legal_ack_at, sublease_doc_state, sublease_doc_reviewed_at
+      ) values (
+        '${space}', '${host}', 'Decline Room', 'physical', 4500, 3, 'keypad',
+        'Side door', '12 Test Lane', 'active', 'space/decline/lease.pdf',
+        now(), 'verified', now()
+      ) on conflict do nothing;
+      insert into bookings (
+        id, space_id, practitioner_id, starts_at, ends_at, is_instant, was_pro,
+        host_rate_cents, service_fee_cents, instant_fee_cents,
+        pro_discount_cents, credit_applied_cents, total_cents, platform_cents,
+        approval_state, authorized_at
+      ) values (
+        '${booking}', '${space}', '${practitioner}', now() + interval '2 days',
+        now() + interval '2 days 1 hour', false, false, 4500, 900, 0,
+        0, 0, 5400, 900, 'pending', now()
+      ) on conflict do nothing;
+
+      update bookings
+      set approval_state = 'declined', approval_decided_at = now(),
+          status = 'cancelled_by_host', cancelled_at = now(), cancelled_by = null
+      where id = '${booking}';
+    `);
+
+    const [state] = await rows<{
+      approval_state: string;
+      cancelled_at: string | null;
+      cancelled_by: string | null;
+    }>(`
+      select approval_state, cancelled_at, cancelled_by
+      from bookings where id = '${booking}'
+    `);
+    expect(state).toMatchObject({
+      approval_state: "declined",
+      cancelled_at: expect.any(Date),
+      cancelled_by: null,
+    });
+
+    await db.exec(`
+      update bookings
+      set approval_state = 'expired'
+      where id = '${booking}'
+    `);
+    const [expired] = await rows<{ approval_state: string; cancelled_by: string | null }>(`
+      select approval_state, cancelled_by from bookings where id = '${booking}'
+    `);
+    expect(expired).toEqual({ approval_state: "expired", cancelled_by: null });
   });
 });
 

@@ -96,6 +96,7 @@ describe("notification outbox", () => {
         message: expect.objectContaining({
           subject: expect.any(String),
           body: expect.stringContaining("$25.00"),
+          html: expect.stringContaining("<!doctype html>"),
         }),
       },
     });

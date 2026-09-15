@@ -1,4 +1,5 @@
 import { formatCents } from "../money";
+import { renderNotificationEmail, renderPlainEmail } from "./email-template";
 
 /**
  * What each notification says, as pure functions over plain data.
@@ -54,7 +55,7 @@ export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
 
 export interface Message {
   subject: string;
-  /** Plain text. Deliberately the primary form — see `html` below. */
+  /** Plain text, always present as the accessible and provider fallback form. */
   body: string;
   /**
    * The same message at SMS length, or null when this kind never goes by SMS.
@@ -68,16 +69,9 @@ export interface Message {
   sms: string | null;
 
   /**
-   * A ready-made HTML body, for the few messages that are laid out rather than
-   * written.
-   *
-   * Everything the app sends is a paragraph or two, and `toHtml` wrapping the
-   * plain text is the right answer for those — one body to keep correct, and
-   * no chance of the two versions drifting. A tool result is a score, a band
-   * and a breakdown, which is a table, so it brings its own.
-   *
-   * Optional on purpose: absent means the text is the message, which is what
-   * every existing kind wants.
+   * The immutable HTML partner. `render` supplies the corporate transactional
+   * shell for every notification kind; direct operational callers may omit it
+   * and let `toHtml` build the safe generic shell.
    */
   html?: string;
 }
@@ -169,6 +163,14 @@ function settlement(context: MessageContext): string | null {
 }
 
 export function render(kind: NotificationKind, context: MessageContext): Message {
+  const message = renderPlain(kind, context);
+  return {
+    ...message,
+    html: renderNotificationEmail(kind, message, context),
+  };
+}
+
+function renderPlain(kind: NotificationKind, context: MessageContext): Message {
   const { name, address, accessCode, entryInstructions } = context;
 
   /**
@@ -783,22 +785,7 @@ export function render(kind: NotificationKind, context: MessageContext): Message
   }
 }
 
-/**
- * A very small HTML wrapper.
- *
- * The plain text is the message; this only makes it survive an email client
- * that would otherwise collapse the line breaks. No images, no tracking pixel,
- * no layout table — the content is six lines and dressing it up would cost
- * deliverability for nothing.
- */
+/** Safe corporate fallback for direct messages outside the notification taxonomy. */
 export function toHtml(message: Message): string {
-  const escape = (s: string) =>
-    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-
-  const paragraphs = message.body
-    .split("\n\n")
-    .map((p) => `<p style="margin:0 0 16px">${escape(p).replace(/\n/g, "<br>")}</p>`)
-    .join("");
-
-  return `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;font-size:15px;line-height:1.6;color:#16304E;max-width:520px">${paragraphs}</div>`;
+  return message.html ?? renderPlainEmail(message);
 }

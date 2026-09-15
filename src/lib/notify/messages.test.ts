@@ -269,9 +269,10 @@ describe("toHtml", () => {
     expect(html).toContain("&lt;script&gt;");
   });
 
-  it("keeps every paragraph", () => {
+  it("keeps the content paragraphs and moves the sign-off into the footer", () => {
     const message = render("access_code_ready", FULL);
     const html = toHtml(message);
-    expect(html.match(/<p /g)?.length).toBe(message.body.split("\n\n").length);
+    expect(html.match(/<p /g)?.length).toBe(message.body.split("\n\n").length - 1);
+    expect(html).toContain("<footer");
   });
 });

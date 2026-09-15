@@ -118,13 +118,32 @@ export function PushEnable() {
           setState("unsupported");
           return;
         }
-        const permitted = await oneSignal.Notifications.requestPermission(true);
+
+        // OneSignal's iOS SDK does not resolve requestPermission while privacy
+        // consent is required but still false. The tap on this explicit Turn on
+        // control is the app-level consent gesture, so unlock the SDK first and
+        // immediately revoke that consent again if OS permission is not granted.
+        oneSignal.setConsentGiven(true);
+
+        let permitted = await oneSignal.Notifications.hasPermission().catch(() => false);
+        if (!permitted) {
+          const canRequest = await oneSignal.Notifications.canRequestPermission().catch(() => false);
+          if (!canRequest) {
+            setNativePushConsentGiven(false);
+            oneSignal.setConsentGiven(false);
+            setState("blocked");
+            return;
+          }
+          permitted = await oneSignal.Notifications.requestPermission(false);
+        }
+
         if (!permitted) {
           setNativePushConsentGiven(false);
           oneSignal.setConsentGiven(false);
           setState("blocked");
           return;
         }
+
         setNativePushConsentGiven(true);
         if (!(await requestNativePushOptIn())) {
           setNativePushConsentGiven(false);
@@ -160,7 +179,6 @@ export function PushEnable() {
 
   const blocked = state === "blocked";
   const repair = state === "repair";
-  const native = isNativeApp();
 
   return (
     <div
@@ -179,7 +197,7 @@ export function PushEnable() {
                 ? "Notifications could not be enabled. Check your connection and try again."
                 : "Get booking confirmations and important updates as soon as they happen."}
         </p>
-        {(!blocked || native) && (
+        {!blocked && (
           <button
             type="button"
             onClick={() => void enable()}
@@ -187,13 +205,7 @@ export function PushEnable() {
             className="mt-2.5 px-4 py-2 rounded-full font-body font-medium text-[14px] press disabled:opacity-60"
             style={{ backgroundColor: "#16304E", color: "#fff" }}
           >
-            {busy
-              ? "Turning on…"
-              : blocked
-                ? "Open settings"
-                : repair
-                  ? "Finish setup"
-                  : "Turn on"}
+            {busy ? "Turning on…" : repair ? "Finish setup" : "Turn on"}
           </button>
         )}
       </div>

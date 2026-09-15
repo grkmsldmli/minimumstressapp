@@ -21,6 +21,11 @@ const config: CapacitorConfig = {
   appId: "com.minimumstress.app",
   appName: "Minimum Stress",
   webDir: "mobile/www",
+  ios: {
+    // OneSignal owns UNUserNotificationCenterDelegate. Leaving Capacitor's
+    // notification router enabled would compete for notification callbacks.
+    handleApplicationNotifications: false,
+  },
   server: {
     url: "https://minimumstress.app",
     // Production is HTTPS only; never fall back to cleartext.

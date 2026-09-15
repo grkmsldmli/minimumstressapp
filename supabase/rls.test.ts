@@ -1307,12 +1307,23 @@ describe("notification history", () => {
 
       insert into notifications (user_id, kind, channel, dedupe_key)
       values ('${HOST}', 'host_new_booking', 'email', 'k3');
+
+      insert into notifications (user_id, kind, channel, dedupe_key, sent_at)
+      values ('${PRACTITIONER}', 'booking_confirmed', 'push', 'k-push', now());
     `);
   });
 
   it("shows somebody their own messages", async () => {
     const mine = await asUser(PRACTITIONER, `select kind from my_notifications`);
     expect(mine).toHaveLength(2);
+  });
+
+  it("does not duplicate an in-app event with its push delivery row", async () => {
+    const mine = await asUser<{ channel: string }>(
+      PRACTITIONER,
+      `select channel from my_notifications`,
+    );
+    expect(mine.map((row) => row.channel)).not.toContain("push");
   });
 
   it("shows nobody else's", async () => {

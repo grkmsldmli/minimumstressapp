@@ -118,7 +118,8 @@ Provide in App Store Connect (App Review Information → Sign-In Required):
   uploads a verification document (purpose strings in Info.plist).
 - Location — optional; used to sort spaces by distance. Declining keeps the manual
   ZIP/postcode entry path.
-- No push in v1 (email + in-app notifications). See PHASE 9 note in the report.
+- Push notifications are optional. The app asks only from the Notifications
+  screen; declining leaves transactional email and the in-app receipt list on.
 
 ## Claims to avoid (do not put in any field)
 - No "therapy" / medical treatment claims.

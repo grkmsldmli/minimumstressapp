@@ -1,6 +1,7 @@
 import "server-only";
 
-import { type Message, toHtml } from "./messages";
+import { DEFAULT_ONESIGNAL_APP_ID } from "../onesignal/config";
+import { type Message, type PushMessage, toHtml } from "./messages";
 
 /**
  * The two ways a message leaves the building.
@@ -13,6 +14,7 @@ import { type Message, toHtml } from "./messages";
  */
 export type SendResult =
   | { status: "sent"; id: string }
+  | { status: "skipped"; reason: string }
   | { status: "retry"; reason: string }
   | { status: "dropped"; reason: string };
 
@@ -21,6 +23,11 @@ export interface EmailSendOptions {
   idempotencyKey?: string;
   /** Opaque SHA-256 token returned by signed delivery webhooks. */
   correlationId?: string;
+}
+
+export interface PushSendOptions {
+  /** OneSignal accepts an RFC UUID and deduplicates it for thirty days. */
+  idempotencyKey: string;
 }
 
 /** Who the mail is from. Overridable so a staging deploy is obviously staging. */
@@ -44,6 +51,10 @@ export function smsConfigured(): boolean {
       process.env.TWILIO_AUTH_TOKEN &&
       (process.env.TWILIO_MESSAGING_SERVICE_SID || process.env.TWILIO_FROM_NUMBER),
   );
+}
+
+export function pushConfigured(): boolean {
+  return Boolean(process.env.ONESIGNAL_REST_API_KEY?.trim() && oneSignalAppId());
 }
 
 export async function sendEmail(
@@ -114,6 +125,77 @@ export async function sendSms(to: string, text: string): Promise<SendResult> {
   }
 
   return classify(response, "sms");
+}
+
+/**
+ * Send only generic lock-screen copy to an opaque OneSignal external_id.
+ * Booking detail stays behind the authenticated app; no user, booking, or
+ * destination identifier is placed in the provider-visible payload.
+ */
+export async function sendPush(
+  externalId: string,
+  message: PushMessage,
+  options: PushSendOptions,
+): Promise<SendResult> {
+  if (!/^ms_[A-Za-z0-9_-]{43}$/.test(externalId)) {
+    return { status: "dropped", reason: "push invalid_external_id" };
+  }
+
+  const key = process.env.ONESIGNAL_REST_API_KEY?.trim();
+  const appId = oneSignalAppId();
+  if (!key || !appId) {
+    return { status: "retry", reason: "OneSignal credentials are not set" };
+  }
+
+  let response: Response;
+  try {
+    response = await fetch("https://api.onesignal.com/notifications", {
+      method: "POST",
+      headers: {
+        Authorization: `Key ${key}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        app_id: appId,
+        include_aliases: { external_id: [externalId] },
+        target_channel: "push",
+        headings: { en: message.title },
+        contents: { en: message.body },
+        // Web opens the authenticated app. Native shells receive only a safe
+        // route token and let the SDK click listener navigate in-app, avoiding
+        // a second browser window or an unverified deep-link handoff.
+        web_url: message.url,
+        data: { minimumstress_destination: "notifications" },
+        idempotency_key: options.idempotencyKey,
+      }),
+      signal: AbortSignal.timeout(10_000),
+    });
+  } catch {
+    // Do not retain exception text: a runtime can include request details in
+    // it, while the queue only needs to know that this class is retryable.
+    return { status: "retry", reason: "push network_error" };
+  }
+
+  if (response.ok) {
+    const payload = (await response.json().catch(() => ({}))) as { id?: unknown };
+    if (typeof payload.id === "string" && payload.id.length > 0) {
+      return { status: "sent", id: payload.id };
+    }
+
+    // OneSignal deliberately returns 200 with no id when every targeted
+    // subscription is absent or unsubscribed. That is terminal, not an outage.
+    return { status: "skipped", reason: "no subscribed push destination" };
+  }
+
+  return classify(response, "push");
+}
+
+function oneSignalAppId(): string {
+  return (
+    process.env.ONESIGNAL_APP_ID?.trim() ||
+    process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID?.trim() ||
+    DEFAULT_ONESIGNAL_APP_ID
+  );
 }
 
 /**

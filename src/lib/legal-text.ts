@@ -108,6 +108,7 @@ export const SECTIONS: readonly LegalSection[] = [
       "Messages you send through the app, with phone numbers and email addresses removed automatically before they are stored.",
       "An emergency contact, if you give us one.",
       "Basic product usage: when the app opens and which public-site page is viewed. These events use a random identifier that lasts only for that browser tab or app session. We do not include a full URL, search query, referrer, persistent device identifier, or precise location in these events.",
+      "Push notifications, only if you turn them on: a random provider identifier, an unguessable account alias, your push token, permission state, app or browser version, device and operating-system details, language, timezone, country, session activity, and whether a notification was opened. We never put a name, address, booking time, amount, message, or door code in a push notification.",
       "Card details are handled by Stripe and never reach us. We hold the identifiers Stripe gives us so we can charge and pay the right accounts.",
       "Identity verification, for practitioners: we use Stripe for identity verification before you can book. Stripe may collect images of your ID and a selfie, identifying information, and device and fraud signals to run the check. We do not store copies of your ID or selfie images in our own database — we keep only the verification status and a reference to the check.",
     ],
@@ -135,6 +136,7 @@ export const SECTIONS: readonly LegalSection[] = [
     points: [
       "Stripe, for payments and payouts, and for identity verification: your card details and, for a practitioner, the ID and selfie images and identifying information you submit to verify — all of which go to them and never reach us, along with what a booking cost. Their own privacy policy governs what they hold.",
       "Resend, for email: your address, and what the message says — a booking confirmation, a door code, a receipt.",
+      "OneSignal, only if you turn on push notifications: an unguessable account alias, push token, permission and delivery status, notification opens, session activity, and technical information about the browser or device. It receives only generic notification wording; booking details, addresses, times, prices, messages and door codes stay in the signed-in app.",
       "Supabase, for storage: your account, your bookings, anything you upload, and your signed-in session.",
       "Google, when you type an address into the search box, and if you sign in with a Google account. Address lookups go through us, so a half-typed address does not leave your device for Google directly.",
       "MapTiler, for the map: which part of the map is on screen, and not who is looking at it.",
@@ -154,6 +156,7 @@ export const SECTIONS: readonly LegalSection[] = [
       "Reviews are detached from your name rather than deleted, because a room's rating is partly what everybody else wrote.",
       "Records we must keep for tax and accounting are kept for as long as the law requires, and no longer.",
       "First-party app-open and public-site page-view events are deleted after 90 days.",
+      "Push subscriptions stay with OneSignal while they are active. Turning notifications off stops delivery, and signing out or deleting your account disconnects that device from your account. You can also ask us to delete any OneSignal user and subscription records associated with your unguessable alias.",
       "To have your identity-verification data deleted or redacted, contact us and we will follow Stripe's identity-verification deletion or redaction process where it applies.",
     ],
   },

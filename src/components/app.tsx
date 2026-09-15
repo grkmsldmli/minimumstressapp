@@ -81,6 +81,10 @@ import {
   type InsuranceRejection,
 } from "@/lib/insurance";
 import type { NotificationEntry } from "@/lib/notify/history";
+import {
+  OPEN_NOTIFICATIONS_EVENT,
+  consumeNotificationsScreenRequest,
+} from "@/lib/onesignal/navigation";
 import { ClaimForm } from "@/components/screens/claim-form";
 import { Disputes } from "@/components/screens/disputes";
 import { RefundRequest } from "@/components/screens/refund-request";
@@ -309,6 +313,18 @@ export function App() {
    * list, which takes precedence.
    */
   const [checkoutBooking, setCheckoutBooking] = useState<Booking | null>(null);
+
+  // A push tap opens the in-app receipt list. On a cold native launch the tap
+  // may arrive before the signed-in snapshot, so the request stays in session
+  // storage and is consumed only once the account is ready.
+  useEffect(() => {
+    const openNotifications = () => {
+      if (data) go("notifications");
+    };
+    window.addEventListener(OPEN_NOTIFICATIONS_EVENT, openNotifications);
+    if (data && consumeNotificationsScreenRequest()) go("notifications");
+    return () => window.removeEventListener(OPEN_NOTIFICATIONS_EVENT, openNotifications);
+  }, [data, go]);
 
   /**
    * Pro checkout confirmation, kept honest.

@@ -7,9 +7,11 @@ const state = vi.hoisted(() => {
   const updates: Record<string, unknown>[] = [];
   const claimed = new Set<string>();
   const sendEmail = vi.fn();
+  const sendPush = vi.fn();
   const sendSms = vi.fn();
   const rpc = vi.fn();
   let emailIsConfigured = true;
+  let externalId: string | null = null;
 
   const from = vi.fn((table: string) => ({
     insert: async (row: Record<string, unknown>) => {
@@ -33,11 +35,14 @@ const state = vi.hoisted(() => {
     updates,
     claimed,
     sendEmail,
+    sendPush,
     sendSms,
     rpc,
     from,
     get emailIsConfigured() { return emailIsConfigured; },
     set emailIsConfigured(value: boolean) { emailIsConfigured = value; },
+    get externalId() { return externalId; },
+    set externalId(value: string | null) { externalId = value; },
   };
 });
 
@@ -47,13 +52,20 @@ vi.mock("../supabase/server", () => ({
 
 vi.mock("./transports", () => ({
   emailConfigured: () => state.emailIsConfigured,
+  pushConfigured: () => true,
   smsConfigured: () => false,
   sendEmail: (...args: unknown[]) => state.sendEmail(...args),
+  sendPush: (...args: unknown[]) => state.sendPush(...args),
   sendSms: (...args: unknown[]) => state.sendSms(...args),
+}));
+
+vi.mock("../onesignal/identity", () => ({
+  oneSignalExternalId: () => state.externalId,
 }));
 
 import {
   notify,
+  oneSignalPushIdempotencyKey,
   providerCorrelationId,
   providerIdempotencyKey,
   retryPending,
@@ -66,10 +78,13 @@ beforeEach(() => {
   state.from.mockClear();
   state.rpc.mockReset();
   state.sendEmail.mockReset();
+  state.sendPush.mockReset();
   state.sendSms.mockReset();
   state.emailIsConfigured = true;
+  state.externalId = null;
   state.rpc.mockResolvedValue({ data: true, error: null });
   state.sendEmail.mockResolvedValue({ status: "sent", id: "email_123" });
+  state.sendPush.mockResolvedValue({ status: "sent", id: "push_123" });
 });
 
 describe("notification outbox", () => {
@@ -176,6 +191,145 @@ describe("notification outbox", () => {
     await expect(notify(request)).resolves.toMatchObject({ email: "sent" });
     await expect(notify(request)).resolves.toMatchObject({ email: "duplicate" });
     expect(state.sendEmail).toHaveBeenCalledTimes(1);
+  });
+
+  it("queues an opaque privacy-safe push before sending email", async () => {
+    state.externalId = `ms_${"a".repeat(43)}`;
+
+    const result = await notify({
+      kind: "access_code_ready",
+      recipient: { userId: "private-user-id", email: "person@example.com" },
+      subjectId: "private-booking-id",
+      context: {
+        accessCode: "PRIVATE-DOOR-4821",
+        address: "PRIVATE 12 Alder Lane",
+      },
+    });
+
+    expect(result).toEqual({ push: "queued", email: "sent" });
+    expect(state.inserted).toHaveLength(2);
+    expect(state.inserted[0]).toMatchObject({
+      channel: "push",
+      dedupe_key: "access_code_ready:private-booking-id:push",
+      destination: state.externalId,
+      provider_correlation_id: null,
+      lease_token: null,
+      lease_until: null,
+      message_snapshot: {
+        version: 1,
+        message: {
+          subject: "Access details ready",
+          body: "Open Minimum Stress securely to view your access details.",
+          sms: null,
+          push: {
+            title: "Access details ready",
+            body: "Open Minimum Stress securely to view your access details.",
+            url: expect.stringMatching(/^https:\/\//),
+          },
+        },
+      },
+    });
+    expect(state.inserted[1]).toMatchObject({ channel: "email" });
+    const storedPush = state.inserted[0].message_snapshot as {
+      message: { html?: unknown; push: unknown };
+    };
+    expect(storedPush.message).not.toHaveProperty("html");
+    expect(JSON.stringify(storedPush))
+      .not.toMatch(/PRIVATE-DOOR-4821|PRIVATE 12 Alder Lane|private-user-id/);
+    expect(state.sendPush).not.toHaveBeenCalled();
+    expect(state.sendEmail).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses a stable RFC UUID for OneSignal retries", async () => {
+    const key = oneSignalPushIdempotencyKey("booking_confirmed:booking-9:push");
+    expect(key).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-8[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    expect(oneSignalPushIdempotencyKey("booking_confirmed:booking-9:push")).toBe(key);
+    expect(oneSignalPushIdempotencyKey("booking_confirmed:booking-10:push")).not.toBe(key);
+
+    const push = {
+      title: "Booking confirmed",
+      body: "Your booking is confirmed. Open Minimum Stress for details.",
+      url: "https://minimumstress.app/",
+    };
+    state.rpc.mockResolvedValueOnce({
+      data: [{
+        id: "notification-push-1",
+        kind: "booking_confirmed",
+        channel: "push",
+        dedupe_key: "booking_confirmed:booking-9:push",
+        destination: `ms_${"b".repeat(43)}`,
+        message_snapshot: {
+          version: 1,
+          message: { subject: "Confirmed", body: "Private email body", sms: null, push },
+        },
+        attempts: 2,
+        booking_id: "booking-9",
+        expires_at: null,
+        lease_token: "worker-push-1",
+        provider_correlation_id: null,
+      }],
+      error: null,
+    });
+
+    await expect(retryPending()).resolves.toEqual({ retried: 1, sent: 1, givenUp: 0 });
+    expect(state.sendPush).toHaveBeenCalledWith(
+      `ms_${"b".repeat(43)}`,
+      push,
+      { idempotencyKey: key },
+    );
+    expect(state.rpc).toHaveBeenLastCalledWith(
+      "record_notification_acceptance",
+      expect.objectContaining({
+        p_dedupe_key: "booking_confirmed:booking-9:push",
+        p_provider_message_id: "push_123",
+      }),
+    );
+  });
+
+  it("closes a 200/no-id push as unsubscribed without creating a failure", async () => {
+    state.rpc.mockResolvedValueOnce({
+      data: [{
+        id: "notification-push-2",
+        kind: "new_message",
+        channel: "push",
+        dedupe_key: "new_message:thread-1:push",
+        destination: `ms_${"c".repeat(43)}`,
+        message_snapshot: {
+          version: 1,
+          message: {
+            subject: "New message",
+            body: "Private email body",
+            sms: null,
+            push: {
+              title: "New message",
+              body: "You have a new message in Minimum Stress.",
+              url: "https://minimumstress.app/",
+            },
+          },
+        },
+        attempts: 1,
+        booking_id: null,
+        expires_at: null,
+        lease_token: "worker-push-2",
+        provider_correlation_id: null,
+      }],
+      error: null,
+    });
+    state.sendPush.mockResolvedValueOnce({
+      status: "skipped",
+      reason: "no subscribed push destination",
+    });
+
+    await expect(retryPending()).resolves.toEqual({ retried: 1, sent: 0, givenUp: 0 });
+    expect(state.updates.at(-1)).toMatchObject({
+      provider_status: "unsubscribed",
+      sent_at: expect.any(String),
+      destination: null,
+      message_snapshot: null,
+      last_error: null,
+      lease_token: null,
+      lease_until: null,
+    });
   });
 
   it("retries the immutable snapshot instead of rebuilding current booking facts", async () => {

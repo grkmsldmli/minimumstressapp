@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("server-only", () => ({}));
+
 /**
  * The dedupe that keeps one decision from emailing twice, proven through the
  * real notification-history mechanism rather than a mock of it.
@@ -34,10 +36,13 @@ const { recipientFor, sendEmail, claimed, fakeAdmin } = vi.hoisted(() => {
 vi.mock("../supabase/server", () => ({ supabaseAdmin: () => fakeAdmin }));
 vi.mock("./transports", () => ({
   emailConfigured: () => true,
+  pushConfigured: () => false,
   smsConfigured: () => false,
   sendEmail: (...args: unknown[]) => sendEmail(...args),
+  sendPush: vi.fn(),
   sendSms: vi.fn(),
 }));
+vi.mock("../onesignal/identity", () => ({ oneSignalExternalId: () => null }));
 vi.mock("./for-booking", () => ({ recipientFor }));
 
 import { notifyInsuranceReviewed } from "./for-insurance";

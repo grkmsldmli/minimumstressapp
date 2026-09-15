@@ -8,6 +8,8 @@ afterEach(() => {
   vi.resetModules();
 });
 
+const PUSH_ALIAS = `ms_${"a".repeat(43)}`;
+
 describe("Resend transport", () => {
   it("requires both the API key and a webhook signing secret for observable delivery", async () => {
     vi.stubEnv("RESEND_API_KEY", "re_test_123");
@@ -69,5 +71,125 @@ describe("Resend transport", () => {
 
     expect(result).toEqual({ status: "dropped", reason: "email 422: provider_4xx" });
     expect(JSON.stringify(result)).not.toContain("private@example.com");
+  });
+});
+
+describe("OneSignal transport", () => {
+  it("uses the public app id fallback but still requires the server REST API key", async () => {
+    vi.stubEnv("ONESIGNAL_REST_API_KEY", "");
+    const { pushConfigured } = await import("./transports");
+    expect(pushConfigured()).toBe(false);
+
+    vi.stubEnv("ONESIGNAL_REST_API_KEY", " os_rest_secret ");
+    expect(pushConfigured()).toBe(true);
+  });
+
+  it("targets an opaque external_id with generic copy and RFC UUID idempotency", async () => {
+    vi.stubEnv("ONESIGNAL_REST_API_KEY", " os_rest_secret ");
+    vi.stubEnv("ONESIGNAL_APP_ID", "app-test-id");
+    const provider = vi.fn(async () =>
+      new Response(JSON.stringify({ id: "notification_123" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }));
+    vi.stubGlobal("fetch", provider);
+    const { sendPush } = await import("./transports");
+    const idempotencyKey = "182d1e8f-14d2-8dc1-a72b-59c562bf88a7";
+
+    const result = await sendPush(
+      PUSH_ALIAS,
+      {
+        title: "Booking confirmed",
+        body: "Open Minimum Stress for details.",
+        url: "https://minimumstress.app/",
+      },
+      { idempotencyKey },
+    );
+
+    expect(result).toEqual({ status: "sent", id: "notification_123" });
+    expect(provider).toHaveBeenCalledWith(
+      "https://api.onesignal.com/notifications",
+      expect.objectContaining({
+        headers: {
+          Authorization: "Key os_rest_secret",
+          "Content-Type": "application/json",
+        },
+      }),
+    );
+    const [, request] = provider.mock.calls[0] as unknown as [string, RequestInit];
+    expect(JSON.parse(String(request.body))).toEqual({
+      app_id: "app-test-id",
+      include_aliases: { external_id: [PUSH_ALIAS] },
+      target_channel: "push",
+      headings: { en: "Booking confirmed" },
+      contents: { en: "Open Minimum Stress for details." },
+      web_url: "https://minimumstress.app/",
+      data: { minimumstress_destination: "notifications" },
+      idempotency_key: idempotencyKey,
+    });
+  });
+
+  it("treats a successful response without an id as terminally unsubscribed", async () => {
+    vi.stubEnv("ONESIGNAL_REST_API_KEY", "os_rest_secret");
+    vi.stubGlobal("fetch", vi.fn(async () =>
+      new Response(JSON.stringify({ errors: ["All included players are not subscribed"] }), {
+        status: 200,
+      })
+    ));
+    const { sendPush } = await import("./transports");
+
+    await expect(sendPush(
+      PUSH_ALIAS,
+      { title: "Update", body: "Open Minimum Stress.", url: "https://minimumstress.app/" },
+      { idempotencyKey: "182d1e8f-14d2-8dc1-a72b-59c562bf88a7" },
+    )).resolves.toEqual({ status: "skipped", reason: "no subscribed push destination" });
+  });
+
+  it.each([429, 500, 503])("retries transient HTTP %s responses", async (status) => {
+    vi.stubEnv("ONESIGNAL_REST_API_KEY", "os_rest_secret");
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("provider details", { status })));
+    const { sendPush } = await import("./transports");
+
+    const result = await sendPush(
+      PUSH_ALIAS,
+      { title: "Update", body: "Open Minimum Stress.", url: "https://minimumstress.app/" },
+      { idempotencyKey: "182d1e8f-14d2-8dc1-a72b-59c562bf88a7" },
+    );
+
+    expect(result).toEqual({
+      status: "retry",
+      reason: status === 429 ? "push 429: rate_limited" : `push ${status}: provider_5xx`,
+    });
+  });
+
+  it("drops permanent 4xx responses without retaining provider or identity details", async () => {
+    vi.stubEnv("ONESIGNAL_REST_API_KEY", "os_rest_secret");
+    vi.stubGlobal("fetch", vi.fn(async () =>
+      new Response('{"errors":["ms_private_alias is invalid"]}', { status: 400 })
+    ));
+    const { sendPush } = await import("./transports");
+
+    const result = await sendPush(
+      PUSH_ALIAS,
+      { title: "Update", body: "Open Minimum Stress.", url: "https://minimumstress.app/" },
+      { idempotencyKey: "182d1e8f-14d2-8dc1-a72b-59c562bf88a7" },
+    );
+
+    expect(result).toEqual({ status: "dropped", reason: "push 400: provider_4xx" });
+    expect(JSON.stringify(result)).not.toContain(PUSH_ALIAS);
+  });
+
+  it("fails closed before fetch if a raw or malformed identity reaches the transport", async () => {
+    vi.stubEnv("ONESIGNAL_REST_API_KEY", "os_rest_secret");
+    const provider = vi.fn();
+    vi.stubGlobal("fetch", provider);
+    const { sendPush } = await import("./transports");
+
+    await expect(sendPush(
+      "11111111-1111-4111-8111-111111111111",
+      { title: "Update", body: "Open Minimum Stress.", url: "https://minimumstress.app/" },
+      { idempotencyKey: "182d1e8f-14d2-8dc1-a72b-59c562bf88a7" },
+    )).resolves.toEqual({ status: "dropped", reason: "push invalid_external_id" });
+    expect(provider).not.toHaveBeenCalled();
   });
 });

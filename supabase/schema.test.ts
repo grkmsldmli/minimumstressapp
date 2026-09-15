@@ -30,6 +30,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
  */
 const STUBS = "0000_supabase_stubs.sql";
 const RELIABLE_OUTBOX_MIGRATION = "20260915003724_reliable_notification_outbox.sql";
+const PUSH_OUTBOX_SUPPORT_MIGRATION = "20260915093208_onesignal_push_outbox_support.sql";
 
 const migrationsDir = join(import.meta.dirname, "migrations");
 
@@ -467,7 +468,12 @@ describe("durable booking financial resolution", () => {
     try {
       await fresh.exec(read(STUBS));
       for (const migration of MIGRATIONS) {
-        if (migration !== RELIABLE_OUTBOX_MIGRATION) await fresh.exec(read(migration));
+        if (
+          migration !== RELIABLE_OUTBOX_MIGRATION &&
+          migration !== PUSH_OUTBOX_SUPPORT_MIGRATION
+        ) {
+          await fresh.exec(read(migration));
+        }
       }
 
       const host = "20000000-0000-4000-8000-000000000001";
@@ -519,6 +525,7 @@ describe("durable booking financial resolution", () => {
       `);
 
       await fresh.exec(read(RELIABLE_OUTBOX_MIGRATION));
+      await fresh.exec(read(PUSH_OUTBOX_SUPPORT_MIGRATION));
       const result = await fresh.query<{
         id: string;
         status: string;
@@ -876,6 +883,100 @@ describe("reliable notification outbox", () => {
 
     expect(first.map((row) => row.dedupe_key)).toContain("outbox:lease:test");
     expect(second.map((row) => row.dedupe_key)).not.toContain("outbox:lease:test");
+  });
+
+  it("claims push rows and namespaces provider ids by channel", async () => {
+    await db.exec(`
+      insert into auth.users (id, email)
+      values ('${USER}', 'outbox@example.com') on conflict do nothing;
+      insert into profiles (id, display_name)
+      values ('${USER}', 'Outbox Test') on conflict do nothing;
+
+      insert into notifications (
+        user_id, kind, channel, dedupe_key, destination, message_snapshot,
+        attempts, next_attempt_at
+      ) values (
+        '${USER}', 'insurance_verified', 'push', 'outbox:push:claim',
+        'ms_${"a".repeat(43)}',
+        '{"version":1,"message":{"subject":"Confirmed","body":"Private email body","sms":null,"push":{"title":"Confirmed","body":"Open Minimum Stress.","url":"https://minimumstress.app/"}}}',
+        0, now() - interval '1 minute'
+      ) on conflict (dedupe_key) do nothing;
+
+      insert into notifications (
+        user_id, kind, channel, dedupe_key, provider_message_id,
+        provider_status, sent_at
+      ) values
+        ('${USER}', 'booking_confirmed', 'email', 'outbox:provider-id:email',
+         'shared_provider_id', 'accepted', now()),
+        ('${USER}', 'booking_confirmed', 'push', 'outbox:provider-id:push',
+         'shared_provider_id', 'accepted', now())
+      on conflict (dedupe_key) do nothing;
+    `);
+
+    const claimed = await rows<{ dedupe_key: string }>(`
+      select dedupe_key from claim_notification_batch(
+        '19191919-1919-4919-8919-191919191919', 200, now()
+      )
+    `);
+    expect(claimed.map((row) => row.dedupe_key)).toContain("outbox:push:claim");
+
+    await expect(db.exec(`
+      insert into notifications (
+        user_id, kind, channel, dedupe_key, provider_message_id,
+        provider_status, sent_at
+      ) values (
+        '${USER}', 'new_message', 'push', 'outbox:provider-id:push-duplicate',
+        'shared_provider_id', 'accepted', now()
+      )
+    `)).rejects.toThrow(/unique|duplicate/i);
+  });
+
+  it("never applies Resend delivery evidence to a push acceptance", async () => {
+    const correlation = "d".repeat(64);
+    await db.exec(`
+      insert into notifications (
+        user_id, kind, channel, dedupe_key, destination, message_snapshot,
+        provider_correlation_id, attempts, next_attempt_at, lease_token,
+        lease_until
+      ) values (
+        '${USER}', 'new_message', 'push', 'outbox:push:resend-guard',
+        'ms_${"b".repeat(43)}',
+        '{"version":1,"message":{"subject":"Message","body":"Private email body","sms":null,"push":{"title":"New message","body":"Open Minimum Stress.","url":"https://minimumstress.app/"}}}',
+        '${correlation}', 1, now(),
+        '20202020-2020-4020-8020-202020202020', now() + interval '2 minutes'
+      ) on conflict (dedupe_key) do nothing;
+
+      insert into resend_email_events (
+        svix_id, resend_email_id, notification_correlation_id,
+        event_type, event_created_at
+      ) values (
+        'svix_push_guard', 'provider_push_guard', '${correlation}',
+        'email.delivered', '2026-09-15T00:02:00Z'
+      ) on conflict (svix_id) do nothing;
+
+      select record_notification_acceptance(
+        'outbox:push:resend-guard', 'provider_push_guard',
+        '2026-09-15T00:01:00Z',
+        '20202020-2020-4020-8020-202020202020'
+      );
+    `);
+
+    const [state] = await rows<{
+      provider_status: string;
+      provider_event_at: Date | null;
+    }>(`
+      select provider_status, provider_event_at
+      from notifications where dedupe_key = 'outbox:push:resend-guard'
+    `);
+    expect(state).toEqual({ provider_status: "accepted", provider_event_at: null });
+
+    const [result] = await rows<{ affected: number }>(`
+      select apply_resend_delivery_event(
+        'provider_push_guard', '${correlation}',
+        'email.delivered', '2026-09-15T00:03:00Z'
+      ) as affected
+    `);
+    expect(result.affected).toBe(0);
   });
 
   it("does not let an older provider event regress delivery state", async () => {

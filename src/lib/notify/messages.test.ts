@@ -142,6 +142,66 @@ describe("what SMS is for", () => {
   });
 });
 
+describe("privacy-safe push", () => {
+  it("provides generic lock-screen copy for every user-facing kind", () => {
+    for (const kind of ALL_KINDS) {
+      const { push } = render(kind, FULL);
+      if (kind === "staff_waiting") {
+        expect(push).toBeNull();
+        continue;
+      }
+
+      expect(push).toMatchObject({
+        title: expect.any(String),
+        body: expect.any(String),
+        url: expect.stringMatching(/^https:\/\//),
+      });
+      expect(push!.title.length).toBeGreaterThan(0);
+      expect(push!.body.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("never copies private notification context onto the lock screen", () => {
+    const privateValues = [
+      "PRIVATE_NAME_781",
+      "PRIVATE_SPACE_782",
+      "PRIVATE_TIME_783",
+      "PRIVATE_ADDRESS_784",
+      "PRIVATE_CODE_785",
+      "PRIVATE_ENTRY_786",
+      "PRIVATE_REASON_787",
+      "PRIVATE_NOTE_788",
+      "PRIVATE_PURPOSE_789",
+      "PRIVATE_CLASS_790",
+    ];
+    const context = {
+      name: privateValues[0],
+      spaceName: privateValues[1],
+      when: privateValues[2],
+      address: privateValues[3],
+      accessCode: privateValues[4],
+      entryInstructions: privateValues[5],
+      reason: privateValues[6],
+      note: privateValues[7],
+      purpose: privateValues[8],
+      className: privateValues[9],
+      amountCents: 987654321,
+      chargedCents: 987654321,
+      refundedCents: 987654321,
+    };
+
+    for (const kind of ALL_KINDS) {
+      const push = render(kind, context).push;
+      if (!push) continue;
+      const serialized = JSON.stringify(push);
+      for (const value of [...privateValues, "987654321"]) {
+        expect(serialized).not.toContain(value);
+      }
+      expect(serialized).not.toMatch(/undefined|null|NaN|\[object|\$\{/);
+    }
+  });
+});
+
 describe("money", () => {
   it("quotes the amount as currency, not cents", () => {
     expect(render("booking_confirmed", FULL).body).toContain("$54.00");

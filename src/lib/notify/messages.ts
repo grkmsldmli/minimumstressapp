@@ -162,7 +162,7 @@ function settlement(context: MessageContext): string | null {
   }
 
   if (context.chargedCents === 0) {
-    return `You are refunded in full. It usually reaches your card within a few working days.`;
+    return `Nothing remains charged for this booking.`;
   }
 
   return null;
@@ -191,7 +191,7 @@ export function render(kind: NotificationKind, context: MessageContext): Message
           greeting(name),
           `Your session at ${spaceName} is confirmed for ${when}.`,
           context.amountCents !== undefined
-            ? `Total ${formatCents(context.amountCents)}, including our service fee, charged to your card now. Cancel more than 24 hours ahead and all of it is refunded.`
+            ? `Total ${formatCents(context.amountCents)}, including our service fee, charged to your card now. Cancel 24 or more hours ahead and it is refunded apart from the card processing fee; Pro members get that fee back too.`
             : null,
           /*
            * Two windows, not one. The way in opens a day ahead; only the code
@@ -277,7 +277,7 @@ export function render(kind: NotificationKind, context: MessageContext): Message
           greeting(name),
           `The host said yes. Your session at ${spaceName} on ${when} is confirmed.`,
           context.amountCents !== undefined
-            ? `${formatCents(context.amountCents)} has now been taken from the card you used. Cancel more than 24 hours ahead and all of it is refunded.`
+            ? `${formatCents(context.amountCents)} has now been taken from the card you used. Cancel 24 or more hours ahead and it is refunded apart from the card processing fee; Pro members get that fee back too.`
             : null,
           `The way in appears in this app the day before, and your door code shortly before you start.`,
           SIGN_OFF,

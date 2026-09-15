@@ -19,6 +19,8 @@ export type SendResult =
 export interface EmailSendOptions {
   /** Resend deduplicates repeated requests carrying the same key. */
   idempotencyKey?: string;
+  /** Opaque SHA-256 token returned by signed delivery webhooks. */
+  correlationId?: string;
 }
 
 /** Who the mail is from. Overridable so a staging deploy is obviously staging. */
@@ -67,6 +69,9 @@ export async function sendEmail(
         subject: message.subject,
         text: message.body,
         html: message.html ?? toHtml(message),
+        ...(options.correlationId
+          ? { tags: [{ name: "notification_id", value: options.correlationId }] }
+          : {}),
       }),
       signal: AbortSignal.timeout(10_000),
     });
@@ -125,9 +130,13 @@ async function classify(response: Response, channel: string): Promise<SendResult
     return { status: "sent", id: payload.id ?? payload.sid ?? "unknown" };
   }
 
-  const detail = (await response.text().catch(() => "")).slice(0, 300);
-  const reason = `${channel} ${response.status}: ${detail}`;
-
-  if (response.status === 429 || response.status >= 500) return { status: "retry", reason };
-  return { status: "dropped", reason };
+  // Provider bodies can echo a rejected address or phone number. They are not
+  // durable diagnostics: retain only a controlled class and status code.
+  if (response.status === 429) {
+    return { status: "retry", reason: `${channel} ${response.status}: rate_limited` };
+  }
+  if (response.status >= 500) {
+    return { status: "retry", reason: `${channel} ${response.status}: provider_5xx` };
+  }
+  return { status: "dropped", reason: `${channel} ${response.status}: provider_4xx` };
 }

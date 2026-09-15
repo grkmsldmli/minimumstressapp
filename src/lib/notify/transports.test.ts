@@ -34,7 +34,7 @@ describe("Resend transport", () => {
     const result = await sendEmail(
       "admin@example.com",
       { subject: "Check", body: "Body", sms: null },
-      { idempotencyKey: "email-health-admin-bucket" },
+      { idempotencyKey: "email-health-admin-bucket", correlationId: "a".repeat(64) },
     );
 
     expect(result).toEqual({ status: "sent", id: "email_123" });
@@ -47,5 +47,26 @@ describe("Resend transport", () => {
         }),
       }),
     );
+    const [, request] = provider.mock.calls[0] as unknown as [string, RequestInit];
+    expect(JSON.parse(String(request.body))).toMatchObject({
+      tags: [{ name: "notification_id", value: "a".repeat(64) }],
+    });
+  });
+
+  it("never copies a provider response body containing an address into durable errors", async () => {
+    vi.stubEnv("RESEND_API_KEY", "re_test_123");
+    vi.stubGlobal("fetch", vi.fn(async () =>
+      new Response('{"message":"private@example.com is invalid"}', { status: 422 })
+    ));
+    const { sendEmail } = await import("./transports");
+
+    const result = await sendEmail("private@example.com", {
+      subject: "Check",
+      body: "Body",
+      sms: null,
+    });
+
+    expect(result).toEqual({ status: "dropped", reason: "email 422: provider_4xx" });
+    expect(JSON.stringify(result)).not.toContain("private@example.com");
   });
 });

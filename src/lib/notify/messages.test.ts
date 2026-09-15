@@ -170,17 +170,15 @@ describe("money", () => {
    * coming. Now the credit is coming, and saying "you were never charged"
    * would be the lie instead.
    */
-  it("calls a refund a refund, and says when it lands", () => {
+  it("does not invent a refund when Stripe reports that no money moved", () => {
     const body = render("cancelled_by_practitioner", {
       ...FULL,
       chargedCents: 0,
       refundedCents: 0,
     }).body;
 
-    expect(body).toMatch(/refunded in full/i);
-    expect(body).toMatch(/working days/i);
-    // The old promise. Nothing may still claim the card was left alone.
-    expect(body).not.toMatch(/hold|authoris|never charged/i);
+    expect(body).toMatch(/nothing remains charged/i);
+    expect(body).not.toMatch(/working days|on its way back/i);
   });
 
   it("says charged in full when the 24-hour window was missed", () => {
@@ -203,6 +201,7 @@ describe("money", () => {
     }).body;
 
     expect(body).toContain("$54.00");
+    expect(body).toMatch(/working days/i);
     expect(body).toMatch(/on its way back/i);
   });
 

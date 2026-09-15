@@ -3,7 +3,12 @@ import type Stripe from "stripe";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { recordEvent } from "@/lib/analytics/record";
-import { notifyBookingCreated, notifyRequestMade, recipientFor } from "@/lib/notify/for-booking";
+import {
+  notifyBookingCreated,
+  notifyRequestApproved,
+  notifyRequestMade,
+  recipientFor,
+} from "@/lib/notify/for-booking";
 import { notify } from "@/lib/notify/send";
 import { stripe } from "@/lib/stripe/client";
 import { grantsPro, isStudioProSubscription } from "@/lib/stripe/subscription";
@@ -129,6 +134,8 @@ interface CapturedBooking {
   id: string;
   approval_state: string;
   practitioner_id: string | null;
+  cancelled_at: string | null;
+  financial_resolution_state: string;
 }
 
 interface PaymentBooking extends CapturedBooking {
@@ -156,7 +163,7 @@ async function bookingForPaymentIntent(
   const { data, error } = await admin
     .from("bookings")
     .select(
-      "id, approval_state, practitioner_id, space_id, status, total_cents, captured_at, stripe_payment_intent_id",
+      "id, approval_state, practitioner_id, space_id, status, total_cents, captured_at, cancelled_at, financial_resolution_state, stripe_payment_intent_id",
     )
     .eq("stripe_payment_intent_id", paymentIntentId)
     .maybeSingle();
@@ -185,7 +192,7 @@ async function claimCapturedBooking(
     .eq("stripe_payment_intent_id", intent.id)
     // Guarded so a replayed event cannot overwrite a time already recorded.
     .is("captured_at", null)
-    .select("id, approval_state, practitioner_id");
+    .select("id, approval_state, practitioner_id, cancelled_at, financial_resolution_state");
   if (directError) throw directError;
 
   const direct = exactlyOneUpdatedBooking(
@@ -195,7 +202,8 @@ async function claimCapturedBooking(
   if (direct) return direct;
 
   // Normal replay: the association exists and this exact intent has already
-  // captured it. Return no claimed row so analytics and notifications stay once.
+  // captured it. Return no newly-claimed row so analytics stays once. The
+  // caller deliberately re-runs the idempotent notification reconciliation.
   const alreadyLinked = await bookingForPaymentIntent(admin, intent.id);
   if (alreadyLinked?.captured_at) return null;
   if (alreadyLinked) {
@@ -214,7 +222,7 @@ async function claimCapturedBooking(
   const { data: candidateData, error: candidateError } = await admin
     .from("bookings")
     .select(
-      "id, approval_state, practitioner_id, space_id, status, total_cents, captured_at, stripe_payment_intent_id",
+      "id, approval_state, practitioner_id, space_id, status, total_cents, captured_at, cancelled_at, financial_resolution_state, stripe_payment_intent_id",
     )
     .eq("id", bookingId)
     .maybeSingle();
@@ -227,6 +235,8 @@ async function claimCapturedBooking(
   if (
     candidate.stripe_payment_intent_id !== null ||
     candidate.captured_at !== null ||
+    candidate.cancelled_at !== null ||
+    candidate.financial_resolution_state !== "not_required" ||
     candidate.space_id !== spaceId ||
     candidate.status !== "upcoming" ||
     candidate.practitioner_id !== practitionerId ||
@@ -251,7 +261,7 @@ async function claimCapturedBooking(
     .eq("practitioner_id", practitionerId)
     .eq("status", "upcoming")
     .eq("total_cents", intent.amount)
-    .select("id, approval_state, practitioner_id");
+    .select("id, approval_state, practitioner_id, cancelled_at, financial_resolution_state");
 
   if (!recoveryError) {
     const recovered = exactlyOneUpdatedBooking(
@@ -303,7 +313,12 @@ async function handle(event: Stripe.Event): Promise<void> {
      */
     case "payment_intent.succeeded": {
       const intent = event.data.object;
-      const booking = await claimCapturedBooking(admin, intent);
+      const newlyCaptured = await claimCapturedBooking(admin, intent);
+      // Notification delivery is reconciled from durable Stripe/booking state,
+      // not only from the process that first wrote captured_at. If that process
+      // stopped between the update and notify(), a Stripe replay repairs the
+      // missing outbox row; its dedupe key makes the normal replay a no-op.
+      const booking = newlyCaptured ?? await bookingForPaymentIntent(admin, intent.id);
 
       /*
        * And this is where the host finds out.
@@ -324,28 +339,38 @@ async function handle(event: Stripe.Event): Promise<void> {
        * cannot inflate on a replay. Best-effort: recordEvent never throws into
        * the webhook. No amounts or PII — a booking id and the approval shape only.
        */
-      if (booking) {
+      if (newlyCaptured) {
         // Trusted server emitter — opt in to the server-only business facts.
         await recordEvent(
           admin,
           {
             name: "payment_succeeded",
-            userId: (booking.practitioner_id as string | null) ?? null,
+            userId: (newlyCaptured.practitioner_id as string | null) ?? null,
             surface: "stripe_webhook",
-            properties: { bookingId: booking.id },
+            properties: { bookingId: newlyCaptured.id },
           },
           true,
         );
-        await recordEvent(
-          admin,
-          {
-            name: "booking_confirmed",
-            userId: (booking.practitioner_id as string | null) ?? null,
-            surface: "stripe_webhook",
-            properties: { bookingId: booking.id, approvalState: booking.approval_state },
-          },
-          true,
-        );
+        if (
+          newlyCaptured.cancelled_at === null &&
+          ["not_required", "resolved"].includes(
+            newlyCaptured.financial_resolution_state,
+          )
+        ) {
+          await recordEvent(
+            admin,
+            {
+              name: "booking_confirmed",
+              userId: (newlyCaptured.practitioner_id as string | null) ?? null,
+              surface: "stripe_webhook",
+              properties: {
+                bookingId: newlyCaptured.id,
+                approvalState: newlyCaptured.approval_state,
+              },
+            },
+            true,
+          );
+        }
       }
       /*
        * Except when the host has just approved it.
@@ -356,8 +381,16 @@ async function handle(event: Stripe.Event): Promise<void> {
        * doing it, the guest by request_approved. Sending "New booking" here
        * would be the third message about one decision.
        */
-      if (booking && booking.approval_state !== "approved") {
-        await notifyBookingCreated(admin, booking.id);
+      if (
+        booking &&
+        booking.cancelled_at === null &&
+        ["not_required", "resolved"].includes(booking.financial_resolution_state)
+      ) {
+        if (booking.approval_state === "approved") {
+          await notifyRequestApproved(admin, booking.id, { propagate: true });
+        } else {
+          await notifyBookingCreated(admin, booking.id);
+        }
       }
       return;
     }
@@ -370,7 +403,6 @@ async function handle(event: Stripe.Event): Promise<void> {
      * has entered a card and the money is held — and it is where the host is
      * told, for the same reason `succeeded` is where they are told about an
      * ordinary booking: before this, a request is a form somebody might still
-     * close.
      */
     case "payment_intent.amount_capturable_updated": {
       const intent = event.data.object;
@@ -379,11 +411,34 @@ async function handle(event: Stripe.Event): Promise<void> {
         .update({ authorized_at: new Date().toISOString() })
         .eq("stripe_payment_intent_id", intent.id)
         .eq("approval_state", "pending")
+        .eq("status", "upcoming")
+        .is("cancelled_at", null)
+        .eq("financial_resolution_state", "not_required")
+        .is("authorized_at", null)
         .select("id");
       if (error) throw error;
 
-      const requestId = held?.[0]?.id;
-      if (requestId) await notifyRequestMade(admin, requestId);
+      let requestId = held?.[0]?.id as string | undefined;
+      if (!requestId) {
+        // A Stripe replay repairs a crash between the durable authorization
+        // timestamp and the outbox claim without rewriting that timestamp.
+        const { data: existing, error: existingError } = await admin
+          .from("bookings")
+          .select("id")
+          .eq("stripe_payment_intent_id", intent.id)
+          .eq("approval_state", "pending")
+          .eq("status", "upcoming")
+          .is("cancelled_at", null)
+          .eq("financial_resolution_state", "not_required")
+          .not("authorized_at", "is", null)
+          .maybeSingle();
+        if (existingError) throw existingError;
+        requestId = existing?.id as string | undefined;
+      }
+
+      if (requestId) {
+        await notifyRequestMade(admin, requestId, { propagate: true });
+      }
       return;
     }
 
@@ -412,8 +467,10 @@ async function handle(event: Stripe.Event): Promise<void> {
          * — otherwise a host's decline would be recorded as the practitioner
          * having cancelled, and that is the version somebody reads back in a
          * dispute.
-         */
-        .eq("status", "upcoming");
+        */
+        .eq("status", "upcoming")
+        .is("cancelled_at", null)
+        .eq("financial_resolution_state", "not_required");
       if (error) throw error;
       return;
     }

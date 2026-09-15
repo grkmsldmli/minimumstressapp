@@ -172,6 +172,15 @@ export interface FailedNotification {
   createdAt: string;
 }
 
+/** A terminal booking whose Stripe outcome could not be proven automatically. */
+export interface FinancialManualReview {
+  id: string;
+  approvalState: string;
+  cancelledBy: string | null;
+  lastError: string | null;
+  createdAt: string;
+}
+
 /** Someone approaching the point where new bookings stop. */
 export interface AtRiskAccount {
   id: string;
@@ -491,6 +500,7 @@ export interface AdminQueue {
   accountChangeRequests: AccountChangeRequest[];
   listingClosureRequests: ListingClosureQueueItem[];
   unpayableHosts: UnpayableHost[];
+  financialManualReview: FinancialManualReview[];
 
   /* --- the business --- */
   money: {
@@ -601,7 +611,7 @@ export async function loadQueue(admin: SupabaseClient): Promise<AdminQueue> {
     admin
       .from("bookings")
       .select(
-        "id, space_id, practitioner_id, starts_at, ends_at, status, captured_at, refunded_at, host_rate_refunded, host_paid_at, cancelled_at, total_cents, host_rate_cents, platform_cents",
+        "id, space_id, practitioner_id, starts_at, ends_at, status, captured_at, refunded_at, host_rate_refunded, host_paid_at, cancelled_at, cancelled_by, approval_state, total_cents, host_rate_cents, platform_cents, financial_resolution_state, financial_resolution_last_error, created_at",
       )
       .order("starts_at", { ascending: false }),
 
@@ -615,9 +625,11 @@ export async function loadQueue(admin: SupabaseClient): Promise<AdminQueue> {
      */
     admin
       .from("notifications")
-      .select("id, kind, channel, attempts, last_error, dropped_at, sent_at, created_at")
-      .is("sent_at", null)
-      .not("last_error", "is", null)
+      .select(
+        "id, kind, channel, attempts, last_error, dropped_at, sent_at, provider_status, created_at",
+      )
+      .or("sent_at.is.null,provider_status.in.(failed,bounced,complained,suppressed)")
+      .or("last_error.not.is.null,provider_status.in.(failed,bounced,complained,suppressed)")
       .order("created_at", { ascending: false })
       .limit(20),
 
@@ -1203,6 +1215,17 @@ export async function loadQueue(admin: SupabaseClient): Promise<AdminQueue> {
       .map((host) => ({ ...host, email: emails.get(host.id) ?? null }))
       .sort((a, b) => b.owedCents - a.owedCents),
 
+    financialManualReview: rows
+      .filter((booking) => booking.financial_resolution_state === "manual_review")
+      .map((booking) => ({
+        id: booking.id as string,
+        approvalState: (booking.approval_state as string) ?? "not_required",
+        cancelledBy: (booking.cancelled_by as string) ?? null,
+        lastError: (booking.financial_resolution_last_error as string) ?? null,
+        createdAt: (booking.created_at as string) ?? "",
+      }))
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
+
     money: {
       platformCents: sum(thisMonth, "platform_cents"),
       hostCents: sum(thisMonth, "host_rate_cents"),
@@ -1246,7 +1269,11 @@ export async function loadQueue(admin: SupabaseClient): Promise<AdminQueue> {
       attempts: (row.attempts as number) ?? 0,
       lastError: (row.last_error as string) ?? null,
       // Given up on, versus still being retried and possibly still arriving.
-      givenUp: row.dropped_at !== null,
+      givenUp:
+        row.dropped_at !== null ||
+        ["failed", "bounced", "complained", "suppressed"].includes(
+          row.provider_status as string,
+        ),
       createdAt: row.created_at as string,
     })),
 

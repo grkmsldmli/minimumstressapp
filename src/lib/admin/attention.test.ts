@@ -12,6 +12,7 @@ import { type QueueCounts, subjectFor, waitingOn, waitingSignature } from "./att
  * the mail gets filtered, which is the same as too quiet but harder to notice.
  */
 const NOTHING: QueueCounts = {
+  financialManualReview: 0,
   unpayableHosts: 0,
   openDisputes: 0,
   escalations: 0,
@@ -54,6 +55,20 @@ describe("what is waiting", () => {
     });
 
     expect(items[0].kind).toBe("unpayable_host");
+  });
+
+  it("puts an unresolved booking payment ahead of every other queue", () => {
+    const items = waitingOn({
+      ...NOTHING,
+      financialManualReview: 1,
+      unpayableHosts: 2,
+      escalations: 3,
+    });
+
+    expect(items[0]).toMatchObject({
+      kind: "financial_manual_review",
+      line: "1 booking payment needs manual review",
+    });
   });
 
   it("puts a safety report above a money argument", () => {

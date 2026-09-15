@@ -186,7 +186,11 @@ export function settlementFor(
 ): SettlementAction {
   if (paidCents === 0) return { kind: "abandon" };
 
-  const owed = outcome.action === "void" ? 0 : outcome.chargedCents;
+  // `action` describes whether the booking stands, not whether the card fee
+  // is waived. An early non-Pro cancellation closes the booking but keeps only
+  // the measured processing cost, so the amount retained must always come
+  // from the explicit chargedCents policy result.
+  const owed = Math.max(0, Math.min(paidCents, outcome.chargedCents));
   const refund = paidCents - owed;
 
   return refund > 0 ? { kind: "refund", amountCents: refund } : { kind: "none" };

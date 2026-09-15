@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /*
  * `booking-service` imports "server-only" so a client bundle cannot pull the
@@ -10,6 +10,7 @@ vi.mock("server-only", () => ({}));
 
 import { answerRequest, expireStaleRequests } from "./approval-service";
 import type { StripeGateway } from "./booking-service";
+import { notifyRequestApproved, notifyRequestDeclined } from "./notify/for-booking";
 
 /**
  * What happens to the money, and in what order.
@@ -25,11 +26,21 @@ const HOST = "host-1";
 const HOUR = 3_600_000;
 const NOW = new Date("2026-08-17T09:00:00Z");
 
+beforeEach(() => {
+  vi.clearAllMocks();
+});
+
 interface Row {
   id: string;
   created_at: string;
   starts_at: string;
   approval_state: string;
+  status: string;
+  cancelled_at: string | null;
+  cancelled_by: "practitioner" | "host" | null;
+  financial_resolution_state: string;
+  financial_resolution_attempts: number;
+  financial_resolution_lease_token: string | null;
   stripe_payment_intent_id: string | null;
   spaces: { host_id: string };
 }
@@ -39,6 +50,12 @@ const row = (over: Partial<Row> = {}): Row => ({
   created_at: new Date(NOW.getTime() - HOUR).toISOString(),
   starts_at: new Date(NOW.getTime() + 72 * HOUR).toISOString(),
   approval_state: "pending",
+  status: "upcoming",
+  cancelled_at: null,
+  cancelled_by: null,
+  financial_resolution_state: "not_required",
+  financial_resolution_attempts: 0,
+  financial_resolution_lease_token: null,
   stripe_payment_intent_id: "pi_1",
   spaces: { host_id: HOST },
   ...over,
@@ -51,7 +68,7 @@ const row = (over: Partial<Row> = {}): Row => ({
  * under test — the row has to be written before Stripe is called, or the
  * `payment_intent.canceled` webhook relabels a host's decline.
  */
-function fakeDb(rows: Row[]) {
+function fakeDb(rows: Row[], writeError: Error | null = null) {
   const writes: { patch: Record<string, unknown>; guards: Record<string, unknown> }[] = [];
   const events: string[] = [];
 
@@ -66,19 +83,48 @@ function fakeDb(rows: Row[]) {
         selected = selected.filter((r) => {
           if (column === "id") return r.id === value;
           if (column === "approval_state") return r.approval_state === value;
+          if (column === "status") return r.status === value;
+          if (column === "financial_resolution_state") {
+            return r.financial_resolution_state === value;
+          }
           return true;
         });
         return chain;
       },
-      maybeSingle: () => Promise.resolve({ data: selected[0] ?? null, error: null }),
+      is(column: string, value: unknown) {
+        guards[column] = value;
+        selected = selected.filter((r) => (r as unknown as Record<string, unknown>)[column] === value);
+        return chain;
+      },
+      maybeSingle: async () => {
+        if (patch) {
+          if (writeError) {
+            events.push("write-error");
+            return { data: null, error: writeError };
+          }
+          writes.push({ patch, guards });
+          events.push("write");
+          for (const r of selected) Object.assign(r, patch);
+        }
+        return { data: selected[0] ?? null, error: null };
+      },
       then(resolve: (value: { data: Row[]; error: null }) => unknown) {
         if (patch) {
+          if (writeError) {
+            events.push("write-error");
+            return Promise.resolve(resolve({ data: null, error: writeError } as never));
+          }
           writes.push({ patch, guards });
           events.push("write");
           // Apply it, so a second answer finds a row that is no longer pending.
           for (const r of selected) Object.assign(r, patch);
         }
-        return Promise.resolve(resolve({ data: selected, error: null }));
+        const projected = selected.map((record) => ({
+          ...record,
+          attempts: record.financial_resolution_attempts,
+          lease_token: record.financial_resolution_lease_token,
+        }));
+        return Promise.resolve(resolve({ data: projected, error: null }));
       },
     };
     return chain;
@@ -122,8 +168,9 @@ describe("a host approving", () => {
     const { db, events, writes } = fakeDb([row()]);
     await answerRequest(db, fakeStripe(events), "bk-1", HOST, "approve", null, NOW);
 
-    expect(events).toEqual(["write", "capture"]);
+    expect(events).toEqual(["write", "capture", "write"]);
     expect(writes[0].patch.approval_state).toBe("approved");
+    expect(writes.at(-1)?.patch.financial_resolution_state).toBe("resolved");
   });
 
   /*
@@ -158,6 +205,47 @@ describe("a host approving", () => {
     ).rejects.toThrow(/never paid for/);
     expect(events).toEqual([]);
   });
+
+  it("does not capture when the approval row could not be written", async () => {
+    const { db, events } = fakeDb([row()], new Error("database unavailable"));
+
+    await expect(
+      answerRequest(db, fakeStripe(events), "bk-1", HOST, "approve", null, NOW),
+    ).rejects.toThrow("database unavailable");
+    expect(events).toEqual(["write-error"]);
+  });
+
+  it("queues a failed capture without sending a false approval receipt", async () => {
+    const { db, events, writes } = fakeDb([row()]);
+    const stripe = fakeStripe(events);
+    vi.mocked(stripe.capture).mockRejectedValueOnce(new Error("provider unavailable"));
+
+    await expect(
+      answerRequest(db, stripe, "bk-1", HOST, "approve", null, NOW),
+    ).resolves.toBeUndefined();
+
+    expect(writes[0].patch).toMatchObject({
+      approval_state: "approved",
+      financial_resolution_state: "pending",
+    });
+    expect(writes.at(-1)?.patch.financial_resolution_state).toBe("pending");
+    expect(notifyRequestApproved).not.toHaveBeenCalled();
+  });
+
+  it("cannot approve a request already claimed for cancellation", async () => {
+    const { db, events } = fakeDb([
+      row({
+        cancelled_at: NOW.toISOString(),
+        cancelled_by: "practitioner",
+        financial_resolution_state: "pending",
+      }),
+    ]);
+
+    await expect(
+      answerRequest(db, fakeStripe(events), "bk-1", HOST, "approve", null, NOW),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(events).toEqual([]);
+  });
 });
 
 describe("a host declining", () => {
@@ -166,7 +254,7 @@ describe("a host declining", () => {
     const stripe = fakeStripe(events);
     await answerRequest(db, stripe, "bk-1", HOST, "decline", "Booked for a class", NOW);
 
-    expect(events).toEqual(["write", "release"]);
+    expect(events).toEqual(["write", "release", "write"]);
     expect(stripe.settle).not.toHaveBeenCalled();
   });
 
@@ -176,12 +264,13 @@ describe("a host declining", () => {
    * still-`upcoming` booking as cancelled by the practitioner. Writing the row
    * first is what makes that update match nothing.
    */
-  it("closes the booking before it touches Stripe", async () => {
+  it("claims the request before Stripe and frees the slot only after release", async () => {
     const { db, events, writes } = fakeDb([row()]);
     await answerRequest(db, fakeStripe(events), "bk-1", HOST, "decline", null, NOW);
 
     expect(events.indexOf("write")).toBeLessThan(events.indexOf("release"));
-    expect(writes[0].patch.status).toBe("cancelled_by_host");
+    expect(writes[0].patch.status).toBe("upcoming");
+    expect(writes.at(-1)?.patch.status).toBe("cancelled_by_host");
   });
 
   /** Nobody cancelled a session, so nobody is named as having done so. */
@@ -191,6 +280,42 @@ describe("a host declining", () => {
 
     expect(writes[0].patch.cancelled_by).toBeNull();
     expect(writes[0].patch.approval_state).toBe("declined");
+  });
+
+  it("does not release a hold when the decline row could not be written", async () => {
+    const { db, events } = fakeDb([row()], new Error("database unavailable"));
+
+    await expect(
+      answerRequest(db, fakeStripe(events), "bk-1", HOST, "decline", null, NOW),
+    ).rejects.toThrow("database unavailable");
+    expect(events).toEqual(["write-error"]);
+  });
+
+  it("queues a failed hold release without sending a false success receipt", async () => {
+    const { db, events } = fakeDb([row()]);
+    const stripe = fakeStripe(events);
+    vi.mocked(stripe.release).mockRejectedValueOnce(new Error("provider unavailable"));
+
+    await expect(
+      answerRequest(db, stripe, "bk-1", HOST, "decline", null, NOW),
+    ).resolves.toBeUndefined();
+
+    expect(notifyRequestDeclined).not.toHaveBeenCalled();
+  });
+
+  it("cannot overwrite the actor on a request already claimed for cancellation", async () => {
+    const existing = row({
+      cancelled_at: NOW.toISOString(),
+      cancelled_by: "practitioner",
+      financial_resolution_state: "pending",
+    });
+    const { db, events } = fakeDb([existing]);
+
+    await expect(
+      answerRequest(db, fakeStripe(events), "bk-1", HOST, "decline", null, NOW),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(existing.cancelled_by).toBe("practitioner");
+    expect(events).toEqual([]);
   });
 });
 

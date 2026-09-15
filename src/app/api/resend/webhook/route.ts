@@ -30,22 +30,38 @@ export async function POST(request: Request): Promise<Response> {
   if (parsed.kind === "ignored") return json({ received: true, ignored: true }, 200);
 
   const svixId = request.headers.get("svix-id")!;
-  const { error } = await supabaseAdmin().from("resend_email_events").insert({
+  const admin = supabaseAdmin();
+  const { error } = await admin.from("resend_email_events").insert({
     svix_id: svixId,
     resend_email_id: parsed.event.emailId,
+    notification_correlation_id: parsed.event.correlationId,
     event_type: parsed.event.type,
     event_created_at: parsed.event.createdAt,
   });
 
   // A real Resend retry carries the same svix-id. The primary-key collision is
   // success: the immutable fact is already present and no work was lost.
-  if (error?.code === "23505") return json({ received: true, duplicate: true }, 200);
-  if (error) {
+  const duplicate = error?.code === "23505";
+  if (error && !duplicate) {
     console.error("Resend webhook delivery evidence could not be stored");
     return json({ error: "Webhook persistence failed" }, 500);
   }
 
-  return json({ received: true }, 200);
+  // Always reconcile, including on a replay. If event storage succeeded but
+  // this update failed, Resend retries; the duplicate event is then harmless
+  // and the notification state still catches up.
+  const { error: correlationError } = await admin.rpc("apply_resend_delivery_event", {
+    p_resend_email_id: parsed.event.emailId,
+    p_notification_correlation_id: parsed.event.correlationId,
+    p_event_type: parsed.event.type,
+    p_event_created_at: parsed.event.createdAt,
+  });
+  if (correlationError) {
+    console.error("Resend webhook delivery state could not be correlated");
+    return json({ error: "Webhook persistence failed" }, 500);
+  }
+
+  return json({ received: true, ...(duplicate ? { duplicate: true } : {}) }, 200);
 }
 
 function json(body: unknown, status: number): Response {

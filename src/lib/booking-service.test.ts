@@ -148,6 +148,7 @@ function fakeAdmin(options: FakeOptions = {}) {
       is: () => chain,
       lt: () => chain,
       not: () => chain,
+      or: () => chain,
       maybeSingle: () => Promise.resolve(complete("maybeSingle")),
       single: () => Promise.resolve(complete("single")),
       then: (

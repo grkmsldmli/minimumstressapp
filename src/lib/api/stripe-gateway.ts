@@ -1,7 +1,14 @@
 import "server-only";
 
 import type { StripeGateway } from "../booking-service";
-import { captureHold, chargeBooking, payHost, releaseHold, settle } from "../stripe/client";
+import {
+  captureHold,
+  chargeBooking,
+  payHost,
+  paymentIntentSettlementState,
+  releaseHold,
+  settle,
+} from "../stripe/client";
 import { settlementFor } from "../stripe/payments";
 
 /**
@@ -17,12 +24,13 @@ export const stripeGateway: StripeGateway = {
 
   capture: (paymentIntentId, bookingId) => captureHold(paymentIntentId, bookingId),
 
-  release: (paymentIntentId) => releaseHold(paymentIntentId),
+  release: (paymentIntentId, idempotencyKey?: string) =>
+    releaseHold(paymentIntentId, idempotencyKey),
 
-  settle: async (paymentIntentId, paidCents, outcome) =>
+  settle: async (paymentIntentId, paidCents, outcome, idempotencyKey?: string) =>
     settlementFor(outcome, paidCents).kind === "none"
-      ? { refundedCents: 0 }
-      : settleAndReport(paymentIntentId, paidCents, outcome),
+      ? { refundedCents: 0, paidCents }
+      : settleAndReport(paymentIntentId, paidCents, outcome, idempotencyKey),
 
   payHost: (money, hostAccountId, paymentIntentId, meta) =>
     payHost(money, hostAccountId, paymentIntentId, meta),
@@ -37,9 +45,52 @@ async function settleAndReport(
   paymentIntentId: string,
   paidCents: number,
   outcome: { action: "void" | "capture_full"; chargedCents: number },
-): Promise<{ refundedCents: number }> {
+  idempotencyKey?: string,
+): Promise<{ refundedCents: number; paidCents: number }> {
   const action = settlementFor(outcome, paidCents);
-  await settle(paymentIntentId, action);
+  try {
+    await settle(paymentIntentId, action, providerOperationKey(idempotencyKey, action.kind));
+  } catch (failure) {
+    if (action.kind !== "abandon") throw failure;
 
-  return { refundedCents: action.kind === "refund" ? action.amountCents : 0 };
+    /*
+     * Postgres may still say "uncaptured" while Stripe has just completed a
+     * capture. Re-read the provider rather than turning that ordinary webhook
+     * race into a manual-review dead end. The same stable operation key is
+     * used if provider truth changes the action from cancel to refund.
+     */
+    let state: Awaited<ReturnType<typeof paymentIntentSettlementState>>;
+    try {
+      state = await paymentIntentSettlementState(paymentIntentId);
+    } catch {
+      throw failure;
+    }
+
+    if (state.status === "canceled") return { refundedCents: 0, paidCents: 0 };
+    if (state.amountReceivedCents <= 0) throw failure;
+
+    const reconciled = settlementFor(outcome, state.amountReceivedCents);
+    await settle(
+      paymentIntentId,
+      reconciled,
+      providerOperationKey(idempotencyKey, reconciled.kind),
+    );
+    return {
+      refundedCents: reconciled.kind === "refund" ? reconciled.amountCents : 0,
+      paidCents: state.amountReceivedCents,
+    };
+  }
+
+  return {
+    refundedCents: action.kind === "refund" ? action.amountCents : 0,
+    paidCents,
+  };
+}
+
+/** Stripe idempotency keys are scoped to the exact endpoint and parameters. */
+function providerOperationKey(
+  base: string | undefined,
+  action: "abandon" | "refund" | "none",
+): string | undefined {
+  return base && action !== "none" ? `${base}:${action}` : base;
 }

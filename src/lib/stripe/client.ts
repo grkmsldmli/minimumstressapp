@@ -382,6 +382,7 @@ export async function chargeBooking(
 export async function settle(
   paymentIntentId: string,
   action: SettlementAction,
+  idempotencyKey?: string,
 ): Promise<void> {
   switch (action.kind) {
     case "refund":
@@ -391,10 +392,36 @@ export async function settle(
        * transfer only happens after it, so there is never a host balance to
        * claw back — the refund comes entirely out of what we are holding.
        */
-      await stripe().refunds.create({
-        payment_intent: paymentIntentId,
-        amount: action.amountCents,
-      });
+      /*
+       * Stripe retains idempotency keys for at least 24 hours, while our
+       * durable worker can outlive an outage. Correlating the refund itself
+       * closes the longer ambiguity window: before every retry we look for
+       * the stable operation id, and after a lost response we look once more.
+       */
+      if (idempotencyKey && await refundExists(paymentIntentId, idempotencyKey)) return;
+
+      try {
+        await stripe().refunds.create(
+          {
+            payment_intent: paymentIntentId,
+            amount: action.amountCents,
+            metadata: idempotencyKey
+              ? { minimumstress_operation_id: idempotencyKey }
+              : undefined,
+          },
+          requestOptions(idempotencyKey),
+        );
+      } catch (failure) {
+        if (idempotencyKey) {
+          try {
+            if (await refundExists(paymentIntentId, idempotencyKey)) return;
+          } catch {
+            // Keep the original provider failure; callers persist only its
+            // controlled code, never either raw Stripe response.
+          }
+        }
+        throw failure;
+      }
       return;
 
     case "abandon":
@@ -404,7 +431,11 @@ export async function settle(
        * paid would throw, which is the right failure: it would mean the state
        * we cancelled against was already stale.
        */
-      await stripe().paymentIntents.cancel(paymentIntentId);
+      await stripe().paymentIntents.cancel(
+        paymentIntentId,
+        undefined,
+        requestOptions(idempotencyKey),
+      );
       return;
 
     case "none":
@@ -422,9 +453,19 @@ export async function settle(
  * rather than an error the host would see.
  */
 export async function captureHold(paymentIntentId: string, bookingId: string): Promise<void> {
-  await stripe().paymentIntents.capture(paymentIntentId, undefined, {
-    idempotencyKey: `booking_capture_${bookingId}`,
-  });
+  try {
+    await stripe().paymentIntents.capture(paymentIntentId, undefined, {
+      idempotencyKey: `booking_capture_${bookingId}`,
+    });
+  } catch (failure) {
+    try {
+      const intent = await stripe().paymentIntents.retrieve(paymentIntentId);
+      if (intent.status === "succeeded") return;
+    } catch {
+      // The original controlled code is the useful retry classification.
+    }
+    throw controlledStripeError("Stripe could not capture the payment hold", failure);
+  }
 }
 
 /**
@@ -434,8 +475,81 @@ export async function captureHold(paymentIntentId: string, bookingId: string): P
  * off the card, and a declined request leaves no line on a statement to explain
  * to anybody. That is the whole reason a request holds rather than charges.
  */
-export async function releaseHold(paymentIntentId: string): Promise<void> {
-  await stripe().paymentIntents.cancel(paymentIntentId);
+export async function releaseHold(
+  paymentIntentId: string,
+  idempotencyKey?: string,
+): Promise<void> {
+  try {
+    await stripe().paymentIntents.cancel(
+      paymentIntentId,
+      undefined,
+      requestOptions(idempotencyKey),
+    );
+    return;
+  } catch (failure) {
+    /*
+     * A timeout is not proof that Stripe rejected the cancellation. The API
+     * can commit the request and lose the response on its way back; retrying
+     * blindly after the idempotency window could then turn a completed release
+     * into a permanent failure. Ask the PaymentIntent what actually happened.
+     */
+    try {
+      const intent = await stripe().paymentIntents.retrieve(paymentIntentId);
+      if (intent.status === "canceled") return;
+    } catch {
+      // Fall through to the controlled error below. Stripe's response may
+      // contain request details and must not become a durable application log.
+    }
+
+    throw controlledStripeError("Stripe could not release the payment hold", failure);
+  }
+}
+
+/** Provider truth used when capture and cancellation cross in flight. */
+export async function paymentIntentSettlementState(
+  paymentIntentId: string,
+): Promise<{ status: Stripe.PaymentIntent.Status; amountReceivedCents: number }> {
+  const intent = await stripe().paymentIntents.retrieve(paymentIntentId);
+  return {
+    status: intent.status,
+    amountReceivedCents: Math.max(0, intent.amount_received ?? 0),
+  };
+}
+
+async function refundExists(paymentIntentId: string, operationId: string): Promise<boolean> {
+  let startingAfter: string | undefined;
+
+  for (;;) {
+    const page = await stripe().refunds.list({
+      payment_intent: paymentIntentId,
+      limit: 100,
+      ...(startingAfter ? { starting_after: startingAfter } : {}),
+    });
+    const match = page.data.some(
+      (refund) =>
+        refund.metadata?.minimumstress_operation_id === operationId &&
+        refund.status !== "failed" &&
+        refund.status !== "canceled",
+    );
+    if (match) return true;
+    if (!page.has_more || page.data.length === 0) return false;
+    startingAfter = page.data[page.data.length - 1].id;
+  }
+}
+
+function controlledStripeError(message: string, failure: unknown): Error {
+  const error = new Error(message) as Error & { code?: string; type?: string };
+  if (failure && typeof failure === "object") {
+    const source = failure as { code?: unknown; type?: unknown };
+    if (typeof source.code === "string") error.code = source.code;
+    if (typeof source.type === "string") error.type = source.type;
+  }
+  return error;
+}
+
+/** Omit the request-options object when an older caller has no stable key. */
+function requestOptions(idempotencyKey?: string): Stripe.RequestOptions | undefined {
+  return idempotencyKey ? { idempotencyKey } : undefined;
 }
 
 /**

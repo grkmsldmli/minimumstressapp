@@ -21,6 +21,7 @@
 
 /** Ordered worst first, which is also the order they are listed in the email. */
 export type WaitingKind =
+  | "financial_manual_review"
   | "unpayable_host"
   | "open_dispute"
   | "escalation"
@@ -37,6 +38,7 @@ export interface WaitingItem {
 }
 
 export interface QueueCounts {
+  financialManualReview: number;
   unpayableHosts: number;
   openDisputes: number;
   escalations: number;
@@ -57,6 +59,7 @@ export interface QueueCounts {
  * affected does not know they are waiting.
  */
 const ORDER: WaitingKind[] = [
+  "financial_manual_review",
   "unpayable_host",
   "escalation",
   "open_dispute",
@@ -66,6 +69,10 @@ const ORDER: WaitingKind[] = [
 ];
 
 const LINES: Record<WaitingKind, (n: number) => string> = {
+  financial_manual_review: (n) =>
+    n === 1
+      ? "1 booking payment needs manual review"
+      : `${n} booking payments need manual review`,
   unpayable_host: (n) =>
     n === 1
       ? "1 host cannot be paid — their money is sitting with us"
@@ -84,6 +91,7 @@ const LINES: Record<WaitingKind, (n: number) => string> = {
 };
 
 const COUNT_OF: Record<WaitingKind, (q: QueueCounts) => number> = {
+  financial_manual_review: (q) => q.financialManualReview,
   unpayable_host: (q) => q.unpayableHosts,
   escalation: (q) => q.escalations,
   open_dispute: (q) => q.openDisputes,

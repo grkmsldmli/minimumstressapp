@@ -150,12 +150,21 @@ export function deriveHealth(
     };
   }
 
+  let payments = unknown("stripe_payments", "Stripe payments");
+  if (q && q.financialManualReview.length > 0 && payments.state !== "critical") {
+    payments = {
+      ...payments,
+      state: "critical",
+      note: `${q.financialManualReview.length} booking ${q.financialManualReview.length === 1 ? "payment needs" : "payments need"} manual review`,
+    };
+  }
+
   return [
     unknown("database", "Database"),
     unknown("auth", "Auth"),
     reporting,
     notifications,
-    unknown("stripe_payments", "Stripe payments"),
+    payments,
     payouts,
     unknown("web_analytics", "Web analytics"),
   ];
@@ -231,9 +240,11 @@ function deliveryHealth(evidence: CommandRuntimeEvidence): HealthItem {
   }
 
   const failureNote: Record<Exclude<ResendDeliveryEventType, "email.delivered">, string> = {
+    "email.delivery_delayed": "Latest email delivery is delayed",
     "email.failed": "Latest email failed",
     "email.bounced": "Latest email bounced",
     "email.complained": "Latest email marked as spam",
+    "email.suppressed": "Latest email was suppressed",
   };
   return {
     ...base,
@@ -251,9 +262,11 @@ export function commandView(
   const reportingAvailable = q !== null;
   const disputesOnUs = q?.openDisputes.filter((d) => d.waitingOn === "us").length ?? 0;
   const failedGivenUp = q?.failedNotifications.filter((n) => n.givenUp).length ?? 0;
+  const financialManualReview = q?.financialManualReview.length ?? 0;
 
   // Ranked by who is hurt while nobody looks: safety, then money, then the rest.
   const candidates: AttentionItem[] = q ? [
+    { key: "financial", label: "Booking payments needing manual review", count: financialManualReview, href: "/admin/money", tone: "bad" },
     { key: "safety", label: "Safety & low ratings", count: q.escalations.length, href: "/admin/trust", tone: "bad" },
     { key: "disputes", label: "Refunds & claims waiting on us", count: disputesOnUs, href: "/admin/trust", tone: "bad" },
     { key: "unpayable", label: "Hosts who cannot be paid", count: q.unpayableHosts.length, href: "/admin/trust", tone: "warn" },
@@ -270,7 +283,7 @@ export function commandView(
 
   // Urgent = the safety/money slice worth a badge, not the whole backlog.
   const urgentCount = q
-    ? q.escalations.length + disputesOnUs + q.unpayableHosts.length + failedGivenUp
+    ? financialManualReview + q.escalations.length + disputesOnUs + q.unpayableHosts.length + failedGivenUp
     : null;
 
   const kpis: Kpi[] = [

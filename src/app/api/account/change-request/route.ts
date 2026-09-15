@@ -74,7 +74,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     if (staffEmail) {
       await notify({
         kind: "account_change_requested",
-        recipient: { userId: auth.user.id, email: staffEmail },
+        recipient: { userId: null, email: staffEmail },
         subjectId: `account-change:${auth.user.id}:${Date.now()}`,
         context: {
           name: profile.display_name ?? auth.user.email ?? "Someone",

@@ -2,8 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { expiresAt } from "../booking-approval";
 import { bookingUse } from "../booking-use";
-import { type NotificationKind, render } from "./messages";
-import { type PendingNotification, type Recipient, notify } from "./send";
+import { type Recipient, notify } from "./send";
 
 /**
  * Turning a booking into "who needs to be told what".
@@ -25,7 +24,7 @@ export async function recipientFor(
   admin: SupabaseClient,
   userId: string,
 ): Promise<Recipient | null> {
-  const [{ data: profile }, { data: auth }] = await Promise.all([
+  const [profileResult, authResult] = await Promise.all([
     admin
       .from("profiles")
       .select(
@@ -35,6 +34,12 @@ export async function recipientFor(
       .maybeSingle(),
     admin.auth.admin.getUserById(userId),
   ]);
+
+  if (profileResult.error) throw profileResult.error;
+  if (authResult.error) throw authResult.error;
+
+  const profile = profileResult.data;
+  const auth = authResult.data;
 
   const email = auth?.user?.email ?? null;
   if (!profile && !email) return null;
@@ -109,6 +114,7 @@ interface BookingRow {
   id: string;
   practitioner_id: string;
   starts_at: string;
+  ends_at: string;
   total_cents: number;
   host_rate_cents: number;
   access_code: string | null;
@@ -119,6 +125,14 @@ interface BookingRow {
     address_line: string | null;
     entry_instructions: string | null;
   };
+}
+
+interface CancelledBookingRow extends BookingRow {
+  cancelled_by: "practitioner" | "host" | null;
+  captured_at: string | null;
+  authorized_at: string | null;
+  refunded_cents: number | null;
+  financial_resolution_state: string;
 }
 
 /**
@@ -133,17 +147,46 @@ interface BookingRow {
  * The same two conditions as the gates in 0039: paid for, and still standing.
  */
 async function loadBooking(admin: SupabaseClient, bookingId: string): Promise<BookingRow | null> {
-  const { data } = await admin
+  const { data, error } = await admin
     .from("bookings")
     .select(
-      "id, practitioner_id, starts_at, total_cents, host_rate_cents, access_code, spaces!inner(name, host_id, timezone, address_line, entry_instructions)",
+      "id, practitioner_id, starts_at, ends_at, total_cents, host_rate_cents, access_code, spaces!inner(name, host_id, timezone, address_line, entry_instructions)",
     )
     .eq("id", bookingId)
     .not("captured_at", "is", null)
-    .in("status", ["upcoming", "completed"])
+    .eq("status", "upcoming")
+    .is("cancelled_at", null)
+    .in("financial_resolution_state", ["not_required", "resolved"])
     .maybeSingle();
 
+  if (error) throw error;
+
   return (data as BookingRow | null) ?? null;
+}
+
+/**
+ * Cancellation is loaded after the status changes, so it must not use the
+ * active-booking gate above. It still selects only the immutable facts needed
+ * for the two receipts and never exposes them to a browser.
+ */
+async function loadCancelledBooking(
+  admin: SupabaseClient,
+  bookingId: string,
+): Promise<CancelledBookingRow | null> {
+  const { data, error } = await admin
+    .from("bookings")
+    .select(
+      "id, practitioner_id, starts_at, ends_at, total_cents, host_rate_cents, access_code, cancelled_by, captured_at, authorized_at, refunded_cents, financial_resolution_state, spaces!inner(name, host_id, timezone, address_line, entry_instructions)",
+    )
+    .eq("id", bookingId)
+    .in("status", ["cancelled_by_practitioner", "cancelled_by_host"])
+    .not("cancelled_by", "is", null)
+    .eq("financial_resolution_state", "resolved")
+    .maybeSingle();
+
+  if (error) throw error;
+
+  return (data as CancelledBookingRow | null) ?? null;
 }
 
 /**
@@ -171,25 +214,44 @@ async function loadRequest(
       purpose_note: string | null;
       attendee_count: number | null;
       approval_note: string | null;
+      status: string;
+      approval_state: string;
+      captured_at: string | null;
+      authorized_at: string | null;
+      cancelled_at: string | null;
+      financial_resolution_state: string;
     })
   | null
 > {
-  const { data } = await admin
+  const { data, error } = await admin
     .from("bookings")
     .select(
-      "id, practitioner_id, starts_at, created_at, total_cents, host_rate_cents, access_code, purpose, purpose_note, attendee_count, approval_note, spaces!inner(name, host_id, timezone, address_line, entry_instructions)",
+      "id, practitioner_id, starts_at, ends_at, created_at, total_cents, host_rate_cents, access_code, purpose, purpose_note, attendee_count, approval_note, status, approval_state, captured_at, authorized_at, cancelled_at, financial_resolution_state, spaces!inner(name, host_id, timezone, address_line, entry_instructions)",
     )
     .eq("id", bookingId)
     .maybeSingle();
+
+  if (error) throw error;
 
   return (data as never) ?? null;
 }
 
 /** A host, told somebody wants their room and by when they have to answer. */
-export async function notifyRequestMade(admin: SupabaseClient, bookingId: string): Promise<void> {
+export async function notifyRequestMade(
+  admin: SupabaseClient,
+  bookingId: string,
+  options: { propagate?: boolean } = {},
+): Promise<void> {
   try {
     const booking = await loadRequest(admin, bookingId);
-    if (!booking) return;
+    if (
+      !booking ||
+      booking.status !== "upcoming" ||
+      booking.approval_state !== "pending" ||
+      !booking.authorized_at ||
+      booking.cancelled_at !== null ||
+      booking.financial_resolution_state !== "not_required"
+    ) return;
 
     const host = await recipientFor(admin, booking.spaces.host_id);
     if (!host || hasOptedOut(host, "host_new_request")) return;
@@ -206,6 +268,7 @@ export async function notifyRequestMade(admin: SupabaseClient, bookingId: string
       recipient: host,
       subjectId: bookingId,
       bookingId,
+      expiresAt: deadline,
       context: {
         spaceName: booking.spaces.name,
         when: formatWhen(new Date(booking.starts_at), zone),
@@ -218,6 +281,7 @@ export async function notifyRequestMade(admin: SupabaseClient, bookingId: string
     });
   } catch (error) {
     console.error(`Request notification failed for ${bookingId}:`, error);
+    if (options.propagate) throw error;
   }
 }
 
@@ -228,30 +292,36 @@ export async function notifyRequestReminder(
 ): Promise<void> {
   try {
     const booking = await loadRequest(admin, bookingId);
-    if (!booking) return;
+    if (
+      !booking ||
+      booking.status !== "upcoming" ||
+      booking.approval_state !== "pending" ||
+      !booking.authorized_at ||
+      booking.cancelled_at !== null ||
+      booking.financial_resolution_state !== "not_required"
+    ) return;
 
     const host = await recipientFor(admin, booking.spaces.host_id);
     if (!host || hasOptedOut(host, "host_new_request")) return;
 
     const zone = booking.spaces.timezone;
+    const deadline = expiresAt({
+      approvalState: "pending",
+      requestedAt: new Date(booking.created_at),
+      startsAt: new Date(booking.starts_at),
+    });
 
     await notify({
       kind: "host_request_reminder",
       recipient: host,
       subjectId: bookingId,
       bookingId,
+      expiresAt: deadline,
       context: {
         spaceName: booking.spaces.name,
         when: formatWhen(new Date(booking.starts_at), zone),
         purpose: describePurpose(booking.purpose, booking.purpose_note),
-        deadline: formatWhen(
-          expiresAt({
-            approvalState: "pending",
-            requestedAt: new Date(booking.created_at),
-            startsAt: new Date(booking.starts_at),
-          }),
-          zone,
-        ),
+        deadline: formatWhen(deadline, zone),
       },
     });
   } catch (error) {
@@ -263,8 +333,9 @@ export async function notifyRequestReminder(
 export async function notifyRequestApproved(
   admin: SupabaseClient,
   bookingId: string,
+  options: { propagate?: boolean } = {},
 ): Promise<void> {
-  await tellGuest(admin, bookingId, "request_approved");
+  await tellGuest(admin, bookingId, "request_approved", options.propagate);
 }
 
 export async function notifyRequestDeclined(
@@ -285,10 +356,28 @@ async function tellGuest(
   admin: SupabaseClient,
   bookingId: string,
   kind: "request_approved" | "request_declined" | "request_expired",
+  propagate = false,
 ): Promise<void> {
   try {
     const booking = await loadRequest(admin, bookingId);
     if (!booking) return;
+
+    const stateMatches =
+      (kind === "request_approved" &&
+        booking.approval_state === "approved" &&
+        booking.status === "upcoming" &&
+        booking.captured_at !== null &&
+        booking.cancelled_at === null &&
+        ["not_required", "resolved"].includes(booking.financial_resolution_state)) ||
+      (kind === "request_declined" &&
+        booking.approval_state === "declined" &&
+        booking.status === "cancelled_by_host" &&
+        booking.financial_resolution_state === "resolved") ||
+      (kind === "request_expired" &&
+        booking.approval_state === "expired" &&
+        booking.status === "cancelled_by_host" &&
+        booking.financial_resolution_state === "resolved");
+    if (!stateMatches) return;
 
     const practitioner = await recipientFor(admin, booking.practitioner_id);
     if (!practitioner) return;
@@ -298,6 +387,7 @@ async function tellGuest(
       recipient: practitioner,
       subjectId: bookingId,
       bookingId,
+      expiresAt: kind === "request_approved" ? booking.starts_at : undefined,
       context: {
         spaceName: booking.spaces.name,
         when: formatWhen(new Date(booking.starts_at), booking.spaces.timezone),
@@ -313,6 +403,7 @@ async function tellGuest(
     });
   } catch (error) {
     console.error(`Request outcome notification failed for ${bookingId}:`, error);
+    if (propagate) throw error;
   }
 }
 
@@ -332,10 +423,9 @@ function describePurpose(purpose: string | null, note?: string | null): string |
 /**
  * Both sides of a new booking.
  *
- * Failures are swallowed on purpose. This runs after the money has already
- * moved, and throwing here would turn a delivered email into a failed booking
- * — the caller has nothing useful to do with the error, and the queue will
- * retry anything transient.
+ * This is called only from Stripe's webhook. An outbox insert failure must
+ * escape so Stripe retries the event; provider failures already have a durable
+ * row and therefore return normally for the worker to recover.
  */
 export async function notifyBookingCreated(
   admin: SupabaseClient,
@@ -358,6 +448,7 @@ export async function notifyBookingCreated(
         recipient: practitioner,
         subjectId: bookingId,
         bookingId,
+        expiresAt: booking.starts_at,
         context: { spaceName: booking.spaces.name, when, amountCents: booking.total_cents },
       });
     }
@@ -368,6 +459,7 @@ export async function notifyBookingCreated(
         recipient: host,
         subjectId: bookingId,
         bookingId,
+        expiresAt: booking.starts_at,
         // The host's rate, never the total. What the practitioner paid is not
         // theirs to see — the same rule host_bookings() enforces in SQL.
         context: { spaceName: booking.spaces.name, when, amountCents: booking.host_rate_cents },
@@ -375,6 +467,7 @@ export async function notifyBookingCreated(
     }
   } catch (error) {
     console.error(`Booking notifications failed for ${bookingId}:`, error);
+    throw error;
   }
 }
 
@@ -395,16 +488,18 @@ export async function notifyNewMessage(
   try {
     const { data } = await admin
       .from("bookings")
-      .select("practitioner_id, starts_at, spaces!inner(name, host_id, timezone)")
+      .select("practitioner_id, starts_at, ends_at, status, spaces!inner(name, host_id, timezone)")
       .eq("id", bookingId)
       .maybeSingle();
 
     const booking = data as unknown as {
       practitioner_id: string;
       starts_at: string;
+      ends_at: string;
+      status: string;
       spaces: { name: string; host_id: string; timezone: string };
     } | null;
-    if (!booking) return;
+    if (!booking || booking.status !== "upcoming") return;
 
     const recipientId =
       senderId === booking.practitioner_id ? booking.spaces.host_id : booking.practitioner_id;
@@ -420,6 +515,7 @@ export async function notifyNewMessage(
       // not — never a permanent per-thread dedupe that would notify once only.
       subjectId: messageId,
       bookingId,
+      expiresAt: booking.ends_at,
       context: {
         spaceName: booking.spaces.name,
         when: formatWhen(new Date(booking.starts_at), booking.spaces.timezone),
@@ -434,11 +530,24 @@ export async function notifyCancellation(
   admin: SupabaseClient,
   bookingId: string,
   actor: "practitioner" | "host",
-  outcome: { chargedCents: number; refundedCents: number },
+  _outcome: { chargedCents: number; refundedCents: number },
 ): Promise<void> {
   try {
-    const booking = await loadBooking(admin, bookingId);
-    if (!booking) return;
+    const booking = await loadCancelledBooking(admin, bookingId);
+    if (
+      !booking ||
+      booking.cancelled_by !== actor ||
+      booking.financial_resolution_state !== "resolved" ||
+      (!booking.captured_at && !booking.authorized_at)
+    ) return;
+
+    // Settlement copy comes from the durable row, never from a caller's stale
+    // pre-update calculation. This makes concurrent cancellation attempts
+    // converge on the actor and money Stripe actually recorded.
+    const refundedCents = booking.refunded_cents ?? 0;
+    const chargedCents = booking.captured_at
+      ? Math.max(0, booking.total_cents - refundedCents)
+      : 0;
 
     const when = formatWhen(new Date(booking.starts_at), booking.spaces.timezone);
 
@@ -459,8 +568,8 @@ export async function notifyCancellation(
           context: {
             spaceName: booking.spaces.name,
             when,
-            chargedCents: outcome.chargedCents,
-            refundedCents: outcome.refundedCents,
+            chargedCents,
+            refundedCents,
           },
         });
       }
@@ -487,8 +596,8 @@ export async function notifyCancellation(
       context: {
         spaceName: booking.spaces.name,
         when,
-        chargedCents: outcome.chargedCents,
-        refundedCents: outcome.refundedCents,
+        chargedCents,
+        refundedCents,
       },
     });
   } catch (error) {
@@ -514,9 +623,11 @@ export async function notifyAccessCodesReady(
   const { data, error } = await admin
     .from("bookings")
     .select(
-      "id, practitioner_id, starts_at, total_cents, host_rate_cents, access_code, spaces!inner(name, host_id, address_line, entry_instructions)",
+      "id, practitioner_id, starts_at, ends_at, total_cents, host_rate_cents, access_code, spaces!inner(name, host_id, timezone, address_line, entry_instructions)",
     )
     .eq("status", "upcoming")
+    .is("cancelled_at", null)
+    .in("financial_resolution_state", ["not_required", "resolved"])
     /*
      * Paid for, which the two gates in the database have required since 0039
      * and this job never did.
@@ -528,9 +639,10 @@ export async function notifyAccessCodesReady(
      * instructions for a room nobody had paid for.
      */
     .not("captured_at", "is", null)
+    .not("access_code", "is", null)
     .lte("access_code_revealed_at", now.toISOString())
-    // Nothing to announce about a session that has already finished.
-    .gte("starts_at", new Date(now.getTime() - 60 * 60 * 1000).toISOString());
+    // Nothing to announce once the booked interval has ended.
+    .gt("ends_at", now.toISOString());
 
   if (error) throw error;
 
@@ -539,67 +651,112 @@ export async function notifyAccessCodesReady(
   // PostgREST types an embedded relation as an array even when the join is
   // one-to-one, so the shape has to be asserted rather than narrowed.
   for (const booking of (data ?? []) as unknown as BookingRow[]) {
-    const practitioner = await recipientFor(admin, booking.practitioner_id);
-    if (!practitioner) continue;
+    try {
+      const practitioner = await recipientFor(admin, booking.practitioner_id);
+      if (!practitioner) continue;
 
-    // The dedupe key makes this safe to re-run: a booking already announced
-    // collides and is skipped, so a job that runs hourly does not text
-    // somebody hourly.
-    const result = await notify({
-      kind: "access_code_ready",
-      recipient: practitioner,
-      subjectId: booking.id,
-      bookingId: booking.id,
-      context: {
-        spaceName: booking.spaces.name,
-        when: formatWhen(new Date(booking.starts_at), booking.spaces.timezone),
-        address: booking.spaces.address_line ?? undefined,
-        accessCode: booking.access_code ?? undefined,
-        entryInstructions: booking.spaces.entry_instructions ?? undefined,
-      },
-    });
+      // The dedupe key makes this safe to re-run: a booking already announced
+      // collides and is skipped, so a job that runs hourly does not text
+      // somebody hourly.
+      const result = await notify({
+        kind: "access_code_ready",
+        recipient: practitioner,
+        subjectId: booking.id,
+        bookingId: booking.id,
+        expiresAt: booking.ends_at,
+        defer: true,
+        context: {
+          spaceName: booking.spaces.name,
+          when: formatWhen(new Date(booking.starts_at), booking.spaces.timezone),
+          address: booking.spaces.address_line ?? undefined,
+          accessCode: booking.access_code ?? undefined,
+          entryInstructions: booking.spaces.entry_instructions ?? undefined,
+        },
+      });
 
-    if (result.email === "sent" || result.sms === "sent") announced += 1;
+      if (
+        result.email === "sent" || result.email === "queued" ||
+        result.sms === "sent" || result.sms === "queued"
+      ) announced += 1;
+    } catch (failure) {
+      // One corrupt recipient or transient auth lookup must not strand every
+      // later door code behind it. The row remains eligible for the next run.
+      console.error(`Access-code notification failed for ${booking.id}:`, failure);
+    }
   }
 
   return { announced };
 }
 
 /**
- * Rebuilds a queued message so the retry loop can send it again.
+ * Reconcile durable cancellation state with the outbox.
  *
- * Reads the booking fresh rather than replaying a stored body, so a retry
- * carries what is true now — and so no door code was ever copied into the
- * notifications table to begin with.
+ * A process can stop after the booking and Stripe settlement are durable but
+ * before the immediate notification call. This bounded sweep makes that crash
+ * recoverable; the normal dedupe key turns already-sent rows into no-ops.
  */
-export async function rebuildPending(admin: SupabaseClient) {
-  return async (row: PendingNotification) => {
-    const recipient = await recipientFor(admin, row.user_id);
-    if (!recipient) return null;
+export async function reconcileCancellationNotifications(
+  admin: SupabaseClient,
+  now = new Date(),
+): Promise<{ reconciled: number }> {
+  const since = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const { data, error } = await admin.rpc("list_cancellation_notification_gaps", {
+    p_since: since,
+    p_limit: 100,
+  });
+  if (error) throw error;
 
-    const to = row.channel === "email" ? recipient.email : recipient.phone;
-    if (!to) return null;
+  let reconciled = 0;
+  for (const booking of data ?? []) {
+    // The abandoned-checkout reaper uses the same cancelled status, but those
+    // rows never became bookings and must not generate a cancellation receipt.
+    if (
+      (!booking.captured_at && !booking.authorized_at) ||
+      (booking.cancelled_by !== "host" && booking.cancelled_by !== "practitioner")
+    ) continue;
 
-    if (!row.booking_id) {
-      // Kinds that are about a person rather than a booking carry no context
-      // worth rebuilding; the subject line alone is still correct.
-      return { to, message: render(row.kind as NotificationKind, { name: recipient.name }) };
+    const actor =
+      booking.cancelled_by === "host" || booking.status === "cancelled_by_host"
+        ? "host"
+        : "practitioner";
+    const refundedCents = booking.refunded_cents ?? 0;
+    await notifyCancellation(admin, booking.id, actor, {
+      chargedCents: booking.captured_at
+        ? Math.max(0, booking.total_cents - refundedCents)
+        : 0,
+      refundedCents,
+    });
+    reconciled += 1;
+  }
+
+  return { reconciled };
+}
+
+/** Repair a crash between a durable request outcome and its practitioner receipt. */
+export async function reconcileRequestOutcomeNotifications(
+  admin: SupabaseClient,
+  now = new Date(),
+): Promise<{ reconciled: number }> {
+  const since = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const { data, error } = await admin.rpc("list_request_outcome_notification_gaps", {
+    p_since: since,
+    p_limit: 100,
+  });
+  if (error) throw error;
+
+  let reconciled = 0;
+  for (const request of data ?? []) {
+    if (request.approval_state === "approved") {
+      await notifyRequestApproved(admin, request.id);
+      reconciled += 1;
+    } else if (request.approval_state === "declined") {
+      await notifyRequestDeclined(admin, request.id);
+      reconciled += 1;
+    } else if (request.approval_state === "expired") {
+      await notifyRequestExpired(admin, request.id);
+      reconciled += 1;
     }
+  }
 
-    const booking = await loadBooking(admin, row.booking_id);
-    if (!booking) return null;
-
-    return {
-      to,
-      message: render(row.kind as NotificationKind, {
-        name: recipient.name,
-        spaceName: booking.spaces.name,
-        when: formatWhen(new Date(booking.starts_at), booking.spaces.timezone),
-        address: booking.spaces.address_line ?? undefined,
-        accessCode: booking.access_code ?? undefined,
-        entryInstructions: booking.spaces.entry_instructions ?? undefined,
-        amountCents: booking.total_cents,
-      }),
-    };
-  };
+  return { reconciled };
 }

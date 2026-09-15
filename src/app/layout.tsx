@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Lora, Poppins } from "next/font/google";
 
+import { OneSignalInit } from "@/components/onesignal/OneSignalInit";
 import { BRAND } from "@/lib/company";
 import { siteUrl } from "@/lib/site-url";
 
@@ -118,7 +119,11 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" className={`${lora.variable} ${poppins.variable} h-full antialiased`}>
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        {children}
+        {/* Web push (browsers + installed PWAs only; no-op in the native shell). */}
+        <OneSignalInit />
+      </body>
     </html>
   );
 }

@@ -27,6 +27,14 @@ import { isSharedPath, isSiteHost } from "@/lib/site-host";
 const SUPABASE_ORIGIN = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 const SUPABASE_SOCKET = SUPABASE_ORIGIN.replace(/^https:/, "wss:");
 const STRIPE = "https://js.stripe.com https://api.stripe.com https://hooks.stripe.com";
+
+// OneSignal web push. connect-src for the SDK's subscribe/login XHRs, img-src
+// for the slidedown icon and notification images, and cdn.onesignal.com in the
+// app script-src as a fallback for browsers that ignore 'strict-dynamic'. Only
+// the app host loads the SDK — the marketing site never does (OneSignalInit
+// host-gates itself) — but naming the origins here is harmless on both.
+const ONESIGNAL = "https://*.onesignal.com https://onesignal.com";
+const ONESIGNAL_IMG = "https://img.onesignal.com https://*.onesignal.com https://*.os.tc";
 /*
  * Read from the same module the maps read, rather than written down twice. A
  * policy naming one tile host while the pictures come from another blocks
@@ -80,7 +88,7 @@ export function proxy(request: NextRequest): NextResponse {
    */
   const scriptSrc = forSite
     ? `script-src 'self' 'unsafe-inline'${DEV_EVAL}`
-    : `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${DEV_EVAL} ${STRIPE}`;
+    : `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${DEV_EVAL} ${STRIPE} https://cdn.onesignal.com`;
 
   const csp = [
     `default-src 'self'`,
@@ -95,7 +103,7 @@ export function proxy(request: NextRequest): NextResponse {
 
     // `data:` covers inline SVG icons; `blob:` covers the local preview a host
     // sees before their photo has finished uploading.
-    `img-src 'self' data: blob: ${SUPABASE_ORIGIN} ${TILES} https://*.stripe.com`,
+    `img-src 'self' data: blob: ${SUPABASE_ORIGIN} ${TILES} https://*.stripe.com ${ONESIGNAL_IMG}`,
 
     /*
      * Video, which had no directive and so fell through to default-src 'self'.
@@ -112,7 +120,7 @@ export function proxy(request: NextRequest): NextResponse {
     // The geocoder is deliberately absent: address lookups are proxied through
     // our own server precisely so a host's half-typed home address never
     // leaves their machine for a third party.
-    `connect-src 'self' ${SUPABASE_ORIGIN} ${SUPABASE_SOCKET} ${STRIPE}`,
+    `connect-src 'self' ${SUPABASE_ORIGIN} ${SUPABASE_SOCKET} ${STRIPE} ${ONESIGNAL}`,
 
     `frame-src ${STRIPE}`,
 

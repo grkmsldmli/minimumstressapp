@@ -106,6 +106,19 @@ describe("the content security policy", () => {
     expect(connect).not.toMatch(/google|locationiq|photon|nominatim/i);
     expect(connect).toMatch(/supabase/);
   });
+
+  /**
+   * Web push is a cross-origin SDK: it registers the subscription and sets the
+   * external id with XHRs to onesignal.com, and paints the slidedown prompt and
+   * notification with images from its CDN. Without these the feature loads and
+   * then silently does nothing — the exact failure this app's CSP has bitten on
+   * before — so the origins are pinned here against a quiet regression.
+   */
+  it("lets the OneSignal SDK reach its backend and images", () => {
+    expect(policy().get("connect-src") ?? "").toMatch(/onesignal\.com/);
+    expect(policy().get("img-src") ?? "").toMatch(/onesignal/);
+    expect(policy().get("script-src") ?? "").toMatch(/cdn\.onesignal\.com/);
+  });
 });
 
 /**

@@ -118,7 +118,7 @@ describe("PushEnable", () => {
     await waitFor(() => expect(container.childElementCount).toBe(0));
   });
 
-  it("requests native permission and opts the device into OneSignal after a user tap", async () => {
+  it("does not re-request native permission when the OS already granted it", async () => {
     mocks.isNativeApp.mockReturnValue(true);
 
     const pushSubscription = {
@@ -133,6 +133,7 @@ describe("PushEnable", () => {
         // Android 12 and lower can report true without ever showing a prompt;
         // the app-owned consent flag must still keep the Turn on button visible.
         hasPermission: vi.fn().mockResolvedValue(true),
+        canRequestPermission: vi.fn().mockResolvedValue(false),
         requestPermission: vi.fn().mockResolvedValue(true),
       },
       User: { pushSubscription },
@@ -143,14 +144,76 @@ describe("PushEnable", () => {
 
     const turnOn = await screen.findByRole("button", { name: "Turn on" });
     expect(oneSignal.setConsentGiven).toHaveBeenCalledWith(false);
-    expect(oneSignal.setConsentGiven).not.toHaveBeenCalledWith(true);
     fireEvent.click(turnOn);
 
-    await waitFor(() =>
-    expect(oneSignal.Notifications.requestPermission).toHaveBeenCalledWith(true),
-    );
+    await waitFor(() => expect(oneSignal.setConsentGiven).toHaveBeenCalledWith(true));
+    expect(oneSignal.Notifications.requestPermission).not.toHaveBeenCalled();
     expect(mocks.setNativePushConsentGiven).toHaveBeenCalledWith(true);
     expect(mocks.requestNativePushOptIn).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(screen.queryByRole("button", { name: "Turn on" })).toBeNull());
+  });
+
+  it("grants OneSignal privacy consent before opening the native iOS permission prompt", async () => {
+    mocks.isNativeApp.mockReturnValue(true);
+
+    const pushSubscription = {
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      getOptedInAsync: vi.fn().mockResolvedValue(true),
+    };
+    const oneSignal = {
+      setConsentGiven: vi.fn(),
+      Notifications: {
+        hasPermission: vi.fn().mockResolvedValue(false),
+        canRequestPermission: vi.fn().mockResolvedValue(true),
+        requestPermission: vi.fn().mockResolvedValue(true),
+      },
+      User: { pushSubscription },
+    };
+    mocks.nativeOneSignal.mockResolvedValue(oneSignal);
+
+    render(<PushEnable />);
+    fireEvent.click(await screen.findByRole("button", { name: "Turn on" }));
+
+    await waitFor(() =>
+      expect(oneSignal.Notifications.requestPermission).toHaveBeenCalledWith(false),
+    );
+    const consentTrueIndex = oneSignal.setConsentGiven.mock.calls.findIndex(([value]) => value === true);
+    expect(consentTrueIndex).toBeGreaterThanOrEqual(0);
+    expect(oneSignal.setConsentGiven.mock.invocationCallOrder[consentTrueIndex]).toBeLessThan(
+      oneSignal.Notifications.requestPermission.mock.invocationCallOrder[0],
+    );
+    expect(mocks.setNativePushConsentGiven).toHaveBeenCalledWith(true);
+    expect(mocks.requestNativePushOptIn).toHaveBeenCalledTimes(1);
+  });
+
+  it("fails closed instead of hanging when native permission was already denied", async () => {
+    mocks.isNativeApp.mockReturnValue(true);
+
+    const oneSignal = {
+      setConsentGiven: vi.fn(),
+      Notifications: {
+        hasPermission: vi.fn().mockResolvedValue(false),
+        canRequestPermission: vi.fn().mockResolvedValue(false),
+        requestPermission: vi.fn(),
+      },
+      User: {
+        pushSubscription: {
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+          getOptedInAsync: vi.fn().mockResolvedValue(false),
+        },
+      },
+    };
+    mocks.nativeOneSignal.mockResolvedValue(oneSignal);
+
+    render(<PushEnable />);
+    fireEvent.click(await screen.findByRole("button", { name: "Turn on" }));
+
+    await screen.findByText(/Notifications are blocked/i);
+    expect(oneSignal.Notifications.requestPermission).not.toHaveBeenCalled();
+    expect(mocks.setNativePushConsentGiven).toHaveBeenCalledWith(false);
+    expect(oneSignal.setConsentGiven).toHaveBeenLastCalledWith(false);
+    expect(screen.queryByRole("button", { name: /Turn on|Open settings/i })).toBeNull();
   });
 });

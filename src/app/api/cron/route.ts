@@ -7,13 +7,22 @@ import { safetyRecipient } from "@/lib/admin/access";
 import { subjectFor, waitingOn, waitingSignature } from "@/lib/admin/attention";
 import { runWithIndependentRetention } from "@/lib/cron-runner";
 import { retryFinancialResolutions } from "@/lib/financial-resolution";
+import { executeMoneyOperation } from "@/lib/money-operation-service";
+import { claimMoneyOperationRetries, claimPayout } from "@/lib/money-operations";
 import {
   notifyAccessCodesReady,
+  reconcileBookingConfirmationNotifications,
   reconcileCancellationNotifications,
+  reconcileHostPayoutNotifications,
   reconcileRequestOutcomeNotifications,
+  reconcileRequestSubmissionNotifications,
 } from "@/lib/notify/for-booking";
+import {
+  reconcileRefundDecisionNotifications,
+  reconcileRefundRequestNotifications,
+} from "@/lib/notify/for-refund";
 import { notify, retryPending } from "@/lib/notify/send";
-import { payHost, settle } from "@/lib/stripe/client";
+import { settle } from "@/lib/stripe/client";
 import { siteUrl } from "@/lib/site-url";
 import { supabaseAdmin } from "@/lib/supabase/server";
 
@@ -97,7 +106,7 @@ export async function GET(request: NextRequest): Promise<Response> {
 }
 
 /**
- * Sequential, with unresolved cancellation money reconciled before payouts.
+ * Sequential: legacy hold resolutions, durable money retries, then payouts.
  *
  * A cancellation can still be waiting for Stripe to confirm its refund or
  * hold release. Resolving those rows first keeps a payout from overtaking that
@@ -107,15 +116,21 @@ export async function GET(request: NextRequest): Promise<Response> {
  */
 export async function runOperationalTasks(now: Date) {
   const financial = await settlePendingFinancialWork(now);
+  const moneyRetries = await retryDueMoneyOperations(now);
   const paid = await payHostsForFinishedSessions(now);
+  const payoutReceipts = await reconcilePayoutReceipts(now);
   const released = await releaseAbandonedCheckouts(now);
+  const bookingConfirmations = await reconcileBookingConfirmations(now);
   /*
    * Before the access codes: an expired request is an hour a studio cannot
    * sell and money held on somebody's card. Both keep getting worse until
    * this runs.
    */
   const requests = await sweepRequests(now);
+  const requestSubmissions = await reconcileRequestSubmissions(now);
   const requestOutcomes = await reconcileRequestOutcomes(now);
+  const refundRequests = await reconcileRefundRequests(now);
+  const refundDecisions = await reconcileRefundDecisions(now);
   const cancellations = await reconcileCancellations(now);
   const announced = await announceAccessCodes(now);
   const retried = await retryFailedNotifications();
@@ -123,10 +138,16 @@ export async function runOperationalTasks(now: Date) {
 
   return {
     ...financial,
+    ...moneyRetries,
     ...paid,
+    ...payoutReceipts,
     ...released,
+    ...bookingConfirmations,
     ...requests,
+    ...requestSubmissions,
     ...requestOutcomes,
+    ...refundRequests,
+    ...refundDecisions,
     ...cancellations,
     ...announced,
     ...retried,
@@ -228,6 +249,7 @@ async function releaseAbandonedCheckouts(
     // written by the `payment_intent.succeeded` webhook and by nothing else.
     .is("captured_at", null)
     .is("cancelled_at", null)
+    .is("active_money_operation_id", null)
     .eq("financial_resolution_state", "not_required")
     /*
      * Except a request still waiting on its host, which is uncaptured by
@@ -273,6 +295,7 @@ async function releaseAbandonedCheckouts(
         .eq("status", "upcoming")
         .is("captured_at", null)
         .is("cancelled_at", null)
+        .is("active_money_operation_id", null)
         .eq("financial_resolution_state", "not_required");
       if (updateError) throw updateError;
 
@@ -292,7 +315,7 @@ async function releaseAbandonedCheckouts(
  * The practitioner's money was taken when they booked and has been sitting in
  * our balance since. This is the moment it stops being ours to give back and
  * becomes the host's — which is exactly why it waits until the session has
- * started rather than happening at the point of sale.
+ * ended rather than happening at the point of sale or at check-in.
  *
  * A late cancellation is included on purpose. Cancelling inside 24 hours
  * charges in full precisely because the host kept the hour free, so they are
@@ -305,15 +328,18 @@ async function releaseAbandonedCheckouts(
  */
 export async function payHostsForFinishedSessions(
   now: Date,
-): Promise<{ paid: number; failed: number }> {
+): Promise<{ paid: number; failed: number; payoutClaimsSkipped: number }> {
   const admin = supabaseAdmin();
 
   const { data: due, error } = await admin
     .from("bookings")
-    .select(
-      "id, space_id, practitioner_id, stripe_payment_intent_id, host_rate_cents, service_fee_cents, instant_fee_cents, pro_discount_cents, total_cents, platform_cents, status, spaces!inner(host_id)",
-    )
-    .lte("starts_at", now.toISOString())
+    // This is only a cheap candidate scan. The service-only claim RPC
+    // re-checks every financial invariant under a row lock before any Stripe
+    // call, so a cancellation that wins after this read makes the claim return
+    // no row rather than racing a transfer.
+    .select("id")
+    // Hosts are paid after the booked session is over, not when it begins.
+    .lte("ends_at", now.toISOString())
     .not("captured_at", "is", null)
     /*
      * Not `refunded_at is null`. That excluded a booking after any refund of
@@ -332,101 +358,84 @@ export async function payHostsForFinishedSessions(
     .in("status", ["upcoming", "completed", "cancelled_by_practitioner", "no_show"]);
 
   if (error) throw error;
-  if (!due?.length) return { paid: 0, failed: 0 };
+  if (!due?.length) return { paid: 0, failed: 0, payoutClaimsSkipped: 0 };
 
   let paid = 0;
   let failed = 0;
+  let payoutClaimsSkipped = 0;
 
   for (const booking of due) {
     try {
-      const hostId = (booking.spaces as unknown as { host_id: string }).host_id;
-
-      const { data: host, error: hostError } = await admin
-        .from("profiles")
-        .select("stripe_connect_account_id")
-        .eq("id", hostId)
-        .maybeSingle();
-      if (hostError) throw hostError;
-
-      if (!host?.stripe_connect_account_id) {
-        // Not an error to retry blindly: the host has not finished onboarding.
-        // Left unpaid and visible, because the operations page lists hosts who
-        // cannot be paid and this is one of them.
-        failed += 1;
-        console.error(`No connected account for host ${hostId} — booking ${booking.id}`);
+      const operation = await claimPayout(admin, booking.id, undefined, now);
+      if (!operation) {
+        // A concurrent cancellation/refund/payout owns the booking, or the
+        // candidate stopped being eligible after the scan. Neither is a
+        // provider failure and neither may be bypassed with a direct write.
+        payoutClaimsSkipped += 1;
         continue;
       }
 
-      const { transferId } = await payHost(
-        {
-          hostRateCents: booking.host_rate_cents,
-          serviceFeeCents: booking.service_fee_cents,
-          instantFeeCents: booking.instant_fee_cents,
-          proDiscountCents: booking.pro_discount_cents,
-          totalCents: booking.total_cents,
-          platformCents: booking.platform_cents,
-        },
-        host.stripe_connect_account_id,
-        booking.stripe_payment_intent_id,
-        {
-          bookingId: booking.id,
-          spaceId: booking.space_id,
-          practitionerId: booking.practitioner_id,
-        },
-      );
-
-      /*
-       * Written after Stripe confirms, so a failure leaves the row untouched
-       * and the next sweep tries again. The transfer itself is idempotent on
-       * the booking id, so a crash between the two cannot pay twice.
-       */
-      /*
-       * The status is written under the status it was read under.
-       *
-       * Every other writer in this codebase guards this way — the abandoned
-       * reaper, the webhook, the checkout release — and this one matched on
-       * the id alone while deciding the new status from a value read earlier
-       * in the loop. A practitioner cancelling while the transfer was in
-       * flight got `completed` written over `cancelled_by_practitioner`, on a
-       * row that already carried `cancelled_at` and had already sent the
-       * cancellation email. `canReview` decides on the status, so both sides
-       * were then invited to review a session that never happened.
-       *
-       * The payment fields are written either way: the money did move, and
-       * losing that record would pay the host twice on the next sweep.
-       */
-      const paidFields = {
-        host_paid_at: new Date().toISOString(),
-        stripe_transfer_id: transferId,
-      };
-
-      if (booking.status === "upcoming") {
-        const { error: statusError } = await admin
-          .from("bookings")
-          .update({ ...paidFields, status: "completed" })
-          .eq("id", booking.id)
-          .eq("status", "upcoming");
-
-        // Cancelled between the read and here. The money still moved, so the
-        // payment fields go on regardless — only the status is surrendered.
-        if (statusError) throw statusError;
-      }
-
-      const { error: paidWriteError } = await admin
-        .from("bookings")
-        .update(paidFields)
-        .eq("id", booking.id)
-        .is("host_paid_at", null);
-      if (paidWriteError) throw paidWriteError;
-
-      paid += 1;
+      const result = await executeMoneyOperation(admin, operation, undefined, now);
+      if (result.committed) paid += 1;
+      else failed += 1;
     } catch (failure) {
       failed += 1;
-      console.error(`Payout failed for booking ${booking.id}:`, failure);
+      console.error(`Payout failed for booking ${booking.id}:`, describe(failure));
     }
   }
 
-  return { paid, failed };
+  return { paid, failed, payoutClaimsSkipped };
+}
+
+/**
+ * Resume provider calls whose worker died or whose transient error is due for
+ * another attempt. Each claimed operation has its own lease and failure
+ * boundary, so one disputed Stripe record cannot block unrelated payouts,
+ * cancellations, or refunds.
+ */
+async function retryDueMoneyOperations(
+  now: Date,
+): Promise<{
+  moneyOperationsRetryClaimed: number;
+  moneyOperationsRetried: number;
+  moneyOperationsRetryFailed: number;
+}> {
+  const admin = supabaseAdmin();
+  let operations;
+
+  try {
+    operations = await claimMoneyOperationRetries(admin, 25, undefined, now);
+  } catch (failure) {
+    console.error("Could not claim money-operation retries:", describe(failure));
+    return {
+      moneyOperationsRetryClaimed: 0,
+      moneyOperationsRetried: 0,
+      moneyOperationsRetryFailed: 1,
+    };
+  }
+
+  let moneyOperationsRetried = 0;
+  let moneyOperationsRetryFailed = 0;
+
+  for (const operation of operations) {
+    try {
+      const result = await executeMoneyOperation(admin, operation, undefined, now);
+      if (result.committed) moneyOperationsRetried += 1;
+      else moneyOperationsRetryFailed += 1;
+    } catch (failure) {
+      moneyOperationsRetryFailed += 1;
+      console.error(
+        `Money-operation retry failed for ${operation.id}:`,
+        describe(failure),
+      );
+    }
+  }
+
+  return {
+    moneyOperationsRetryClaimed: operations.length,
+    moneyOperationsRetried,
+    moneyOperationsRetryFailed,
+  };
 }
 
 /**
@@ -482,6 +491,21 @@ async function reconcileCancellations(now: Date): Promise<{ cancellationsReconci
   }
 }
 
+async function reconcileBookingConfirmations(
+  now: Date,
+): Promise<{ bookingConfirmationsReconciled: number }> {
+  try {
+    const { reconciled } = await reconcileBookingConfirmationNotifications(
+      supabaseAdmin(),
+      now,
+    );
+    return { bookingConfirmationsReconciled: reconciled };
+  } catch (error) {
+    console.error("Booking-confirmation notification reconciliation failed:", describe(error));
+    return { bookingConfirmationsReconciled: 0 };
+  }
+}
+
 async function reconcileRequestOutcomes(
   now: Date,
 ): Promise<{ requestOutcomesReconciled: number }> {
@@ -491,6 +515,63 @@ async function reconcileRequestOutcomes(
   } catch (error) {
     console.error("Request-outcome notification reconciliation failed:", describe(error));
     return { requestOutcomesReconciled: 0 };
+  }
+}
+
+async function reconcileRequestSubmissions(
+  now: Date,
+): Promise<{ requestSubmissionsReconciled: number }> {
+  try {
+    const { reconciled } = await reconcileRequestSubmissionNotifications(
+      supabaseAdmin(),
+      now,
+    );
+    return { requestSubmissionsReconciled: reconciled };
+  } catch (error) {
+    console.error("Request-submission notification reconciliation failed:", describe(error));
+    return { requestSubmissionsReconciled: 0 };
+  }
+}
+
+async function reconcileRefundDecisions(
+  now: Date,
+): Promise<{ refundDecisionsReconciled: number }> {
+  try {
+    const { reconciled } = await reconcileRefundDecisionNotifications(
+      supabaseAdmin(),
+      now,
+    );
+    return { refundDecisionsReconciled: reconciled };
+  } catch (error) {
+    console.error("Refund-decision notification reconciliation failed:", describe(error));
+    return { refundDecisionsReconciled: 0 };
+  }
+}
+
+async function reconcileRefundRequests(
+  now: Date,
+): Promise<{ refundRequestsReconciled: number }> {
+  try {
+    const { reconciled } = await reconcileRefundRequestNotifications(
+      supabaseAdmin(),
+      now,
+    );
+    return { refundRequestsReconciled: reconciled };
+  } catch (error) {
+    console.error("Refund-request notification reconciliation failed:", describe(error));
+    return { refundRequestsReconciled: 0 };
+  }
+}
+
+async function reconcilePayoutReceipts(
+  now: Date,
+): Promise<{ payoutReceiptsReconciled: number }> {
+  try {
+    const { reconciled } = await reconcileHostPayoutNotifications(supabaseAdmin(), now);
+    return { payoutReceiptsReconciled: reconciled };
+  } catch (error) {
+    console.error("Payout notification reconciliation failed:", describe(error));
+    return { payoutReceiptsReconciled: 0 };
   }
 }
 

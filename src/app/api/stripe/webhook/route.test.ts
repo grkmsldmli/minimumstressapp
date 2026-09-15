@@ -50,6 +50,7 @@ const effects = vi.hoisted(() => ({
   notifyBookingCreated: vi.fn(),
   notifyRequestApproved: vi.fn(),
   notifyRequestMade: vi.fn(),
+  notifyRequestSubmitted: vi.fn(),
   recordEvent: vi.fn(),
 }));
 
@@ -57,6 +58,7 @@ vi.mock("@/lib/notify/for-booking", () => ({
   notifyBookingCreated: effects.notifyBookingCreated,
   notifyRequestApproved: effects.notifyRequestApproved,
   notifyRequestMade: effects.notifyRequestMade,
+  notifyRequestSubmitted: effects.notifyRequestSubmitted,
   recipientFor: vi.fn(async () => null),
 }));
 
@@ -118,7 +120,14 @@ const paymentSucceeded = (over: Record<string, unknown> = {}) => ({
 const paymentAuthorized = {
   id: "evt_authorized",
   type: "payment_intent.amount_capturable_updated",
-  data: { object: { id: "pi_1" } },
+  data: {
+    object: {
+      id: "pi_1",
+      status: "requires_capture",
+      amount_capturable: 5_000,
+      currency: "usd",
+    },
+  },
 };
 
 function respondWith(...results: DbResult[]): void {
@@ -449,6 +458,11 @@ describe("stripe webhook", () => {
         "bk_1",
         { propagate: true },
       );
+      expect(effects.notifyRequestSubmitted).toHaveBeenCalledWith(
+        expect.anything(),
+        "bk_1",
+        { propagate: true },
+      );
     });
 
     it("uses a replay to repair the request notification without rewriting authorized_at", async () => {
@@ -467,6 +481,11 @@ describe("stripe webhook", () => {
         "bk_1",
         { propagate: true },
       );
+      expect(effects.notifyRequestSubmitted).toHaveBeenCalledWith(
+        expect.anything(),
+        "bk_1",
+        { propagate: true },
+      );
     });
 
     it("returns 500 when the authorization write fails so Stripe retries", async () => {
@@ -477,6 +496,7 @@ describe("stripe webhook", () => {
 
       expect(response.status).toBe(500);
       expect(effects.notifyRequestMade).not.toHaveBeenCalled();
+      expect(effects.notifyRequestSubmitted).not.toHaveBeenCalled();
     });
 
     it("does not notify when no pending upcoming request matches the intent", async () => {
@@ -489,6 +509,25 @@ describe("stripe webhook", () => {
       const response = await post(signed(PLATFORM_SECRET, paymentAuthorized));
 
       expect(response.status).toBe(200);
+      expect(effects.notifyRequestMade).not.toHaveBeenCalled();
+      expect(effects.notifyRequestSubmitted).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ["zero capturable amount", { status: "requires_capture", amount_capturable: 0 }],
+      ["an unheld status", { status: "requires_payment_method", amount_capturable: 5_000 }],
+      ["a non-USD intent", { status: "requires_capture", amount_capturable: 5_000, currency: "cad" }],
+    ])("does not write or notify for %s", async (_label, object) => {
+      vi.stubEnv("STRIPE_WEBHOOK_SECRET", PLATFORM_SECRET);
+
+      const response = await post(signed(PLATFORM_SECRET, {
+        ...paymentAuthorized,
+        data: { object: { id: "pi_1", currency: "usd", ...object } },
+      }));
+
+      expect(response.status).toBe(200);
+      expect(updateChain.update).not.toHaveBeenCalled();
+      expect(effects.notifyRequestSubmitted).not.toHaveBeenCalled();
       expect(effects.notifyRequestMade).not.toHaveBeenCalled();
     });
   });

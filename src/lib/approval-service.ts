@@ -69,7 +69,8 @@ export async function answerRequest(
   if (
     booking.status !== "upcoming" ||
     booking.cancelled_at !== null ||
-    booking.financial_resolution_state !== "not_required"
+    booking.financial_resolution_state !== "not_required" ||
+    booking.active_money_operation_id !== null
   ) {
     throw new BookingError("This request is no longer open", 409);
   }
@@ -121,6 +122,7 @@ export async function answerRequest(
       .eq("status", "upcoming")
       .is("cancelled_at", null)
       .eq("financial_resolution_state", "not_required")
+      .is("active_money_operation_id", null)
       .select(FINANCIAL_RESOLUTION_SELECT);
     if (answerError) throw answerError;
     if (!answered?.length) return;
@@ -205,6 +207,7 @@ async function closeRequest(
     .eq("status", "upcoming")
     .is("cancelled_at", null)
     .eq("financial_resolution_state", "not_required")
+    .is("active_money_operation_id", null)
     .select(FINANCIAL_RESOLUTION_SELECT);
   if (closeError) throw closeError;
   if (!closed?.length) return false;
@@ -253,7 +256,8 @@ export async function expireStaleRequests(
     .eq("approval_state", "pending")
     .eq("status", "upcoming")
     .is("cancelled_at", null)
-    .eq("financial_resolution_state", "not_required");
+    .eq("financial_resolution_state", "not_required")
+    .is("active_money_operation_id", null);
   if (error) throw error;
 
   let expired = 0;
@@ -304,7 +308,8 @@ export async function remindWaitingHosts(
     .eq("approval_state", "pending")
     .eq("status", "upcoming")
     .is("cancelled_at", null)
-    .eq("financial_resolution_state", "not_required");
+    .eq("financial_resolution_state", "not_required")
+    .is("active_money_operation_id", null);
   if (error) throw error;
 
   let reminded = 0;

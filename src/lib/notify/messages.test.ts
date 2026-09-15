@@ -220,6 +220,29 @@ describe("money", () => {
   });
 });
 
+describe("lifecycle receipts", () => {
+  it("describes a submitted request as held, not charged, with a deadline and no action", () => {
+    const message = render("request_submitted", {
+      ...FULL,
+      deadline: "Monday, Sep 14 at 4:00 PM PDT",
+    });
+
+    expect(message.body).toContain("temporary hold for $54.00");
+    expect(message.body).toContain("authorization, not a charge");
+    expect(message.body).toContain("Monday, Sep 14 at 4:00 PM PDT");
+    expect(message.body).toContain("No action is needed from you");
+  });
+
+  it("describes a host transfer without claiming it reached the bank", () => {
+    const message = render("host_payout_sent", FULL);
+
+    expect(message.body).toContain("sent to your Stripe connected balance");
+    expect(message.body).toContain("not a bank deposit");
+    expect(message.body).toMatch(/arrival time varies by bank and account/i);
+    expect(message.body).not.toMatch(/arrived|deposited|reached your bank/i);
+  });
+});
+
 describe("suspension wording", () => {
   /**
    * The policy is that existing bookings are always honoured. If the message

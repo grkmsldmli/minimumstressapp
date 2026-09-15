@@ -20,6 +20,7 @@ const PRESENTATION = {
   booking_confirmed: confirmation("Confirmed", "View your booking"),
   host_new_booking: confirmation("Booked", "View the booking"),
   host_new_request: attention("Action needed", "Review the request"),
+  request_submitted: information("Request sent", "View your request"),
   host_request_reminder: attention("Awaiting response", "Review the request"),
   request_approved: confirmation("Approved", "View your booking"),
   request_declined: neutral("Not approved", "Open Minimum Stress"),
@@ -30,6 +31,7 @@ const PRESENTATION = {
   cancelled_by_host: danger("Studio cancellation", "View your bookings"),
   reliability_warning: attention("Account notice", "Review your account"),
   reliability_suspended: danger("Bookings paused", "Review your account"),
+  host_payout_sent: confirmation("Sent to Stripe", "View payouts", "/host/payouts"),
   payout_failed: danger("Action needed", "Update payout details"),
   safety_escalation: danger("Urgent review", "Open the safety queue", "/admin/trust"),
   account_change_requested: attention("Review needed", "Open the request", "/admin/trust"),
@@ -172,6 +174,7 @@ function detailsFor(
     case "booking_confirmed":
     case "host_new_booking":
     case "host_new_request":
+    case "request_submitted":
     case "host_request_reminder":
     case "request_approved":
     case "request_declined":
@@ -186,7 +189,11 @@ function detailsFor(
     case "claim_decided":
       add("Space", context.spaceName);
       add("When", context.when);
-      if (kind === "host_new_request" || kind === "host_request_reminder") {
+      if (
+        kind === "host_new_request" ||
+        kind === "request_submitted" ||
+        kind === "host_request_reminder"
+      ) {
         add("Purpose", context.purpose);
         add("People", context.attendees);
         add("Decision by", context.deadline);
@@ -199,6 +206,12 @@ function detailsFor(
       } else {
         add("Amount", money(context.amountCents));
       }
+      return rows;
+
+    case "host_payout_sent":
+      add("Space", context.spaceName);
+      add("Session", context.when);
+      add("Sent to Stripe", money(context.amountCents));
       return rows;
 
     case "access_code_ready":

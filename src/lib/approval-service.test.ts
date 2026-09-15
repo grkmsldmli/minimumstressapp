@@ -41,6 +41,7 @@ interface Row {
   financial_resolution_state: string;
   financial_resolution_attempts: number;
   financial_resolution_lease_token: string | null;
+  active_money_operation_id: string | null;
   stripe_payment_intent_id: string | null;
   spaces: { host_id: string };
 }
@@ -56,6 +57,7 @@ const row = (over: Partial<Row> = {}): Row => ({
   financial_resolution_state: "not_required",
   financial_resolution_attempts: 0,
   financial_resolution_lease_token: null,
+  active_money_operation_id: null,
   stripe_payment_intent_id: "pi_1",
   spaces: { host_id: HOST },
   ...over,
@@ -246,6 +248,24 @@ describe("a host approving", () => {
     ).rejects.toMatchObject({ status: 409 });
     expect(events).toEqual([]);
   });
+
+  it("cannot race an active booking-money operation", async () => {
+    const { db, events } = fakeDb([
+      row({ active_money_operation_id: "money-op-1" }),
+    ]);
+
+    await expect(
+      answerRequest(db, fakeStripe(events), "bk-1", HOST, "approve", null, NOW),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(events).toEqual([]);
+  });
+
+  it("guards the approval write against a cancellation claimed after the read", async () => {
+    const { db, events, writes } = fakeDb([row()]);
+    await answerRequest(db, fakeStripe(events), "bk-1", HOST, "approve", null, NOW);
+
+    expect(writes[0].guards.active_money_operation_id).toBeNull();
+  });
 });
 
 describe("a host declining", () => {
@@ -317,6 +337,24 @@ describe("a host declining", () => {
     expect(existing.cancelled_by).toBe("practitioner");
     expect(events).toEqual([]);
   });
+
+  it("cannot decline while a booking-money operation owns the row", async () => {
+    const { db, events } = fakeDb([
+      row({ active_money_operation_id: "money-op-1" }),
+    ]);
+
+    await expect(
+      answerRequest(db, fakeStripe(events), "bk-1", HOST, "decline", null, NOW),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(events).toEqual([]);
+  });
+
+  it("guards the decline write against a cancellation claimed after the read", async () => {
+    const { db, events, writes } = fakeDb([row()]);
+    await answerRequest(db, fakeStripe(events), "bk-1", HOST, "decline", null, NOW);
+
+    expect(writes[0].guards.active_money_operation_id).toBeNull();
+  });
 });
 
 describe("the sweep", () => {
@@ -333,6 +371,19 @@ describe("the sweep", () => {
 
   it("leaves one that still has time", async () => {
     const { db, events } = fakeDb([row()]);
+    const { expired } = await expireStaleRequests(db, fakeStripe(events), NOW);
+
+    expect(expired).toBe(0);
+    expect(events).toEqual([]);
+  });
+
+  it("does not expire a request owned by a booking-money operation", async () => {
+    const stale = row({
+      created_at: new Date(NOW.getTime() - 30 * HOUR).toISOString(),
+      active_money_operation_id: "money-op-1",
+    });
+    const { db, events } = fakeDb([stale]);
+
     const { expired } = await expireStaleRequests(db, fakeStripe(events), NOW);
 
     expect(expired).toBe(0);

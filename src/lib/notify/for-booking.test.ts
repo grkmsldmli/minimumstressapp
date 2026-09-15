@@ -8,9 +8,14 @@ vi.mock("./send", () => ({ notify }));
 import {
   notifyBookingCreated,
   notifyCancellation,
+  notifyHostPayoutSent,
   notifyRequestMade,
+  notifyRequestSubmitted,
+  reconcileBookingConfirmationNotifications,
   reconcileCancellationNotifications,
+  reconcileHostPayoutNotifications,
   reconcileRequestOutcomeNotifications,
+  reconcileRequestSubmissionNotifications,
 } from "./for-booking";
 
 const BOOKING = {
@@ -23,9 +28,15 @@ const BOOKING = {
   access_code: "4821",
   cancelled_by: "practitioner",
   captured_at: "2026-09-14T12:00:00.000Z",
-  authorized_at: null,
+  authorized_at: "2026-09-14T12:01:00.000Z",
+  cancelled_at: null,
   refunded_cents: 5699,
   financial_resolution_state: "resolved",
+  created_at: "2026-09-14T12:00:00.000Z",
+  status: "upcoming",
+  approval_state: "pending",
+  host_paid_at: null,
+  stripe_transfer_id: null,
   spaces: {
     name: "Willow Room",
     host_id: "host-1",
@@ -38,6 +49,7 @@ const BOOKING = {
 function fakeAdmin(
   reconcileRows: Record<string, unknown>[] = [],
   bookingRow: Record<string, unknown> = BOOKING,
+  profileOverrides: Record<string, unknown> = {},
 ) {
   const statusFilters: string[][] = [];
   const from = vi.fn((table: string) => {
@@ -53,6 +65,7 @@ function fakeAdmin(
         return chain;
       }),
       not: vi.fn(() => chain),
+      is: vi.fn(() => chain),
       gte: vi.fn(() => chain),
       order: vi.fn(() => chain),
       limit: vi.fn(async () => ({ data: reconcileRows, error: null })),
@@ -60,7 +73,7 @@ function fakeAdmin(
         if (table === "bookings") {
           const reconciled = reconcileRows.find((row) => row.id === userId);
           return {
-            data: reconciled ? { ...BOOKING, ...reconciled } : bookingRow,
+            data: reconciled ? { ...bookingRow, ...reconciled } : bookingRow,
             error: null,
           };
         }
@@ -73,6 +86,7 @@ function fakeAdmin(
               notify_sms: false,
               notify_bookings: true,
               notify_payouts: true,
+              ...profileOverrides,
             },
             error: null,
           };
@@ -85,15 +99,7 @@ function fakeAdmin(
 
   const admin = {
     from,
-    rpc: vi.fn(async (name: string) => ({
-      data: [
-        "list_cancellation_notification_gaps",
-        "list_request_outcome_notification_gaps",
-      ].includes(name)
-        ? reconcileRows
-        : null,
-      error: null,
-    })),
+    rpc: vi.fn(async () => ({ data: reconcileRows, error: null })),
     auth: {
       admin: {
         getUserById: vi.fn(async (id: string) => ({
@@ -271,6 +277,141 @@ describe("cancellation notifications", () => {
   });
 });
 
+describe("request-submitted receipt", () => {
+  const HELD_REQUEST = {
+    ...BOOKING,
+    captured_at: null,
+    cancelled_by: null,
+    refunded_cents: null,
+    financial_resolution_state: "not_required",
+  };
+
+  it("goes only to the practitioner after durable Stripe authorization", async () => {
+    const { admin } = fakeAdmin([], HELD_REQUEST);
+
+    await notifyRequestSubmitted(admin, BOOKING.id);
+
+    expect(notify).toHaveBeenCalledTimes(1);
+    expect(notify).toHaveBeenCalledWith(expect.objectContaining({
+      kind: "request_submitted",
+      subjectId: BOOKING.id,
+      bookingId: BOOKING.id,
+      recipient: expect.objectContaining({ userId: "practitioner-1" }),
+      context: expect.objectContaining({ amountCents: 5900, deadline: expect.any(String) }),
+    }));
+  });
+
+  it.each([
+    ["no proven hold", { authorized_at: null }],
+    ["a decided request", { approval_state: "approved" }],
+    ["a closed request", { status: "cancelled_by_host" }],
+  ])("sends nothing for %s", async (_label, patch) => {
+    const { admin } = fakeAdmin([], { ...HELD_REQUEST, ...patch });
+
+    await notifyRequestSubmitted(admin, BOOKING.id);
+
+    expect(notify).not.toHaveBeenCalled();
+  });
+
+  it("reconciles a crash between durable hold state and the two independent claims", async () => {
+    const { admin } = fakeAdmin([{ id: BOOKING.id }], HELD_REQUEST);
+
+    await expect(reconcileRequestSubmissionNotifications(admin)).resolves.toEqual({
+      reconciled: 1,
+    });
+
+    expect(notify.mock.calls.map(([call]) => call.kind)).toEqual([
+      "request_submitted",
+      "host_new_request",
+    ]);
+    expect(notify.mock.calls.map(([call]) => call.subjectId)).toEqual([
+      BOOKING.id,
+      BOOKING.id,
+    ]);
+  });
+});
+
+describe("host payout receipt", () => {
+  const PAID = {
+    ...BOOKING,
+    status: "completed",
+    host_paid_at: "2026-09-14T18:00:00.000Z",
+    stripe_transfer_id: "tr_123",
+  };
+
+  it("sends only after both durable payout fields exist", async () => {
+    const { admin } = fakeAdmin([], PAID);
+
+    await notifyHostPayoutSent(admin, BOOKING.id);
+
+    expect(notify).toHaveBeenCalledWith(expect.objectContaining({
+      kind: "host_payout_sent",
+      subjectId: BOOKING.id,
+      bookingId: BOOKING.id,
+      recipient: expect.objectContaining({ userId: "host-1" }),
+      context: expect.objectContaining({ amountCents: 4500 }),
+    }));
+  });
+
+  it.each([
+    ["no confirmed transfer", { stripe_transfer_id: null }],
+    ["no durable paid timestamp", { host_paid_at: null }],
+  ])("sends nothing with %s", async (_label, patch) => {
+    const { admin } = fakeAdmin([], { ...PAID, ...patch });
+
+    await notifyHostPayoutSent(admin, BOOKING.id);
+
+    expect(notify).not.toHaveBeenCalled();
+  });
+
+  it("honors the host payout-alert preference", async () => {
+    const { admin } = fakeAdmin([], PAID, { notify_payouts: false });
+
+    await notifyHostPayoutSent(admin, BOOKING.id);
+
+    expect(notify).not.toHaveBeenCalled();
+  });
+
+  it("reconciles the crash after payout state commits but before the outbox claim", async () => {
+    const { admin } = fakeAdmin([{ id: BOOKING.id }], PAID);
+
+    await expect(reconcileHostPayoutNotifications(admin)).resolves.toEqual({
+      reconciled: 1,
+    });
+    expect(notify).toHaveBeenCalledWith(expect.objectContaining({
+      kind: "host_payout_sent",
+      subjectId: BOOKING.id,
+    }));
+  });
+});
+
+describe("booking confirmation notification repair", () => {
+  it("replays the idempotent two-sided notifier for a captured direct-booking gap", async () => {
+    const { admin } = fakeAdmin([{ id: BOOKING.id }], {
+      ...BOOKING,
+      approval_state: "not_required",
+    });
+    const now = new Date("2026-09-15T12:00:00.000Z");
+
+    await expect(
+      reconcileBookingConfirmationNotifications(admin, now),
+    ).resolves.toEqual({ reconciled: 1 });
+
+    expect(admin.rpc).toHaveBeenCalledWith(
+      "list_booking_confirmation_notification_gaps",
+      {
+        p_since: "2026-09-08T12:00:00.000Z",
+        p_now: "2026-09-15T12:00:00.000Z",
+        p_limit: 100,
+      },
+    );
+    expect(notify.mock.calls.map(([call]) => call.kind)).toEqual([
+      "booking_confirmed",
+      "host_new_booking",
+    ]);
+  });
+});
+
 describe("strict webhook notification paths", () => {
   function failingAdmin(): SupabaseClient {
     const failure = new Error("database unavailable");
@@ -294,6 +435,12 @@ describe("strict webhook notification paths", () => {
   it("surfaces a request loader error in strict mode", async () => {
     await expect(
       notifyRequestMade(failingAdmin(), "booking-1", { propagate: true }),
+    ).rejects.toThrow("database unavailable");
+  });
+
+  it("surfaces a request-submitted loader error in strict mode", async () => {
+    await expect(
+      notifyRequestSubmitted(failingAdmin(), "booking-1", { propagate: true }),
     ).rejects.toThrow("database unavailable");
   });
 });

@@ -151,7 +151,7 @@ describe("releaseHold", () => {
     retrieve.mockRejectedValue(new Error("retrieve response contained customer_private"));
 
     await expect(releaseHold("pi_1", "booking_request_release_bk_1")).rejects.toThrow(
-      new Error("Stripe could not release the payment hold"),
+      "Stripe could not release the payment hold",
     );
   });
 });

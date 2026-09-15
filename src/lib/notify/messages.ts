@@ -23,6 +23,7 @@ export const NOTIFICATION_KINDS = [
   "booking_confirmed",
   "host_new_booking",
   "host_new_request",
+  "request_submitted",
   "host_request_reminder",
   "request_approved",
   "request_declined",
@@ -33,6 +34,7 @@ export const NOTIFICATION_KINDS = [
   "cancelled_by_host",
   "reliability_warning",
   "reliability_suspended",
+  "host_payout_sent",
   "payout_failed",
   "safety_escalation",
   "account_change_requested",
@@ -250,6 +252,25 @@ function renderPlain(kind: NotificationKind, context: MessageContext): Message {
             ? `Approve or decline in the app. If nobody answers by ${context.deadline}, the request expires on its own and the hour goes back on your calendar.`
             : `Approve or decline in the app.`,
           `Their card is held for this, not charged. Nothing is taken unless you approve.`,
+          SIGN_OFF,
+        ),
+        sms: null,
+      };
+
+    /** A truthful receipt for a request backed by a real card hold. */
+    case "request_submitted":
+      return {
+        subject: `Request sent: ${spaceName}, ${when}`,
+        body: lines(
+          greeting(name),
+          `Your request for ${spaceName} on ${when} has been sent to the host.`,
+          context.amountCents !== undefined
+            ? `We placed a temporary hold for ${formatCents(context.amountCents)} on your card. This is an authorization, not a charge; your bank may show it as pending.`
+            : `We placed a temporary authorization on your card. This is a hold, not a charge; your bank may show it as pending.`,
+          context.deadline
+            ? `The host has until ${context.deadline} to approve or decline. If they do not answer by then, the request expires and the hold is released.`
+            : `If the host declines or the request expires, the hold is released.`,
+          `No action is needed from you. We will email you when the host answers.`,
           SIGN_OFF,
         ),
         sms: null,
@@ -647,6 +668,27 @@ function renderPlain(kind: NotificationKind, context: MessageContext): Message {
           "Waiting on a decision:",
           String(context.items ?? ""),
           `The queue is at ${context.queueUrl ?? "/admin"}.`,
+          SIGN_OFF,
+        ),
+        sms: null,
+      };
+
+    /**
+     * A transfer reaches Stripe balance before Stripe pays a bank. Naming the
+     * completed leg avoids promising a bank deposit we have not observed.
+     */
+    case "host_payout_sent":
+      return {
+        subject: context.when
+          ? `Earnings sent to Stripe: ${spaceName}, ${when}`
+          : `Earnings sent to Stripe: ${spaceName}`,
+        body: lines(
+          greeting(name),
+          context.amountCents !== undefined
+            ? `${formatCents(context.amountCents)} for your ${spaceName} session on ${when} was sent to your Stripe connected balance.`
+            : `Your earnings for the ${spaceName} session on ${when} were sent to your Stripe connected balance.`,
+          `This confirms the transfer to Stripe, not a bank deposit. Stripe sends funds to your bank according to your payout schedule, and arrival time varies by bank and account.`,
+          `No action is needed. You can track the bank payout in Stripe.`,
           SIGN_OFF,
         ),
         sms: null,

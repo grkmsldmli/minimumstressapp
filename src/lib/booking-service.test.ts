@@ -57,6 +57,7 @@ interface DbCall {
 function fakeAdmin(options: FakeOptions = {}) {
   const calls: DbCall[] = [];
   const events: string[] = [];
+  const bookingUpdates: Record<string, unknown>[] = [];
 
   const resultFor = (
     table: string,
@@ -131,6 +132,9 @@ function fakeAdmin(options: FakeOptions = {}) {
     operation: DbCall["operation"],
     payload?: Record<string, unknown>,
   ) => {
+    if (table === "bookings" && operation === "update" && payload) {
+      bookingUpdates.push(payload);
+    }
     let columns: string | undefined;
     const complete = (terminal: DbCall["terminal"]) => {
       calls.push({ table, operation, columns, terminal });
@@ -165,6 +169,7 @@ function fakeAdmin(options: FakeOptions = {}) {
   return {
     calls,
     events,
+    bookingUpdates,
     admin: {
       from: (table: string) => ({
         delete: () => builder(table, "delete"),
@@ -232,6 +237,21 @@ describe("createBooking payment association", () => {
       columns: "id",
       terminal: "single",
     });
+  });
+
+  it("does not mark a request authorized before Stripe confirms a real card hold", async () => {
+    serviceMocks.planBooking.mockReturnValueOnce({
+      ok: true,
+      money: MONEY,
+      isInstant: false,
+      needsApproval: true,
+    });
+    const { admin, bookingUpdates, events } = fakeAdmin();
+
+    await createBooking(admin, fakeStripe(events), "pr_1", request, NOW);
+
+    expect(bookingUpdates).toContainEqual({ stripe_payment_intent_id: "pi_1" });
+    expect(bookingUpdates.some((patch) => "authorized_at" in patch)).toBe(false);
   });
 
   it("cancels the PaymentIntent before deleting the booking when association fails", async () => {

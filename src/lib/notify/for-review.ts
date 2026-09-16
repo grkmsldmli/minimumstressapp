@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { REVIEW_WINDOW_DAYS } from "../reviews";
+import { BLIND_PERIOD_DAYS, REVIEW_WINDOW_DAYS } from "../reviews";
 import { formatWhen, recipientFor } from "./for-booking";
 import { notify } from "./send";
 
@@ -120,4 +120,141 @@ export async function notifyReviewRequests(
   }
 
   return { prompted, reminded };
+}
+
+interface ReviewLifecycleRow {
+  id: string;
+  booking_id: string;
+  author_id: string;
+  role: "practitioner" | "host";
+  created_at: string;
+}
+
+export interface ReviewLifecycleAction {
+  kind: "review_submitted" | "counterpart_reviewed" | "review_published";
+  recipientId: string;
+  subjectId: string;
+}
+
+/**
+ * The lifecycle implied by durable review rows.
+ *
+ * This is deliberately reconstructable: the API calls it for speed, and cron
+ * calls it for recovery. Dedupe keys make both routes converge on one email and
+ * one push per semantic event.
+ */
+export function reviewLifecycleActions(
+  reviews: ReviewLifecycleRow[],
+  now: Date,
+): ReviewLifecycleAction[] {
+  const ordered = [...reviews].sort(
+    (a, b) =>
+      new Date(a.created_at).getTime() - new Date(b.created_at).getTime() ||
+      a.id.localeCompare(b.id),
+  );
+  const actions: ReviewLifecycleAction[] = ordered.map((review) => ({
+    kind: "review_submitted",
+    recipientId: review.author_id,
+    subjectId: `${review.id}:author`,
+  }));
+
+  if (ordered.length >= 2) {
+    const first = ordered[0];
+    actions.push({
+      kind: "counterpart_reviewed",
+      recipientId: first.author_id,
+      subjectId: `${first.booking_id}:${first.role}`,
+    });
+  } else if (ordered.length === 1) {
+    const first = ordered[0];
+    const releasesAt =
+      new Date(first.created_at).getTime() + BLIND_PERIOD_DAYS * DAY_MS;
+    if (now.getTime() >= releasesAt) {
+      actions.push({
+        kind: "review_published",
+        recipientId: first.author_id,
+        subjectId: first.id,
+      });
+    }
+  }
+
+  return actions;
+}
+
+/** Recoverable review receipts and blind-release notifications. */
+export async function reconcileReviewLifecycleNotifications(
+  admin: SupabaseClient,
+  now = new Date(),
+  bookingId?: string,
+): Promise<{ submitted: number; counterpart: number; published: number }> {
+  const earliest = new Date(now.getTime() - (REVIEW_WINDOW_DAYS + 1) * DAY_MS).toISOString();
+  let query = admin
+    .from("reviews")
+    .select("id, booking_id, author_id, role, created_at")
+    .gte("created_at", earliest)
+    .order("created_at", { ascending: true });
+  if (bookingId) query = query.eq("booking_id", bookingId);
+
+  const { data, error } = await query.limit(400);
+  if (error) throw error;
+  const reviews = (data ?? []) as ReviewLifecycleRow[];
+  if (reviews.length === 0) return { submitted: 0, counterpart: 0, published: 0 };
+
+  const ids = [...new Set(reviews.map((review) => review.booking_id))];
+  const { data: bookingRows, error: bookingError } = await admin
+    .from("bookings")
+    .select("id, starts_at, spaces!inner(name, timezone)")
+    .in("id", ids);
+  if (bookingError) throw bookingError;
+  const bookingById = new Map(
+    ((bookingRows ?? []) as unknown as Array<{
+      id: string;
+      starts_at: string;
+      spaces: { name: string; timezone: string };
+    }>).map((booking) => [booking.id, booking]),
+  );
+
+  const grouped = new Map<string, ReviewLifecycleRow[]>();
+  for (const review of reviews) {
+    const group = grouped.get(review.booking_id) ?? [];
+    group.push(review);
+    grouped.set(review.booking_id, group);
+  }
+
+  const result = { submitted: 0, counterpart: 0, published: 0 };
+  let failed = false;
+  for (const [id, group] of grouped) {
+    const booking = bookingById.get(id);
+    if (!booking) continue;
+    const context = {
+      spaceName: booking.spaces.name,
+      when: formatWhen(new Date(booking.starts_at), booking.spaces.timezone),
+    };
+
+    for (const action of reviewLifecycleActions(group, now)) {
+      try {
+        const recipient = await recipientFor(admin, action.recipientId);
+        if (!recipient) continue;
+        const outcome = await notify({
+          kind: action.kind,
+          recipient,
+          subjectId: action.subjectId,
+          bookingId: id,
+          context,
+        });
+        if (!Object.values(outcome).some((value) => value === "sent" || value === "queued")) {
+          continue;
+        }
+        if (action.kind === "review_submitted") result.submitted += 1;
+        else if (action.kind === "counterpart_reviewed") result.counterpart += 1;
+        else result.published += 1;
+      } catch (error) {
+        failed = true;
+        console.error(`Review lifecycle notification failed for ${id}:`, error);
+      }
+    }
+  }
+
+  if (failed) throw new Error("One or more review lifecycle notifications could not be queued");
+  return result;
 }

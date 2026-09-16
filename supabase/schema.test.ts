@@ -101,7 +101,8 @@ describe("migrations apply cleanly", () => {
       // +1 in 0079: listing_closure_requests.
       // +2 in 20260914190221: signed Resend events and correlated probes.
       // +1 in 20260915025303: the private booking money-operation journal.
-      expect(tables.rows).toHaveLength(33);
+      // +1 in 20260916050000: the message notification transactional outbox.
+      expect(tables.rows).toHaveLength(34);
     } finally {
       await fresh.close();
     }
@@ -179,6 +180,8 @@ describe("migrations apply cleanly", () => {
       "founding_practitioners",
       // Host-requested permanent closures, resolved by Command Center (0079).
       "listing_closure_requests",
+      // Created atomically with each message; providers are handled afterwards.
+      "message_notification_jobs",
       // Booking-chat abuse reports for staff review (App Store 1.2, 0067).
       "message_reports",
       "messages",

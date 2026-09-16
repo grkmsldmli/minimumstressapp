@@ -1,9 +1,10 @@
-import type { NextRequest } from "next/server";
+import { after, type NextRequest } from "next/server";
 
 import { LIMITS, check, identify, tooManyRequests } from "@/lib/api/rate-limit";
 import { handled, jsonError, requireUser } from "@/lib/api/session";
 import { flag, integer, jsonObject, optionalString, uuid } from "@/lib/api/validate";
 import { submitReview, type SubmitFailure } from "@/lib/review-service";
+import { reconcileReviewLifecycleNotifications } from "@/lib/notify/for-review";
 import { supabaseAdmin } from "@/lib/supabase/server";
 
 /**
@@ -49,6 +50,15 @@ export async function POST(request: NextRequest): Promise<Response> {
     if (!result.ok) {
       return jsonError(explain(result.reason), statusFor(result.reason));
     }
+
+    // The review row is the durable source. This is the immediate attempt;
+    // scheduled reconciliation recreates any missing receipt/release event.
+    const admin = supabaseAdmin();
+    after(() =>
+      reconcileReviewLifecycleNotifications(admin, new Date(), bookingId.value).then(
+        () => undefined,
+      ),
+    );
 
     /**
      * Whether it escalated is deliberately not reported back.

@@ -26,12 +26,14 @@ end $$;
 
 create schema if not exists auth;
 create schema if not exists storage;
+create schema if not exists realtime;
 
 -- Supabase grants these itself. Without them auth.uid() raises "permission
 -- denied for schema auth" the moment a policy evaluates it, which would make
 -- every policy look like it was denying access for the right reason.
 grant usage on schema auth to anon, authenticated, service_role;
 grant usage on schema storage to anon, authenticated, service_role;
+grant usage on schema realtime to anon, authenticated, service_role;
 grant usage on schema public to anon, authenticated, service_role;
 
 create table auth.users (
@@ -60,6 +62,47 @@ create table storage.objects (
 );
 
 alter table storage.objects enable row level security;
+
+-- Realtime Broadcast is managed by Supabase in production. The chat migration
+-- uses the supported realtime.send() trigger path and an authorization policy
+-- on realtime.messages; these small local equivalents let the SQL suites prove
+-- the payload and participant boundary without pretending raw Postgres Changes
+-- are safe for a table that contains original_body.
+create table realtime.messages (
+  id bigint generated always as identity primary key,
+  topic text not null,
+  extension text not null default 'broadcast',
+  event text not null,
+  payload jsonb not null,
+  private boolean not null default true,
+  inserted_at timestamptz not null default now()
+);
+
+alter table realtime.messages enable row level security;
+grant select on realtime.messages to authenticated, service_role;
+
+create or replace function realtime.topic()
+returns text
+language sql
+stable
+as $$
+  select current_setting('realtime.topic', true);
+$$;
+
+create or replace function realtime.send(
+  payload jsonb,
+  event text,
+  topic text,
+  private boolean default true
+)
+returns void
+language sql
+security definer
+set search_path = ''
+as $$
+  insert into realtime.messages(topic, extension, event, payload, private)
+  values (topic, 'broadcast', event, payload, private);
+$$;
 
 -- Splits an object path into its folder segments, dropping the trailing
 -- filename, so "space/{id}/doc.pdf" yields {space, id}. Mirrors Supabase's own

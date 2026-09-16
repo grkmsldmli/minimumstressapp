@@ -193,6 +193,27 @@ describe("notification outbox", () => {
     expect(state.sendEmail).toHaveBeenCalledTimes(1);
   });
 
+  it("gives actionable chat and review emails an opaque signed-in destination", async () => {
+    await notify({
+      kind: "review_prompt",
+      recipient: { userId: "user-1", email: "user@example.com" },
+      subjectId: "booking-1:practitioner:prompt",
+      bookingId: "booking-1",
+      context: { spaceName: "Willow", role: "practitioner" },
+    });
+
+    const row = state.inserted[0];
+    const snapshot = row.message_snapshot as { message: { html: string } };
+    expect(snapshot.message.html).toContain("open=notification");
+    expect(snapshot.message.html).toContain(String(row.id));
+    expect(snapshot.message.html).not.toContain("booking-1");
+    expect(state.sendEmail).toHaveBeenCalledWith(
+      "user@example.com",
+      expect.objectContaining({ html: expect.stringContaining(String(row.id)) }),
+      expect.any(Object),
+    );
+  });
+
   it("sends an opaque privacy-safe push immediately before email", async () => {
     state.externalId = `ms_${"a".repeat(43)}`;
 
@@ -239,11 +260,15 @@ describe("notification outbox", () => {
     expect(state.sendPush).toHaveBeenCalledTimes(1);
     expect(state.sendPush).toHaveBeenCalledWith(
       state.externalId,
-      expect.objectContaining({ title: "Access details ready" }),
+      expect.objectContaining({
+        title: "Access details ready",
+        url: expect.stringMatching(/open=notification/),
+      }),
       {
         idempotencyKey: oneSignalPushIdempotencyKey(
           "access_code_ready:private-booking-id:push",
         ),
+        navigationToken: state.inserted[0].id,
       },
     );
     expect(state.sendEmail).toHaveBeenCalledTimes(1);
@@ -284,7 +309,7 @@ describe("notification outbox", () => {
     expect(state.sendPush).toHaveBeenCalledWith(
       `ms_${"b".repeat(43)}`,
       push,
-      { idempotencyKey: key },
+      { idempotencyKey: key, navigationToken: "notification-push-1" },
     );
     expect(state.rpc).toHaveBeenLastCalledWith(
       "record_notification_acceptance",

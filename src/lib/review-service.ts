@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { safetyRecipient } from "./admin/access";
-import { redact } from "./message-redaction";
+import { offPlatformRequest, redact } from "./message-redaction";
 import { notify } from "./notify/send";
 import {
   type HostReview,
@@ -95,6 +95,9 @@ export async function submitReview(
   if (!role) return { ok: false, reason: "not_your_booking" };
 
   const subjectId = role === "practitioner" ? hostId! : booking.practitioner_id;
+  if (!hostId || hostId === booking.practitioner_id || subjectId === authorId) {
+    return { ok: false, reason: "not_your_booking" };
+  }
 
   const { count, error: countError } = await admin
     .from("reviews")
@@ -119,10 +122,13 @@ export async function submitReview(
   // A room review can become listing content. Contact details have no place in
   // public feedback, and masking them here means no client can bypass that rule.
   // We deliberately do not retain an unredacted review copy.
-  const safeComment = redact(submission.comment.trim().slice(0, 2000)).text
-    .replaceAll("[hidden]", "")
-    .replace(/\s{2,}/g, " ")
-    .trim();
+  const rawComment = submission.comment.trim().slice(0, 2000);
+  const safeComment = offPlatformRequest(rawComment)
+    ? ""
+    : redact(rawComment).text
+        .replaceAll("[hidden]", "")
+        .replace(/\s{2,}/g, " ")
+        .trim();
 
   const { data: inserted, error: insertError } = await admin
     .from("reviews")

@@ -178,6 +178,15 @@ export const LIMITS = {
    */
   message: { limit: 30, windowMs: 60_000 },
 
+  /** Opening/reopening a thread; Realtime and the safe view handle refreshes. */
+  messageRead: { limit: 120, windowMs: 60_000 },
+
+  /** Reporting or blocking is rare; a loop should stop before it floods staff. */
+  messageSafety: { limit: 10, windowMs: 60 * 60_000 },
+
+  /** Public one-click email preference links; generous but not enumerable. */
+  marketingUnsubscribe: { limit: 30, windowMs: 60 * 60_000 },
+
   /**
    * Work coverage mutations — posting a request, cancelling, confirming one.
    * Each fans out into matching and notifications, so it is metered like a

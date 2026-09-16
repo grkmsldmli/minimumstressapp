@@ -80,6 +80,7 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await db.exec(`
+    truncate table realtime.messages;
     truncate table auth.users cascade;
     insert into auth.users (id, email) values
       ('${HOST}', 'host@e.com'), ('${PRAC}', 'prac@e.com'), ('${STRANGER}', 'stranger@e.com');
@@ -234,6 +235,96 @@ describe("new messages only on a confirmed booking", () => {
     await expect(
       rows(message("b1000000-0000-4000-8000-000000000002", CONFIRMED, HOST, "after", null)),
     ).rejects.toThrow(/confirmed booking/i);
+  });
+});
+
+describe("durable delivery and safe realtime signalling", () => {
+  const MESSAGE = "d0000000-0000-4000-8000-000000000001";
+
+  beforeEach(async () => {
+    await rows(message(MESSAGE, CONFIRMED, HOST, "safe visible body", "private original body"));
+  });
+
+  it("creates the notification job in the same insert transaction", async () => {
+    const [job] = await rows<{
+      message_id: string;
+      booking_id: string;
+      sender_id: string;
+      attempts: number;
+    }>(`select message_id::text, booking_id::text, sender_id::text, attempts
+        from message_notification_jobs where message_id = '${MESSAGE}'`);
+
+    expect(job).toEqual({
+      message_id: MESSAGE,
+      booking_id: CONFIRMED,
+      sender_id: HOST,
+      attempts: 0,
+    });
+  });
+
+  it("broadcasts only an opaque refresh hint — never either message body", async () => {
+    const [signal] = await rows<{ topic: string; event: string; payload: Record<string, string> }>(
+      `select topic, event, payload from realtime.messages
+       where payload->>'message_id' = '${MESSAGE}'`,
+    );
+
+    expect(signal).toEqual({
+      topic: `booking:${CONFIRMED}:messages`,
+      event: "message_created",
+      payload: { message_id: MESSAGE },
+    });
+    expect(JSON.stringify(signal)).not.toMatch(/safe visible body|private original body/);
+  });
+
+  it("authorizes the private channel only for the two booking participants", async () => {
+    const readSignal = (userId: string) =>
+      db.transaction(async (tx) => {
+        await tx.exec(`
+          set local role authenticated;
+          select set_config('request.jwt.claim.sub', '${userId}', true);
+          select set_config('realtime.topic', 'booking:${CONFIRMED}:messages', true);
+        `);
+        return (await tx.query(
+          `select payload from realtime.messages where payload->>'message_id' = '${MESSAGE}'`,
+        )).rows;
+      });
+
+    await expect(readSignal(HOST)).resolves.toHaveLength(1);
+    await expect(readSignal(PRAC)).resolves.toHaveLength(1);
+    await expect(readSignal(STRANGER)).resolves.toHaveLength(0);
+  });
+
+  it("keeps the job table unreadable to browser roles", async () => {
+    await expect(
+      asUser(PRAC, `select * from message_notification_jobs where message_id = '${MESSAGE}'`),
+    ).rejects.toThrow(/permission denied/i);
+  });
+
+  it("claims a due job once with a lease", async () => {
+    const claimed = await db.transaction(async (tx) => {
+      await tx.exec(`set local role service_role`);
+      return (await tx.query<{ message_id: string; attempts: number; lease_token: string }>(
+        `select message_id::text, attempts, lease_token::text
+         from claim_message_notification_jobs(
+           '99999999-9999-4999-8999-999999999999', 10, now(), '${MESSAGE}'
+         )`,
+      )).rows;
+    });
+    expect(claimed).toEqual([{
+      message_id: MESSAGE,
+      attempts: 1,
+      lease_token: "99999999-9999-4999-8999-999999999999",
+    }]);
+
+    const second = await db.transaction(async (tx) => {
+      await tx.exec(`set local role service_role`);
+      return (await tx.query(
+        `select * from claim_message_notification_jobs(
+          '88888888-8888-4888-8888-888888888888', 10, now(), '${MESSAGE}'
+        )`,
+      )).rows;
+    });
+    expect(second).toHaveLength(0);
   });
 });
 

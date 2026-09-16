@@ -20,8 +20,20 @@ export interface OneSignalWebApi {
   };
   Notifications?: {
     requestPermission?: () => Promise<void>;
-    addEventListener?: (event: "click", listener: () => void) => void;
-    removeEventListener?: (event: "click", listener: () => void) => void;
+    addEventListener?: (
+      event: "click",
+      listener: (event: OneSignalWebClickEvent) => void,
+    ) => void;
+    removeEventListener?: (
+      event: "click",
+      listener: (event: OneSignalWebClickEvent) => void,
+    ) => void;
+  };
+}
+
+export interface OneSignalWebClickEvent {
+  notification?: {
+    additionalData?: Record<string, unknown>;
   };
 }
 

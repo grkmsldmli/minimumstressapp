@@ -10,8 +10,58 @@ import {
   offPlatformRequest,
   redact,
 } from "@/lib/message-redaction";
-import { notifyNewMessage } from "@/lib/notify/for-booking";
+import { processMessageNotificationJobs } from "@/lib/notify/message-jobs";
 import { supabaseAdmin } from "@/lib/supabase/server";
+
+/**
+ * Small participant-only thread state. Message bodies still come exclusively
+ * from messages_visible; this only lets a composer reflect a block placed on
+ * another device before the user attempts a doomed send.
+ */
+export async function GET(request: NextRequest): Promise<Response> {
+  return handled(async () => {
+    const auth = await requireUser();
+    if ("response" in auth) return auth.response;
+
+    const limited = check("message-read", identify(request, auth.user.id), LIMITS.messageRead);
+    if (!limited.ok) return tooManyRequests(limited);
+
+    const parsed = uuid(
+      { bookingId: request.nextUrl.searchParams.get("bookingId") },
+      "bookingId",
+    );
+    if (!parsed.ok) return jsonError(parsed.reason, 400);
+
+    const admin = supabaseAdmin();
+    const { data, error } = await admin
+      .from("bookings")
+      .select("practitioner_id, spaces(host_id)")
+      .eq("id", parsed.value)
+      .maybeSingle();
+    if (error) throw error;
+
+    const booking = data as unknown as {
+      practitioner_id: string;
+      spaces: { host_id: string } | null;
+    } | null;
+    const hostId = booking?.spaces?.host_id ?? null;
+    if (!booking || (auth.user.id !== booking.practitioner_id && auth.user.id !== hostId)) {
+      return jsonError("We couldn't find that booking.", 404);
+    }
+
+    const { data: block, error: blockError } = await admin
+      .from("blocked_users")
+      .select("blocker_id")
+      .or(
+        `and(blocker_id.eq.${booking.practitioner_id},blocked_id.eq.${hostId}),and(blocker_id.eq.${hostId},blocked_id.eq.${booking.practitioner_id})`,
+      )
+      .limit(1)
+      .maybeSingle();
+    if (blockError) throw blockError;
+
+    return Response.json({ blocked: Boolean(block) });
+  });
+}
 
 /**
  * Sending a message on a booking.
@@ -146,13 +196,17 @@ export async function POST(request: NextRequest): Promise<Response> {
     }
 
     /*
-     * Tell the other side after the response without abandoning the work.
-     * `after` is part of Next's request lifecycle: unlike a floating promise,
-     * the runtime keeps the task alive after the 201 is returned. The message
-     * itself remains the durable source of truth, and the notifier has its own
-     * outbox/idempotency boundary.
+     * The insert trigger already created a durable job in the same transaction.
+     * `after` is only the low-latency attempt; if the runtime dies at any point,
+     * the frequent worker claims the same job later. The notification outbox is
+     * independently deduplicated by message id, so even a crash between enqueue
+     * and completion cannot produce a second semantic alert.
      */
-    after(() => notifyNewMessage(admin, bookingId.value, auth.user.id, inserted.id));
+    after(() =>
+      processMessageNotificationJobs(admin, { limit: 1, messageId: inserted.id }).then(
+        () => undefined,
+      ),
+    );
 
     return Response.json(
       {

@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
   nativeOneSignal: vi.fn(),
   nativePushConsentGiven: vi.fn(),
   currentPushIdentity: vi.fn(),
-  requestNotificationsScreen: vi.fn(),
+  requestNotificationDestination: vi.fn(),
   withWebOneSignal: vi.fn(),
   onAuthStateChange: vi.fn(),
   unsubscribe: vi.fn(),
@@ -28,7 +28,8 @@ vi.mock("@/lib/onesignal/consent", () => ({
   nativePushConsentGiven: mocks.nativePushConsentGiven,
 }));
 vi.mock("@/lib/onesignal/navigation", () => ({
-  requestNotificationsScreen: mocks.requestNotificationsScreen,
+  PUSH_RECEIVED_EVENT: "minimumstress:push-received",
+  requestNotificationDestination: mocks.requestNotificationDestination,
 }));
 vi.mock("@/lib/onesignal/web", () => ({
   withWebOneSignal: mocks.withWebOneSignal,
@@ -166,6 +167,44 @@ describe("OneSignalInit privacy gate", () => {
     await waitFor(() => expect(native.login).toHaveBeenCalledWith("ms_next_user"));
     expect(native.logout.mock.invocationCallOrder[0])
       .toBeLessThan(native.login.mock.invocationCallOrder[0]);
+  });
+
+  it("routes a native tap by opaque token and keeps foreground OS presentation", async () => {
+    mocks.isNativeApp.mockReturnValue(true);
+    const listeners = new Map<string, (event: unknown) => void>();
+    const native = {
+      setConsentGiven: vi.fn(),
+      login: vi.fn().mockResolvedValue(undefined),
+      logout: vi.fn().mockResolvedValue(undefined),
+      Notifications: {
+        hasPermission: vi.fn().mockResolvedValue(false),
+        addEventListener: vi.fn((event: string, listener: (value: unknown) => void) => {
+          listeners.set(event, listener);
+        }),
+        removeEventListener: vi.fn(),
+      },
+      User: { pushSubscription: { optIn: vi.fn() } },
+    };
+    mocks.nativeOneSignal.mockResolvedValue(native);
+
+    render(<OneSignalInit />);
+    await waitFor(() => expect(listeners.has("click")).toBe(true));
+    expect(listeners.has("foregroundWillDisplay")).toBe(true);
+
+    const token = "182d1e8f-14d2-8dc1-a72b-59c562bf88a7";
+    listeners.get("click")?.({
+      notification: {
+        additionalData: {
+          minimumstress_destination: "notification",
+          minimumstress_notification_id: token,
+        },
+      },
+    });
+    expect(mocks.requestNotificationDestination).toHaveBeenCalledWith(token);
+
+    const preventDefault = vi.fn();
+    listeners.get("foregroundWillDisplay")?.({ preventDefault });
+    expect(preventDefault).not.toHaveBeenCalled();
   });
 
   it("serializes web sign-out before binding the next signed-in user", async () => {

@@ -33,6 +33,7 @@ export function Thread({
   spaceName,
   when,
   canSend,
+  serverBlocked,
   disabledReason,
   onBack,
   onSend,
@@ -46,6 +47,8 @@ export function Thread({
   when: string;
   /** Whether this booking can still receive new messages (server-enforced too). */
   canSend: boolean;
+  /** A block read from server truth when the thread opened. */
+  serverBlocked: boolean;
   /** Why the composer is disabled, shown in its place. Null when it is enabled. */
   disabledReason: string | null;
   onBack: () => void;
@@ -73,7 +76,8 @@ export function Thread({
 
   const endRef = useRef<HTMLDivElement>(null);
   const seenMessageIds = useRef<Set<string> | null>(null);
-  const effectiveCanSend = canSend && !blocked;
+  const effectiveBlocked = serverBlocked || blocked;
+  const effectiveCanSend = canSend && !effectiveBlocked;
 
   const runSafety = async (work: () => Promise<void>, done: string) => {
     if (safetyBusy) return;
@@ -285,7 +289,7 @@ export function Thread({
       {!effectiveCanSend ? (
         <div className="px-6 pt-3 pb-6 safe-pb-6 shrink-0" style={{ borderTop: "1px solid #F0ECE0" }}>
           <p className="font-body font-normal text-[14px] leading-relaxed text-ink-faint text-center">
-            {blocked ? "This conversation is blocked. You can still read the history." : (disabledReason ?? "This booking can no longer receive messages.")}
+            {effectiveBlocked ? "This conversation is blocked. You can still read the history." : (disabledReason ?? "This booking can no longer receive messages.")}
           </p>
         </div>
       ) : (

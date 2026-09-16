@@ -16,8 +16,12 @@ import {
   reconcileRefundDecisionNotifications,
   reconcileRefundRequestNotifications,
 } from "@/lib/notify/for-refund";
+import { processMessageNotificationJobs } from "@/lib/notify/message-jobs";
 import { retryPending } from "@/lib/notify/send";
-import { notifyReviewRequests } from "@/lib/notify/for-review";
+import {
+  notifyReviewRequests,
+  reconcileReviewLifecycleNotifications,
+} from "@/lib/notify/for-review";
 import { supabaseAdmin } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -57,7 +61,9 @@ export async function GET(request: NextRequest): Promise<Response> {
     refundRequests,
     refundDecisions,
     payouts,
-    reviews,
+    messageJobs,
+    reviewNudges,
+    reviewLifecycle,
     access,
     retries,
   ] =
@@ -70,7 +76,9 @@ export async function GET(request: NextRequest): Promise<Response> {
       reconcileRefundRequestNotifications(admin, now),
       reconcileRefundDecisionNotifications(admin, now),
       reconcileHostPayoutNotifications(admin, now),
+      processMessageNotificationJobs(admin, { now }),
       notifyReviewRequests(admin, now),
+      reconcileReviewLifecycleNotifications(admin, now),
       notifyAccessCodesReady(admin, now),
       retryPending(),
     ]);
@@ -85,7 +93,9 @@ export async function GET(request: NextRequest): Promise<Response> {
   if (refundRequests.status === "rejected") failures.push("refundRequests");
   if (refundDecisions.status === "rejected") failures.push("refundDecisions");
   if (payouts.status === "rejected") failures.push("payouts");
-  if (reviews.status === "rejected") failures.push("reviews");
+  if (messageJobs.status === "rejected") failures.push("messageJobs");
+  if (reviewNudges.status === "rejected") failures.push("reviewNudges");
+  if (reviewLifecycle.status === "rejected") failures.push("reviewLifecycle");
   if (access.status === "rejected") failures.push("access");
   if (retries.status === "rejected") failures.push("retries");
 
@@ -132,8 +142,23 @@ export async function GET(request: NextRequest): Promise<Response> {
       ...(payouts.status === "fulfilled"
         ? { payoutReceiptsReconciled: payouts.value.reconciled }
         : {}),
-      ...(reviews.status === "fulfilled"
-        ? { reviewPrompts: reviews.value.prompted, reviewReminders: reviews.value.reminded }
+      ...(messageJobs.status === "fulfilled"
+        ? {
+            messageJobsClaimed: messageJobs.value.claimed,
+            messageJobsCompleted: messageJobs.value.completed,
+            messageJobsRetrying: messageJobs.value.retrying,
+            messageJobsFailed: messageJobs.value.failed,
+          }
+        : {}),
+      ...(reviewNudges.status === "fulfilled"
+        ? { reviewPrompts: reviewNudges.value.prompted, reviewReminders: reviewNudges.value.reminded }
+        : {}),
+      ...(reviewLifecycle.status === "fulfilled"
+        ? {
+            reviewReceipts: reviewLifecycle.value.submitted,
+            counterpartReviews: reviewLifecycle.value.counterpart,
+            reviewsPublished: reviewLifecycle.value.published,
+          }
         : {}),
       ...(access.status === "fulfilled"
         ? { accessCodesAnnounced: access.value.announced }

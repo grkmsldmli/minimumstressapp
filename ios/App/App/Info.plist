@@ -24,6 +24,8 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>OneSignal_app_groups_key</key>
+	<string>group.com.minimumstress.app.onesignal</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>

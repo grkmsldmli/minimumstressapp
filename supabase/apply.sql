@@ -12952,3 +12952,975 @@ revoke all on function public.list_booking_confirmation_notification_gaps(
 grant execute on function public.list_booking_confirmation_notification_gaps(
   timestamptz, timestamptz, integer
 ) to service_role;
+
+
+-- ===================================================================
+-- 20260915093158_onesignal_push_channel.sql
+-- ===================================================================
+
+-- PostgreSQL will not let the value be used safely by constraints, views, or
+-- functions until the transaction that adds it commits. Keep this migration
+-- intentionally single-purpose; the dependent objects live in the next one.
+alter type public.notification_channel add value if not exists 'push';
+
+
+-- ===================================================================
+-- 20260915093208_onesignal_push_outbox_support.sql
+-- ===================================================================
+
+-- OneSignal returns HTTP 200 without a notification id when every subscription
+-- attached to the external_id is absent or unsubscribed. That closes the row
+-- without being an operator-visible delivery failure.
+alter table public.notifications
+  drop constraint if exists notifications_provider_status_valid;
+
+alter table public.notifications
+  add constraint notifications_provider_status_valid
+  check (provider_status in (
+    'queued', 'accepted', 'delayed', 'delivered', 'unsubscribed',
+    'failed', 'bounced', 'complained', 'suppressed'
+  ));
+
+-- Provider identifiers are only unique inside a provider/channel namespace.
+-- Resend and OneSignal are allowed to return the same opaque string, while a
+-- duplicate within one channel remains rejected.
+drop index if exists public.notifications_provider_message_id_uidx;
+
+create unique index notifications_provider_message_id_uidx
+  on public.notifications (channel, provider_message_id)
+  where provider_message_id is not null and provider_message_id <> 'unknown';
+
+-- Push is a delivery companion to the existing in-app notification history,
+-- not a second semantic event. Hiding push rows prevents duplicate cards.
+create or replace view public.my_notifications
+with (security_invoker = true) as
+  select
+    id,
+    booking_id,
+    kind,
+    channel,
+    sent_at,
+    created_at,
+    case
+      when provider_status in ('failed', 'bounced', 'complained', 'suppressed')
+        or dropped_at is not null then 'failed'
+      when sent_at is not null then 'sent'
+      else 'queued'
+    end as state
+  from public.notifications
+  where user_id = (select auth.uid())
+    and channel <> 'push';
+
+grant select on public.my_notifications to authenticated;
+
+-- A signed Resend event is authoritative only for email. Provider ids are now
+-- namespaced by channel, so an email event must never mutate a push/SMS row
+-- that happens to carry the same id.
+create or replace function public.apply_resend_delivery_event(
+  p_resend_email_id text,
+  p_notification_correlation_id text,
+  p_event_type text,
+  p_event_created_at timestamptz
+)
+returns integer
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  affected integer := 0;
+  next_status text;
+  next_rank integer;
+begin
+  next_status := case p_event_type
+    when 'email.delivered' then 'delivered'
+    when 'email.delivery_delayed' then 'delayed'
+    when 'email.failed' then 'failed'
+    when 'email.bounced' then 'bounced'
+    when 'email.complained' then 'complained'
+    when 'email.suppressed' then 'suppressed'
+    else null
+  end;
+
+  if next_status is null then
+    return 0;
+  end if;
+
+  next_rank := case next_status
+    when 'accepted' then 1
+    when 'delayed' then 2
+    when 'delivered' then 3
+    when 'failed' then 4
+    when 'bounced' then 5
+    when 'suppressed' then 6
+    when 'complained' then 7
+    else 0
+  end;
+
+  update public.notifications
+  set provider_message_id = coalesce(provider_message_id, p_resend_email_id),
+      provider_status = next_status,
+      provider_event_at = p_event_created_at,
+      accepted_at = coalesce(accepted_at, p_event_created_at),
+      sent_at = coalesce(sent_at, p_event_created_at),
+      last_error = case
+        when next_status = 'delivered' then null
+        when next_status in ('failed', 'bounced', 'complained', 'suppressed')
+          then 'provider event: ' || p_event_type
+        else last_error
+      end,
+      delivered_at = case
+        when next_status = 'delivered' then p_event_created_at
+        else delivered_at
+      end,
+      failed_at = case
+        when next_status in ('failed', 'bounced', 'complained', 'suppressed')
+          then p_event_created_at
+        when next_status in ('delayed', 'delivered') then null
+        else failed_at
+      end,
+      dropped_at = case
+        when next_status in ('delayed', 'delivered') then null
+        else dropped_at
+      end,
+      destination = null,
+      message_snapshot = null,
+      lease_token = null,
+      lease_until = null
+  where channel = 'email'
+    and (
+      provider_message_id = p_resend_email_id
+      or (
+        p_notification_correlation_id is not null
+        and provider_correlation_id = p_notification_correlation_id
+      )
+    )
+    and (
+      provider_event_at is null
+      or next_rank > case provider_status
+        when 'accepted' then 1
+        when 'delayed' then 2
+        when 'delivered' then 3
+        when 'failed' then 4
+        when 'bounced' then 5
+        when 'suppressed' then 6
+        when 'complained' then 7
+        else 0
+      end
+      or (
+        next_rank = case provider_status
+          when 'accepted' then 1
+          when 'delayed' then 2
+          when 'delivered' then 3
+          when 'failed' then 4
+          when 'bounced' then 5
+          when 'suppressed' then 6
+          when 'complained' then 7
+          else 0
+        end
+        and (provider_event_at is null or p_event_created_at > provider_event_at)
+      )
+    );
+
+  get diagnostics affected = row_count;
+  return affected;
+end;
+$$;
+
+revoke all on function public.apply_resend_delivery_event(text, text, text, timestamptz)
+  from public, anon, authenticated;
+grant execute on function public.apply_resend_delivery_event(text, text, text, timestamptz)
+  to service_role;
+
+-- Acceptance is channel-generic, but only email can race a stored Resend
+-- webhook. The channel guard avoids treating a OneSignal/Twilio id as email.
+create or replace function public.record_notification_acceptance(
+  p_dedupe_key text,
+  p_provider_message_id text,
+  p_accepted_at timestamptz,
+  p_lease_token uuid
+)
+returns boolean
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  latest_event record;
+  changed integer;
+  notification_correlation text;
+  accepted_channel public.notification_channel;
+begin
+  update public.notifications
+  set provider_message_id = nullif(p_provider_message_id, 'unknown'),
+      provider_status = 'accepted',
+      accepted_at = coalesce(accepted_at, p_accepted_at),
+      sent_at = coalesce(sent_at, p_accepted_at),
+      destination = null,
+      message_snapshot = null,
+      last_error = null,
+      lease_token = null,
+      lease_until = null
+  where dedupe_key = p_dedupe_key
+    and lease_token = p_lease_token
+    and sent_at is null
+    and dropped_at is null;
+
+  get diagnostics changed = row_count;
+  if changed = 0 then return false; end if;
+
+  select n.provider_correlation_id, n.channel
+    into notification_correlation, accepted_channel
+  from public.notifications n
+  where n.dedupe_key = p_dedupe_key;
+
+  if accepted_channel = 'email' and (
+    (p_provider_message_id is not null and p_provider_message_id <> 'unknown')
+    or notification_correlation is not null
+  ) then
+    select e.event_type, e.event_created_at
+      into latest_event
+    from public.resend_email_events e
+    where (
+        p_provider_message_id is not null
+        and p_provider_message_id <> 'unknown'
+        and e.resend_email_id = p_provider_message_id
+      )
+      or (
+        notification_correlation is not null
+        and e.notification_correlation_id = notification_correlation
+      )
+    order by case e.event_type
+      when 'email.complained' then 7
+      when 'email.suppressed' then 6
+      when 'email.bounced' then 5
+      when 'email.failed' then 4
+      when 'email.delivered' then 3
+      when 'email.delivery_delayed' then 2
+      else 0
+    end desc, e.event_created_at desc, e.received_at desc
+    limit 1;
+
+    if found then
+      perform public.apply_resend_delivery_event(
+        p_provider_message_id,
+        notification_correlation,
+        latest_event.event_type,
+        latest_event.event_created_at
+      );
+    end if;
+  end if;
+
+  return true;
+end;
+$$;
+
+revoke all on function public.record_notification_acceptance(text, text, timestamptz, uuid)
+  from public, anon, authenticated;
+grant execute on function public.record_notification_acceptance(text, text, timestamptz, uuid)
+  to service_role;
+
+
+-- ===================================================================
+-- 20260916034500_review_privacy_and_engagement.sql
+-- ===================================================================
+
+-- Review privacy + lifecycle engagement.
+--
+-- 1) A host's review is about the practitioner. It must never appear on the
+--    host's room listing just because it shares the booking's space_id.
+-- 2) Review prompt retries stop the moment that side has already reviewed, so
+--    a temporary provider failure cannot produce a stale "please review" email
+--    days after the person already did it.
+
+create or replace view private._ms_public_reviews_definer as
+  select
+    r.id,
+    r.subject_id,
+    b.space_id,
+    r.role,
+    r.overall,
+    r.comment,
+    r.created_at
+  from public.reviews r
+  join public.bookings b on b.id = r.booking_id
+  where r.role = 'practitioner'::public.reviewer_role
+    and (
+      exists (
+        select 1
+        from public.reviews other
+        where other.booking_id = r.booking_id
+          and other.role <> r.role
+      )
+      or r.created_at + interval '14 days' <= now()
+    );
+
+-- The public facade keeps the same seven-column shape. Re-assert its narrow ACL
+-- so this migration cannot accidentally broaden the signed-in-only listing data.
+revoke all on private._ms_public_reviews_definer from public, anon, authenticated, service_role;
+grant select on private._ms_public_reviews_definer to authenticated, service_role;
+
+create or replace function public.notification_delivery_is_current(
+  p_kind text,
+  p_booking_id uuid,
+  p_dedupe_key text,
+  p_channel text,
+  p_now timestamptz,
+  p_require_settled boolean default false
+)
+returns boolean
+language plpgsql
+stable
+security invoker
+set search_path = ''
+as $$
+begin
+  return case
+    when p_kind not in (
+      'booking_confirmed', 'host_new_booking', 'request_approved',
+      'host_new_request', 'request_submitted', 'host_request_reminder',
+      'host_payout_sent', 'access_code_ready', 'new_message',
+      'review_prompt', 'review_reminder', 'review_submitted',
+      'counterpart_reviewed', 'review_published',
+      'request_declined', 'request_expired',
+      'cancelled_by_practitioner', 'cancelled_by_host',
+      'refund_requested', 'refund_decided', 'refund_taken_back'
+    ) then true
+    when p_booking_id is null then false
+    else coalesce((
+      select case
+        when p_kind in ('booking_confirmed', 'host_new_booking') then
+          b.status = 'upcoming'
+          and b.cancelled_at is null
+          and b.financial_resolution_state in ('not_required', 'resolved')
+          and b.active_money_operation_id is null
+          and b.captured_at is not null
+        when p_kind = 'request_approved' then
+          b.status = 'upcoming'
+          and b.cancelled_at is null
+          and b.financial_resolution_state in ('not_required', 'resolved')
+          and b.active_money_operation_id is null
+          and b.approval_state = 'approved'
+          and b.captured_at is not null
+        when p_kind in (
+          'host_new_request', 'request_submitted', 'host_request_reminder'
+        ) then
+          b.status = 'upcoming'
+          and b.cancelled_at is null
+          and b.financial_resolution_state = 'not_required'
+          and b.active_money_operation_id is null
+          and b.approval_state = 'pending'
+          and b.authorized_at is not null
+          and b.captured_at is null
+        when p_kind = 'host_payout_sent' then
+          b.host_paid_at is not null
+          and b.stripe_transfer_id is not null
+          and b.host_rate_refunded is false
+          and b.financial_resolution_state in ('not_required', 'resolved')
+          and b.active_money_operation_id is null
+          and p_dedupe_key = 'host_payout_sent:' || b.id::text || ':' || p_channel
+          and exists (
+            select 1
+            from public.booking_money_operations o
+            where o.booking_id = b.id
+              and o.kind = 'payout'
+              and o.state = 'committed'
+              and o.stripe_transfer_id = b.stripe_transfer_id
+          )
+        when p_kind = 'access_code_ready' then
+          b.status = 'upcoming'
+          and b.cancelled_at is null
+          and b.financial_resolution_state in ('not_required', 'resolved')
+          and b.active_money_operation_id is null
+          and b.captured_at is not null
+          and b.access_code is not null
+          and b.access_code_revealed_at <= p_now
+          and b.ends_at > p_now
+        when p_kind = 'new_message' then
+          b.captured_at is not null
+          and b.status not in ('cancelled_by_practitioner', 'cancelled_by_host')
+          and b.cancelled_at is null
+          and b.financial_resolution_state in ('not_required', 'resolved')
+          and b.active_money_operation_id is null
+        when p_kind in ('review_prompt', 'review_reminder') then
+          b.status = 'completed'
+          and b.cancelled_at is null
+          and b.captured_at is not null
+          and b.ends_at <= p_now
+          and b.ends_at + interval '30 days' > p_now
+          and (
+            (
+              p_dedupe_key like p_kind || ':' || b.id::text || ':practitioner:%:' || p_channel
+              and not exists (
+                select 1 from public.reviews r
+                where r.booking_id = b.id and r.role = 'practitioner'
+              )
+            )
+            or
+            (
+              p_dedupe_key like p_kind || ':' || b.id::text || ':host:%:' || p_channel
+              and not exists (
+                select 1 from public.reviews r
+                where r.booking_id = b.id and r.role = 'host'
+              )
+            )
+          )
+        when p_kind = 'review_submitted' then
+          exists (
+            select 1 from public.reviews r
+            where r.booking_id = b.id
+              and p_dedupe_key =
+                'review_submitted:' || r.id::text || ':author:' || p_channel
+          )
+        when p_kind = 'counterpart_reviewed' then
+          (select count(*) from public.reviews r where r.booking_id = b.id) = 2
+          and exists (
+            select 1 from public.reviews first_review
+            where first_review.booking_id = b.id
+              and p_dedupe_key =
+                'counterpart_reviewed:' || b.id::text || ':' ||
+                first_review.role::text || ':' || p_channel
+          )
+        when p_kind = 'review_published' then
+          exists (
+            select 1 from public.reviews r
+            where r.booking_id = b.id
+              and (
+                r.created_at + interval '14 days' <= p_now
+                or exists (
+                  select 1 from public.reviews other
+                  where other.booking_id = r.booking_id and other.role <> r.role
+                )
+              )
+              and p_dedupe_key = 'review_published:' || r.id::text || ':' || p_channel
+          )
+        when p_kind = 'request_declined' then
+          b.approval_state = 'declined'
+          and (
+            not p_require_settled
+            or (
+              b.financial_resolution_state = 'resolved'
+              and b.active_money_operation_id is null
+            )
+          )
+        when p_kind = 'request_expired' then
+          b.approval_state = 'expired'
+          and (
+            not p_require_settled
+            or (
+              b.financial_resolution_state = 'resolved'
+              and b.active_money_operation_id is null
+            )
+          )
+        when p_kind = 'cancelled_by_practitioner' then
+          b.cancelled_by = 'practitioner'
+          and (
+            not p_require_settled
+            or (
+              b.financial_resolution_state = 'resolved'
+              and b.active_money_operation_id is null
+            )
+          )
+        when p_kind = 'cancelled_by_host' then
+          b.cancelled_by = 'host'
+          and (
+            not p_require_settled
+            or (
+              b.financial_resolution_state = 'resolved'
+              and b.active_money_operation_id is null
+            )
+          )
+        when p_kind = 'refund_requested' then
+          b.financial_resolution_state in ('not_required', 'resolved')
+          and b.active_money_operation_id is null
+          and exists (
+            select 1
+            from public.refund_requests r
+            where r.booking_id = b.id
+              and r.state = 'awaiting_host'
+              and p_dedupe_key = 'refund_requested:' || r.id::text || ':' || p_channel
+          )
+        when p_kind = 'refund_decided' then
+          b.financial_resolution_state in ('not_required', 'resolved')
+          and b.active_money_operation_id is null
+          and exists (
+            select 1
+            from public.refund_requests r
+            join public.booking_money_operations o
+              on o.refund_request_id = r.id
+            where r.booking_id = b.id
+              and r.state in ('approved', 'refused')
+              and o.kind = 'refund_request'
+              and o.state = 'committed'
+              and p_dedupe_key = 'refund_decided:' || r.id::text || ':' || p_channel
+          )
+        when p_kind = 'refund_taken_back' then
+          b.host_paid_at is not null
+          and b.financial_resolution_state in ('not_required', 'resolved')
+          and b.active_money_operation_id is null
+          and exists (
+            select 1
+            from public.refund_requests r
+            join public.booking_money_operations o
+              on o.refund_request_id = r.id
+            where r.booking_id = b.id
+              and r.state = 'approved'
+              and r.outcome = 'full'
+              and o.kind = 'refund_request'
+              and o.state = 'committed'
+              and o.expected_reversal_cents > 0
+              and o.stripe_reversal_id is not null
+              and p_dedupe_key = 'refund_taken_back:' || r.id::text || ':' || p_channel
+          )
+        else false
+      end
+      from public.bookings b
+      where b.id = p_booking_id
+    ), false)
+  end;
+end;
+$$;
+
+revoke all on function public.notification_delivery_is_current(
+  text, uuid, text, text, timestamptz, boolean
+) from public, anon, authenticated;
+grant execute on function public.notification_delivery_is_current(
+  text, uuid, text, text, timestamptz, boolean
+) to service_role;
+
+
+-- A signed-in account needs one private fact to keep review CTAs honest: which
+-- of its own bookings it has already reviewed. Expose only ids authored by the
+-- caller; the review text, stars and counterpart remain behind the normal views.
+create or replace function public.reviewed_booking_ids()
+returns table(booking_id uuid)
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select r.booking_id
+  from public.reviews r
+  where r.author_id = auth.uid();
+$$;
+revoke all on function public.reviewed_booking_ids() from public, anon;
+grant execute on function public.reviewed_booking_ids() to authenticated;
+
+-- Listing copy is public marketplace copy, not a back door for exchanging
+-- contact details or payment handles. This is the database backstop beneath
+-- the normal UI validation: a modified client cannot publish an email, URL,
+-- social handle, payment app or obvious phone number into public room text.
+create or replace function private._ms_has_offplatform_contact(value text)
+returns boolean
+language sql
+immutable
+set search_path = ''
+as $$
+  select coalesce(value, '') ~* '([[:alnum:]_.%+\-]+[[:space:]]*@[[:space:]]*[[:alnum:].\-]+\.[[:alpha:]]{2,})'
+      or coalesce(value, '') ~* '(https?://|www\.|[[:alnum:]_-]+\.(com|net|org|io|co|app|me|link)([^[:alnum:]]|$))'
+      or coalesce(value, '') ~* '(^|[^[:alnum:]_])@[[:alpha:]][[:alnum:]_.]{2,}'
+      or coalesce(value, '') ~* '\m(whats[[:space:]]?app|telegram|instagram|insta|snapchat|wechat|viber|messenger|venmo|paypal|cash[[:space:]]?app|zelle|revolut)\M'
+      or coalesce(value, '') ~* '(^|[^0-9])\+?[0-9][0-9[:space:]().\-]{5,}[0-9]([^0-9]|$)';
+$$;
+
+create or replace function public.enforce_space_contact_safety()
+returns trigger
+language plpgsql
+set search_path = 'public', 'private', 'pg_temp'
+as $$
+begin
+  if private._ms_has_offplatform_contact(new.name)
+     or private._ms_has_offplatform_contact(new.description)
+     or private._ms_has_offplatform_contact(new.house_rules)
+     or private._ms_has_offplatform_contact(new.entry_instructions)
+     or private._ms_has_offplatform_contact(array_to_string(new.requirements, ' ')) then
+    raise exception 'Listing text cannot contain contact details, external links, social handles, or off-platform payment details'
+      using errcode = 'check_violation';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists spaces_contact_safety on public.spaces;
+create trigger spaces_contact_safety
+before insert or update of name, description, house_rules, entry_instructions, requirements on public.spaces
+for each row execute function public.enforce_space_contact_safety();
+
+
+-- ===================================================================
+-- 20260916042000_reviewed_booking_ids_facade.sql
+-- ===================================================================
+
+-- Keep the client-facing reviewed-booking reader aligned with the project's
+-- Security Advisor rule: privileged implementations live in private, while the
+-- public RPC is a SECURITY INVOKER facade with the same narrow return shape.
+
+create schema if not exists private;
+revoke all on schema private from public;
+grant usage on schema private to authenticated, service_role;
+
+create or replace function private._ms_reviewed_booking_ids_definer()
+returns table(booking_id uuid)
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select r.booking_id
+  from public.reviews r
+  where r.author_id = auth.uid();
+$$;
+
+revoke all on function private._ms_reviewed_booking_ids_definer()
+  from public, anon, authenticated, service_role;
+grant execute on function private._ms_reviewed_booking_ids_definer()
+  to authenticated, service_role;
+
+create or replace function public.reviewed_booking_ids()
+returns table(booking_id uuid)
+language sql
+stable
+security invoker
+set search_path = 'pg_catalog'
+as $$
+  select * from private._ms_reviewed_booking_ids_definer();
+$$;
+
+revoke all on function public.reviewed_booking_ids()
+  from public, anon, authenticated, service_role;
+grant execute on function public.reviewed_booking_ids()
+  to authenticated, service_role;
+
+
+-- ===================================================================
+-- 20260916050000_chat_delivery_and_realtime.sql
+-- ===================================================================
+
+-- Durable chat delivery and privacy-safe Realtime signalling.
+--
+-- The messages row is the business fact. An AFTER INSERT trigger creates the
+-- notification job in the same transaction, so a process crash between the
+-- API insert and a provider call cannot lose the alert. The same trigger emits
+-- a private Broadcast carrying only an opaque message id. Clients use it only
+-- as a reason to re-read messages_visible; original_body is never published.
+
+create table if not exists public.message_notification_jobs (
+  message_id uuid primary key references public.messages(id) on delete cascade,
+  booking_id uuid not null references public.bookings(id) on delete cascade,
+  sender_id uuid not null references public.profiles(id) on delete cascade,
+  attempts integer not null default 0 check (attempts >= 0),
+  next_attempt_at timestamptz not null default now(),
+  lease_token uuid,
+  lease_until timestamptz,
+  completed_at timestamptz,
+  failed_at timestamptz,
+  last_error text,
+  created_at timestamptz not null default now(),
+  check ((lease_token is null) = (lease_until is null)),
+  check (not (completed_at is not null and failed_at is not null))
+);
+
+create index if not exists message_notification_jobs_due_idx
+  on public.message_notification_jobs(next_attempt_at, created_at)
+  where completed_at is null and failed_at is null;
+
+alter table public.message_notification_jobs enable row level security;
+revoke all on table public.message_notification_jobs from public, anon, authenticated;
+grant select, insert, update on table public.message_notification_jobs to service_role;
+
+create schema if not exists private;
+revoke all on schema private from public;
+grant usage on schema private to service_role;
+
+create or replace function private._ms_queue_message_delivery_definer()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  insert into public.message_notification_jobs(message_id, booking_id, sender_id)
+  values (new.id, new.booking_id, new.sender_id)
+  on conflict (message_id) do nothing;
+
+  -- Realtime is an acceleration path, never the source of truth. If its
+  -- managed schema is temporarily unavailable, preserve the message and its
+  -- durable notification job; the client's visibility refresh/fallback poll
+  -- will still converge.
+  begin
+    perform realtime.send(
+      jsonb_build_object('message_id', new.id),
+      'message_created',
+      'booking:' || new.booking_id::text || ':messages',
+      true
+    );
+  exception when others then
+    raise warning 'safe message broadcast failed for %', new.id;
+  end;
+
+  return new;
+end;
+$$;
+
+revoke all on function private._ms_queue_message_delivery_definer()
+  from public, anon, authenticated, service_role;
+
+drop trigger if exists messages_queue_delivery on public.messages;
+create trigger messages_queue_delivery
+  after insert on public.messages
+  for each row execute function private._ms_queue_message_delivery_definer();
+
+-- A private channel is authorized from booking truth. The topic has to match
+-- the exact booking:<uuid>:messages form before the cast can run, so a caller
+-- cannot turn an arbitrary topic into an exception or a cross-thread oracle.
+drop policy if exists "booking participants receive safe message signals"
+  on realtime.messages;
+create policy "booking participants receive safe message signals"
+  on realtime.messages for select
+  to authenticated
+  using (
+    extension = 'broadcast'
+    and realtime.topic() ~ '^booking:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:messages$'
+    and public.is_booking_participant(
+      split_part(realtime.topic(), ':', 2)::uuid
+    )
+  );
+
+create or replace function private._ms_claim_message_notification_jobs_definer(
+  p_worker uuid,
+  p_limit integer,
+  p_now timestamptz,
+  p_message_id uuid default null
+)
+returns table (
+  message_id uuid,
+  booking_id uuid,
+  sender_id uuid,
+  attempts integer,
+  lease_token uuid
+)
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  return query
+  with candidates as (
+    select j.message_id
+    from public.message_notification_jobs j
+    where j.completed_at is null
+      and j.failed_at is null
+      and j.next_attempt_at <= p_now
+      and (j.lease_until is null or j.lease_until <= p_now)
+      and (p_message_id is null or j.message_id = p_message_id)
+    order by j.created_at, j.message_id
+    for update skip locked
+    limit greatest(0, least(coalesce(p_limit, 20), 100))
+  )
+  update public.message_notification_jobs j
+  set attempts = j.attempts + 1,
+      lease_token = p_worker,
+      lease_until = p_now + interval '5 minutes',
+      last_error = null
+  from candidates c
+  where j.message_id = c.message_id
+  returning j.message_id, j.booking_id, j.sender_id, j.attempts, j.lease_token;
+end;
+$$;
+
+revoke all on function private._ms_claim_message_notification_jobs_definer(
+  uuid, integer, timestamptz, uuid
+) from public, anon, authenticated, service_role;
+grant execute on function private._ms_claim_message_notification_jobs_definer(
+  uuid, integer, timestamptz, uuid
+) to service_role;
+
+create or replace function public.claim_message_notification_jobs(
+  p_worker uuid,
+  p_limit integer,
+  p_now timestamptz,
+  p_message_id uuid default null
+)
+returns table (
+  message_id uuid,
+  booking_id uuid,
+  sender_id uuid,
+  attempts integer,
+  lease_token uuid
+)
+language sql
+volatile
+security invoker
+set search_path = 'pg_catalog'
+as $$
+  select *
+  from private._ms_claim_message_notification_jobs_definer(
+    p_worker, p_limit, p_now, p_message_id
+  );
+$$;
+
+revoke all on function public.claim_message_notification_jobs(
+  uuid, integer, timestamptz, uuid
+) from public, anon, authenticated, service_role;
+grant execute on function public.claim_message_notification_jobs(
+  uuid, integer, timestamptz, uuid
+) to service_role;
+
+
+-- ===================================================================
+-- 20260916051000_marketing_consent.sql
+-- ===================================================================
+
+-- Marketing consent proof and one-click unsubscribe.
+--
+-- Transactional booking, money and safety notifications continue to use the
+-- notification outbox and never consult notify_offers. Marketing remains a
+-- separate, default-off permission with an auditable opt-in/opt-out history.
+
+alter table public.profiles
+  add column if not exists marketing_consent_at timestamptz,
+  add column if not exists marketing_unsubscribed_at timestamptz,
+  add column if not exists marketing_consent_source text,
+  add column if not exists marketing_unsubscribe_token uuid default gen_random_uuid();
+
+update public.profiles
+set marketing_unsubscribe_token = gen_random_uuid()
+where marketing_unsubscribe_token is null;
+
+update public.profiles
+set marketing_consent_at = coalesce(marketing_consent_at, updated_at, created_at),
+    marketing_unsubscribed_at = null,
+    marketing_consent_source = coalesce(marketing_consent_source, 'legacy_in_app_setting')
+where notify_offers is true;
+
+create unique index if not exists profiles_marketing_unsubscribe_token_uidx
+  on public.profiles(marketing_unsubscribe_token);
+
+alter table public.profiles
+  alter column marketing_unsubscribe_token set not null;
+
+alter table public.profiles
+  drop constraint if exists profiles_marketing_consent_consistent;
+alter table public.profiles
+  add constraint profiles_marketing_consent_consistent check (
+    (
+      notify_offers is true
+      and marketing_consent_at is not null
+      and marketing_unsubscribed_at is null
+    )
+    or notify_offers is false
+  );
+
+create or replace function public.record_marketing_preference_change()
+returns trigger
+language plpgsql
+set search_path = 'public', 'pg_temp'
+as $$
+begin
+  if tg_op = 'INSERT' then
+    if auth.uid() is not null then
+      new.marketing_unsubscribe_token := gen_random_uuid();
+      if new.notify_offers then
+        new.marketing_consent_at := now();
+        new.marketing_unsubscribed_at := null;
+        new.marketing_consent_source := 'in_app_settings';
+      else
+        new.marketing_consent_at := null;
+        new.marketing_unsubscribed_at := null;
+        new.marketing_consent_source := null;
+      end if;
+    end if;
+    return new;
+  end if;
+
+  if auth.uid() is not null then
+    -- These are server-authored evidence, not editable profile fields.
+    new.marketing_unsubscribe_token := old.marketing_unsubscribe_token;
+    if new.notify_offers is distinct from old.notify_offers then
+      if new.notify_offers then
+        new.marketing_consent_at := now();
+        new.marketing_unsubscribed_at := null;
+        new.marketing_consent_source := 'in_app_settings';
+      else
+        new.marketing_consent_at := old.marketing_consent_at;
+        new.marketing_unsubscribed_at := now();
+        new.marketing_consent_source := old.marketing_consent_source;
+      end if;
+    else
+      new.marketing_consent_at := old.marketing_consent_at;
+      new.marketing_unsubscribed_at := old.marketing_unsubscribed_at;
+      new.marketing_consent_source := old.marketing_consent_source;
+    end if;
+  end if;
+  return new;
+end;
+$$;
+
+revoke all on function public.record_marketing_preference_change()
+  from public, anon, authenticated;
+grant execute on function public.record_marketing_preference_change() to service_role;
+
+drop trigger if exists profiles_record_marketing_preference on public.profiles;
+create trigger profiles_record_marketing_preference
+  before insert or update of notify_offers, marketing_consent_at,
+    marketing_unsubscribed_at, marketing_consent_source,
+    marketing_unsubscribe_token
+  on public.profiles
+  for each row execute function public.record_marketing_preference_change();
+
+
+-- ===================================================================
+-- 20260916052000_reputation_review_count.sql
+-- ===================================================================
+
+-- A private reputation fact for the signed-in account.
+--
+-- The practitioner milestone previously hard-coded received reviews to zero.
+-- Count only reviews that have actually cleared the blind-review boundary;
+-- otherwise the number itself would tell somebody that the counterpart had
+-- submitted while the review was still sealed.
+
+create schema if not exists private;
+revoke all on schema private from public;
+grant usage on schema private to authenticated, service_role;
+
+create or replace function private._ms_my_released_review_count_definer()
+returns bigint
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select count(*)
+  from public.reviews r
+  where r.subject_id = auth.uid()
+    and (
+      exists (
+        select 1
+        from public.reviews counterpart
+        where counterpart.booking_id = r.booking_id
+          and counterpart.role <> r.role
+      )
+      or r.created_at + interval '14 days' <= now()
+    );
+$$;
+
+revoke all on function private._ms_my_released_review_count_definer()
+  from public, anon, authenticated, service_role;
+grant execute on function private._ms_my_released_review_count_definer()
+  to authenticated, service_role;
+
+create or replace function public.my_released_review_count()
+returns bigint
+language sql
+stable
+security invoker
+set search_path = 'pg_catalog'
+as $$
+  select private._ms_my_released_review_count_definer();
+$$;
+
+revoke all on function public.my_released_review_count()
+  from public, anon, authenticated, service_role;
+grant execute on function public.my_released_review_count()
+  to authenticated, service_role;

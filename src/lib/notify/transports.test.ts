@@ -9,6 +9,7 @@ afterEach(() => {
 });
 
 const PUSH_ALIAS = `ms_${"a".repeat(43)}`;
+const NAV_TOKEN = "182d1e8f-14d2-8dc1-a72b-59c562bf88a7";
 
 describe("Resend transport", () => {
   it("requires both the API key and a webhook signing secret for observable delivery", async () => {
@@ -103,7 +104,7 @@ describe("OneSignal transport", () => {
         body: "Open Minimum Stress for details.",
         url: "https://minimumstress.app/",
       },
-      { idempotencyKey },
+      { idempotencyKey, navigationToken: NAV_TOKEN },
     );
 
     expect(result).toEqual({ status: "sent", id: "notification_123" });
@@ -124,8 +125,13 @@ describe("OneSignal transport", () => {
       headings: { en: "Booking confirmed" },
       contents: { en: "Open Minimum Stress for details." },
       web_url: "https://minimumstress.app/",
-      data: { minimumstress_destination: "notifications" },
+      data: {
+        minimumstress_destination: "notification",
+        minimumstress_notification_id: NAV_TOKEN,
+      },
       ios_sound: "default",
+      ios_badgeType: "Increase",
+      ios_badgeCount: 1,
       android_sound: "default",
       priority: 10,
       idempotency_key: idempotencyKey,
@@ -144,7 +150,7 @@ describe("OneSignal transport", () => {
     await expect(sendPush(
       PUSH_ALIAS,
       { title: "Update", body: "Open Minimum Stress.", url: "https://minimumstress.app/" },
-      { idempotencyKey: "182d1e8f-14d2-8dc1-a72b-59c562bf88a7" },
+      { idempotencyKey: NAV_TOKEN, navigationToken: NAV_TOKEN },
     )).resolves.toEqual({ status: "skipped", reason: "no subscribed push destination" });
   });
 
@@ -156,7 +162,7 @@ describe("OneSignal transport", () => {
     const result = await sendPush(
       PUSH_ALIAS,
       { title: "Update", body: "Open Minimum Stress.", url: "https://minimumstress.app/" },
-      { idempotencyKey: "182d1e8f-14d2-8dc1-a72b-59c562bf88a7" },
+      { idempotencyKey: NAV_TOKEN, navigationToken: NAV_TOKEN },
     );
 
     expect(result).toEqual({
@@ -175,7 +181,7 @@ describe("OneSignal transport", () => {
     const result = await sendPush(
       PUSH_ALIAS,
       { title: "Update", body: "Open Minimum Stress.", url: "https://minimumstress.app/" },
-      { idempotencyKey: "182d1e8f-14d2-8dc1-a72b-59c562bf88a7" },
+      { idempotencyKey: NAV_TOKEN, navigationToken: NAV_TOKEN },
     );
 
     expect(result).toEqual({ status: "dropped", reason: "push 400: provider_4xx" });
@@ -191,7 +197,7 @@ describe("OneSignal transport", () => {
     await expect(sendPush(
       "11111111-1111-4111-8111-111111111111",
       { title: "Update", body: "Open Minimum Stress.", url: "https://minimumstress.app/" },
-      { idempotencyKey: "182d1e8f-14d2-8dc1-a72b-59c562bf88a7" },
+      { idempotencyKey: NAV_TOKEN, navigationToken: NAV_TOKEN },
     )).resolves.toEqual({ status: "dropped", reason: "push invalid_external_id" });
     expect(provider).not.toHaveBeenCalled();
   });

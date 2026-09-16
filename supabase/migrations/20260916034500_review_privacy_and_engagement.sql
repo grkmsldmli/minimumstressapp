@@ -53,7 +53,8 @@ begin
       'booking_confirmed', 'host_new_booking', 'request_approved',
       'host_new_request', 'request_submitted', 'host_request_reminder',
       'host_payout_sent', 'access_code_ready', 'new_message',
-      'review_prompt', 'review_reminder',
+      'review_prompt', 'review_reminder', 'review_submitted',
+      'counterpart_reviewed', 'review_published',
       'request_declined', 'request_expired',
       'cancelled_by_practitioner', 'cancelled_by_host',
       'refund_requested', 'refund_decided', 'refund_taken_back'
@@ -109,11 +110,11 @@ begin
           and b.access_code_revealed_at <= p_now
           and b.ends_at > p_now
         when p_kind = 'new_message' then
-          b.status = 'upcoming'
+          b.captured_at is not null
+          and b.status not in ('cancelled_by_practitioner', 'cancelled_by_host')
           and b.cancelled_at is null
           and b.financial_resolution_state in ('not_required', 'resolved')
           and b.active_money_operation_id is null
-          and b.ends_at > p_now
         when p_kind in ('review_prompt', 'review_reminder') then
           b.status = 'completed'
           and b.cancelled_at is null
@@ -136,6 +137,35 @@ begin
                 where r.booking_id = b.id and r.role = 'host'
               )
             )
+          )
+        when p_kind = 'review_submitted' then
+          exists (
+            select 1 from public.reviews r
+            where r.booking_id = b.id
+              and p_dedupe_key =
+                'review_submitted:' || r.id::text || ':author:' || p_channel
+          )
+        when p_kind = 'counterpart_reviewed' then
+          (select count(*) from public.reviews r where r.booking_id = b.id) = 2
+          and exists (
+            select 1 from public.reviews first_review
+            where first_review.booking_id = b.id
+              and p_dedupe_key =
+                'counterpart_reviewed:' || b.id::text || ':' ||
+                first_review.role::text || ':' || p_channel
+          )
+        when p_kind = 'review_published' then
+          exists (
+            select 1 from public.reviews r
+            where r.booking_id = b.id
+              and (
+                r.created_at + interval '14 days' <= p_now
+                or exists (
+                  select 1 from public.reviews other
+                  where other.booking_id = r.booking_id and other.role <> r.role
+                )
+              )
+              and p_dedupe_key = 'review_published:' || r.id::text || ':' || p_channel
           )
         when p_kind = 'request_declined' then
           b.approval_state = 'declined'

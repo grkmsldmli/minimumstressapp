@@ -27,9 +27,26 @@ artifact.
 
 ## Messaging safety (Guideline 1.2)
 - [ ] Open a confirmed booking's thread → shield/Flag button top-right.
+- [ ] A second signed-in device sends a message → it appears without exposing a
+      raw `messages` payload; unread state clears after the thread is read.
+- [ ] Try “send me your number”, “continue on WhatsApp”, and “pay outside” → each
+      is refused with an explanation; a normal sentence containing “signal” or
+      “cash” still sends.
+- [ ] Send an actual phone/email → the other side sees only the redacted copy.
 - [ ] Report → sends; confirmation shown; no address/code required in the report.
 - [ ] Block → confirms; after blocking, the composer is closed but the booking's
       address/door code remain available on the booking screen.
+
+## Push and notification navigation
+- [ ] Confirm the archive embeds `OneSignalNotificationServiceExtension` and the
+      app + extension use `group.com.minimumstress.app.onesignal`.
+- [ ] Foreground push → banner/default sound appears and in-app badges refresh.
+- [ ] Background push → default sound/haptic and app badge appear (subject to the
+      phone's Focus, silent-mode and per-app settings).
+- [ ] Kill the app, tap a new-message push → after sign-in it opens that exact
+      booking thread, never another account's booking.
+- [ ] Tap a review-request push/email → it opens the correct booking and reviewer
+      side; an expired/invalid token falls back to Notifications.
 
 ## Account & Pro
 - [ ] Settings/Profile → "Delete account" is present, confirms, scrubs data, and

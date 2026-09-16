@@ -1174,6 +1174,13 @@ export class SupabaseRepository implements Repository {
     return (data ?? []).map((row: { booking_id: string }) => row.booking_id);
   }
 
+  async reviewsReceivedCount(): Promise<number> {
+    const { data, error } = await this.db.rpc("my_released_review_count");
+    if (error) throw asError(error);
+    const count = Number(data ?? 0);
+    return Number.isSafeInteger(count) && count >= 0 ? count : 0;
+  }
+
   /* ---------------- messages ---------------- */
 
   /**
@@ -1198,6 +1205,41 @@ export class SupabaseRepository implements Repository {
       createdAt: new Date(row.created_at),
       redactedKinds: row.redacted_kinds ?? [],
     }));
+  }
+
+  watchMessageSignals(bookingId: string, onSignal: () => void): () => void {
+    const topic = `booking:${bookingId}:messages`;
+    let stopped = false;
+    let channel: ReturnType<SupabaseClient["channel"]> | null = null;
+
+    // Private-channel authorization uses the current Supabase JWT. setAuth()
+    // refreshes Realtime's copy before joining; no booking data is accepted
+    // from the signal itself.
+    void this.db.realtime
+      .setAuth()
+      .then(() => {
+        if (stopped) return;
+        channel = this.db
+          .channel(topic, { config: { private: true } })
+          .on("broadcast", { event: "message_created" }, () => onSignal())
+          .subscribe();
+      })
+      .catch(() => undefined);
+
+    return () => {
+      stopped = true;
+      if (channel) void this.db.removeChannel(channel);
+    };
+  }
+
+  async messageThreadState(bookingId: string): Promise<{ blocked: boolean }> {
+    const response = await apiFetch(`/api/messages?bookingId=${encodeURIComponent(bookingId)}`);
+    const payload = (await response.json().catch(() => ({}))) as {
+      blocked?: boolean;
+      error?: string;
+    };
+    if (!response.ok) throw new Error(payload.error ?? "We couldn't open this conversation.");
+    return { blocked: payload.blocked === true };
   }
 
   /**
@@ -1279,6 +1321,22 @@ export class SupabaseRepository implements Repository {
       const body = (await response.json().catch(() => ({}))) as { error?: string };
       throw new Error(body.error ?? "We couldn't block that person just now.");
     }
+  }
+
+  async notificationTarget(
+    notificationId: string,
+  ): Promise<{ bookingId: string | null; kind: string } | null> {
+    const { data, error } = await this.db
+      .from("notifications")
+      .select("booking_id, kind")
+      .eq("id", notificationId)
+      .maybeSingle();
+    if (error) throw asError(error);
+    if (!data) return null;
+    return {
+      bookingId: (data.booking_id as string | null) ?? null,
+      kind: data.kind as string,
+    };
   }
 
   async unreadMessageCounts(): Promise<Record<string, number>> {

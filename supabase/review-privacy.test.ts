@@ -85,6 +85,41 @@ describe("review CTA truth and listing contact guard", () => {
     }
   });
 
+  it("counts received reviews only after the blind boundary releases them", async () => {
+    const booking = "55555555-5555-4555-8555-555555555555";
+    const review = "66666666-6666-4666-8666-666666666666";
+    await db.exec(`
+      insert into bookings (
+        id, space_id, practitioner_id, starts_at, ends_at, is_instant, was_pro,
+        host_rate_cents, service_fee_cents, instant_fee_cents, pro_discount_cents,
+        credit_applied_cents, total_cents, platform_cents, status, captured_at,
+        approval_state
+      ) values (
+        '${booking}', '${SPACE}', '${PRAC}', now() - interval '2 hours', now() - interval '1 hour',
+        false, false, 4500, 900, 0, 0, 0, 5400, 900, 'completed', now() - interval '3 hours',
+        'not_required'
+      );
+      insert into reviews (id, booking_id, author_id, subject_id, role, overall, comment)
+      values ('${review}', '${booking}', '${HOST}', '${PRAC}', 'host', 5, 'Reliable');
+    `);
+
+    const countAsPractitioner = () =>
+      db.transaction(async (tx) => {
+        await tx.exec(`
+          set local role authenticated;
+          select set_config('request.jwt.claim.sub', '${PRAC}', true);
+        `);
+        return Number((await tx.query<{ count: string }>(
+          `select my_released_review_count()::text as count`,
+        )).rows[0].count);
+      });
+
+    // The already-paired fixture counts; the new lone review must not move it.
+    await expect(countAsPractitioner()).resolves.toBe(1);
+    await db.exec(`update reviews set created_at = now() - interval '15 days' where id = '${review}'`);
+    await expect(countAsPractitioner()).resolves.toBe(2);
+  });
+
   it("rejects contact details in public listing copy but preserves ordinary access instructions", async () => {
     await expect(
       db.exec(`update spaces set description = 'Email me at host@example.com' where id = '${SPACE}'`),

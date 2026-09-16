@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 
 import { oneSignalExternalId } from "../onesignal/identity";
 import { supabaseAdmin } from "../supabase/server";
+import { renderNotificationEmail } from "./email-template";
 import { type Message, type MessageContext, type NotificationKind, render } from "./messages";
 import {
   emailConfigured,
@@ -96,6 +97,7 @@ async function deliver(
   message: Message,
 ): Promise<NotifyOutcome> {
   const admin = supabaseAdmin();
+  const notificationId = randomUUID();
   const dedupeKey = `${request.kind}:${request.subjectId}:${channel}`;
   const correlationId = channel === "email" ? providerCorrelationId(dedupeKey) : null;
   const configured =
@@ -106,14 +108,20 @@ async function deliver(
         : pushConfigured();
   const now = new Date();
   const dispatchLease = randomUUID();
+  const deliveryMessage = channel === "push"
+    ? withPushNavigation(message, notificationId)
+    : channel === "email" && request.recipient.userId && request.bookingId && directDestination(request.kind)
+      ? withEmailNavigation(request, message, notificationId)
+      : message;
   const { error: claimError } = await admin.from("notifications").insert({
+    id: notificationId,
     user_id: request.recipient.userId,
     booking_id: request.bookingId ?? null,
     kind: request.kind,
     channel,
     dedupe_key: dedupeKey,
     destination,
-    message_snapshot: snapshot(message),
+    message_snapshot: snapshot(deliveryMessage),
     provider_correlation_id: correlationId,
     provider_status: "queued",
     attempts: 1,
@@ -154,14 +162,15 @@ async function deliver(
   }
 
   const result = channel === "email"
-    ? await sendEmail(destination, message, {
+    ? await sendEmail(destination, deliveryMessage, {
         idempotencyKey: providerIdempotencyKey(dedupeKey),
         correlationId: correlationId!,
       })
     : channel === "sms"
-      ? await sendSms(destination, message.sms!)
-      : await sendPush(destination, message.push!, {
+      ? await sendSms(destination, deliveryMessage.sms!)
+      : await sendPush(destination, deliveryMessage.push!, {
           idempotencyKey: oneSignalPushIdempotencyKey(dedupeKey),
+          navigationToken: notificationId,
         });
 
   if (result.status === "sent") {
@@ -201,6 +210,33 @@ async function deliver(
 
   console.error(`Notification ${result.status} — ${dedupeKey}: ${result.reason}`);
   return "failed";
+}
+
+function withPushNavigation(message: Message, notificationId: string): Message {
+  if (!message.push) return message;
+  const url = new URL(message.push.url);
+  url.searchParams.set("open", "notification");
+  url.searchParams.set("notification", notificationId);
+  return {
+    ...message,
+    push: { ...message.push, url: url.href },
+  };
+}
+
+function withEmailNavigation(
+  request: NotifyRequest,
+  message: Message,
+  notificationId: string,
+): Message {
+  const path = `/?open=notification&notification=${notificationId}`;
+  return {
+    ...message,
+    html: renderNotificationEmail(request.kind, message, request.context, path),
+  };
+}
+
+function directDestination(kind: NotificationKind): boolean {
+  return kind === "new_message" || kind === "review_prompt" || kind === "review_reminder";
 }
 
 /** Stable, bounded and free of recipient data. Resend retains it for 24 hours. */
@@ -325,6 +361,7 @@ export async function retryPending(
           ? await sendSms(row.destination, message.sms!)
           : await sendPush(row.destination, message.push!, {
               idempotencyKey: oneSignalPushIdempotencyKey(row.dedupe_key),
+              navigationToken: row.id,
             });
 
       if (result.status === "sent") {

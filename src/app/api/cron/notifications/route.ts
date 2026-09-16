@@ -17,6 +17,7 @@ import {
   reconcileRefundRequestNotifications,
 } from "@/lib/notify/for-refund";
 import { retryPending } from "@/lib/notify/send";
+import { notifyReviewRequests } from "@/lib/notify/for-review";
 import { supabaseAdmin } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -56,6 +57,7 @@ export async function GET(request: NextRequest): Promise<Response> {
     refundRequests,
     refundDecisions,
     payouts,
+    reviews,
     access,
     retries,
   ] =
@@ -68,6 +70,7 @@ export async function GET(request: NextRequest): Promise<Response> {
       reconcileRefundRequestNotifications(admin, now),
       reconcileRefundDecisionNotifications(admin, now),
       reconcileHostPayoutNotifications(admin, now),
+      notifyReviewRequests(admin, now),
       notifyAccessCodesReady(admin, now),
       retryPending(),
     ]);
@@ -82,6 +85,7 @@ export async function GET(request: NextRequest): Promise<Response> {
   if (refundRequests.status === "rejected") failures.push("refundRequests");
   if (refundDecisions.status === "rejected") failures.push("refundDecisions");
   if (payouts.status === "rejected") failures.push("payouts");
+  if (reviews.status === "rejected") failures.push("reviews");
   if (access.status === "rejected") failures.push("access");
   if (retries.status === "rejected") failures.push("retries");
 
@@ -127,6 +131,9 @@ export async function GET(request: NextRequest): Promise<Response> {
         : {}),
       ...(payouts.status === "fulfilled"
         ? { payoutReceiptsReconciled: payouts.value.reconciled }
+        : {}),
+      ...(reviews.status === "fulfilled"
+        ? { reviewPrompts: reviews.value.prompted, reviewReminders: reviews.value.reminded }
         : {}),
       ...(access.status === "fulfilled"
         ? { accessCodesAnnounced: access.value.announced }

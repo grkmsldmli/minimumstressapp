@@ -44,6 +44,7 @@ import { errorMessage } from "@/lib/error-message";
 import { formatCents } from "@/lib/money";
 import { PAYOUT_DELAY_DAYS, describeSpeed } from "@/lib/payouts";
 import type { Standing } from "@/lib/reliability";
+import { reviewWindowClosesAt } from "@/lib/reviews";
 import type { MilestoneKey } from "@/lib/milestones";
 import { claimWindowEndsAt } from "@/lib/claims";
 import { FOUNDING_HOST_LABEL, foundingSpotsRemainingLabel } from "@/lib/founding";
@@ -353,6 +354,7 @@ export function HostDashboard({
   onGoNotifications,
   undeliveredCount,
   onReviewBooking,
+  reviewedBookingIds,
   onReportProblem,
   onMessageBooking,
   hostTermsVersion,
@@ -396,6 +398,7 @@ export function HostDashboard({
   undeliveredCount: number;
   /** Absent until the review window opens for a session. */
   onReviewBooking?: (bookingId: string) => void;
+  reviewedBookingIds?: ReadonlySet<string>;
   /** Absent once the 48-hour window on that session has closed. */
   onReportProblem?: (bookingId: string) => void;
   /** Opens the thread for a booking. */
@@ -804,7 +807,14 @@ export function HostDashboard({
                       timeZone={zoneOf(booking.spaceId)}
                       index={i}
                       past
-                      onReview={onReviewBooking ? () => onReviewBooking(booking.id) : undefined}
+                      onReview={
+                        onReviewBooking &&
+                        booking.status === "completed" &&
+                        reviewWindowClosesAt(booking.endsAt) >= new Date() &&
+                        !reviewedBookingIds?.has(booking.id)
+                          ? () => onReviewBooking(booking.id)
+                          : undefined
+                      }
                       onReportProblem={
                         onReportProblem && withinClaimWindow(booking)
                           ? () => onReportProblem(booking.id)
@@ -1554,6 +1564,12 @@ export function HostProfile({
             sub="The moment someone books"
             on={profile.notifyBookings}
             onToggle={() => onUpdate({ notifyBookings: !profile.notifyBookings })}
+          />
+          <SettingToggle
+            label="Product news & offers"
+            sub="Optional marketing email only. Booking, safety and account emails stay separate."
+            on={profile.notifyOffers}
+            onToggle={() => onUpdate({ notifyOffers: !profile.notifyOffers })}
           />
           {/*
             Asked of both sides. Somebody alone in a stranger's building and

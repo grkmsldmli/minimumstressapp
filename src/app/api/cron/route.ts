@@ -22,6 +22,7 @@ import {
   reconcileRefundRequestNotifications,
 } from "@/lib/notify/for-refund";
 import { notify, retryPending } from "@/lib/notify/send";
+import { notifyReviewRequests } from "@/lib/notify/for-review";
 import { settle } from "@/lib/stripe/client";
 import { siteUrl } from "@/lib/site-url";
 import { supabaseAdmin } from "@/lib/supabase/server";
@@ -132,6 +133,7 @@ export async function runOperationalTasks(now: Date) {
   const refundRequests = await reconcileRefundRequests(now);
   const refundDecisions = await reconcileRefundDecisions(now);
   const cancellations = await reconcileCancellations(now);
+  const reviews = await nudgeForReviews(now);
   const announced = await announceAccessCodes(now);
   const retried = await retryFailedNotifications();
   const waiting = await reportWhatIsWaiting(now);
@@ -149,10 +151,24 @@ export async function runOperationalTasks(now: Date) {
     ...refundRequests,
     ...refundDecisions,
     ...cancellations,
+    ...reviews,
     ...announced,
     ...retried,
     ...waiting,
   };
+}
+
+
+async function nudgeForReviews(
+  now: Date,
+): Promise<{ reviewPrompts: number; reviewReminders: number }> {
+  try {
+    const result = await notifyReviewRequests(supabaseAdmin(), now);
+    return { reviewPrompts: result.prompted, reviewReminders: result.reminded };
+  } catch (error) {
+    console.error("Review prompts failed:", describe(error));
+    return { reviewPrompts: 0, reviewReminders: 0 };
+  }
 }
 
 async function settlePendingFinancialWork(

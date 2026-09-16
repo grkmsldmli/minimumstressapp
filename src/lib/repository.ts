@@ -113,6 +113,9 @@ export interface Repository {
    */
   submitReview(input: ReviewInput): Promise<void>;
 
+  /** Booking ids this signed-in account has already reviewed. */
+  reviewedBookingIds(): Promise<string[]>;
+
   /**
    * What the app has sent this account, newest first.
    *

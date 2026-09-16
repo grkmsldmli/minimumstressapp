@@ -31,6 +31,7 @@ import {
 } from "@/lib/money";
 import { LATE_CANCELLATION_HOURS, type Standing } from "@/lib/reliability";
 import { REFUND_WINDOW_DAYS, canRequestRefund } from "@/lib/refunds";
+import { reviewWindowClosesAt } from "@/lib/reviews";
 import { sessionDate, sessionTime, sessionWeekday } from "@/lib/when";
 
 /* ------------------------------------------------------------------ */
@@ -364,6 +365,7 @@ export function MyBookings({
   onBack,
   onCancel,
   onReview,
+  reviewedBookingIds,
   onAskRefund,
   onMessage,
   unreadFor,
@@ -382,6 +384,8 @@ export function MyBookings({
   onCancel: (id: string) => Promise<unknown>;
   /** Offered on a finished session that has not been reviewed yet. */
   onReview?: (id: string) => void;
+  /** Server-authoritative set so a completed review never keeps advertising itself. */
+  reviewedBookingIds?: ReadonlySet<string>;
   /** Absent for a host, who asks through a claim rather than a refund. */
   onAskRefund?: (id: string) => void;
   /** Opens the thread for a booking. */
@@ -463,7 +467,11 @@ export function MyBookings({
                   rules already handle a repeated canceller.
                 */
                 const reviewable =
-                  onReview && booking.status === "completed" && booking.endsAt < now;
+                  onReview &&
+                  booking.status === "completed" &&
+                  booking.endsAt < now &&
+                  reviewWindowClosesAt(booking.endsAt) >= now &&
+                  !reviewedBookingIds?.has(booking.id);
 
                 return (
                   <div

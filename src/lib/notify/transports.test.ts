@@ -125,6 +125,9 @@ describe("OneSignal transport", () => {
       contents: { en: "Open Minimum Stress for details." },
       web_url: "https://minimumstress.app/",
       data: { minimumstress_destination: "notifications" },
+      ios_sound: "default",
+      android_sound: "default",
+      priority: 10,
       idempotency_key: idempotencyKey,
     });
   });

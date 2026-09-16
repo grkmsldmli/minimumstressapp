@@ -28,6 +28,7 @@ import { payoutSetupFrom } from "./payout-setup";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { errorMessage } from "./error-message";
+import { offPlatformRequest, redact } from "./message-redaction";
 
 /**
  * A real Error carrying what Supabase actually said.
@@ -66,6 +67,18 @@ function trustFrom(row: HostRpcRow): PractitionerTrust {
 
 function asError(cause: unknown): Error {
   return cause instanceof Error ? cause : new Error(errorMessage(cause, "Request failed"));
+}
+
+function assertMarketplaceCopy(fields: readonly (string | null | undefined)[]): void {
+  for (const value of fields) {
+    const text = value?.trim();
+    if (!text) continue;
+    if (redact(text).found.length > 0 || offPlatformRequest(text) !== null) {
+      throw new Error(
+        "Keep listing communication in Minimum Stress. Remove phone numbers, email, links, social handles and off-platform payment details.",
+      );
+    }
+  }
 }
 
 import type { AccessDetails } from "./access-details";
@@ -1155,6 +1168,12 @@ export class SupabaseRepository implements Repository {
     }
   }
 
+  async reviewedBookingIds(): Promise<string[]> {
+    const { data, error } = await this.db.rpc("reviewed_booking_ids");
+    if (error) throw asError(error);
+    return (data ?? []).map((row: { booking_id: string }) => row.booking_id);
+  }
+
   /* ---------------- messages ---------------- */
 
   /**
@@ -1594,6 +1613,8 @@ export class SupabaseRepository implements Repository {
   async editSpace(spaceId: string, edit: SpaceEdit): Promise<HostSpace> {
     const hostId = await this.userId();
 
+    assertMarketplaceCopy([edit.name, edit.description, edit.entryInstructions]);
+
     const patch: Record<string, unknown> = {};
     if (edit.name !== undefined) patch.name = edit.name;
     if (edit.hourlyRateCents !== undefined) patch.hourly_rate_cents = edit.hourlyRateCents;
@@ -1835,6 +1856,14 @@ export class SupabaseRepository implements Repository {
 
   async createSpace(input: NewSpaceInput): Promise<HostSpace> {
     const hostId = await this.userId();
+
+    assertMarketplaceCopy([
+      input.name,
+      input.description,
+      input.houseRules,
+      input.entryInstructions,
+      ...input.requirements,
+    ]);
 
     const { data, error } = await this.db
       .from("spaces")

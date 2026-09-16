@@ -30,6 +30,8 @@ export const NOTIFICATION_KINDS = [
   "request_expired",
   "access_code_ready",
   "new_message",
+  "review_prompt",
+  "review_reminder",
   "cancelled_by_practitioner",
   "cancelled_by_host",
   "reliability_warning",
@@ -220,6 +222,9 @@ function renderPush(kind: NotificationKind): PushMessage | null {
       return push("Access details ready", "Open Minimum Stress securely to view your access details.", url);
     case "new_message":
       return push("New message", "You have a new message in Minimum Stress.", url);
+    case "review_prompt":
+    case "review_reminder":
+      return push("Review your session", "Your review window is open in Minimum Stress.", url);
     case "cancelled_by_practitioner":
     case "cancelled_by_host":
       return push("Booking cancelled", "A booking was cancelled. Open Minimum Stress for details.", url);
@@ -467,6 +472,39 @@ function renderPlain(kind: NotificationKind, context: MessageContext): Message {
             context.when ? ` on ${when}` : ""
           }.`,
           `Open the app to read it and reply.`,
+          SIGN_OFF,
+        ),
+        sms: null,
+      };
+
+    case "review_prompt":
+      return {
+        subject: `How did ${spaceName} go?`,
+        body: lines(
+          greeting(name),
+          `Your session at ${spaceName}${context.when ? ` on ${when}` : ""} has ended.`,
+          context.role === "host"
+            ? `A quick review helps Minimum Stress keep reliable professionals on the marketplace. Your review of the practitioner is not posted on the room listing.`
+            : `A quick review helps other professionals know what to expect and gives the studio useful feedback.`,
+          `To keep it fair, your review stays hidden until both sides have written or 14 days pass. The review window stays open for 30 days.`,
+          `Open Minimum Stress and leave your review when it is fresh.`,
+          SIGN_OFF,
+        ),
+        sms: null,
+      };
+
+    case "review_reminder":
+      return {
+        subject: `Review still open: ${spaceName}`,
+        body: lines(
+          greeting(name),
+          `A quick reminder: you can still review the completed session at ${spaceName}${
+            context.when ? ` on ${when}` : ""
+          }.`,
+          context.role === "host"
+            ? `Your feedback stays private from the room listing and helps us keep the marketplace reliable.`
+            : `Your room review helps future professionals know what to expect.`,
+          `Reviews are blind until both sides submit or 14 days pass, and the window closes 30 days after the session.`,
           SIGN_OFF,
         ),
         sms: null,

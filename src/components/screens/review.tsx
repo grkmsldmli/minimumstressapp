@@ -114,7 +114,9 @@ export function ReviewScreen({
           <Headline pre="How was" accent={`${subject}?`} size={22} light />
         </div>
         <p className="font-body font-normal text-[13.5px] text-white/55 mt-1 relative z-10">
-          Only you and they will see this, and not until you have both written.
+          {role === "practitioner"
+            ? "Hidden until both sides review or 14 days pass. Then your room review may appear on the listing without your contact details."
+            : "Hidden until both sides review or 14 days pass. Your contact details are never shared."}
         </p>
       </div>
 

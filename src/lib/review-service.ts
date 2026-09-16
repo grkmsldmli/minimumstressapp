@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { safetyRecipient } from "./admin/access";
+import { redact } from "./message-redaction";
 import { notify } from "./notify/send";
 import {
   type HostReview,
@@ -115,6 +116,13 @@ export async function submitReview(
   if (!eligibility.allowed) return { ok: false, reason: eligibility.reason };
 
   const overall = submission.overall as Rating;
+  // A room review can become listing content. Contact details have no place in
+  // public feedback, and masking them here means no client can bypass that rule.
+  // We deliberately do not retain an unredacted review copy.
+  const safeComment = redact(submission.comment.trim().slice(0, 2000)).text
+    .replaceAll("[hidden]", "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
 
   const { data: inserted, error: insertError } = await admin
     .from("reviews")
@@ -126,7 +134,7 @@ export async function submitReview(
       overall,
       // Trimmed and capped. The column is unbounded text and this is the only
       // place a person's free typing reaches it.
-      comment: submission.comment.trim().slice(0, 2000),
+      comment: safeComment,
       safety_concern: submission.safetyConcern,
       ...(role === "practitioner"
         ? {
@@ -158,7 +166,7 @@ export async function submitReview(
     await raiseEscalation(admin, inserted.id, {
       overall,
       safetyConcern: submission.safetyConcern,
-      comment: submission.comment,
+      comment: safeComment,
       spaceName: booking.spaces?.name ?? "a space",
       role,
     });

@@ -39,6 +39,8 @@ const LABELS: Record<NotificationKind, string> = {
   request_expired: "Your booking request expired",
   access_code_ready: "Your door code was released",
   new_message: "You have a new message",
+  review_prompt: "Your session is ready to review",
+  review_reminder: "Your review window is still open",
   cancelled_by_practitioner: "A session was cancelled",
   cancelled_by_host: "The host cancelled a session",
   reliability_warning: "A note about late cancellations",

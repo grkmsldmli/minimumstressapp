@@ -18,7 +18,16 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Read installed Next.js route handler guidance
+      - name: Read installed guidance and dependency audit
         run: |
-          find node_modules/next/dist/docs -type f \( -iname '*route*handler*' -o -iname '*after*' \) -print
-          find node_modules/next/dist/docs -type f -iname '*route*handler*' -exec sh -c 'head -180 "$1"' sh {} \;
+          cat node_modules/next/dist/docs/01-app/03-api-reference/04-functions/after.md
+          npm audit --omit=dev --json > /tmp/chat-audit.json || true
+          cat /tmp/chat-audit.json
+      - name: Pack reproducible workspace without Git credentials
+        run: tar --exclude=.git --exclude='.env.local' --exclude='.env.production' --exclude='node_modules/.cache' -czf /tmp/minimumstress-chat-workbench.tar.gz .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chat-workspace
+          path: /tmp/minimumstress-chat-workbench.tar.gz
+          retention-days: 1
+          compression-level: 0

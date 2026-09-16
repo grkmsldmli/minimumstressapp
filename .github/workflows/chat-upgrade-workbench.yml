@@ -1,0 +1,24 @@
+name: Chat upgrade workbench
+on:
+  push:
+    branches: [fix/chat-safety-engagement]
+permissions:
+  contents: read
+concurrency:
+  group: chat-upgrade-workbench
+  cancel-in-progress: true
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Read installed Next.js route handler guidance
+        run: |
+          find node_modules/next/dist/docs -type f \( -iname '*route*handler*' -o -iname '*after*' \) -print
+          find node_modules/next/dist/docs -type f -iname '*route*handler*' -exec sh -c 'head -180 "$1"' sh {} \;

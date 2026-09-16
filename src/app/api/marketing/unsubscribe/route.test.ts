@@ -60,6 +60,7 @@ describe("one-click marketing unsubscribe", () => {
     expect(state.rows[0]).toMatchObject({
       notify_offers: false,
       marketing_unsubscribed_at: expect.any(String),
+      marketing_unsubscribe_reason: "one_click",
     });
     expect(await response.text()).toContain("Transactional booking, payment, safety and account messages are unchanged");
   });

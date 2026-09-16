@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { hasMarketingConsent, marketingLifecycleCandidates } from "./lifecycle";
+import {
+  hasMarketingConsent,
+  marketingLifecycleBucket,
+  marketingLifecycleCandidates,
+  orderMarketingLifecycles,
+} from "./lifecycle";
 
 const now = new Date("2026-09-16T12:00:00.000Z");
 const daysAgo = (days: number) => new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
@@ -14,6 +19,7 @@ describe("marketing lifecycle candidate policy", () => {
           onboardingComplete: true,
           isHost: true,
           liveListings: 1,
+          firstLiveListingAt: daysAgo(8),
           bookingCount: 0,
           lastBrowseAt: daysAgo(2),
           lastBookingAt: null,
@@ -21,7 +27,7 @@ describe("marketing lifecycle candidate policy", () => {
         },
         now,
       ),
-    ).toEqual(["host_listed_no_bookings", "browsed_no_booking"]);
+    ).toEqual(["host_listed_no_bookings"]);
   });
 
   it("does not keep an onboarding or browse nudge alive indefinitely", () => {
@@ -32,6 +38,7 @@ describe("marketing lifecycle candidate policy", () => {
           onboardingComplete: false,
           isHost: false,
           liveListings: 0,
+          firstLiveListingAt: null,
           bookingCount: 0,
           lastBrowseAt: daysAgo(10),
           lastBookingAt: null,
@@ -42,7 +49,7 @@ describe("marketing lifecycle candidate policy", () => {
     ).toEqual([]);
   });
 
-  it("can surface rebooking, dormancy and stale host inventory independently", () => {
+  it("can surface dormancy and stale host inventory independently", () => {
     expect(
       marketingLifecycleCandidates(
         {
@@ -50,6 +57,7 @@ describe("marketing lifecycle candidate policy", () => {
           onboardingComplete: true,
           isHost: true,
           liveListings: 2,
+          firstLiveListingAt: daysAgo(300),
           bookingCount: 12,
           lastBrowseAt: null,
           lastBookingAt: daysAgo(35),
@@ -57,7 +65,85 @@ describe("marketing lifecycle candidate policy", () => {
         },
         now,
       ),
-    ).toEqual(["rebooking", "dormant_reactivation", "host_inventory_engagement"]);
+    ).toEqual(["dormant_reactivation", "host_inventory_engagement"]);
+  });
+
+  it("keeps practitioner rebooking journeys away from host accounts", () => {
+    expect(
+      marketingLifecycleCandidates(
+        {
+          accountCreatedAt: daysAgo(400),
+          onboardingComplete: true,
+          isHost: true,
+          liveListings: 1,
+          firstLiveListingAt: daysAgo(200),
+          bookingCount: 1,
+          lastBrowseAt: daysAgo(2),
+          lastBookingAt: daysAgo(3),
+          lastActiveAt: daysAgo(1),
+        },
+        now,
+      ),
+    ).toEqual([]);
+  });
+
+  it("waits seven days after the listing itself goes live", () => {
+    expect(
+      marketingLifecycleCandidates(
+        {
+          accountCreatedAt: daysAgo(90),
+          onboardingComplete: true,
+          isHost: true,
+          liveListings: 1,
+          firstLiveListingAt: daysAgo(2),
+          bookingCount: 0,
+          lastBrowseAt: null,
+          lastBookingAt: null,
+          lastActiveAt: daysAgo(1),
+        },
+        now,
+      ),
+    ).toEqual([]);
+  });
+});
+
+describe("marketing lifecycle dedupe", () => {
+  const facts = {
+    accountCreatedAt: daysAgo(400),
+    onboardingComplete: true,
+    isHost: false,
+    liveListings: 0,
+    firstLiveListingAt: null,
+    bookingCount: 2,
+    lastBrowseAt: daysAgo(2),
+    lastBookingAt: daysAgo(30),
+    lastActiveAt: daysAgo(61),
+  };
+
+  it("ties browse and rebooking mail to the activity that earned it", () => {
+    expect(marketingLifecycleBucket("browsed_no_booking", facts, now)).toContain(
+      facts.lastBrowseAt.toISOString(),
+    );
+    expect(marketingLifecycleBucket("rebooking", facts, now)).toContain(
+      facts.lastBookingAt.toISOString(),
+    );
+  });
+
+  it("opens a new dormant cycle only after another ninety days", () => {
+    expect(marketingLifecycleBucket("dormant_reactivation", facts, now)).toMatch(/:0$/);
+    expect(
+      marketingLifecycleBucket(
+        "dormant_reactivation",
+        { ...facts, lastActiveAt: daysAgo(151) },
+        now,
+      ),
+    ).toMatch(/:1$/);
+  });
+
+  it("orders competing journeys by user value", () => {
+    expect(
+      orderMarketingLifecycles(["dormant_reactivation", "rebooking", "browsed_no_booking"]),
+    ).toEqual(["browsed_no_booking", "rebooking", "dormant_reactivation"]);
   });
 });
 

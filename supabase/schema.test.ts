@@ -102,7 +102,8 @@ describe("migrations apply cleanly", () => {
       // +2 in 20260914190221: signed Resend events and correlated probes.
       // +1 in 20260915025303: the private booking money-operation journal.
       // +1 in 20260916050000: the message notification transactional outbox.
-      expect(tables.rows).toHaveLength(34);
+      // +2 in 20260916221824: consented marketing activity and its isolated outbox.
+      expect(tables.rows).toHaveLength(36);
     } finally {
       await fresh.close();
     }
@@ -180,6 +181,10 @@ describe("migrations apply cleanly", () => {
       "founding_practitioners",
       // Host-requested permanent closures, resolved by Command Center (0079).
       "listing_closure_requests",
+      // Coarse, consent-gated timestamps only; no listing/search/device detail.
+      "marketing_activity",
+      // Optional lifecycle mail is isolated from transactional notifications.
+      "marketing_outbox",
       // Created atomically with each message; providers are handled afterwards.
       "message_notification_jobs",
       // Booking-chat abuse reports for staff review (App Store 1.2, 0067).

@@ -2,7 +2,7 @@ apply plugin: 'com.android.application'
 
 def ciBuildNumber = System.getenv('PROJECT_BUILD_NUMBER')
 def resolvedVersionCode = ciBuildNumber?.matches('^[1-9][0-9]*$') ? ciBuildNumber.toInteger() : 1
-def resolvedVersionName = System.getenv('APP_VERSION_NAME')?.trim() ?: '1.0.1'
+def resolvedVersionName = System.getenv('APP_VERSION_NAME')?.trim() ?: '1.0.2'
 def releaseSigningValues = [
     System.getenv('CM_KEYSTORE_PATH'),
     System.getenv('CM_KEYSTORE_PASSWORD'),

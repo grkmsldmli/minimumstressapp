@@ -39,12 +39,15 @@ workflows:
     max_build_duration: 90
     environment:
       node: 22
+      groups:
+        # Secret JSON key with release-only access to this app in Play Console.
+        - google_credentials
       # Upload the long-lived Play upload keystore once in Codemagic under
       # Team settings -> Code signing identities using this exact reference.
       android_signing:
         - minimumstress_upload
       vars:
-        APP_VERSION_NAME: "1.0.1"
+        APP_VERSION_NAME: "1.0.2"
         ONESIGNAL_DISABLE_LOCATION: "true"
     scripts:
       - name: Verify release inputs
@@ -62,6 +65,11 @@ workflows:
               exit 1
             fi
           done
+          if [ -z "${GOOGLE_PLAY_SERVICE_ACCOUNT_CREDENTIALS:-}" ]; then
+            echo "Missing encrypted GOOGLE_PLAY_SERVICE_ACCOUNT_CREDENTIALS for Internal testing publishing."
+            exit 1
+          fi
+          node -e 'JSON.parse(process.env.GOOGLE_PLAY_SERVICE_ACCOUNT_CREDENTIALS)'
           if [ ! -f "$CM_KEYSTORE_PATH" ]; then
             echo "Codemagic did not fetch the configured Android keystore."
             exit 1
@@ -90,9 +98,13 @@ workflows:
           }
     artifacts:
       - android/app/build/outputs/bundle/release/*.aab
-    # Google requires the first version to be uploaded manually. Download the
-    # signed AAB artifact and upload it to Internal testing in Play Console.
-    # Add google_play publishing only after that first Play version exists.
+    publishing:
+      # The first Play release already exists. Every subsequent signed build
+      # is delivered to Internal testing, never directly to production.
+      google_play:
+        credentials: $GOOGLE_PLAY_SERVICE_ACCOUNT_CREDENTIALS
+        track: internal
+        submit_as_draft: false
 
   ios-release:
     name: iOS — TestFlight
@@ -102,7 +114,9 @@ workflows:
       app_store_connect: minimumstress_asc
     environment:
       node: 22
-      xcode: latest
+      # Pin the image so a Codemagic default update cannot change the compiler
+      # underneath an otherwise identical release commit.
+      xcode: "26.6"
       vars:
         ONESIGNAL_DISABLE_LOCATION: "true"
       ios_signing:

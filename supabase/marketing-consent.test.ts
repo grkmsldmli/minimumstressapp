@@ -20,10 +20,12 @@ async function preference() {
     marketing_consent_at: string | null;
     marketing_unsubscribed_at: string | null;
     marketing_consent_source: string | null;
+    marketing_unsubscribe_reason: string | null;
     marketing_unsubscribe_token: string;
   }>(
     `select notify_offers, marketing_consent_at::text, marketing_unsubscribed_at::text,
-            marketing_consent_source, marketing_unsubscribe_token::text
+            marketing_consent_source, marketing_unsubscribe_reason,
+            marketing_unsubscribe_token::text
        from profiles where id = '${USER}'`,
   )).rows[0];
 }
@@ -66,6 +68,7 @@ describe("auditable marketing consent", () => {
       set notify_offers = true,
           marketing_consent_at = '2000-01-01T00:00:00Z',
           marketing_consent_source = 'forged',
+          marketing_unsubscribe_reason = 'provider_complaint',
           marketing_unsubscribe_token = '99999999-9999-4999-8999-999999999999'
       where id = '${USER}';
     `);
@@ -74,6 +77,7 @@ describe("auditable marketing consent", () => {
     expect(row.notify_offers).toBe(true);
     expect(row.marketing_consent_at).not.toContain("2000-01-01");
     expect(row.marketing_consent_source).toBe("in_app_settings");
+    expect(row.marketing_unsubscribe_reason).toBeNull();
     expect(row.marketing_unsubscribe_token).toBe(before.marketing_unsubscribe_token);
   });
 
@@ -84,6 +88,7 @@ describe("auditable marketing consent", () => {
     expect(row.notify_offers).toBe(false);
     expect(row.marketing_consent_at).not.toBeNull();
     expect(row.marketing_unsubscribed_at).not.toBeNull();
+    expect(row.marketing_unsubscribe_reason).toBe("in_app");
 
     const [{ source }] = (await db.query<{ source: string }>(
       `select pg_get_functiondef(

@@ -73,6 +73,57 @@ describe("Resend transport", () => {
     expect(result).toEqual({ status: "dropped", reason: "email 422: provider_4xx" });
     expect(JSON.stringify(result)).not.toContain("private@example.com");
   });
+
+  it("sends marketing through an RFC 8058 one-click envelope", async () => {
+    vi.stubEnv("RESEND_API_KEY", "re_test_123");
+    vi.stubEnv("MARKETING_FROM_EMAIL", "Minimum Stress <news@minimumstress.app>");
+    const provider = vi.fn(async () =>
+      new Response(JSON.stringify({ id: "email_marketing_1" }), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", provider);
+    const { sendMarketingEmail } = await import("./transports");
+    const unsubscribeUrl =
+      "https://minimumstress.app/api/marketing/unsubscribe?token=11111111-1111-4111-8111-111111111111";
+
+    await expect(
+      sendMarketingEmail(
+        "person@example.com",
+        { subject: "Come back", text: "Text", html: "<p>Text</p>", unsubscribeUrl },
+        { idempotencyKey: "marketing-key", correlationId: "b".repeat(64) },
+      ),
+    ).resolves.toEqual({ status: "sent", id: "email_marketing_1" });
+
+    const [, request] = provider.mock.calls[0] as unknown as [string, RequestInit];
+    expect(JSON.parse(String(request.body))).toMatchObject({
+      from: "Minimum Stress <news@minimumstress.app>",
+      headers: {
+        "List-Unsubscribe": `<${unsubscribeUrl}>`,
+        "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+      },
+      tags: [{ name: "notification_id", value: "b".repeat(64) }],
+    });
+  });
+
+  it("refuses a marketing unsubscribe URL outside the app", async () => {
+    vi.stubEnv("RESEND_API_KEY", "re_test_123");
+    const provider = vi.fn();
+    vi.stubGlobal("fetch", provider);
+    const { sendMarketingEmail } = await import("./transports");
+
+    await expect(
+      sendMarketingEmail(
+        "person@example.com",
+        {
+          subject: "Come back",
+          text: "Text",
+          html: "<p>Text</p>",
+          unsubscribeUrl: "https://attacker.example/unsubscribe",
+        },
+        { idempotencyKey: "marketing-key", correlationId: "b".repeat(64) },
+      ),
+    ).resolves.toEqual({ status: "dropped", reason: "email invalid_unsubscribe_url" });
+    expect(provider).not.toHaveBeenCalled();
+  });
 });
 
 describe("OneSignal transport", () => {

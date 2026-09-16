@@ -188,6 +188,12 @@ export const LIMITS = {
   marketingUnsubscribe: { limit: 30, windowMs: 60 * 60_000 },
 
   /**
+   * Coarse opt-in lifecycle activity. One app-open plus a few listing opens;
+   * no IDs or search text are accepted by the endpoint.
+   */
+  marketingActivity: { limit: 30, windowMs: 60_000 },
+
+  /**
    * Work coverage mutations — posting a request, cancelling, confirming one.
    * Each fans out into matching and notifications, so it is metered like a
    * booking: enough for a studio managing a busy week, far below a loop.

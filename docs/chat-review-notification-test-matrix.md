@@ -97,7 +97,7 @@ badge behavior.
 ## Production rollout order
 
 1. Apply migrations through
-   `20260916053821_notification_delivery_current_chat_reviews.sql`.
+   `20260916054908_message_notification_job_fk_indexes.sql`.
 2. Confirm `messages` is still absent from `supabase_realtime` publication.
 3. Confirm the private Broadcast policy exists on `realtime.messages`.
 4. Deploy the web/API build with `CRON_SECRET`, OneSignal and Resend secrets.

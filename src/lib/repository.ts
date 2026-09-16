@@ -116,6 +116,9 @@ export interface Repository {
   /** Booking ids this signed-in account has already reviewed. */
   reviewedBookingIds(): Promise<string[]>;
 
+  /** Reviews about this account that have cleared the blind-review boundary. */
+  reviewsReceivedCount(): Promise<number>;
+
   /**
    * What the app has sent this account, newest first.
    *
@@ -128,6 +131,15 @@ export interface Repository {
   /* ---------------- messages ---------------- */
 
   listMessages(bookingId: string): Promise<Message[]>;
+
+  /**
+   * Subscribe to a body-free private Broadcast for this booking. The callback
+   * is only a refresh hint; the caller still reads messages_visible for data.
+   */
+  watchMessageSignals(bookingId: string, onSignal: () => void): () => void;
+
+  /** Server truth needed to disable a composer that was blocked on any device. */
+  messageThreadState(bookingId: string): Promise<{ blocked: boolean }>;
 
   /**
    * Returns the message as it was actually sent, plus a note when something
@@ -162,6 +174,11 @@ export interface Repository {
    * closes. A repeat block is a no-op.
    */
   blockBookingParty(bookingId: string): Promise<void>;
+
+  /** Resolve an opaque push/email token through the caller's own notification row. */
+  notificationTarget(
+    notificationId: string,
+  ): Promise<{ bookingId: string | null; kind: string } | null>;
 
   /* ---------------- standing ---------------- */
 

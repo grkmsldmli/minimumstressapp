@@ -82,9 +82,11 @@ import {
 } from "@/lib/insurance";
 import type { NotificationEntry } from "@/lib/notify/history";
 import {
-  OPEN_NOTIFICATIONS_EVENT,
-  consumeNotificationsScreenRequest,
+  OPEN_NOTIFICATION_EVENT,
+  PUSH_RECEIVED_EVENT,
+  consumeNotificationDestination,
 } from "@/lib/onesignal/navigation";
+import { notificationDestination } from "@/lib/onesignal/destination";
 import { ClaimForm } from "@/components/screens/claim-form";
 import { Disputes } from "@/components/screens/disputes";
 import { RefundRequest } from "@/components/screens/refund-request";
@@ -220,6 +222,8 @@ interface Snapshot {
   unreadCounts: Record<string, number>;
   /** Booking ids this account has already reviewed — prevents stale review CTAs. */
   reviewedBookingIds: Set<string>;
+  /** Released reviews written about this account; sealed reviews stay unknowable. */
+  reviewsReceived: number;
   /* ---- Work (empty/default for the side that does not use each) ---- */
   workPreferences: WorkPreferences;
   workAvailability: AvailabilityBlock[];
@@ -315,18 +319,57 @@ export function App() {
    * list, which takes precedence.
    */
   const [checkoutBooking, setCheckoutBooking] = useState<Booking | null>(null);
+  /** Server-backed block state for the currently open booking thread. */
+  const [threadBlocked, setThreadBlocked] = useState(false);
 
-  // A push tap opens the in-app receipt list. On a cold native launch the tap
-  // may arrive before the signed-in snapshot, so the request stays in session
-  // storage and is consumed only once the account is ready.
+  // A push carries only an opaque notification-row id. Resolve it after sign-in
+  // through the caller's own RLS-scoped row, then open the relevant protected
+  // surface. Cold-launch intent stays in session storage until data is ready.
   useEffect(() => {
-    const openNotifications = () => {
-      if (data) go("notifications");
+    let cancelled = false;
+    const openDestination = async () => {
+      if (!data) return;
+      const request = consumeNotificationDestination();
+      if (!request) return;
+      if (!request.notificationId) {
+        go("notifications");
+        return;
+      }
+
+      const target = await repo.notificationTarget(request.notificationId).catch(() => null);
+      if (cancelled) return;
+      const destination = notificationDestination(
+        target,
+        new Set(data.bookings.map((booking) => booking.id)),
+        new Set(data.hostBookings.map((booking) => booking.id)),
+      );
+      if (destination.screen === "thread") {
+        setThreadBlocked(false);
+        setThreadBookingId(destination.bookingId);
+        go("thread");
+      } else if (destination.screen === "review") {
+        setReviewing({ bookingId: destination.bookingId, role: destination.role });
+        go("review");
+      } else {
+        go("notifications");
+      }
     };
-    window.addEventListener(OPEN_NOTIFICATIONS_EVENT, openNotifications);
-    if (data && consumeNotificationsScreenRequest()) go("notifications");
-    return () => window.removeEventListener(OPEN_NOTIFICATIONS_EVENT, openNotifications);
-  }, [data, go]);
+    const onOpen = () => void openDestination();
+    window.addEventListener(OPEN_NOTIFICATION_EVENT, onOpen);
+    void openDestination();
+    return () => {
+      cancelled = true;
+      window.removeEventListener(OPEN_NOTIFICATION_EVENT, onOpen);
+    };
+  }, [data, go, repo, setReviewing, setThreadBookingId]);
+
+  // A native notification displayed while the app is foregrounded keeps its
+  // normal OS banner/sound; refresh the in-app badge and receipt state too.
+  useEffect(() => {
+    const onPush = () => refresh();
+    window.addEventListener(PUSH_RECEIVED_EVENT, onPush);
+    return () => window.removeEventListener(PUSH_RECEIVED_EVENT, onPush);
+  }, [refresh]);
 
   /**
    * Pro checkout confirmation, kept honest.
@@ -453,9 +496,14 @@ export function App() {
     const bookingId = threadBookingId;
 
     let cancelled = false;
+    let loadRevision = 0;
     const load = async () => {
-      const messages = await repo.listMessages(bookingId);
-      if (cancelled) return;
+      const currentLoad = ++loadRevision;
+      const [messages, state] = await Promise.all([
+        repo.listMessages(bookingId),
+        repo.messageThreadState(bookingId),
+      ]);
+      if (cancelled || currentLoad !== loadRevision) return;
       setThread(
         messages.map((m) => ({
           id: m.id,
@@ -465,6 +513,7 @@ export function App() {
           redactedKinds: m.redactedKinds,
         })),
       );
+      setThreadBlocked(state.blocked);
       // Reading the thread marks its incoming messages read (server truth); clear
       // this booking's badge locally so it does not linger until the next load.
       const marked = await repo.markMessagesRead(bookingId).catch(() => 0);
@@ -477,24 +526,25 @@ export function App() {
 
     void load();
     /*
-     * A safe near-realtime poll rather than Supabase Realtime. Realtime on the
-     * messages table would broadcast the whole changed row — original_body
-     * included — so a raw subscription would undo the masking boundary. While
-     * the thread is visible we re-read only the redacted view every 2.5s; while
-     * the app is hidden, push/email own the interruption and polling stops. A
-     * visibility return refreshes immediately rather than waiting for the next
-     * tick.
+     * The private Broadcast contains only an opaque message id. It is a refresh
+     * hint, never message data: every arrival re-reads messages_visible, which
+     * cannot expose original_body. A slow fallback poll plus visibility/online
+     * refresh makes the thread self-heal after a dropped socket or sleep.
      */
     const tick = () => {
       if (document.visibilityState === "visible") void load();
     };
-    const poll = setInterval(tick, 2500);
+    const stopSignals = repo.watchMessageSignals(bookingId, tick);
+    const poll = setInterval(tick, 30_000);
     document.addEventListener("visibilitychange", tick);
+    window.addEventListener("online", tick);
 
     return () => {
       cancelled = true;
+      stopSignals();
       clearInterval(poll);
       document.removeEventListener("visibilitychange", tick);
+      window.removeEventListener("online", tick);
     };
   }, [repo, threadBookingId, revision]);
 
@@ -713,6 +763,7 @@ export function App() {
         referrals,
         unreadCounts,
         reviewedBookingIds,
+        reviewsReceived,
         workPreferences,
         workAvailability,
         workOpportunities,
@@ -741,6 +792,7 @@ export function App() {
           // Unread message badges — a convenience; an empty map on failure.
           repo.unreadMessageCounts().catch(() => ({})),
           repo.reviewedBookingIds().then((ids) => new Set(ids)).catch(() => new Set<string>()),
+          repo.reviewsReceivedCount().catch(() => 0),
           // Work is a whole extra area; a hiccup fetching any of it must never
           // keep somebody out of their account. Each side reads only its own.
           repo.getWorkPreferences().catch(() => WORK_PREFERENCES_FALLBACK),
@@ -778,6 +830,7 @@ export function App() {
         referrals,
         unreadCounts,
         reviewedBookingIds,
+        reviewsReceived,
         workPreferences,
         workAvailability,
         workOpportunities,
@@ -1543,9 +1596,9 @@ export function App() {
   });
   const practitionerFacts = practitionerFactsFrom({
     bookings,
-    // Reviews written about the practitioner. Not yet surfaced anywhere, so
-    // the milestone waits rather than firing on a number we do not have.
-    reviewsReceived: 0,
+    // Only released reviews: a milestone must not leak that the host submitted
+    // while the blind-review period is still sealed.
+    reviewsReceived: data.reviewsReceived,
   });
 
   const hostMilestones = earnedByHost(hostFacts);
@@ -1770,6 +1823,7 @@ export function App() {
             go("claim");
           }}
           onMessageBooking={(bookingId) => {
+            setThreadBlocked(false);
             setThreadBookingId(bookingId);
             go("thread");
           }}
@@ -2402,6 +2456,7 @@ export function App() {
 
       return (
         <Thread
+          key={threadBookingId}
           messages={thread}
           meId={profile.id}
           otherName={mine ? "the studio" : (theirs as HostBooking).practitionerName}
@@ -2413,6 +2468,7 @@ export function App() {
               FALLBACK_ZONE,
           )}
           canSend={canSend}
+          serverBlocked={threadBlocked}
           disabledReason={disabledReason}
           onBack={() => {
             setThreadBookingId(null);
@@ -2426,7 +2482,8 @@ export function App() {
           onReport={(reason) => repo.reportBooking(threadBookingId, reason)}
           onBlock={async () => {
             await repo.blockBookingParty(threadBookingId);
-            // The thread can no longer send after a block; reflect it.
+            // Disable synchronously; the server state also survives reopening.
+            setThreadBlocked(true);
             refresh();
           }}
         />
@@ -2476,6 +2533,7 @@ export function App() {
             go("refund");
           }}
           onMessage={(id) => {
+            setThreadBlocked(false);
             setThreadBookingId(id);
             go("thread");
           }}

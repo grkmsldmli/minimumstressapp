@@ -698,12 +698,24 @@ export class MockRepository implements Repository {
     return [];
   }
 
+  async reviewsReceivedCount(): Promise<number> {
+    return 0;
+  }
+
   /* ---------------- messages ---------------- */
 
   private messages: Message[] = [];
 
   async listMessages(bookingId: string): Promise<Message[]> {
     return this.messages.filter((m) => m.bookingId === bookingId);
+  }
+
+  watchMessageSignals(): () => void {
+    return () => undefined;
+  }
+
+  async messageThreadState(): Promise<{ blocked: boolean }> {
+    return { blocked: false };
   }
 
   /**
@@ -748,6 +760,10 @@ export class MockRepository implements Repository {
 
   async blockBookingParty(): Promise<void> {
     // No message channel to sever in the mock.
+  }
+
+  async notificationTarget(): Promise<null> {
+    return null;
   }
 
   /* ---------------- standing ---------------- */

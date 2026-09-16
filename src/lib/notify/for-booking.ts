@@ -605,22 +605,31 @@ export async function notifyNewMessage(
   bookingId: string,
   senderId: string,
   messageId: string,
+  options: { propagate?: boolean } = {},
 ): Promise<void> {
   try {
-    const { data } = await admin
+    const { data, error } = await admin
       .from("bookings")
-      .select("practitioner_id, starts_at, ends_at, status, spaces!inner(name, host_id, timezone)")
+      .select("practitioner_id, starts_at, status, captured_at, cancelled_at, spaces!inner(name, host_id, timezone)")
       .eq("id", bookingId)
       .maybeSingle();
+    if (error) throw error;
 
     const booking = data as unknown as {
       practitioner_id: string;
       starts_at: string;
-      ends_at: string;
       status: string;
+      captured_at: string | null;
+      cancelled_at: string | null;
       spaces: { name: string; host_id: string; timezone: string };
     } | null;
-    if (!booking || booking.status !== "upcoming") return;
+    if (
+      !booking ||
+      !booking.captured_at ||
+      booking.cancelled_at ||
+      booking.status === "cancelled_by_practitioner" ||
+      booking.status === "cancelled_by_host"
+    ) return;
 
     const recipientId =
       senderId === booking.practitioner_id ? booking.spaces.host_id : booking.practitioner_id;
@@ -636,7 +645,6 @@ export async function notifyNewMessage(
       // not — never a permanent per-thread dedupe that would notify once only.
       subjectId: messageId,
       bookingId,
-      expiresAt: booking.ends_at,
       context: {
         spaceName: booking.spaces.name,
         when: formatWhen(new Date(booking.starts_at), booking.spaces.timezone),
@@ -644,6 +652,7 @@ export async function notifyNewMessage(
     });
   } catch (error) {
     console.error(`New-message notification failed for ${bookingId}:`, error);
+    if (options.propagate) throw error;
   }
 }
 

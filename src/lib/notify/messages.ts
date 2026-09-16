@@ -32,6 +32,9 @@ export const NOTIFICATION_KINDS = [
   "new_message",
   "review_prompt",
   "review_reminder",
+  "review_submitted",
+  "counterpart_reviewed",
+  "review_published",
   "cancelled_by_practitioner",
   "cancelled_by_host",
   "reliability_warning",
@@ -225,6 +228,12 @@ function renderPush(kind: NotificationKind): PushMessage | null {
     case "review_prompt":
     case "review_reminder":
       return push("Review your session", "Your review window is open in Minimum Stress.", url);
+    case "review_submitted":
+      return push("Review received", "Your review was saved securely in Minimum Stress.", url);
+    case "counterpart_reviewed":
+      return push("Reviews ready", "Both sides have reviewed the session. Open Minimum Stress.", url);
+    case "review_published":
+      return push("Review published", "Your blind review period has ended. Open Minimum Stress.", url);
     case "cancelled_by_practitioner":
     case "cancelled_by_host":
       return push("Booking cancelled", "A booking was cancelled. Open Minimum Stress for details.", url);
@@ -505,6 +514,49 @@ function renderPlain(kind: NotificationKind, context: MessageContext): Message {
             ? `Your feedback stays private from the room listing and helps us keep the marketplace reliable.`
             : `Your room review helps future professionals know what to expect.`,
           `Reviews are blind until both sides submit or 14 days pass, and the window closes 30 days after the session.`,
+          SIGN_OFF,
+        ),
+        sms: null,
+      };
+
+    case "review_submitted":
+      return {
+        subject: `Review received: ${spaceName}`,
+        body: lines(
+          greeting(name),
+          `We received your review of the session at ${spaceName}${
+            context.when ? ` on ${when}` : ""
+          }.`,
+          `It stays sealed until the other side reviews too or 14 days pass. This keeps the second review independent rather than turning it into a reply.`,
+          `That record matters. Honest feedback — positive or critical — helps us improve quality and reliability without changing your booking record.`,
+          SIGN_OFF,
+        ),
+        sms: null,
+      };
+
+    case "counterpart_reviewed":
+      return {
+        subject: `Both reviews are ready: ${spaceName}`,
+        body: lines(
+          greeting(name),
+          `The other side has now reviewed the session at ${spaceName}${
+            context.when ? ` on ${when}` : ""
+          }.`,
+          `Both blind reviews are now released. Open Minimum Stress to see your review status.`,
+          SIGN_OFF,
+        ),
+        sms: null,
+      };
+
+    case "review_published":
+      return {
+        subject: `Your review is now published: ${spaceName}`,
+        body: lines(
+          greeting(name),
+          `Fourteen days have passed since your review of ${spaceName}${
+            context.when ? ` on ${when}` : ""
+          }.`,
+          `The blind period is over, so your review is now released even though the other side did not submit one.`,
           SIGN_OFF,
         ),
         sms: null,

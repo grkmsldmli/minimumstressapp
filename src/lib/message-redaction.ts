@@ -53,9 +53,11 @@ const PATTERNS: { kind: RedactionKind; pattern: RegExp }[] = [
   },
   {
     kind: "handle",
-    // A social handle or an app named alongside one.
+    // A real handle, or a messaging service used as a hand-off. Do not hide a
+    // bare service name: "the Signal in the basement is weak" is ordinary
+    // booking logistics, not contact information.
     pattern:
-      /\b(?:whats\s?app|telegram|signal|instagram|insta|snapchat|wechat|viber|messenger)\b|(?<![\w])@[a-z][\w.]{2,}/gi,
+      /(?<![\w])@[a-z][\w.]{2,}|\b(?:message|dm|add|find|contact|reach)\s+(?:me|you)(?:\s+(?:on|via))?\s+(?:whats\s?app|telegram|signal|instagram|insta|snapchat|wechat|viber|messenger)\b|\b(?:whats\s?app|telegram|signal|instagram|insta|snapchat|wechat|viber|messenger)\s*(?:handle|username|is|:|=|@)\s*[$@]?[a-z][\w.\-]{2,}/gi,
   },
   {
     kind: "phone",
@@ -96,41 +98,87 @@ const NOT_A_PHONE = [
  * start of an off-platform handoff.
  */
 export function offPlatformRequest(input: string): RedactionKind | null {
-  const text = input.toLowerCase().replace(/[’]/g, "'");
+  const text = input
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/[’]/g, "'")
+    .replace(/[\u200b-\u200d\ufeff]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 
-  const targets: { kind: RedactionKind; pattern: RegExp }[] = [
-    {
-      kind: "phone",
-      pattern: /\b(?:phone(?: number)?|mobile|cell(?: number)?|telephone|text(?: me| you)?|call(?: me| you)?)\b/i,
-    },
-    { kind: "email", pattern: /\be[ -]?mail(?: address)?\b/i },
-    {
-      kind: "handle",
-      pattern: /\b(?:whats\s?app|telegram|signal|instagram|insta|snapchat|wechat|viber|messenger|facebook|facetime|social(?: media)?|handle|username)\b/i,
-    },
-    {
-      kind: "payment",
-      pattern: /\b(?:venmo|paypal|cash\s?app|zelle|revolut|apple\s?pay|cash|pay (?:you )?(?:directly|outside|off[- ]?app))\b/i,
-    },
+  /*
+   * These are invitations, not keyword matches. Words such as "call",
+   * "cash" and "signal" are common booking language, so each rule requires
+   * both the thing being requested and the request/handoff around it.
+   */
+  const phone = [
+    /\b(?:send|share|give|drop|tell)\s+(?:me\s+)?(?:your\s+)?(?:phone|mobile|cell|telephone)?\s*(?:number|digits)\b/,
+    /\b(?:what(?:'s| is)|where(?:'s| is))\s+(?:the\s+best\s+)?(?:your\s+)?(?:phone|mobile|cell|telephone)(?:\s+number)?\b/,
+    /\b(?:can|could|would|will|may)\s+(?:you\s+)?(?:send|share|give|text|call)\s+(?:me\s+)?(?:your\s+)?(?:phone|mobile|cell|telephone|number|digits)\b/,
+    /\bcan\s+i\s+(?:have|get)\s+(?:your\s+)?(?:phone|mobile|cell|telephone)?\s*(?:number|digits)\b/,
+    /\b(?:text|call)\s+me\s+(?:instead|directly|outside|off[- ]?(?:the\s+)?app|privately)\b/,
+    /\b(?:reach|contact)\s+(?:me|you)\s+(?:by|on|via)\s+(?:phone|text|call)\b/,
+    /(?:^|\s)(?:telefon\s+|cep\s+)?numaran(?:ı|i)?\s+(?:gönder|paylaş|ver)(?=\s|[?.!,]|$)/u,
   ];
+  if (phone.some((pattern) => pattern.test(text))) return "phone";
 
-  const ask = /\b(?:send|share|give|tell|what(?:'s| is)|where(?:'s| is)|can i (?:have|get)|could i (?:have|get)|may i (?:have|get)|text|call|contact|reach|dm|message|add|find|pay|use|move|take|continue|talk|chat|communicate)\b/i;
-  const outside = /\b(?:outside|off[- ]?(?:the )?app|direct(?:ly)?|elsewhere|privately)\b/i;
-  const genericContact = /\b(?:contact (?:info|information|details)|your details|my details)\b/i;
+  const email = [
+    /\b(?:send|share|give|drop|tell)\s+(?:me\s+)?(?:your\s+)?e[ -]?mail(?:\s+address)?\b/,
+    /\b(?:what(?:'s| is)|where(?:'s| is))\s+(?:your\s+)?e[ -]?mail(?:\s+address)?\b/,
+    /\b(?:can|could|would|will|may)\s+(?:you\s+)?e[ -]?mail\s+me\b/,
+    /\b(?:reach|contact)\s+(?:me|you)\s+(?:by|on|via)\s+e[ -]?mail\b/,
+    /(?:^|\s)e[- ]?posta(?:\s+adres(?:in|ini))?\s+(?:gönder|paylaş|ver)(?=\s|[?.!,]|$)/u,
+  ];
+  if (email.some((pattern) => pattern.test(text))) return "email";
 
-  if (genericContact.test(text)) return "phone";
+  const channel =
+    "(?:whats\\s?app|telegram|signal|instagram|insta|snapchat|wechat|viber|messenger|facebook|facetime|social(?: media)?|handle|username)";
+  const social = [
+    new RegExp(`\\b(?:send|share|give|drop|tell)\\s+(?:me\\s+)?(?:your\\s+)?${channel}\\b`),
+    new RegExp(`\\b(?:what(?:'s| is)|where(?:'s| is))\\s+(?:your\\s+)?${channel}\\b`),
+    new RegExp(`\\b(?:message|dm|add|find|contact|reach)\\s+(?:me|you)\\s+(?:on|via)\\s+${channel}\\b`),
+    new RegExp(`\\b(?:move|take|continue|talk|chat|communicate|message)\\s+(?:this|there|with me|with you)?\\s*(?:on|over to|via)\\s+${channel}\\b`),
+    new RegExp(`\\b(?:can|could|would|will|may)\\s+(?:we|you)\\s+(?:move|continue|talk|chat|message|connect)\\s+(?:on|via|over to)\\s+${channel}\\b`),
+    new RegExp(`\\b(?:let(?:'s| us)|can we)\\s+(?:use|switch to|move to)\\s+${channel}\\b`),
+    /(?:^|\s)(?:whats\s?app|telegram|instagram|insta|signal)(?:'(?:tan|ten|dan|den|a|e))?\s+(?:yaz|geçelim|konuşalım|mesaj\s+at)(?=\s|[?.!,]|$)/u,
+  ];
+  if (social.some((pattern) => pattern.test(text))) return "handle";
 
-  for (const target of targets) {
-    const match = target.pattern.exec(text);
-    if (!match) continue;
-    const start = Math.max(0, match.index - 70);
-    const end = Math.min(text.length, match.index + match[0].length + 70);
-    const nearby = text.slice(start, end);
-    if (ask.test(nearby) || outside.test(nearby)) return target.kind;
-  }
+  const payment = [
+    /\b(?:pay|send|transfer)\s+(?:me|you)?\s*(?:directly|privately|outside|off[- ]?(?:the\s+)?app)\b/,
+    /\b(?:pay|send|transfer|use|accept)\b.{0,35}\b(?:venmo|paypal|cash\s?app|zelle|revolut|apple\s?pay)\b/,
+    /\b(?:venmo|paypal|cash\s?app|zelle|revolut|apple\s?pay)\b.{0,35}\b(?:me|you|directly|instead|outside|off[- ]?(?:the\s+)?app|easier)\b/,
+    /\b(?:let(?:'s| us)|can we)\s+(?:use|do|pay (?:with|on))\s+(?:venmo|paypal|cash\s?app|zelle|revolut|apple\s?pay)\b/,
+    /\b(?:pay|book|do)\s+(?:me|you)?\s*(?:for\s+)?(?:this|it|the session|the booking)?\s*(?:in\s+)?cash\s+(?:instead|directly|outside|off[- ]?(?:the\s+)?app)\b/,
+    /\b(?:avoid|skip|save)\s+(?:the\s+)?(?:app|platform|booking|service)?\s*(?:fee|fees)\b/,
+    /(?:^|\s)(?:venmo|paypal|cash\s?app|zelle|revolut)(?:'(?:tan|ten|dan|den|la|le))?\s+(?:yapalım|ödeyelim|gönderelim|atalım)(?=\s|[?.!,]|$)/u,
+    /(?:^|\s)uygulama\s+dışında\s+(?:ödeyelim|ödeme\s+yapalım|rezervasyon\s+yapalım)(?=\s|[?.!,]|$)/u,
+  ];
+  if (payment.some((pattern) => pattern.test(text))) return "payment";
+
+  const link = [
+    /\b(?:send|share|give|drop)\s+(?:me\s+)?(?:your\s+|the\s+)?(?:website|site|link|booking link)\b/,
+    /\b(?:what(?:'s| is)|where(?:'s| is))\s+(?:your\s+)?(?:website|site|booking link)\b/,
+    /\b(?:book|pay|contact|message)\s+(?:me\s+)?(?:through|via|on)\s+(?:your\s+)?(?:website|site|link)\b/,
+  ];
+  if (link.some((pattern) => pattern.test(text))) return "link";
+
+  const outside = /\b(?:outside|off[- ]?(?:the\s+)?app|off[- ]?platform|elsewhere|privately)\b/;
+  const handoff = /\b(?:move|take|continue|talk|chat|communicate|contact|message|book|pay)\b/;
+  const proposal = /\b(?:can|could|would|should|shall|may)\s+we\b|\blet(?:'s| us)\b|\bwhy don't we\b/;
 
   // Generic handoff language with no named channel: "can we talk outside the app?"
-  if (outside.test(text) && ask.test(text)) return "handle";
+  if (outside.test(text) && handoff.test(text) && proposal.test(text)) return "handle";
+
+  if (
+    /(?:^|\s)uygulama\s+dışında\s+(?:konuşalım|yazışalım|mesajlaşalım)(?=\s|[?.!,]|$)/u.test(text)
+  ) return "handle";
+
+  if (
+    /\b(?:send|share|give)\s+(?:me\s+)?(?:your\s+)?contact (?:info|information|details)\b/.test(text) ||
+    /\b(?:what(?:'s| is)|can i (?:have|get))\s+(?:your\s+)?contact (?:info|information|details)\b/.test(text)
+  ) return "phone";
+
   return null;
 }
 

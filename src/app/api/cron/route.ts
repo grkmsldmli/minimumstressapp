@@ -21,8 +21,12 @@ import {
   reconcileRefundDecisionNotifications,
   reconcileRefundRequestNotifications,
 } from "@/lib/notify/for-refund";
+import { processMessageNotificationJobs } from "@/lib/notify/message-jobs";
 import { notify, retryPending } from "@/lib/notify/send";
-import { notifyReviewRequests } from "@/lib/notify/for-review";
+import {
+  notifyReviewRequests,
+  reconcileReviewLifecycleNotifications,
+} from "@/lib/notify/for-review";
 import { settle } from "@/lib/stripe/client";
 import { siteUrl } from "@/lib/site-url";
 import { supabaseAdmin } from "@/lib/supabase/server";
@@ -133,6 +137,7 @@ export async function runOperationalTasks(now: Date) {
   const refundRequests = await reconcileRefundRequests(now);
   const refundDecisions = await reconcileRefundDecisions(now);
   const cancellations = await reconcileCancellations(now);
+  const messageJobs = await recoverMessageNotifications(now);
   const reviews = await nudgeForReviews(now);
   const announced = await announceAccessCodes(now);
   const retried = await retryFailedNotifications();
@@ -151,6 +156,7 @@ export async function runOperationalTasks(now: Date) {
     ...refundRequests,
     ...refundDecisions,
     ...cancellations,
+    ...messageJobs,
     ...reviews,
     ...announced,
     ...retried,
@@ -158,16 +164,65 @@ export async function runOperationalTasks(now: Date) {
   };
 }
 
+async function recoverMessageNotifications(
+  now: Date,
+): Promise<{
+  messageJobsClaimed: number;
+  messageJobsCompleted: number;
+  messageJobsRetrying: number;
+  messageJobsFailed: number;
+}> {
+  try {
+    const result = await processMessageNotificationJobs(supabaseAdmin(), { limit: 100, now });
+    return {
+      messageJobsClaimed: result.claimed,
+      messageJobsCompleted: result.completed,
+      messageJobsRetrying: result.retrying,
+      messageJobsFailed: result.failed,
+    };
+  } catch (error) {
+    console.error("Message notification recovery failed:", describe(error));
+    return {
+      messageJobsClaimed: 0,
+      messageJobsCompleted: 0,
+      messageJobsRetrying: 0,
+      messageJobsFailed: 1,
+    };
+  }
+}
+
 
 async function nudgeForReviews(
   now: Date,
-): Promise<{ reviewPrompts: number; reviewReminders: number }> {
+): Promise<{
+  reviewPrompts: number;
+  reviewReminders: number;
+  reviewReceipts: number;
+  counterpartReviews: number;
+  reviewsPublished: number;
+}> {
   try {
-    const result = await notifyReviewRequests(supabaseAdmin(), now);
-    return { reviewPrompts: result.prompted, reviewReminders: result.reminded };
+    const admin = supabaseAdmin();
+    const [nudges, lifecycle] = await Promise.all([
+      notifyReviewRequests(admin, now),
+      reconcileReviewLifecycleNotifications(admin, now),
+    ]);
+    return {
+      reviewPrompts: nudges.prompted,
+      reviewReminders: nudges.reminded,
+      reviewReceipts: lifecycle.submitted,
+      counterpartReviews: lifecycle.counterpart,
+      reviewsPublished: lifecycle.published,
+    };
   } catch (error) {
     console.error("Review prompts failed:", describe(error));
-    return { reviewPrompts: 0, reviewReminders: 0 };
+    return {
+      reviewPrompts: 0,
+      reviewReminders: 0,
+      reviewReceipts: 0,
+      counterpartReviews: 0,
+      reviewsPublished: 0,
+    };
   }
 }
 

@@ -141,8 +141,33 @@ workflows:
             echo "Selected provisioning profile must contain aps-environment=production. Regenerate it after enabling Push Notifications for com.minimumstress.app."
             exit 1
           fi
+          /usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.security.application-groups' /tmp/profile.plist \
+            | grep -F 'group.com.minimumstress.app.onesignal' >/dev/null || {
+            echo "Selected app profile must contain the OneSignal App Group. Enable group.com.minimumstress.app.onesignal and regenerate it."
+            exit 1
+          }
+
+          EXTENSION_PROFILE_FOUND=false
+          for CANDIDATE in "$HOME/Library/MobileDevice/Provisioning Profiles"/*.mobileprovision; do
+            [ -f "$CANDIDATE" ] || continue
+            security cms -D -i "$CANDIDATE" > /tmp/candidate-profile.plist
+            APPLICATION_ID=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' /tmp/candidate-profile.plist 2>/dev/null || true)
+            case "$APPLICATION_ID" in
+              *.com.minimumstress.app.OneSignalNotificationServiceExtension)
+                /usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.security.application-groups' /tmp/candidate-profile.plist \
+                  | grep -F 'group.com.minimumstress.app.onesignal' >/dev/null || continue
+                EXTENSION_PROFILE_FOUND=true
+                break
+                ;;
+            esac
+          done
+          if [ "$EXTENSION_PROFILE_FOUND" != "true" ]; then
+            echo "No App Store profile was found for com.minimumstress.app.OneSignalNotificationServiceExtension with the shared OneSignal App Group."
+            exit 1
+          fi
           echo "Sign in with Apple entitlement: present"
           echo "APNs push entitlement: present"
+          echo "OneSignal App Group and extension profile: present"
       - name: Release version and unique build number
         script: |
           cd ios/App

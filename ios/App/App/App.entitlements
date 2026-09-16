@@ -8,5 +8,9 @@
 	<array>
 		<string>Default</string>
 	</array>
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.com.minimumstress.app.onesignal</string>
+	</array>
 </dict>
 </plist>

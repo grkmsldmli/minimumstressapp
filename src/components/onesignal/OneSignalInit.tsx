@@ -1,6 +1,9 @@
 "use client";
 
-import type { NotificationClickEvent } from "@onesignal/capacitor-plugin";
+import type {
+  NotificationClickEvent,
+  NotificationWillDisplayEvent,
+} from "@onesignal/capacitor-plugin";
 import { useEffect } from "react";
 
 import { isNativeApp } from "@/lib/native";
@@ -14,8 +17,15 @@ import {
   NATIVE_PUSH_OPT_IN_EVENT,
   type NativePushOptInRequest,
 } from "@/lib/onesignal/native-sync";
-import { requestNotificationsScreen } from "@/lib/onesignal/navigation";
-import { type OneSignalWebApi, withWebOneSignal } from "@/lib/onesignal/web";
+import {
+  PUSH_RECEIVED_EVENT,
+  requestNotificationDestination,
+} from "@/lib/onesignal/navigation";
+import {
+  type OneSignalWebApi,
+  type OneSignalWebClickEvent,
+  withWebOneSignal,
+} from "@/lib/onesignal/web";
 import {
   WEB_PUSH_OPT_IN_EVENT,
   type WebPushOptInRequest,
@@ -63,6 +73,7 @@ export function OneSignalInit() {
 
     if (native) {
       let removeClick: (() => void) | undefined;
+      let removeForeground: (() => void) | undefined;
       let removeOptIn: (() => void) | undefined;
 
       void nativeOneSignal().then(async (os) => {
@@ -148,12 +159,21 @@ export function OneSignalInit() {
           const data = event.notification.additionalData as Record<string, unknown> | undefined;
           const destination = data?.minimumstress_destination;
           // Missing keeps already-issued notifications backward compatible.
-          if (destination === undefined || destination === "notifications") {
-            requestNotificationsScreen();
-          }
+          requestNotificationDestination(
+            destination === "notification" ? data?.minimumstress_notification_id : undefined,
+          );
         };
         os.Notifications.addEventListener("click", onClick);
         removeClick = () => os.Notifications.removeEventListener("click", onClick);
+
+        const onForeground = (_event: NotificationWillDisplayEvent) => {
+          // Do not call preventDefault: the OS banner, default sound, haptic and
+          // badge remain authoritative. Refresh in-app counters while visible.
+          window.dispatchEvent(new Event(PUSH_RECEIVED_EVENT));
+        };
+        os.Notifications.addEventListener("foregroundWillDisplay", onForeground);
+        removeForeground = () =>
+          os.Notifications.removeEventListener("foregroundWillDisplay", onForeground);
 
         const onOptIn = (event: Event) => {
           const request = (event as CustomEvent<NativePushOptInRequest>).detail;
@@ -178,6 +198,7 @@ export function OneSignalInit() {
         authRevision += 1;
         unsubscribeAuth?.();
         removeClick?.();
+        removeForeground?.();
         removeOptIn?.();
         window.__oneSignalStarted = false;
       };
@@ -223,7 +244,14 @@ export function OneSignalInit() {
       let removeClick: (() => void) | undefined;
       void initPromise.then(() => {
         if (stopped) return;
-        const onClick = () => requestNotificationsScreen();
+        const onClick = (event: OneSignalWebClickEvent) => {
+          const data = event.notification?.additionalData;
+          requestNotificationDestination(
+            data?.minimumstress_destination === "notification"
+              ? data.minimumstress_notification_id
+              : undefined,
+          );
+        };
         os.Notifications?.addEventListener?.("click", onClick);
         removeClick = () => os.Notifications?.removeEventListener?.("click", onClick);
       });

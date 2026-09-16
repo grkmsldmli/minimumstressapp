@@ -184,8 +184,40 @@ describe("off-platform handoff requests", () => {
     "Can I arrive five minutes early?",
     "I paid for the booking in the app",
     "The signal in the basement is weak",
+    "Can you call the front desk when you arrive?",
+    "I paid in cash for supplies last week",
+    "The Instagram photo in the listing shows two reformers",
+    "Message me here when the door opens",
+    "What is the booking number?",
   ])("does not block booking logistics: %s", (input) => {
     expect(offPlatformRequest(input)).toBeNull();
+  });
+
+  it.each([
+    ["send me your number", "phone"],
+    ["can I get your phone number?", "phone"],
+    ["could you share your mobile number?", "phone"],
+    ["call me outside the app", "phone"],
+    ["where is your email address?", "email"],
+    ["add me on Telegram", "handle"],
+    ["let's continue privately", "handle"],
+    ["why don't we book off-platform?", "handle"],
+    ["send me your booking link", "link"],
+    ["we can avoid the service fee", "payment"],
+    ["pay me in cash outside the app", "payment"],
+    ["Numaranı gönder", "phone"],
+    ["WhatsApp’tan yaz", "handle"],
+    ["Venmo yapalım", "payment"],
+    ["Uygulama dışında konuşalım", "handle"],
+  ] as const)("catches another handoff form: %s", (input, kind) => {
+    expect(offPlatformRequest(input)).toBe(kind);
+  });
+
+  it("does not redact a messaging-app word used in its ordinary meaning", () => {
+    expect(redact("The signal in the basement is weak")).toEqual({
+      text: "The signal in the basement is weak",
+      found: [],
+    });
   });
 
   it("explains the protection without threatening the sender", () => {

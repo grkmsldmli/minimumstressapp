@@ -15,7 +15,9 @@ const stages = vi.hoisted(() => ({
   refundRequest: vi.fn(async () => ({ reconciled: 9 })),
   refundDecision: vi.fn(async () => ({ reconciled: 7 })),
   payout: vi.fn(async () => ({ reconciled: 4 })),
+  messageJobs: vi.fn(async () => ({ claimed: 3, completed: 3, retrying: 0, failed: 0 })),
   reviews: vi.fn(async () => ({ prompted: 2, reminded: 1 })),
+  reviewLifecycle: vi.fn(async () => ({ submitted: 4, counterpart: 1, published: 2 })),
   access: vi.fn(async () => ({ announced: 5 })),
   notifications: vi.fn(async () => ({ retried: 6, sent: 6, givenUp: 0 })),
 }));
@@ -44,7 +46,13 @@ vi.mock("@/lib/notify/for-refund", () => ({
   reconcileRefundDecisionNotifications: stages.refundDecision,
 }));
 vi.mock("@/lib/notify/send", () => ({ retryPending: stages.notifications }));
-vi.mock("@/lib/notify/for-review", () => ({ notifyReviewRequests: stages.reviews }));
+vi.mock("@/lib/notify/message-jobs", () => ({
+  processMessageNotificationJobs: stages.messageJobs,
+}));
+vi.mock("@/lib/notify/for-review", () => ({
+  notifyReviewRequests: stages.reviews,
+  reconcileReviewLifecycleNotifications: stages.reviewLifecycle,
+}));
 
 const { GET } = await import("./route");
 
@@ -117,8 +125,13 @@ describe("money-operation recovery in the frequent cron", () => {
       refundRequestsReconciled: 9,
       refundDecisionsReconciled: 7,
       payoutReceiptsReconciled: 4,
+      messageJobsClaimed: 3,
+      messageJobsCompleted: 3,
       reviewPrompts: 2,
       reviewReminders: 1,
+      reviewReceipts: 4,
+      counterpartReviews: 1,
+      reviewsPublished: 2,
       accessCodesAnnounced: 5,
     });
     expect(stages.notifications).toHaveBeenCalledOnce();

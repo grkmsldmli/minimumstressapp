@@ -155,6 +155,85 @@ describe("createBooking → payment preparation", () => {
   });
 });
 
+describe("safe chat refresh and notification routing", () => {
+  it("joins a private body-free broadcast channel and removes it on cleanup", async () => {
+    let signal: (() => void) | null = null;
+    const removeChannel = vi.fn();
+    const realtimeChannel: Record<string, unknown> = {};
+    const subscribe = vi.fn(() => realtimeChannel);
+    const on = vi.fn((_type, _filter, callback: () => void) => {
+      signal = callback;
+      return realtimeChannel;
+    });
+    realtimeChannel.on = on;
+    realtimeChannel.subscribe = subscribe;
+    const channel = vi.fn(() => realtimeChannel);
+    const setAuth = vi.fn().mockResolvedValue(undefined);
+    const db = {
+      realtime: { setAuth },
+      channel,
+      removeChannel,
+    } as unknown as SupabaseClient;
+    const repo = new SupabaseRepository(db);
+    const refresh = vi.fn();
+
+    const stop = repo.watchMessageSignals("booking-1", refresh);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(setAuth).toHaveBeenCalledOnce();
+    expect(channel).toHaveBeenCalledWith(
+      "booking:booking-1:messages",
+      { config: { private: true } },
+    );
+    expect(on).toHaveBeenCalledWith(
+      "broadcast",
+      { event: "message_created" },
+      expect.any(Function),
+    );
+    expect(signal).not.toBeNull();
+    (signal as unknown as () => void)();
+    expect(refresh).toHaveBeenCalledOnce();
+
+    stop();
+    expect(removeChannel).toHaveBeenCalledOnce();
+  });
+
+  it("resolves an opaque push or email id through the caller's own notification row", async () => {
+    const repo = new SupabaseRepository(
+      makeDb({
+        notifications: [
+          { id: "n1", channel: "email", booking_id: "b1", kind: "new_message" },
+        ],
+      }),
+    );
+
+    await expect(repo.notificationTarget("n1")).resolves.toEqual({
+      bookingId: "b1",
+      kind: "new_message",
+    });
+  });
+
+  it("reads thread block truth from the participant-checked server route", async () => {
+    apiFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ blocked: true }),
+    });
+    const repo = new SupabaseRepository(makeDb({}));
+
+    await expect(repo.messageThreadState("booking/id")).resolves.toEqual({ blocked: true });
+    expect(apiFetch).toHaveBeenCalledWith("/api/messages?bookingId=booking%2Fid");
+  });
+
+  it("normalizes the released review count returned by the private RPC", async () => {
+    const db = makeDb({}) as SupabaseClient & { rpc: ReturnType<typeof vi.fn> };
+    db.rpc = vi.fn().mockResolvedValue({ data: "3", error: null });
+    const repo = new SupabaseRepository(db);
+
+    await expect(repo.reviewsReceivedCount()).resolves.toBe(3);
+  });
+});
+
 describe("listing media is signed by the server, never the browser", () => {
   const spaceRow: Row = {
     id: "s1",

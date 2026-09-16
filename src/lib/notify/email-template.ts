@@ -29,6 +29,9 @@ const PRESENTATION = {
   new_message: information("New message", "Read the message"),
   review_prompt: information("Review ready", "Leave a review"),
   review_reminder: neutral("Review window open", "Leave a review"),
+  review_submitted: confirmation("Review received", "View review status"),
+  counterpart_reviewed: confirmation("Reviews ready", "View review status"),
+  review_published: information("Review published", "View review status"),
   cancelled_by_practitioner: neutral("Cancelled", "View your bookings"),
   cancelled_by_host: danger("Studio cancellation", "View your bookings"),
   reliability_warning: attention("Account notice", "Review your account"),
@@ -126,11 +129,14 @@ export function renderNotificationEmail(
   kind: NotificationKind,
   message: Pick<Message, "subject" | "body">,
   context: MessageContext,
+  actionOverride?: string,
 ): string {
   const presentation = PRESENTATION[kind];
-  const action = kind === "staff_waiting" && context.queueUrl
-    ? context.queueUrl
-    : presentation.path;
+  const action = actionOverride ?? (
+    kind === "staff_waiting" && context.queueUrl
+      ? context.queueUrl
+      : presentation.path
+  );
 
   return emailDocument({
     subject: message.subject,
@@ -184,6 +190,9 @@ function detailsFor(
     case "new_message":
     case "review_prompt":
     case "review_reminder":
+    case "review_submitted":
+    case "counterpart_reviewed":
+    case "review_published":
     case "cancelled_by_practitioner":
     case "cancelled_by_host":
     case "refund_requested":

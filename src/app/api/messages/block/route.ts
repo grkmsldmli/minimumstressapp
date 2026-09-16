@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 
+import { LIMITS, check, identify, tooManyRequests } from "@/lib/api/rate-limit";
 import { bookingParties, counterpartFor } from "@/lib/api/message-safety";
 import { handled, jsonError, requireUser } from "@/lib/api/session";
 import { supabaseAdmin } from "@/lib/supabase/server";
@@ -16,6 +17,9 @@ export async function POST(request: NextRequest): Promise<Response> {
   return handled(async () => {
     const auth = await requireUser();
     if ("response" in auth) return auth.response;
+
+    const limited = check("message-block", identify(request, auth.user.id), LIMITS.messageSafety);
+    if (!limited.ok) return tooManyRequests(limited);
 
     const body = (await request.json().catch(() => null)) as { bookingId?: unknown } | null;
     const bookingId = typeof body?.bookingId === "string" ? body.bookingId : null;

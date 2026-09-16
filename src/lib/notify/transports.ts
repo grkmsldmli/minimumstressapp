@@ -28,6 +28,8 @@ export interface EmailSendOptions {
 export interface PushSendOptions {
   /** OneSignal accepts an RFC UUID and deduplicates it for thirty days. */
   idempotencyKey: string;
+  /** Opaque notifications.id used to resolve the destination after sign-in. */
+  navigationToken: string;
 }
 
 /** Who the mail is from. Overridable so a staging deploy is obviously staging. */
@@ -140,6 +142,9 @@ export async function sendPush(
   if (!/^ms_[A-Za-z0-9_-]{43}$/.test(externalId)) {
     return { status: "dropped", reason: "push invalid_external_id" };
   }
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(options.navigationToken)) {
+    return { status: "dropped", reason: "push invalid_navigation_token" };
+  }
 
   const key = process.env.ONESIGNAL_REST_API_KEY?.trim();
   const appId = oneSignalAppId();
@@ -165,12 +170,17 @@ export async function sendPush(
         // route token and let the SDK click listener navigate in-app, avoiding
         // a second browser window or an unverified deep-link handoff.
         web_url: message.url,
-        data: { minimumstress_destination: "notifications" },
+        data: {
+          minimumstress_destination: "notification",
+          minimumstress_notification_id: options.navigationToken,
+        },
         // Use the platform default alert sound/channel so an enabled device
         // gets the ordinary audible/haptic cue for time-sensitive booking
         // activity. The OS still owns quiet modes and per-app notification
         // settings; we never try to bypass them.
         ios_sound: "default",
+        ios_badgeType: "Increase",
+        ios_badgeCount: 1,
         android_sound: "default",
         priority: 10,
         idempotency_key: options.idempotencyKey,

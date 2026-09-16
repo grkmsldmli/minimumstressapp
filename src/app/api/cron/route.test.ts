@@ -80,8 +80,21 @@ vi.mock("@/lib/notify/send", () => ({
   notify: vi.fn(),
   retryPending: vi.fn(async () => ({ sent: 0 })),
 }));
+vi.mock("@/lib/notify/message-jobs", () => ({
+  processMessageNotificationJobs: vi.fn(async () => ({
+    claimed: 3,
+    completed: 3,
+    retrying: 0,
+    failed: 0,
+  })),
+}));
 vi.mock("@/lib/notify/for-review", () => ({
   notifyReviewRequests: vi.fn(async () => ({ prompted: 2, reminded: 1 })),
+  reconcileReviewLifecycleNotifications: vi.fn(async () => ({
+    submitted: 4,
+    counterpart: 1,
+    published: 2,
+  })),
 }));
 vi.mock("@/lib/stripe/client", () => ({ settle: vi.fn() }));
 vi.mock("@/lib/site-url", () => ({ siteUrl: () => "https://minimumstress.app" }));

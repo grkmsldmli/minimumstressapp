@@ -36,8 +36,9 @@ const NAVY = "radial-gradient(140% 120% at 15% 0%, #1E4066 0%, #16304E 85%)";
 /**
  * One tile in the practitioner Work action grid — a fixed-height, comfortable
  * touch target with an icon, a label, and a state/value line. Kept uniform so a
- * 2×2 (or, on a wide iPad, a single row) reads as one intentional grid rather
- * than buttons that happened to wrap.
+ * 2×2 reads as one intentional grid rather than buttons that happened to wrap.
+ * The app shell remains phone-width even on a wide browser, so this must not
+ * switch to four columns from a viewport breakpoint.
  */
 function ActionTile({
   icon: Icon,
@@ -349,9 +350,10 @@ export function WorkPractitioner({
 
         {/* A balanced 2×2 of the practitioner's Work actions — availability on/off
             and weekly hours are the real controls; applications and the board are
-            quick jumps to the sections below. Four equal tiles so the top reads as
-            one intentional grid, opening out to a single row on a wide iPad. */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            quick jumps to the sections below. Keep two columns at every viewport:
+            the centered app shell stays phone-width on desktop, so a viewport
+            breakpoint would squeeze four cards into this narrow container. */}
+        <div className="grid grid-cols-2 gap-3">
           <ActionTile
             icon={preferences.availableForWork ? ToggleRight : ToggleLeft}
             label="Available for work"

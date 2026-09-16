@@ -61,6 +61,13 @@ describe("WorkPractitioner — action grid", () => {
     expect(screen.getAllByText("Coverage board").length).toBeGreaterThanOrEqual(1);
   });
 
+  it("keeps a two-column grid when the phone shell is shown in a wide viewport", () => {
+    renderWork();
+    const grid = screen.getByText("Available for work").closest("button")?.parentElement;
+    expect(grid?.className).toContain("grid-cols-2");
+    expect(grid?.className).not.toContain("grid-cols-4");
+  });
+
   it("the Available tile reflects state and toggles it", () => {
     const props = renderWork({ preferences: { ...PREFS, availableForWork: false } });
     expect(screen.getByText("Off")).toBeTruthy();

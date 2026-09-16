@@ -38,6 +38,7 @@ export async function POST(request: NextRequest): Promise<Response> {
       .update({
         notify_offers: false,
         marketing_unsubscribed_at: new Date().toISOString(),
+        marketing_unsubscribe_reason: "one_click",
       })
       .eq("marketing_unsubscribe_token", token);
     if (error) return html("We couldn't update that preference just now. Please try again.", 500);

@@ -26,6 +26,7 @@ import { type WorkEligibilityGap, workEligibility } from "@/lib/work/eligibility
 import { entitlementsFor } from "@/lib/entitlements";
 import { canSendInvite, inviteControlState } from "@/lib/work/roster-invite";
 import { apiFetch } from "@/lib/api-fetch";
+import { recordMarketingActivity } from "@/lib/marketing/client";
 import {
   SPACE_DEEP_LINK_PARAM,
   clearPendingSpace,
@@ -887,6 +888,14 @@ export function App() {
     };
   }, [repo, revision, needsAccount]);
 
+  // Lifecycle activity exists only for people who explicitly enabled optional
+  // marketing. The endpoint stores one coarse timestamp and rechecks consent;
+  // no route, listing id, search text or device identifier leaves the app.
+  useEffect(() => {
+    if (!data?.profile.notifyOffers) return;
+    void recordMarketingActivity("app_opened");
+  }, [data?.profile.id, data?.profile.notifyOffers]);
+
   /**
    * The interest on the coverage request the studio is looking at.
    *
@@ -1733,6 +1742,7 @@ export function App() {
           greetingName={profile.displayName}
           rebookable={rebookableRooms}
           onRebook={(entry) => {
+            if (profile.notifyOffers) void recordMarketingActivity("space_browsed");
             // A gate belongs to the room it was raised on; a new one starts clean.
             setInsuranceGate(null);
             setActiveSpaceId(entry.spaceId);
@@ -1740,6 +1750,7 @@ export function App() {
             go("detail");
           }}
           onOpenSpace={(spaceId) => {
+            if (profile.notifyOffers) void recordMarketingActivity("space_browsed");
             setInsuranceGate(null);
             setOpenAtSlot(null);
             setActiveSpaceId(spaceId);

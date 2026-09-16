@@ -20,6 +20,13 @@ const stages = vi.hoisted(() => ({
   reviewLifecycle: vi.fn(async () => ({ submitted: 4, counterpart: 1, published: 2 })),
   access: vi.fn(async () => ({ announced: 5 })),
   notifications: vi.fn(async () => ({ retried: 6, sent: 6, givenUp: 0 })),
+  marketing: vi.fn(async () => ({
+    claimed: 2,
+    sent: 1,
+    retrying: 1,
+    failed: 0,
+    suppressed: 0,
+  })),
 }));
 
 vi.mock("@/lib/supabase/server", () => ({ supabaseAdmin: () => ({}) }));
@@ -52,6 +59,9 @@ vi.mock("@/lib/notify/message-jobs", () => ({
 vi.mock("@/lib/notify/for-review", () => ({
   notifyReviewRequests: stages.reviews,
   reconcileReviewLifecycleNotifications: stages.reviewLifecycle,
+}));
+vi.mock("@/lib/marketing/outbox", () => ({
+  processMarketingOutbox: stages.marketing,
 }));
 
 const { GET } = await import("./route");
@@ -106,6 +116,9 @@ describe("money-operation recovery in the frequent cron", () => {
       refundRequestsReconciled: 9,
       refundDecisionsReconciled: 7,
       accessCodesAnnounced: 5,
+      marketingClaimed: 2,
+      marketingSent: 1,
+      marketingRetrying: 1,
     });
   });
 
@@ -133,6 +146,8 @@ describe("money-operation recovery in the frequent cron", () => {
       counterpartReviews: 1,
       reviewsPublished: 2,
       accessCodesAnnounced: 5,
+      marketingClaimed: 2,
+      marketingSent: 1,
     });
     expect(stages.notifications).toHaveBeenCalledOnce();
   });

@@ -98,6 +98,21 @@ vi.mock("@/lib/notify/for-review", () => ({
 }));
 vi.mock("@/lib/stripe/client", () => ({ settle: vi.fn() }));
 vi.mock("@/lib/site-url", () => ({ siteUrl: () => "https://minimumstress.app" }));
+vi.mock("@/lib/marketing/outbox", () => ({
+  enqueueMarketingLifecycles: vi.fn(async () => ({
+    configured: true,
+    profilesScanned: 10,
+    profilesEligible: 2,
+    enqueued: 1,
+  })),
+  processMarketingOutbox: vi.fn(async () => ({
+    claimed: 1,
+    sent: 1,
+    retrying: 0,
+    failed: 0,
+    suppressed: 0,
+  })),
+}));
 
 const { GET, payHostsForFinishedSessions, runOperationalTasks } = await import("./route");
 
@@ -180,6 +195,9 @@ describe("money operations in the operational cron", () => {
       bookingConfirmationsReconciled: 8,
       refundRequestsReconciled: 9,
       refundDecisionsReconciled: 7,
+      marketingConfigured: true,
+      marketingEnqueued: 1,
+      marketingSent: 1,
     });
   });
 

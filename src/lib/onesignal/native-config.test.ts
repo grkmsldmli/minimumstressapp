@@ -39,6 +39,15 @@ describe("native push build contract", () => {
     expect(workflow).toContain("com.minimumstress.app.OneSignalNotificationServiceExtension");
   });
 
+  it("pins release toolchains and publishes Android only to Internal testing", () => {
+    const workflow = read("codemagic.yaml");
+    expect(workflow).toContain('APP_VERSION_NAME: "1.0.2"');
+    expect(workflow).toContain('xcode: "26.6"');
+    expect(workflow).toContain("credentials: $GOOGLE_PLAY_SERVICE_ACCOUNT_CREDENTIALS");
+    expect(workflow).toContain("track: internal");
+    expect(workflow).toContain("submit_as_draft: false");
+  });
+
   it("keeps Android 13 notification permission in the shipped manifest", () => {
     expect(read("android/app/src/main/AndroidManifest.xml")).toContain(
       'android.permission.POST_NOTIFICATIONS',

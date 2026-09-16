@@ -1,6 +1,7 @@
 import "server-only";
 
 import { DEFAULT_ONESIGNAL_APP_ID } from "../onesignal/config";
+import { APP_URL } from "../company";
 import { type Message, type PushMessage, toHtml } from "./messages";
 
 /**
@@ -32,8 +33,16 @@ export interface PushSendOptions {
   navigationToken: string;
 }
 
+export interface MarketingEmailMessage {
+  subject: string;
+  text: string;
+  html: string;
+  unsubscribeUrl: string;
+}
+
 /** Who the mail is from. Overridable so a staging deploy is obviously staging. */
 const FROM = process.env.NOTIFY_FROM_EMAIL ?? "Minimum Stress <hello@minimumstress.app>";
+const MARKETING_FROM = process.env.MARKETING_FROM_EMAIL ?? FROM;
 
 export function emailConfigured(): boolean {
   return Boolean(process.env.RESEND_API_KEY?.trim());
@@ -92,6 +101,60 @@ export async function sendEmail(
     // Timeout or connection failure. The message may or may not have been
     // accepted, so this retries — see the note on duplicates in send.ts.
     return { status: "retry", reason: `network: ${(error as Error).message}` };
+  }
+
+  return classify(response, "email");
+}
+
+/**
+ * Marketing uses the same provider but a deliberately separate envelope.
+ * The RFC 8058 headers make Gmail/Apple/etc. one-click opt-out available next
+ * to the sender, while the visible footer keeps the choice available in every
+ * client. Transactional mail never calls this function.
+ */
+export async function sendMarketingEmail(
+  to: string,
+  message: MarketingEmailMessage,
+  options: Required<EmailSendOptions>,
+): Promise<SendResult> {
+  const key = process.env.RESEND_API_KEY?.trim();
+  if (!key) return { status: "retry", reason: "RESEND_API_KEY is not set" };
+
+  let unsubscribe: URL;
+  try {
+    unsubscribe = new URL(message.unsubscribeUrl);
+  } catch {
+    return { status: "dropped", reason: "email invalid_unsubscribe_url" };
+  }
+  if (unsubscribe.origin !== new URL(APP_URL).origin || unsubscribe.protocol !== "https:") {
+    return { status: "dropped", reason: "email invalid_unsubscribe_url" };
+  }
+
+  let response: Response;
+  try {
+    response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${key}`,
+        "Content-Type": "application/json",
+        "Idempotency-Key": options.idempotencyKey,
+      },
+      body: JSON.stringify({
+        from: MARKETING_FROM,
+        to: [to],
+        subject: message.subject,
+        text: message.text,
+        html: message.html,
+        headers: {
+          "List-Unsubscribe": `<${unsubscribe.href}>`,
+          "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+        },
+        tags: [{ name: "notification_id", value: options.correlationId }],
+      }),
+      signal: AbortSignal.timeout(10_000),
+    });
+  } catch {
+    return { status: "retry", reason: "email network_error" };
   }
 
   return classify(response, "email");

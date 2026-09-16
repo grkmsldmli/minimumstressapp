@@ -1,7 +1,9 @@
 import type { NextRequest } from "next/server";
 
 import { stripeGateway } from "@/lib/api/stripe-gateway";
+import { authorizeCronRequest } from "@/lib/cron-auth";
 import { retryFinancialResolutions } from "@/lib/financial-resolution";
+import { processMarketingOutbox } from "@/lib/marketing/outbox";
 import { executeMoneyOperation } from "@/lib/money-operation-service";
 import { claimMoneyOperationRetries } from "@/lib/money-operations";
 import {
@@ -34,10 +36,9 @@ export const runtime = "nodejs";
  * schedule leaves avoidable notification gaps after a process crash.
  */
 export async function GET(request: NextRequest): Promise<Response> {
-  const expected = process.env.CRON_SECRET;
-  if (!expected) return new Response("Not configured", { status: 500 });
-  if (request.headers.get("authorization") !== `Bearer ${expected}`) {
-    return new Response("Unauthorized", { status: 401 });
+  const authorization = await authorizeCronRequest(request);
+  if (!authorization.ok) {
+    return new Response(authorization.message, { status: authorization.status });
   }
 
   const now = new Date();
@@ -64,6 +65,7 @@ export async function GET(request: NextRequest): Promise<Response> {
     messageJobs,
     reviewNudges,
     reviewLifecycle,
+    marketing,
     access,
     retries,
   ] =
@@ -79,6 +81,7 @@ export async function GET(request: NextRequest): Promise<Response> {
       processMessageNotificationJobs(admin, { now }),
       notifyReviewRequests(admin, now),
       reconcileReviewLifecycleNotifications(admin, now),
+      processMarketingOutbox(admin, { now, limit: 50 }),
       notifyAccessCodesReady(admin, now),
       retryPending(),
     ]);
@@ -96,6 +99,7 @@ export async function GET(request: NextRequest): Promise<Response> {
   if (messageJobs.status === "rejected") failures.push("messageJobs");
   if (reviewNudges.status === "rejected") failures.push("reviewNudges");
   if (reviewLifecycle.status === "rejected") failures.push("reviewLifecycle");
+  if (marketing.status === "rejected") failures.push("marketing");
   if (access.status === "rejected") failures.push("access");
   if (retries.status === "rejected") failures.push("retries");
 
@@ -158,6 +162,15 @@ export async function GET(request: NextRequest): Promise<Response> {
             reviewReceipts: reviewLifecycle.value.submitted,
             counterpartReviews: reviewLifecycle.value.counterpart,
             reviewsPublished: reviewLifecycle.value.published,
+          }
+        : {}),
+      ...(marketing.status === "fulfilled"
+        ? {
+            marketingClaimed: marketing.value.claimed,
+            marketingSent: marketing.value.sent,
+            marketingRetrying: marketing.value.retrying,
+            marketingFailed: marketing.value.failed,
+            marketingSuppressed: marketing.value.suppressed,
           }
         : {}),
       ...(access.status === "fulfilled"

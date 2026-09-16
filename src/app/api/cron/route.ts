@@ -6,7 +6,12 @@ import { stripeGateway } from "@/lib/api/stripe-gateway";
 import { safetyRecipient } from "@/lib/admin/access";
 import { subjectFor, waitingOn, waitingSignature } from "@/lib/admin/attention";
 import { runWithIndependentRetention } from "@/lib/cron-runner";
+import { authorizeCronRequest } from "@/lib/cron-auth";
 import { retryFinancialResolutions } from "@/lib/financial-resolution";
+import {
+  enqueueMarketingLifecycles,
+  processMarketingOutbox,
+} from "@/lib/marketing/outbox";
 import { executeMoneyOperation } from "@/lib/money-operation-service";
 import { claimMoneyOperationRetries, claimPayout } from "@/lib/money-operations";
 import {
@@ -56,17 +61,9 @@ import { supabaseAdmin } from "@/lib/supabase/server";
  */
 
 export async function GET(request: NextRequest): Promise<Response> {
-  const expected = process.env.CRON_SECRET;
-  if (!expected) {
-    console.error("CRON_SECRET is not set; refusing to run");
-    return new Response("Not configured", { status: 500 });
-  }
-
-  // Vercel Cron sends the secret as a bearer token. Without this the endpoint
-  // is a public button for capturing everyone's payments early.
-  const authorization = request.headers.get("authorization");
-  if (authorization !== `Bearer ${expected}`) {
-    return new Response("Unauthorized", { status: 401 });
+  const authorization = await authorizeCronRequest(request);
+  if (!authorization.ok) {
+    return new Response(authorization.message, { status: authorization.status });
   }
 
   const now = new Date();
@@ -142,6 +139,7 @@ export async function runOperationalTasks(now: Date) {
   const announced = await announceAccessCodes(now);
   const retried = await retryFailedNotifications();
   const waiting = await reportWhatIsWaiting(now);
+  const marketing = await runMarketingLifecycles(now);
 
   return {
     ...financial,
@@ -161,6 +159,34 @@ export async function runOperationalTasks(now: Date) {
     ...announced,
     ...retried,
     ...waiting,
+    ...marketing,
+  };
+}
+
+async function runMarketingLifecycles(now: Date): Promise<{
+  marketingConfigured: boolean;
+  marketingProfilesScanned: number;
+  marketingProfilesEligible: number;
+  marketingEnqueued: number;
+  marketingClaimed: number;
+  marketingSent: number;
+  marketingRetrying: number;
+  marketingFailed: number;
+  marketingSuppressed: number;
+}> {
+  const admin = supabaseAdmin();
+  const queued = await enqueueMarketingLifecycles(admin, now);
+  const delivered = await processMarketingOutbox(admin, { now, limit: 50 });
+  return {
+    marketingConfigured: queued.configured,
+    marketingProfilesScanned: queued.profilesScanned,
+    marketingProfilesEligible: queued.profilesEligible,
+    marketingEnqueued: queued.enqueued,
+    marketingClaimed: delivered.claimed,
+    marketingSent: delivered.sent,
+    marketingRetrying: delivered.retrying,
+    marketingFailed: delivered.failed,
+    marketingSuppressed: delivered.suppressed,
   };
 }
 

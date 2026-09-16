@@ -1,9 +1,15 @@
-import type { NextRequest } from "next/server";
+import { after, type NextRequest } from "next/server";
 
 import { LIMITS, check, identify, tooManyRequests } from "@/lib/api/rate-limit";
 import { handled, jsonError, requireUser } from "@/lib/api/session";
 import { jsonObject, requiredString, uuid } from "@/lib/api/validate";
-import { explainRedaction, isEmptyAfterRedaction, redact } from "@/lib/message-redaction";
+import {
+  explainOffPlatformRequest,
+  explainRedaction,
+  isEmptyAfterRedaction,
+  offPlatformRequest,
+  redact,
+} from "@/lib/message-redaction";
 import { notifyNewMessage } from "@/lib/notify/for-booking";
 import { supabaseAdmin } from "@/lib/supabase/server";
 
@@ -70,6 +76,20 @@ export async function POST(request: NextRequest): Promise<Response> {
     // not theirs confirms it exists.
     if (!isParticipant) return jsonError("We couldn't find that booking.", 404);
 
+    // A block is enforced in Postgres too, but checking it here keeps a normal
+    // safety action from surfacing as an opaque 500 if somebody still has an
+    // old composer open on another device. Either direction closes the thread.
+    const { data: block, error: blockError } = await admin
+      .from("blocked_users")
+      .select("blocker_id")
+      .or(
+        `and(blocker_id.eq.${row!.practitioner_id},blocked_id.eq.${hostId}),and(blocker_id.eq.${hostId},blocked_id.eq.${row!.practitioner_id})`,
+      )
+      .limit(1)
+      .maybeSingle();
+    if (blockError) throw blockError;
+    if (block) return jsonError("Messaging isn't available for this booking.", 409);
+
     /**
      * Messaging is for a live booking. The database refuses a message on a
      * booking that is not captured or is cancelled (migration 0063); this checks
@@ -86,6 +106,12 @@ export async function POST(request: NextRequest): Promise<Response> {
         409,
       );
     }
+
+    // Do not merely mask a request for the other person's contact details.
+    // The request itself is the off-platform handoff; stopping it before a row
+    // is written keeps the recipient from being pressured to disclose anything.
+    const handoff = offPlatformRequest(text.value);
+    if (handoff) return jsonError(explainOffPlatformRequest(handoff), 400);
 
     const redaction = redact(text.value);
 
@@ -109,15 +135,24 @@ export async function POST(request: NextRequest): Promise<Response> {
       .select("id")
       .single();
 
-    if (insertError) throw insertError;
+    if (insertError) {
+      // A block can race this request after the preflight above. The database
+      // trigger is the final authority; translate its refusal into the same
+      // plain state instead of leaking a constraint-shaped 500.
+      if (insertError.code === "23514") {
+        return jsonError("Messaging isn't available for this booking.", 409);
+      }
+      throw insertError;
+    }
 
     /*
-     * Tell the other side, best-effort. Deduped by the message id, so a retry
-     * never notifies twice; the notification names only the booking, never the
-     * text, address, or code. A failure here must not fail the send — the
-     * message is already stored and visible in the thread.
+     * Tell the other side after the response without abandoning the work.
+     * `after` is part of Next's request lifecycle: unlike a floating promise,
+     * the runtime keeps the task alive after the 201 is returned. The message
+     * itself remains the durable source of truth, and the notifier has its own
+     * outbox/idempotency boundary.
      */
-    void notifyNewMessage(admin, bookingId.value, auth.user.id, inserted.id);
+    after(() => notifyNewMessage(admin, bookingId.value, auth.user.id, inserted.id));
 
     return Response.json(
       {

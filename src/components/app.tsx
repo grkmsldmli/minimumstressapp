@@ -218,6 +218,8 @@ interface Snapshot {
   referrals: ReferralSummary[];
   /** Unread incoming messages per booking id, from server truth. */
   unreadCounts: Record<string, number>;
+  /** Booking ids this account has already reviewed — prevents stale review CTAs. */
+  reviewedBookingIds: Set<string>;
   /* ---- Work (empty/default for the side that does not use each) ---- */
   workPreferences: WorkPreferences;
   workAvailability: AvailabilityBlock[];
@@ -475,18 +477,24 @@ export function App() {
 
     void load();
     /*
-     * A safe poll rather than Supabase Realtime. Realtime on the messages table
-     * broadcasts the whole changed row — original_body included — to subscribers,
-     * and column-level grants are not reliably applied to that payload, so a live
-     * subscription would reintroduce the very leak 0063 closes. Re-reading the
-     * redacted view every few seconds brings in incoming messages without ever
-     * putting original_body on the wire. Stops the moment the thread closes.
+     * A safe near-realtime poll rather than Supabase Realtime. Realtime on the
+     * messages table would broadcast the whole changed row — original_body
+     * included — so a raw subscription would undo the masking boundary. While
+     * the thread is visible we re-read only the redacted view every 2.5s; while
+     * the app is hidden, push/email own the interruption and polling stops. A
+     * visibility return refreshes immediately rather than waiting for the next
+     * tick.
      */
-    const poll = setInterval(() => void load(), 5000);
+    const tick = () => {
+      if (document.visibilityState === "visible") void load();
+    };
+    const poll = setInterval(tick, 2500);
+    document.addEventListener("visibilitychange", tick);
 
     return () => {
       cancelled = true;
       clearInterval(poll);
+      document.removeEventListener("visibilitychange", tick);
     };
   }, [repo, threadBookingId, revision]);
 
@@ -704,6 +712,7 @@ export function App() {
         referralCode,
         referrals,
         unreadCounts,
+        reviewedBookingIds,
         workPreferences,
         workAvailability,
         workOpportunities,
@@ -731,6 +740,7 @@ export function App() {
           repo.listReferrals().catch(() => []),
           // Unread message badges — a convenience; an empty map on failure.
           repo.unreadMessageCounts().catch(() => ({})),
+          repo.reviewedBookingIds().then((ids) => new Set(ids)).catch(() => new Set<string>()),
           // Work is a whole extra area; a hiccup fetching any of it must never
           // keep somebody out of their account. Each side reads only its own.
           repo.getWorkPreferences().catch(() => WORK_PREFERENCES_FALLBACK),
@@ -767,6 +777,7 @@ export function App() {
         referralCode,
         referrals,
         unreadCounts,
+        reviewedBookingIds,
         workPreferences,
         workAvailability,
         workOpportunities,
@@ -1749,6 +1760,7 @@ export function App() {
           onGoWork={() => go("work")}
           onGoNotifications={() => go("notifications")}
           undeliveredCount={data.notifications.filter((n) => n.state === "failed").length}
+          reviewedBookingIds={data.reviewedBookingIds}
           onReviewBooking={(bookingId) => {
             setReviewing({ bookingId, role: "host" });
             go("review");
@@ -2454,6 +2466,7 @@ export function App() {
           standing={practitionerStanding}
           onBack={back}
           onCancel={(id) => mutate(() => repo.cancelBooking(id, "practitioner"))}
+          reviewedBookingIds={data.reviewedBookingIds}
           onReview={(id) => {
             setReviewing({ bookingId: id, role: "practitioner" });
             go("review");

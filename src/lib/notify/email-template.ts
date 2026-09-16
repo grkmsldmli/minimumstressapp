@@ -27,6 +27,8 @@ const PRESENTATION = {
   request_expired: neutral("Expired", "Find another space"),
   access_code_ready: information("Access ready", "View access details"),
   new_message: information("New message", "Read the message"),
+  review_prompt: information("Review ready", "Leave a review"),
+  review_reminder: neutral("Review window open", "Leave a review"),
   cancelled_by_practitioner: neutral("Cancelled", "View your bookings"),
   cancelled_by_host: danger("Studio cancellation", "View your bookings"),
   reliability_warning: attention("Account notice", "Review your account"),
@@ -180,6 +182,8 @@ function detailsFor(
     case "request_declined":
     case "request_expired":
     case "new_message":
+    case "review_prompt":
+    case "review_reminder":
     case "cancelled_by_practitioner":
     case "cancelled_by_host":
     case "refund_requested":

@@ -1185,6 +1185,12 @@ export function PractitionerProfile({
               </p>
             </div>
           </div>
+          <SettingToggle
+            label="Product news & offers"
+            sub="Optional marketing email only. Booking, safety and account emails stay separate."
+            on={profile.notifyOffers}
+            onToggle={() => onUpdate({ notifyOffers: !profile.notifyOffers })}
+          />
           <EmergencyContactCard
             collapsible
             contact={profile.emergencyContact}

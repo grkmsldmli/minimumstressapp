@@ -58,10 +58,11 @@ export async function notify(
   const message = render(request.kind, { name: request.recipient.name, ...request.context });
   const outcome: Partial<Record<NotificationChannel, NotifyOutcome>> = {};
 
-  // Persist push first and let the state-gated worker send it. If this process
-  // stops before email is written, the existing missing-email repair reruns
-  // the notifier: push dedupes and email is restored. The reverse ordering can
-  // leave a delivered email with no durable push claim after a crash.
+  // Persist push first, then send it immediately unless the caller explicitly
+  // asked for a state-gated deferred send (door codes are the important case).
+  // Provider failures stay in the same durable outbox for retry. This keeps
+  // chat/cancellation/booking push genuinely immediate even on a free hosting
+  // plan whose scheduled worker only runs a few times a day.
   if (request.recipient.userId && message.push) {
     const externalId = oneSignalExternalId(request.recipient.userId);
     // Never retain the richer email/SMS envelope in a push row. Only the
@@ -73,7 +74,7 @@ export async function notify(
       push: message.push,
     };
     outcome.push = externalId
-      ? await deliver({ ...request, defer: true }, "push", externalId, pushOnlyMessage)
+      ? await deliver(request, "push", externalId, pushOnlyMessage)
       : "skipped";
   }
 

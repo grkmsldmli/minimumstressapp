@@ -80,6 +80,9 @@ vi.mock("@/lib/notify/send", () => ({
   notify: vi.fn(),
   retryPending: vi.fn(async () => ({ sent: 0 })),
 }));
+vi.mock("@/lib/notify/for-review", () => ({
+  notifyReviewRequests: vi.fn(async () => ({ prompted: 2, reminded: 1 })),
+}));
 vi.mock("@/lib/stripe/client", () => ({ settle: vi.fn() }));
 vi.mock("@/lib/site-url", () => ({ siteUrl: () => "https://minimumstress.app" }));
 

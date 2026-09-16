@@ -193,7 +193,7 @@ describe("notification outbox", () => {
     expect(state.sendEmail).toHaveBeenCalledTimes(1);
   });
 
-  it("queues an opaque privacy-safe push before sending email", async () => {
+  it("sends an opaque privacy-safe push immediately before email", async () => {
     state.externalId = `ms_${"a".repeat(43)}`;
 
     const result = await notify({
@@ -206,15 +206,15 @@ describe("notification outbox", () => {
       },
     });
 
-    expect(result).toEqual({ push: "queued", email: "sent" });
+    expect(result).toEqual({ push: "sent", email: "sent" });
     expect(state.inserted).toHaveLength(2);
     expect(state.inserted[0]).toMatchObject({
       channel: "push",
       dedupe_key: "access_code_ready:private-booking-id:push",
       destination: state.externalId,
       provider_correlation_id: null,
-      lease_token: null,
-      lease_until: null,
+      lease_token: expect.any(String),
+      lease_until: expect.any(String),
       message_snapshot: {
         version: 1,
         message: {
@@ -236,7 +236,16 @@ describe("notification outbox", () => {
     expect(storedPush.message).not.toHaveProperty("html");
     expect(JSON.stringify(storedPush))
       .not.toMatch(/PRIVATE-DOOR-4821|PRIVATE 12 Alder Lane|private-user-id/);
-    expect(state.sendPush).not.toHaveBeenCalled();
+    expect(state.sendPush).toHaveBeenCalledTimes(1);
+    expect(state.sendPush).toHaveBeenCalledWith(
+      state.externalId,
+      expect.objectContaining({ title: "Access details ready" }),
+      {
+        idempotencyKey: oneSignalPushIdempotencyKey(
+          "access_code_ready:private-booking-id:push",
+        ),
+      },
+    );
     expect(state.sendEmail).toHaveBeenCalledTimes(1);
   });
 

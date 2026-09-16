@@ -166,6 +166,13 @@ export async function sendPush(
         // a second browser window or an unverified deep-link handoff.
         web_url: message.url,
         data: { minimumstress_destination: "notifications" },
+        // Use the platform default alert sound/channel so an enabled device
+        // gets the ordinary audible/haptic cue for time-sensitive booking
+        // activity. The OS still owns quiet modes and per-app notification
+        // settings; we never try to bypass them.
+        ios_sound: "default",
+        android_sound: "default",
+        priority: 10,
         idempotency_key: options.idempotencyKey,
       }),
       signal: AbortSignal.timeout(10_000),

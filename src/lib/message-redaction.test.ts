@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { explainRedaction, isEmptyAfterRedaction, redact } from "./message-redaction";
+import {
+  explainOffPlatformRequest,
+  explainRedaction,
+  isEmptyAfterRedaction,
+  offPlatformRequest,
+  redact,
+} from "./message-redaction";
 
 /**
  * Two failure directions, and the second is worse.
@@ -155,5 +161,37 @@ describe("isEmptyAfterRedaction", () => {
 
   it("is true for an empty message", () => {
     expect(isEmptyAfterRedaction(redact("   "))).toBe(true);
+  });
+});
+
+
+describe("off-platform handoff requests", () => {
+  it.each([
+    ["what is your phone number?", "phone"],
+    ["can you text me instead?", "phone"],
+    ["send me your email address", "email"],
+    ["what's your instagram?", "handle"],
+    ["can we continue on WhatsApp", "handle"],
+    ["can we talk outside the app?", "handle"],
+    ["can I pay you directly on Venmo?", "payment"],
+  ] as const)("stops %s", (input, kind) => {
+    expect(offPlatformRequest(input)).toBe(kind);
+  });
+
+  it.each([
+    "Is there parking nearby?",
+    "What is the door code?",
+    "Can I arrive five minutes early?",
+    "I paid for the booking in the app",
+    "The signal in the basement is weak",
+  ])("does not block booking logistics: %s", (input) => {
+    expect(offPlatformRequest(input)).toBeNull();
+  });
+
+  it("explains the protection without threatening the sender", () => {
+    const message = explainOffPlatformRequest("phone");
+    expect(message).toMatch(/private/i);
+    expect(message).toMatch(/support|refund/i);
+    expect(message).not.toMatch(/ban|suspend|violation/i);
   });
 });

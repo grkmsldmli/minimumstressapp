@@ -5,6 +5,7 @@ import { stripeGateway } from "@/lib/api/stripe-gateway";
 import { handled, jsonError, requireUser } from "@/lib/api/session";
 import { integer, jsonObject, oneOf, timestamp, uuid } from "@/lib/api/validate";
 import { BOOKING_USES, MAX_OTHER_CHARS } from "@/lib/booking-use";
+import { offPlatformRequest, redact } from "@/lib/message-redaction";
 import {
   BookingError,
   createBooking,
@@ -103,6 +104,16 @@ export async function POST(request: NextRequest): Promise<Response> {
       typeof body.value.purposeNote === "string"
         ? body.value.purposeNote.trim().slice(0, MAX_OTHER_CHARS)
         : null;
+
+    if (
+      purposeNote &&
+      (redact(purposeNote).found.length > 0 || offPlatformRequest(purposeNote) !== null)
+    ) {
+      return jsonError(
+        "Use this note only to describe the session. Keep phone numbers, email, links, social handles and payment details inside Minimum Stress.",
+        400,
+      );
+    }
 
     /*
      * The same declaration on every week of the run. A series is one intention

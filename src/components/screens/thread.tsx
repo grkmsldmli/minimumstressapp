@@ -57,6 +57,10 @@ export function Thread({
 }) {
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+  // A successful block closes this composer immediately. The database closes
+  // both directions too; this local bit prevents one stale extra tap while the
+  // surrounding account snapshot refreshes.
+  const [blocked, setBlocked] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -68,6 +72,8 @@ export function Thread({
   const [safetyDone, setSafetyDone] = useState<string | null>(null);
 
   const endRef = useRef<HTMLDivElement>(null);
+  const seenMessageIds = useRef<Set<string> | null>(null);
+  const effectiveCanSend = canSend && !blocked;
 
   const runSafety = async (work: () => Promise<void>, done: string) => {
     if (safetyBusy) return;
@@ -91,9 +97,32 @@ export function Thread({
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages.length]);
 
+  // In-app arrival cue. The OS push already handles background sound/vibration;
+  // this covers the person who is actively looking at the thread. Never buzz
+  // on the initial history load or for the sender's own message.
+  useEffect(() => {
+    const current = new Set(messages.map((message) => message.id));
+    if (seenMessageIds.current === null) {
+      seenMessageIds.current = current;
+      return;
+    }
+
+    const incoming = messages.some(
+      (message) => !seenMessageIds.current!.has(message.id) && message.senderId !== meId,
+    );
+    seenMessageIds.current = current;
+
+    if (!incoming || document.visibilityState !== "visible") return;
+    try {
+      navigator.vibrate?.([18, 28, 18]);
+    } catch {
+      // Vibration is progressive enhancement; unsupported devices stay silent.
+    }
+  }, [messages, meId]);
+
   const send = async () => {
     const text = draft.trim();
-    if (!text || sending || !canSend) return;
+    if (!text || sending || !effectiveCanSend) return;
 
     setSending(true);
     setError(null);
@@ -180,6 +209,7 @@ export function Thread({
           </div>
         </div>
 
+        <div role="log" aria-live="polite" aria-relevant="additions">
         {messages.length === 0 ? (
           <p className="font-body font-normal text-[14px] text-ink-faint text-center mt-8">
             No messages yet. Ask about parking, the door, or anything you need before you arrive.
@@ -192,6 +222,7 @@ export function Thread({
           </div>
         )}
         <div ref={endRef} />
+        </div>
       </div>
 
       {notice && (
@@ -240,15 +271,21 @@ export function Thread({
             )
           }
           onBlock={() =>
-            runSafety(onBlock, `You blocked ${otherName}. Neither of you can message the other now.`)
+            runSafety(
+              async () => {
+                await onBlock();
+                setBlocked(true);
+              },
+              `You blocked ${otherName}. Neither of you can message the other now.`,
+            )
           }
         />
       )}
 
-      {!canSend ? (
+      {!effectiveCanSend ? (
         <div className="px-6 pt-3 pb-6 safe-pb-6 shrink-0" style={{ borderTop: "1px solid #F0ECE0" }}>
           <p className="font-body font-normal text-[14px] leading-relaxed text-ink-faint text-center">
-            {disabledReason ?? "This booking can no longer receive messages."}
+            {blocked ? "This conversation is blocked. You can still read the history." : (disabledReason ?? "This booking can no longer receive messages.")}
           </p>
         </div>
       ) : (

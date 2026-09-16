@@ -88,6 +88,63 @@ const NOT_A_PHONE = [
   /^\s*\d{1,2}\/\d{1,2}\/\d{2,4}\s*$/, // 08/04/2026
 ];
 
+
+/**
+ * A request to move contact, payment or identity details outside the booking
+ * thread. Actual details are masked by `redact`; these phrases are stopped
+ * before sending because asking the other party for a number is itself the
+ * start of an off-platform handoff.
+ */
+export function offPlatformRequest(input: string): RedactionKind | null {
+  const text = input.toLowerCase().replace(/[’]/g, "'");
+
+  const targets: { kind: RedactionKind; pattern: RegExp }[] = [
+    {
+      kind: "phone",
+      pattern: /\b(?:phone(?: number)?|mobile|cell(?: number)?|telephone|text(?: me| you)?|call(?: me| you)?)\b/i,
+    },
+    { kind: "email", pattern: /\be[ -]?mail(?: address)?\b/i },
+    {
+      kind: "handle",
+      pattern: /\b(?:whats\s?app|telegram|signal|instagram|insta|snapchat|wechat|viber|messenger|facebook|facetime|social(?: media)?|handle|username)\b/i,
+    },
+    {
+      kind: "payment",
+      pattern: /\b(?:venmo|paypal|cash\s?app|zelle|revolut|apple\s?pay|cash|pay (?:you )?(?:directly|outside|off[- ]?app))\b/i,
+    },
+  ];
+
+  const ask = /\b(?:send|share|give|tell|what(?:'s| is)|where(?:'s| is)|can i (?:have|get)|could i (?:have|get)|may i (?:have|get)|text|call|contact|reach|dm|message|add|find|pay|use|move|take|continue|talk|chat|communicate)\b/i;
+  const outside = /\b(?:outside|off[- ]?(?:the )?app|direct(?:ly)?|elsewhere|privately)\b/i;
+  const genericContact = /\b(?:contact (?:info|information|details)|your details|my details)\b/i;
+
+  if (genericContact.test(text)) return "phone";
+
+  for (const target of targets) {
+    const match = target.pattern.exec(text);
+    if (!match) continue;
+    const start = Math.max(0, match.index - 70);
+    const end = Math.min(text.length, match.index + match[0].length + 70);
+    const nearby = text.slice(start, end);
+    if (ask.test(nearby) || outside.test(nearby)) return target.kind;
+  }
+
+  // Generic handoff language with no named channel: "can we talk outside the app?"
+  if (outside.test(text) && ask.test(text)) return "handle";
+  return null;
+}
+
+export function explainOffPlatformRequest(kind: RedactionKind): string {
+  const what: Record<RedactionKind, string> = {
+    phone: "phone numbers",
+    email: "email addresses",
+    link: "external links",
+    handle: "social or messaging details",
+    payment: "off-app payment details",
+  };
+  return `Keep ${what[kind]} private. Use this thread for everything about the booking so both sides keep the booking record, support and refund protection.`;
+}
+
 export function redact(input: string): Redaction {
   const found = new Set<RedactionKind>();
   let text = input;

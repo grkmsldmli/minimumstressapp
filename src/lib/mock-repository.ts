@@ -694,6 +694,10 @@ export class MockRepository implements Repository {
    */
   async submitReview(): Promise<void> {}
 
+  async reviewedBookingIds(): Promise<string[]> {
+    return [];
+  }
+
   /* ---------------- messages ---------------- */
 
   private messages: Message[] = [];

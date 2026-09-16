@@ -6,6 +6,7 @@ import { jsonObject, oneOf } from "@/lib/api/validate";
 import { stripeGateway } from "@/lib/api/stripe-gateway";
 import { answerRequest } from "@/lib/approval-service";
 import { MAX_DECLINE_NOTE } from "@/lib/booking-approval";
+import { offPlatformRequest, redact } from "@/lib/message-redaction";
 import { supabaseAdmin } from "@/lib/supabase/server";
 
 /**
@@ -51,6 +52,13 @@ export async function POST(
       typeof parsed.value.note === "string"
         ? parsed.value.note.trim().slice(0, MAX_DECLINE_NOTE) || null
         : null;
+
+    if (note && (redact(note).found.length > 0 || offPlatformRequest(note) !== null)) {
+      return jsonError(
+        "Keep replies in Minimum Stress. Don't include phone numbers, email, links, social handles or off-platform payment details.",
+        400,
+      );
+    }
 
     await answerRequest(
       supabaseAdmin(),

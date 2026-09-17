@@ -120,11 +120,11 @@ workflows:
       vars:
         ONESIGNAL_DISABLE_LOCATION: "true"
       ios_signing:
-        # Fetch only the capability-complete 1.0.2 profiles. Bundle matching
+        # Fetch only the capability-complete release profiles. Bundle matching
         # is intentionally avoided: Codemagic may otherwise choose an older,
         # still-valid profile that predates the shared OneSignal App Group.
         provisioning_profiles:
-          - profile: minimumstress_appstore_102
+          - profile: minimumstress_appstore_103
             environment_variable: CM_APP_PROVISIONING_PROFILE
           - profile: minimumstress_onesignal_extension_102
             environment_variable: CM_EXTENSION_PROVISIONING_PROFILE
@@ -145,7 +145,7 @@ workflows:
           APP_PROFILE_PATH="${CM_APP_PROVISIONING_PROFILE:-}"
           EXTENSION_PROFILE_PATH="${CM_EXTENSION_PROVISIONING_PROFILE:-}"
           if [ -z "$APP_PROFILE_PATH" ] || [ ! -f "$APP_PROFILE_PATH" ]; then
-            echo "Codemagic did not fetch minimumstress_appstore_102."
+            echo "Codemagic did not fetch minimumstress_appstore_103."
             exit 1
           fi
           if [ -z "$EXTENSION_PROFILE_PATH" ] || [ ! -f "$EXTENSION_PROFILE_PATH" ]; then

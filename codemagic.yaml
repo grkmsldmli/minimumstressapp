@@ -106,6 +106,63 @@ workflows:
         track: internal
         submit_as_draft: false
 
+
+  android-release-manual:
+    name: Android — signed AAB (manual Play upload)
+    instance_type: mac_mini_m2
+    max_build_duration: 90
+    environment:
+      node: 22
+      android_signing:
+        - minimumstress_upload
+      vars:
+        APP_VERSION_NAME: "1.0.2"
+        ONESIGNAL_DISABLE_LOCATION: "true"
+    scripts:
+      - name: Verify manual release inputs
+        script: |
+          set -eu
+          case "${PROJECT_BUILD_NUMBER:-}" in
+            ""|*[!0-9]*|0)
+              echo "PROJECT_BUILD_NUMBER must be a positive integer for Play versionCode."
+              exit 1
+              ;;
+          esac
+          for required in CM_KEYSTORE_PATH CM_KEYSTORE_PASSWORD CM_KEY_ALIAS CM_KEY_PASSWORD; do
+            if [ -z "$(printenv "$required")" ]; then
+              echo "Missing encrypted Android signing input: $required"
+              exit 1
+            fi
+          done
+          if [ ! -f "$CM_KEYSTORE_PATH" ]; then
+            echo "Codemagic did not fetch the configured Android keystore."
+            exit 1
+          fi
+      - name: Install dependencies
+        script: npm ci
+      - name: Sync Capacitor (Android)
+        script: npx cap sync android
+      - name: Build and verify signed AAB
+        script: |
+          set -eu
+          export JAVA_HOME=$(/usr/libexec/java_home -v 21)
+          "$JAVA_HOME/bin/java" -version
+          cd android
+          chmod +x ./gradlew
+          ./gradlew clean bundleRelease \
+            -Dorg.gradle.java.home="$JAVA_HOME" \
+            --no-daemon
+          AAB_PATH="app/build/outputs/bundle/release/app-release.aab"
+          test -s "$AAB_PATH"
+          SIGNATURE_OUTPUT=$("$JAVA_HOME/bin/jarsigner" -verify "$AAB_PATH" 2>&1)
+          printf '%s\n' "$SIGNATURE_OUTPUT"
+          printf '%s\n' "$SIGNATURE_OUTPUT" | grep -Fq "jar verified." || {
+            echo "AAB signature verification failed."
+            exit 1
+          }
+    artifacts:
+      - android/app/build/outputs/bundle/release/*.aab
+
   ios-release:
     name: iOS — TestFlight
     instance_type: mac_mini_m2

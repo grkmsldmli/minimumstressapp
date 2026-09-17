@@ -37,6 +37,11 @@ describe("native push build contract", () => {
     const workflow = read("codemagic.yaml");
     expect(workflow).toContain(APP_GROUP);
     expect(workflow).toContain("com.minimumstress.app.OneSignalNotificationServiceExtension");
+    expect(workflow).toContain("profile: minimumstress_appstore_102");
+    expect(workflow).toContain("profile: minimumstress_onesignal_extension_102");
+    expect(workflow).toContain("certificate: minimumstress_distribution_101");
+    expect(workflow).toContain("environment_variable: CM_APP_PROVISIONING_PROFILE");
+    expect(workflow).toContain("environment_variable: CM_EXTENSION_PROVISIONING_PROFILE");
   });
 
   it("pins release toolchains and publishes Android only to Internal testing", () => {

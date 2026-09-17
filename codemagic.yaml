@@ -120,8 +120,17 @@ workflows:
       vars:
         ONESIGNAL_DISABLE_LOCATION: "true"
       ios_signing:
-        distribution_type: app_store
-        bundle_identifier: com.minimumstress.app
+        # Fetch only the capability-complete 1.0.2 profiles. Bundle matching
+        # is intentionally avoided: Codemagic may otherwise choose an older,
+        # still-valid profile that predates the shared OneSignal App Group.
+        provisioning_profiles:
+          - profile: minimumstress_appstore_102
+            environment_variable: CM_APP_PROVISIONING_PROFILE
+          - profile: minimumstress_onesignal_extension_102
+            environment_variable: CM_EXTENSION_PROVISIONING_PROFILE
+        certificates:
+          - certificate: minimumstress_distribution_101
+            environment_variable: CM_DISTRIBUTION_CERTIFICATE
     scripts:
       - name: Install dependencies
         script: npm ci
@@ -133,15 +142,18 @@ workflows:
       - name: Verify Apple capabilities in provisioning
         script: |
           set -e
-          PROFILE_PATH="${CM_PROVISIONING_PROFILE:-}"
-          if [ -z "$PROFILE_PATH" ]; then
-            PROFILE_PATH=$(find "$HOME/Library/MobileDevice/Provisioning Profiles" -type f -name '*.mobileprovision' 2>/dev/null | head -n 1 || true)
-          fi
-          if [ -z "$PROFILE_PATH" ] || [ ! -f "$PROFILE_PATH" ]; then
-            echo "No provisioning profile was fetched by Codemagic. Upload the App Store profile for com.minimumstress.app under Code signing identities."
+          APP_PROFILE_PATH="${CM_APP_PROVISIONING_PROFILE:-}"
+          EXTENSION_PROFILE_PATH="${CM_EXTENSION_PROVISIONING_PROFILE:-}"
+          if [ -z "$APP_PROFILE_PATH" ] || [ ! -f "$APP_PROFILE_PATH" ]; then
+            echo "Codemagic did not fetch minimumstress_appstore_102."
             exit 1
           fi
-          security cms -D -i "$PROFILE_PATH" > /tmp/profile.plist
+          if [ -z "$EXTENSION_PROFILE_PATH" ] || [ ! -f "$EXTENSION_PROFILE_PATH" ]; then
+            echo "Codemagic did not fetch minimumstress_onesignal_extension_102."
+            exit 1
+          fi
+
+          security cms -D -i "$APP_PROFILE_PATH" > /tmp/profile.plist
           PROFILE_NAME=$(/usr/libexec/PlistBuddy -c 'Print :Name' /tmp/profile.plist 2>/dev/null || true)
           PROFILE_UUID=$(/usr/libexec/PlistBuddy -c 'Print :UUID' /tmp/profile.plist 2>/dev/null || true)
           echo "Provisioning profile: $PROFILE_NAME"
@@ -161,24 +173,20 @@ workflows:
             exit 1
           }
 
-          EXTENSION_PROFILE_FOUND=false
-          for CANDIDATE in "$HOME/Library/MobileDevice/Provisioning Profiles"/*.mobileprovision; do
-            [ -f "$CANDIDATE" ] || continue
-            security cms -D -i "$CANDIDATE" > /tmp/candidate-profile.plist
-            APPLICATION_ID=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' /tmp/candidate-profile.plist 2>/dev/null || true)
-            case "$APPLICATION_ID" in
-              *.com.minimumstress.app.OneSignalNotificationServiceExtension)
-                /usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.security.application-groups' /tmp/candidate-profile.plist \
-                  | grep -F 'group.com.minimumstress.app.onesignal' >/dev/null || continue
-                EXTENSION_PROFILE_FOUND=true
-                break
-                ;;
-            esac
-          done
-          if [ "$EXTENSION_PROFILE_FOUND" != "true" ]; then
-            echo "No App Store profile was found for com.minimumstress.app.OneSignalNotificationServiceExtension with the shared OneSignal App Group."
+          security cms -D -i "$EXTENSION_PROFILE_PATH" > /tmp/extension-profile.plist
+          EXTENSION_APPLICATION_ID=$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' /tmp/extension-profile.plist 2>/dev/null || true)
+          case "$EXTENSION_APPLICATION_ID" in
+            *.com.minimumstress.app.OneSignalNotificationServiceExtension) ;;
+            *)
+              echo "The pinned extension profile has the wrong application identifier."
+              exit 1
+              ;;
+          esac
+          /usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.security.application-groups' /tmp/extension-profile.plist \
+            | grep -F 'group.com.minimumstress.app.onesignal' >/dev/null || {
+            echo "The pinned extension profile does not contain the shared OneSignal App Group."
             exit 1
-          fi
+          }
           echo "Sign in with Apple entitlement: present"
           echo "APNs push entitlement: present"
           echo "OneSignal App Group and extension profile: present"

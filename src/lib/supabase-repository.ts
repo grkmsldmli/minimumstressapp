@@ -2030,6 +2030,15 @@ export class SupabaseRepository implements Repository {
       });
       if (finalizeError) throw asError(finalizeError);
     } catch (failure) {
+      /*
+       * If upload itself failed, uploadSpaceFiles already removed anything it
+       * had managed to store. If a later step failed (availability/finalize),
+       * the files are valid and recorded, so remove those before discarding the
+       * short-lived listing row. A failed create should leave neither a row nor
+       * private orphan files behind.
+       */
+      await this.cleanupIncompleteSpaceFiles(data.id, hostId);
+
       // Not a general host DELETE. Migration 0079's RPC accepts only this
       // short-lived, pending, never-reviewed creation row and nothing else.
       await this.db.rpc("discard_incomplete_listing", { p_space_id: data.id });
@@ -2040,6 +2049,53 @@ export class SupabaseRepository implements Repository {
     const created = spaces.find((s) => s.id === data.id);
     if (!created) throw new Error("Listing was created but could not be read back");
     return created;
+  }
+
+  private async cleanupIncompleteSpaceFiles(
+    spaceId: string,
+    hostId: string,
+  ): Promise<void> {
+    try {
+      const [mediaResult, spaceResult] = await Promise.all([
+        this.db
+          .from("space_media")
+          .select("storage_path, card_path")
+          .eq("space_id", spaceId),
+        this.db
+          .from("spaces")
+          .select("sublease_doc_path, insurance_doc_path")
+          .eq("id", spaceId)
+          .eq("host_id", hostId)
+          .maybeSingle(),
+      ]);
+
+      const mediaPaths = [
+        ...new Set(
+          (mediaResult.data ?? []).flatMap((row) =>
+            [row.storage_path as string | null, row.card_path as string | null].filter(
+              (path): path is string => Boolean(path),
+            ),
+          ),
+        ),
+      ];
+      const documentPaths = [
+        spaceResult.data?.sublease_doc_path as string | null,
+        spaceResult.data?.insurance_doc_path as string | null,
+      ].filter((path): path is string => Boolean(path));
+
+      await Promise.allSettled([
+        mediaPaths.length
+          ? this.db.storage.from("space-media").remove(mediaPaths)
+          : Promise.resolve(),
+        documentPaths.length
+          ? this.db.storage.from("verification-docs").remove(documentPaths)
+          : Promise.resolve(),
+      ]);
+    } catch {
+      // Best-effort cleanup only. The creation row still gets discarded below,
+      // which is more important than turning a storage cleanup problem into a
+      // second user-facing failure.
+    }
   }
 
   /**

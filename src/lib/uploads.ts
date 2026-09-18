@@ -46,7 +46,11 @@ const ALLOWED: Record<UploadKind, string[]> = {
  * megabytes.
  */
 export const MAX_BYTES: Record<UploadKind, number> = {
-  image: 12 * 1024 * 1024,
+  // Modern phone photos can exceed 12 MB before the browser creates the
+  // 600px/1600px listing variants. The original is normally not stored, so
+  // rejecting it before that resize turned perfectly usable studio photos
+  // into a listing-blocking error at the final step.
+  image: 50 * 1024 * 1024,
   video: 100 * 1024 * 1024,
   document: 20 * 1024 * 1024,
 };

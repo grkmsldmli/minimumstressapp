@@ -1,6 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import { Camera, FileCheck, FileUp, Plus, User, Video, X } from "lucide-react";
+
+import { rejectionReason } from "@/lib/uploads";
 
 export interface PickedMedia {
   id: string;
@@ -43,6 +46,8 @@ export function DocumentUpload({
   onPick: (file: File) => void;
   onRemove: () => void;
 }) {
+  const [pickError, setPickError] = useState<string | null>(null);
+
   return (
     <div>
       <div className="flex items-center justify-between mb-1.5">
@@ -75,13 +80,27 @@ export function DocumentUpload({
             className="sr-only"
             onChange={(e) => {
               const picked = e.target.files?.[0];
-              if (picked) onPick(picked);
+              if (picked) {
+                const reason = rejectionReason(picked, "document");
+                if (reason) {
+                  setPickError(`${picked.name}: ${reason}`);
+                } else {
+                  setPickError(null);
+                  onPick(picked);
+                }
+              }
               e.target.value = "";
             }}
           />
           <FileUp size={16} color="#3B9BE8" className="shrink-0" />
           <span className="font-body text-[13.5px] text-ink-faint">{hint}</span>
         </label>
+      )}
+
+      {pickError && (
+        <p className="font-body font-normal text-[12.5px] mt-2 leading-relaxed text-coral-deep">
+          {pickError}
+        </p>
       )}
     </div>
   );

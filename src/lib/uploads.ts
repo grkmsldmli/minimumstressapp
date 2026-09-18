@@ -21,9 +21,11 @@ export type UploadKind = "image" | "video" | "document";
  */
 const EXTENSIONS: Record<string, string> = {
   "image/jpeg": "jpg",
+  "image/jpg": "jpg",
   "image/png": "png",
   "image/webp": "webp",
   "image/heic": "heic",
+  "image/heif": "heif",
   "video/mp4": "mp4",
   "video/quicktime": "mov",
   "video/webm": "webm",
@@ -31,10 +33,18 @@ const EXTENSIONS: Record<string, string> = {
 };
 
 const ALLOWED: Record<UploadKind, string[]> = {
-  image: ["image/jpeg", "image/png", "image/webp", "image/heic"],
+  image: ["image/jpeg", "image/jpg", "image/png", "image/webp", "image/heic", "image/heif"],
   video: ["video/mp4", "video/quicktime", "video/webm"],
-  // A photo of a lease is as common as a scan of one, so images count.
-  document: ["application/pdf", "image/jpeg", "image/png", "image/heic"],
+  // A photo of a lease is as common as a scan of one, so safe raster images count.
+  document: [
+    "application/pdf",
+    "image/jpeg",
+    "image/jpg",
+    "image/png",
+    "image/webp",
+    "image/heic",
+    "image/heif",
+  ],
 };
 
 /**

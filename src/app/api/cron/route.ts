@@ -697,6 +697,46 @@ async function retryFailedNotifications(): Promise<{ notificationsSent: number }
  * failed one — so counting first would report a queue the same run had already
  * emptied.
  */
+async function countActuallyUnpayableHosts(
+  admin: ReturnType<typeof supabaseAdmin>,
+  now: Date,
+): Promise<number> {
+  const { data: due, error: dueError } = await admin
+    .from("bookings")
+    .select("space_id")
+    .lte("ends_at", now.toISOString())
+    .not("captured_at", "is", null)
+    .eq("host_rate_refunded", false)
+    .is("host_paid_at", null)
+    .in("financial_resolution_state", ["not_required", "resolved"])
+    .in("status", ["upcoming", "completed", "cancelled_by_practitioner", "no_show"]);
+  if (dueError) throw dueError;
+  if (!due?.length) return 0;
+
+  const spaceIds = [...new Set(due.map((row) => row.space_id as string).filter(Boolean))];
+  if (spaceIds.length === 0) return 0;
+
+  const { data: spaces, error: spacesError } = await admin
+    .from("spaces")
+    .select("host_id")
+    .in("id", spaceIds);
+  if (spacesError) throw spacesError;
+
+  const hostIds = [
+    ...new Set((spaces ?? []).map((row) => row.host_id as string).filter(Boolean)),
+  ];
+  if (hostIds.length === 0) return 0;
+
+  const { data: blockedHosts, error: hostsError } = await admin
+    .from("profiles")
+    .select("id")
+    .in("id", hostIds)
+    .or("stripe_connect_account_id.is.null,stripe_connect_charges_enabled.is.false");
+  if (hostsError) throw hostsError;
+
+  return blockedHosts?.length ?? 0;
+}
+
 async function reportWhatIsWaiting(now: Date): Promise<{ waiting: number }> {
   const to = safetyRecipient();
   if (!to) return { waiting: 0 };
@@ -710,17 +750,12 @@ async function reportWhatIsWaiting(now: Date): Promise<{ waiting: number }> {
    * zero, so the alerting would have stayed silent about exactly the things it
    * was built to raise. A monitor that fails quietly is worse than none.
    */
-  const [financial, unpayable, refunds, claims, escalations, listings, changes, failed] =
+  const [financial, refunds, claims, escalations, listings, changes, failed] =
     await Promise.all([
     admin
       .from("bookings")
       .select("id", { count: "exact", head: true })
       .eq("financial_resolution_state", "manual_review"),
-    admin
-      .from("profiles")
-      .select("id", { count: "exact", head: true })
-      .eq("account_type", "host")
-      .or("stripe_connect_account_id.is.null,stripe_connect_charges_enabled.is.false"),
     admin
       .from("refund_requests")
       .select("id", { count: "exact", head: true })
@@ -749,7 +784,6 @@ async function reportWhatIsWaiting(now: Date): Promise<{ waiting: number }> {
 
   for (const result of [
     financial,
-    unpayable,
     refunds,
     claims,
     escalations,
@@ -760,9 +794,18 @@ async function reportWhatIsWaiting(now: Date): Promise<{ waiting: number }> {
     if (result.error) throw result.error;
   }
 
+  /*
+   * A host without Stripe onboarding is not, by itself, a host we owe money.
+   * The old alert counted every host with incomplete payout setup, which could
+   * produce "their money is sitting with us" even when the marketplace had
+   * never captured a single payment. Only sessions that are actually due for
+   * payout may create this alert.
+   */
+  const unpayableHosts = await countActuallyUnpayableHosts(admin, now);
+
   const items = waitingOn({
     financialManualReview: financial.count ?? 0,
-    unpayableHosts: unpayable.count ?? 0,
+    unpayableHosts,
     openDisputes: (refunds.count ?? 0) + (claims.count ?? 0),
     escalations: escalations.count ?? 0,
     pendingListings: listings.count ?? 0,

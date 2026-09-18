@@ -55,6 +55,7 @@ import {
 import { spaceTypesFor } from "@/lib/space-types";
 import { HOST_USES, OPT_IN_USES, defaultUsesFor } from "@/lib/booking-use";
 import { HOST_TERMS_CONFIRMATION } from "@/lib/host-terms";
+import { rejectionReason } from "@/lib/uploads";
 const MAX_MEDIA = 6;
 const STEP_LABELS = ["Basics", "Photos & extras", "Verify"] as const;
 export function AddSpace({
@@ -247,6 +248,13 @@ export function AddSpace({
   }
   const addMedia = (file: File) => {
     if (media.length >= MAX_MEDIA) return;
+    const kind = file.type.startsWith("video") ? "video" : "image";
+    const reason = rejectionReason(file, kind);
+    if (reason) {
+      setSubmitError(`${file.name}: ${reason}`);
+      return;
+    }
+    setSubmitError(null);
     setMedia((m) => [...m, createPickedMedia(file)]);
   };
   const removeMedia = (item: PickedMedia) => {
@@ -990,14 +998,30 @@ export function AddSpace({
                 hint="Lease clause, landlord letter, or deed"
                 required
                 file={subleaseDoc}
-                onPick={setSubleaseDoc}
+                onPick={(file) => {
+                  const reason = rejectionReason(file, "document");
+                  if (reason) {
+                    setSubmitError(`${file.name}: ${reason}`);
+                    return;
+                  }
+                  setSubmitError(null);
+                  setSubleaseDoc(file);
+                }}
                 onRemove={() => setSubleaseDoc(null)}
               />
               <DocumentUpload
                 label="Space insurance certificate"
                 hint="PDF or photo"
                 file={insuranceDoc}
-                onPick={setInsuranceDoc}
+                onPick={(file) => {
+                  const reason = rejectionReason(file, "document");
+                  if (reason) {
+                    setSubmitError(`${file.name}: ${reason}`);
+                    return;
+                  }
+                  setSubmitError(null);
+                  setInsuranceDoc(file);
+                }}
                 onRemove={() => setInsuranceDoc(null)}
               />
             </div>

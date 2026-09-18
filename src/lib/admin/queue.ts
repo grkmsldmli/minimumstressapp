@@ -700,6 +700,29 @@ export async function loadQueue(admin: SupabaseClient): Promise<AdminQueue> {
   const paid = rows.filter((b) => b.captured_at !== null);
   const thisMonth = paid.filter((b) => new Date(b.starts_at as string) >= monthStart);
 
+  /*
+   * A captured booking is not automatically money currently owed to a host.
+   *
+   * Before this filter, any captured booking could make an unfinished Stripe
+   * account look "unpayable" even while the session was still in the future,
+   * after the host's share had been refunded, or after a financial resolution
+   * was still blocking payout. Keep this definition aligned with the payout
+   * sweep: the session must be over, the host share must still be owed, payout
+   * must not already be recorded, and the financial state must be settled.
+   */
+  const payoutDue = paid.filter(
+    (b) =>
+      new Date(b.ends_at as string) <= now &&
+      b.host_rate_refunded !== true &&
+      b.host_paid_at === null &&
+      ["not_required", "resolved"].includes(
+        (b.financial_resolution_state as string) ?? "not_required",
+      ) &&
+      ["upcoming", "completed", "cancelled_by_practitioner", "no_show"].includes(
+        (b.status as string) ?? "",
+      ),
+  );
+
   const sum = (list: typeof rows, field: string) =>
     list.reduce((total, row) => total + ((row[field as keyof typeof row] as number) ?? 0), 0);
 
@@ -715,7 +738,7 @@ export async function loadQueue(admin: SupabaseClient): Promise<AdminQueue> {
   );
 
   const unpayable = new Map<string, UnpayableHost>();
-  for (const booking of paid) {
+  for (const booking of payoutDue) {
     const hostId = spaceHost.get(booking.space_id as string);
     if (!hostId || payable.get(hostId)) continue;
 
@@ -1246,18 +1269,11 @@ export async function loadQueue(admin: SupabaseClient): Promise<AdminQueue> {
           new Date(b.starts_at as string) > now,
       ).length,
       /*
-       * The same question the payout sweep asks, and for the same reason it
-       * had to change: filtering on `refunded_at` hid every booking where a
-       * partial refund had left the host unpaid — which is precisely the
-       * failure this counter exists to surface.
+       * The same due-session set used by the unpayable-host queue above.
+       * Upcoming sessions and bookings whose money is still under financial
+       * resolution are not overdue payouts and must not trigger an alarm.
        */
-      hostsUnpaid: rows.filter(
-        (b) =>
-          b.captured_at !== null &&
-          b.host_rate_refunded !== true &&
-          b.host_paid_at === null &&
-          new Date(b.starts_at as string) < now,
-      ).length,
+      hostsUnpaid: payoutDue.length,
     },
 
     bookingsByDay: [...byDay.entries()].map(([day, count]) => ({ day, bookings: count })),

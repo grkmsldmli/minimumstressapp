@@ -2129,7 +2129,9 @@ export class SupabaseRepository implements Repository {
         // somehow did, replacing another listing's photo is the wrong repair.
         upsert: false,
       });
-      if (error) throw asError(error);
+      if (error) {
+        throw new Error(`${item.file.name}: ${errorMessage(error, "Upload failed")}`);
+      }
       return path;
     };
 
@@ -2215,7 +2217,11 @@ export class SupabaseRepository implements Repository {
           contentType: input.subleaseDoc.type,
           upsert: false,
         });
-      if (subleaseError) throw asError(subleaseError);
+      if (subleaseError) {
+        throw new Error(
+          `${input.subleaseDoc.name}: ${errorMessage(subleaseError, "Upload failed")}`,
+        );
+      }
       documentPaths.push(subleasePath);
 
       let insurancePath: string | null = null;
@@ -2237,7 +2243,11 @@ export class SupabaseRepository implements Repository {
             contentType: input.insuranceDoc.type,
             upsert: false,
           });
-        if (error) throw asError(error);
+        if (error) {
+          throw new Error(
+            `${input.insuranceDoc.name}: ${errorMessage(error, "Upload failed")}`,
+          );
+        }
         documentPaths.push(insurancePath);
       }
 

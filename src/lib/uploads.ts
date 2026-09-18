@@ -62,7 +62,7 @@ export const MAX_BYTES: Record<UploadKind, number> = {
   // into a listing-blocking error at the final step.
   image: 50 * 1024 * 1024,
   video: 100 * 1024 * 1024,
-  document: 20 * 1024 * 1024,
+  document: 50 * 1024 * 1024,
 };
 
 export interface UploadCandidate {

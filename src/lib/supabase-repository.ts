@@ -1915,6 +1915,28 @@ export class SupabaseRepository implements Repository {
   async createSpace(input: NewSpaceInput): Promise<HostSpace> {
     const hostId = await this.userId();
 
+    /*
+     * Validate every selected file before creating the database row.
+     *
+     * Previously file validation happened after the pending listing had already
+     * been inserted. A bad/oversized photo therefore created a row, uploaded
+     * some bytes, failed late, then rolled the row back. The user only saw the
+     * error on the final step and had no clue which earlier file caused it.
+     * Preflight keeps validation failures local and leaves no partial listing.
+     */
+    for (const item of input.media) {
+      const reason = rejectionReason(item.file, item.kind);
+      if (reason) throw new Error(`${item.file.name}: ${reason}`);
+    }
+    const subleaseReason = rejectionReason(input.subleaseDoc, "document");
+    if (subleaseReason) throw new Error(`${input.subleaseDoc.name}: ${subleaseReason}`);
+    if (input.insuranceDoc) {
+      const insuranceReason = rejectionReason(input.insuranceDoc, "document");
+      if (insuranceReason) {
+        throw new Error(`${input.insuranceDoc.name}: ${insuranceReason}`);
+      }
+    }
+
     assertMarketplaceCopy([
       input.name,
       input.description,
@@ -2083,55 +2105,98 @@ export class SupabaseRepository implements Repository {
       kind: MediaKind;
       position: number;
     }[] = [];
+    const mediaPaths: string[] = [];
+    const documentPaths: string[] = [];
 
-    for (const [index, item] of input.media.entries()) {
-      const reason = rejectionReason(item.file, item.kind);
-      if (reason) throw new Error(reason);
+    try {
+      for (const [index, item] of input.media.entries()) {
+        const reason = rejectionReason(item.file, item.kind);
+        if (reason) throw new Error(`${item.file.name}: ${reason}`);
 
-      const { storage_path, card_path } = await this.uploadListingMedia(hostId, spaceId, item);
-      mediaRows.push({ space_id: spaceId, storage_path, card_path, kind: item.kind, position: index });
-    }
+        const { storage_path, card_path } = await this.uploadListingMedia(hostId, spaceId, item);
+        mediaRows.push({
+          space_id: spaceId,
+          storage_path,
+          card_path,
+          kind: item.kind,
+          position: index,
+        });
+        mediaPaths.push(storage_path);
+        if (card_path) mediaPaths.push(card_path);
+      }
 
-    if (mediaRows.length > 0) {
-      const { error } = await this.db.from("space_media").insert(mediaRows);
-      if (error) throw asError(error);
-    }
+      if (mediaRows.length > 0) {
+        const { error } = await this.db.from("space_media").insert(mediaRows);
+        if (error) throw asError(error);
+      }
 
-    const subleaseReason = rejectionReason(input.subleaseDoc, "document");
-    if (subleaseReason) throw new Error(subleaseReason);
+      const subleaseReason = rejectionReason(input.subleaseDoc, "document");
+      if (subleaseReason) {
+        throw new Error(`${input.subleaseDoc.name}: ${subleaseReason}`);
+      }
 
-    const subleasePath = spaceDocPath(hostId, spaceId, input.subleaseDoc.type, crypto.randomUUID());
-    const { error: subleaseError } = await this.db.storage
-      .from("verification-docs")
-      .upload(subleasePath, input.subleaseDoc, {
-        contentType: input.subleaseDoc.type,
-        upsert: false,
-      });
-    if (subleaseError) throw subleaseError;
-
-    let insurancePath: string | null = null;
-    if (input.insuranceDoc) {
-      const insuranceReason = rejectionReason(input.insuranceDoc, "document");
-      if (insuranceReason) throw new Error(insuranceReason);
-
-      insurancePath = spaceDocPath(hostId, spaceId, input.insuranceDoc.type, crypto.randomUUID());
-      const { error } = await this.db.storage
+      const subleasePath = spaceDocPath(
+        hostId,
+        spaceId,
+        input.subleaseDoc.type,
+        crypto.randomUUID(),
+      );
+      const { error: subleaseError } = await this.db.storage
         .from("verification-docs")
-        .upload(insurancePath, input.insuranceDoc, {
-          contentType: input.insuranceDoc.type,
+        .upload(subleasePath, input.subleaseDoc, {
+          contentType: input.subleaseDoc.type,
           upsert: false,
         });
-      if (error) throw asError(error);
-    }
+      if (subleaseError) throw asError(subleaseError);
+      documentPaths.push(subleasePath);
 
-    // Written last, so a path in the row always points at a file that is
-    // already there — never the other way round.
-    const { error: pathError } = await this.db
-      .from("spaces")
-      .update({ sublease_doc_path: subleasePath, insurance_doc_path: insurancePath })
-      .eq("id", spaceId)
-      .eq("host_id", hostId);
-    if (pathError) throw pathError;
+      let insurancePath: string | null = null;
+      if (input.insuranceDoc) {
+        const insuranceReason = rejectionReason(input.insuranceDoc, "document");
+        if (insuranceReason) {
+          throw new Error(`${input.insuranceDoc.name}: ${insuranceReason}`);
+        }
+
+        insurancePath = spaceDocPath(
+          hostId,
+          spaceId,
+          input.insuranceDoc.type,
+          crypto.randomUUID(),
+        );
+        const { error } = await this.db.storage
+          .from("verification-docs")
+          .upload(insurancePath, input.insuranceDoc, {
+            contentType: input.insuranceDoc.type,
+            upsert: false,
+          });
+        if (error) throw asError(error);
+        documentPaths.push(insurancePath);
+      }
+
+      // Written last, so a path in the row always points at a file that is
+      // already there — never the other way round.
+      const { error: pathError } = await this.db
+        .from("spaces")
+        .update({ sublease_doc_path: subleasePath, insurance_doc_path: insurancePath })
+        .eq("id", spaceId)
+        .eq("host_id", hostId);
+      if (pathError) throw asError(pathError);
+    } catch (failure) {
+      /*
+       * A failed listing attempt must not leave orphaned private uploads.
+       * The database row is discarded by createSpace's outer rollback; remove
+       * any bytes that reached storage before the failure as well.
+       */
+      await Promise.allSettled([
+        mediaPaths.length > 0
+          ? this.db.storage.from("space-media").remove(mediaPaths)
+          : Promise.resolve(),
+        documentPaths.length > 0
+          ? this.db.storage.from("verification-docs").remove(documentPaths)
+          : Promise.resolve(),
+      ]);
+      throw failure;
+    }
   }
 
   async updateSpaceAvailability(

@@ -140,7 +140,7 @@ export function SpaceMediaManager({
           ? "No photos yet. The first one becomes the cover."
           : `${media.length} ${media.length === 1 ? "item" : "items"} · the first is the cover`}
         {" · "}
-        up to {Math.round(MAX_BYTES.image / 1_000_000)}MB a photo
+        up to {Math.round(MAX_BYTES.image / (1024 * 1024))}MB a photo
       </p>
 
       {error && (

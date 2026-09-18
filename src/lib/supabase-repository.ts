@@ -2137,15 +2137,27 @@ export class SupabaseRepository implements Repository {
       return { storage_path: await put(item.file, item.file.type), card_path: null };
     }
 
+    let variants;
     try {
-      const { card, detail } = await buildImageVariants(item.file);
-      // storage_path is the detail variant; the original is not retained.
-      const storage_path = await put(detail, detail.type);
-      const card_path = await put(card, card.type);
-      return { storage_path, card_path };
+      variants = await buildImageVariants(item.file);
     } catch {
-      // The optimisation failed — keep the upload working with the original.
+      // Only image processing failure falls back to the original. Storage
+      // failures must stay failures; treating a network error as an encoder
+      // error used to upload the full-size original and could leave a partial
+      // variant orphaned in the bucket.
       return { storage_path: await put(item.file, item.file.type), card_path: null };
+    }
+
+    // storage_path is the detail variant; the original is not retained.
+    const storage_path = await put(variants.detail, variants.detail.type);
+    try {
+      const card_path = await put(variants.card, variants.card.type);
+      return { storage_path, card_path };
+    } catch (failure) {
+      // The detail object was already written; remove it before surfacing the
+      // card-upload failure so a failed attempt leaves no hidden bytes behind.
+      await this.db.storage.from("space-media").remove([storage_path]).catch(() => {});
+      throw failure;
     }
   }
 
